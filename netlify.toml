@@ -5,6 +5,10 @@
 [build.environment]
   NPM_FLAGS = "--legacy-peer-deps"
   NODE_VERSION = "22.23.2"
+  # Firebase project/database IDs are public identifiers shipped in the web
+  # client config (and the project ID is the brand name), so they are not secrets.
+  # FIREBASE_PRIVATE_KEY and FIREBASE_CLIENT_EMAIL remain scanned.
+  SECRETS_SCAN_OMIT_KEYS = "FIREBASE_PROJECT_ID,FIREBASE_DATABASE_ID"
 
 [functions]
   directory = "netlify/functions"
