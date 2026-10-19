@@ -8,7 +8,7 @@
   # Firebase project/database IDs are public identifiers shipped in the web
   # client config (and the project ID is the brand name), so they are not secrets.
   # FIREBASE_PRIVATE_KEY and FIREBASE_CLIENT_EMAIL remain scanned.
-  SECRETS_SCAN_OMIT_KEYS = "FIREBASE_PROJECT_ID,FIREBASE_DATABASE_ID"
+  SECRETS_SCAN_OMIT_KEYS = "FIREBASE_PROJECT_ID,FIREBASE_DATABASE_ID,VITE_CLOUDINARY_CLOUD_NAME,VITE_CLOUDINARY_UPLOAD_PRESET,PUBLIC_APP_URL"
 
 [functions]
   directory = "netlify/functions"
