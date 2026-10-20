@@ -87,6 +87,27 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
     finally { setSubmittingId(''); }
   };
 
+  const uploadSubmissionFile = async (assignmentId: string, file?: File) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { setError('Please choose a file smaller than 10 MB.'); return; }
+    const cloudName = localStorage.getItem('cloudinary_cloud_name') || 'jaystarbliss';
+    const uploadPreset = localStorage.getItem('cloudinary_upload_preset') || 'jaystarbliss_cms';
+    if (!cloudName || !uploadPreset) { setError('File uploads are not configured. Please paste a share link instead.'); return; }
+    setUploadingId(assignmentId); setError('');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', uploadPreset);
+      formData.append('folder', 'jdi/assignment-submissions/' + assignmentId);
+      const response = await fetch('https://api.cloudinary.com/v1_1/' + encodeURIComponent(cloudName) + '/auto/upload', { method: 'POST', body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.secure_url) throw new Error(data.error?.message || 'Unable to upload this file. You can paste a share link instead.');
+      updateDraft(assignmentId, { fileUrl: data.secure_url, fileName: file.name });
+      setSuccess('File attached: ' + file.name);
+    } catch (error) { setError(error instanceof Error ? error.message : 'Unable to upload assignment file.'); }
+    finally { setUploadingId(''); }
+  };
+
   const reviewAssignment = async (event: React.FormEvent) => {
     event.preventDefault(); if (!reviewing) return;
     setError('');
