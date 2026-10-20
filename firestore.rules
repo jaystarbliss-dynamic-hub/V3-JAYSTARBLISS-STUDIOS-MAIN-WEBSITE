@@ -59,6 +59,10 @@ service cloud.firestore {
         (request.auth.token.email != null && request.auth.token.email in ['johnrufai242@gmail.com','admin@jaystarbliss.com','admin@jaystar.com'])
       );
     }
+    function isParentUser() {
+      return isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['PARENT', 'parent'];
+    }
     function notificationTargetRoleMatches(targetRole) {
       // Broadcasts must explicitly name their audience. Missing/empty roles
       // are not a public broadcast and must never match every signed-in user.
@@ -418,7 +422,7 @@ service cloud.firestore {
         resource.data.get('targetUid', '') == request.auth.uid ||
         (isSchoolUser() && (resource.data.get('recipientId', '') == userSchoolId() || resource.data.get('recipientId', '') == 'school_' + userSchoolId())) ||
         (isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['STUDENT', 'student'] && resource.data.get('recipientId', '') == 'school_students_' + userSchoolId()) ||
-        (request.auth.token.email != null && resource.data.get('targetEmail', '') == request.auth.token.email) ||
+        (!isParentUser() && request.auth.token.email != null && resource.data.get('targetEmail', '') == request.auth.token.email) ||
         (resource.data.get('recipientId', '') == 'all' && notificationTargetRoleMatches(resource.data.get('targetRole', '')) ) ||
         (resource.data.get('recipientType', '') == 'all' && resource.data.get('targetRole', '') == 'all') ||
         (resource.data.get('recipientId', '') == 'all_students' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['STUDENT','student']) ||
