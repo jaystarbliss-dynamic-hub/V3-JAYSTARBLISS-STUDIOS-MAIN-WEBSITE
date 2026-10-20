@@ -73,7 +73,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not publish assignment.'); }
   };
 
-  const updateDraft = (assignmentId: string, patch: Partial<Draft>) => setDrafts(current => ({ ...current, [assignmentId]: { text: current[assignmentId]?.text || '', url: current[assignmentId]?.url || '', ...patch } }));
+  const updateDraft = (assignmentId: string, patch: Partial<Draft>) => setDrafts(current => ({ ...current, [assignmentId]: { text: current[assignmentId]?.text || '', url: current[assignmentId]?.url || '', fileUrl: current[assignmentId]?.fileUrl || '', fileName: current[assignmentId]?.fileName || '', ...patch } }));
   const submitAssignment = async (assignmentId: string) => {
     const draft = drafts[assignmentId] || { text: '', url: '' };
     setSubmittingId(assignmentId); setError('');
