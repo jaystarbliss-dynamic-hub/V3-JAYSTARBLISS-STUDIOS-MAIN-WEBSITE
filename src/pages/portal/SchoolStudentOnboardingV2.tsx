@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs, doc, getDoc, setDoc, addDoc, serverTimestamp, query, limit, where } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, limit } from 'firebase/firestore';
 import { Download, FileText, Loader2, UserPlus, Printer, ShieldCheck, BookOpen, Check, Copy } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
 import { auth, db } from '../../lib/firebase';
@@ -103,7 +103,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
             issuedCredentials = result.credentials;
           }
         } catch (apiErr) {
-          console.warn('Netlify function onboard note (proceeding to direct Firestore fallback):', apiErr);
+          throw apiErr;
         }
       }
 
