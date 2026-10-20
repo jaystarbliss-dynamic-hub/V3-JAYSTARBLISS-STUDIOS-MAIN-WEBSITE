@@ -7,7 +7,7 @@ import { DashboardGreeting } from '../../components/portal/DashboardGreeting';
 export type AssignmentCenterRole = 'student' | 'staff' | 'parent' | 'school';
 type Student = { id: string; fullName: string; username?: string; email?: string; plan?: string; schoolId?: string; parentId?: string; tutorId?: string; firebaseUid?: string };
 type Assignment = { id: string; title: string; instructions: string; tutorName?: string; studentName?: string; dueDate?: string | null; status: string; grade?: number | null; feedback?: string | null; submissionText?: string | null; submissionUrl?: string | null; submittedAt?: string | null; reviewedAt?: string | null; reviewStatus?: string | null; resourceUrl?: string | null; resourceTitle?: string | null; createdAt?: string | null };
-type Draft = { text: string; url: string };
+type Draft = { text: string; url: string; fileUrl: string; fileName: string };
 
 const api = async (path: string, options: RequestInit = {}) => {
   const user = auth.currentUser;
