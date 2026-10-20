@@ -16,14 +16,20 @@ async function findStudent(identifier: string, db: FirebaseFirestore.Firestore) 
   // 1. Search in individualStudents
   const byUsername = await db.collection("individualStudents").where("username", "==", username).limit(1).get();
   if (!byUsername.empty) return byUsername.docs[0];
+  // Older records may store the username with its leading @.
+  const byTaggedUsername = await db.collection("individualStudents").where("username", "==", `@${username}`).limit(1).get();
+  if (!byTaggedUsername.empty) return byTaggedUsername.docs[0];
 
   if (email.includes("@")) {
     const byEmail = await db.collection("individualStudents").where("email", "==", email).limit(1).get();
     if (!byEmail.empty) return byEmail.docs[0];
   }
 
-  const byCode = await db.collection("individualStudents").where("accessCode", "==", upperRaw).limit(1).get();
-  if (!byCode.empty) return byCode.docs[0];
+  // Support older records that used passcode/code instead of accessCode.
+  for (const field of ["accessCode", "passcode", "code"]) {
+    const byCode = await db.collection("individualStudents").where(field, "==", upperRaw).limit(1).get();
+    if (!byCode.empty) return byCode.docs[0];
+  }
 
   // Newer onboarding flows intentionally persist only a hash, not the plaintext
   // access code. Support access-code-as-identifier without weakening verification.
@@ -38,14 +44,18 @@ async function findStudent(identifier: string, db: FirebaseFirestore.Firestore) 
   // 2. Search in students collection
   const legacyByUsername = await db.collection("students").where("username", "==", username).limit(1).get();
   if (!legacyByUsername.empty) return legacyByUsername.docs[0];
+  const legacyTaggedUsername = await db.collection("students").where("username", "==", `@${username}`).limit(1).get();
+  if (!legacyTaggedUsername.empty) return legacyTaggedUsername.docs[0];
 
   if (email.includes("@")) {
     const legacyByEmail = await db.collection("students").where("email", "==", email).limit(1).get();
     if (!legacyByEmail.empty) return legacyByEmail.docs[0];
   }
 
-  const legacyByCode = await db.collection("students").where("accessCode", "==", upperRaw).limit(1).get();
-  if (!legacyByCode.empty) return legacyByCode.docs[0];
+  for (const field of ["accessCode", "passcode", "code"]) {
+    const legacyByCode = await db.collection("students").where(field, "==", upperRaw).limit(1).get();
+    if (!legacyByCode.empty) return legacyByCode.docs[0];
+  }
 
   const legacyByCodeHash = await db.collection("students").where("accessCodeHash", "==", hashAccessCode(raw)).limit(1).get();
   if (!legacyByCodeHash.empty) return legacyByCodeHash.docs[0];
