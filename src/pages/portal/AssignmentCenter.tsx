@@ -80,7 +80,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
     try {
       await api('/api/academic-assignments', { method: 'POST', body: JSON.stringify({ action: 'submit', assignmentId, submissionText: draft.text, submissionUrl: draft.url, submissionFileUrl: draft.fileUrl, submissionFileName: draft.fileName }) });
       setSuccess('Your assignment has been submitted to your tutor.');
-      setDrafts(current => ({ ...current, [assignmentId]: { text: '', url: '' } }));
+      setDrafts(current => ({ ...current, [assignmentId]: { text: '', url: '', fileUrl: '', fileName: '' } }));
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not submit assignment.'); }
     finally { setSubmittingId(''); }
