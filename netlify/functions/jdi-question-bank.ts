@@ -54,8 +54,9 @@ function validateQuestion(value: any) {
   if (["single_choice", "multiple_choice", "true_false"].includes(type) && (options.length < 2 || new Set(options.map((o: any) => o.id)).size !== options.length)) return null;
   const optionIds = new Set(options.map((o: any) => o.id));
   const correctOptionIds = Array.isArray(value.correctOptionIds) ? [...new Set(value.correctOptionIds.map(String))].filter((x: string) => optionIds.has(x)).slice(0, 10) : [];
-  if (["single_choice", "multiple_choice", "true_false"].includes(type) && !correctOptionIds.length) return null;
-  if (["single_choice", "true_false"].includes(type) && correctOptionIds.length !== 1) return null;
+  // The question bank is also used for work-in-progress drafts. Permit an
+  // unanswered marking key here; the exam publisher validates it before release.
+  if (["single_choice", "true_false"].includes(type) && correctOptionIds.length > 1) return null;
   return {
     ...(id ? { id } : {}),
     prompt,
