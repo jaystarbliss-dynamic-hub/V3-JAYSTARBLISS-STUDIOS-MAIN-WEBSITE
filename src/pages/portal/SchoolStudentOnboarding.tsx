@@ -12,7 +12,7 @@ const SchoolStudentOnboarding: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState<{ username: string; accessCode: string; portal: string } | null>(null);
   const [programs, setPrograms] = useState<{ id: string; name: string }[]>([]);
-  const [programId, setProgramId] = useState('');
+  const [programIds, setProgramIds] = useState<string[]>([]);
   const [schoolInfo, setSchoolInfo] = useState<{ id: string; name: string }>({ id: '', name: '' });
   const [copied, setCopied] = useState(false);
 
@@ -85,8 +85,8 @@ const SchoolStudentOnboarding: React.FC = () => {
 
     setSaving(true);
     try {
-      const selectedProg = programs.find(p => p.id === programId);
-      const programName = selectedProg?.name || form.track.trim() || 'General School Programme';
+      const selectedPrograms = programs.filter(p => programIds.includes(String(p.id)));
+      const programName = selectedPrograms.map(p => p.name).filter(Boolean).join(', ') || form.track.trim() || 'General School Programme';
       let issuedCredentials: { username: string; accessCode: string; portal: string } | null = null;
 
       // 1. Attempt backend Netlify function safely
@@ -96,7 +96,7 @@ const SchoolStudentOnboarding: React.FC = () => {
           const response = await fetch('/.netlify/functions/school-student-onboard', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...form, schoolId: schoolInfo.id || effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || '', fullName: trimmedName, username: cleanUsername, programId, programName }),
+            body: JSON.stringify({ ...form, schoolId: schoolInfo.id || effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || '', fullName: trimmedName, username: cleanUsername, programId: programIds[0] || '', programIds, programName }),
           });
           const contentType = response.headers.get('content-type') || '';
           if (contentType.includes('application/json')) {
@@ -221,17 +221,18 @@ const SchoolStudentOnboarding: React.FC = () => {
           <Field label="Learning track / notes (optional)" value={form.track} onChange={v => update('track', v)} placeholder="e.g. Robotics & IoT Track" />
           
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-            Programme Assignment
+            Programme Assignments
             <select
-              value={programId}
-              onChange={e => setProgramId(e.target.value)}
+              multiple
+              value={programIds}
+              onChange={e => setProgramIds(Array.from(e.currentTarget.selectedOptions, option => option.value))}
               className="mt-1.5 w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 px-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium"
             >
-              <option value="">Default School Tech Programme</option>
               {programs.map(program => (
                 <option key={program.id} value={program.id}>{program.name}</option>
               ))}
             </select>
+            <span className="mt-1 block text-[11px] font-normal text-slate-500">Select every programme for this learner. Hold Ctrl (Windows) or Cmd (Mac) to choose multiple; each selected programme creates its own enrollment.</span>
           </label>
 
           <Field label="Parent account ID (optional)" value={form.parentId} onChange={v => update('parentId', v)} placeholder="Parent UID or email" />
