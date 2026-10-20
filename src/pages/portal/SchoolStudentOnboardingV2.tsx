@@ -193,14 +193,13 @@ const SchoolStudentOnboardingV2: React.FC = () => {
           </label>
 
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 md:col-span-2">
-            <span className="flex items-center gap-2">Programme <BookOpen size={14} className="text-brand-red" /></span>
+            <span className="flex items-center gap-2">Programmes <BookOpen size={14} className="text-brand-red" /></span>
             <select
               multiple
               value={form.programIds}
               onChange={e => setForm(p => ({ ...p, programIds: Array.from(e.currentTarget.selectedOptions, option => option.value) }))}
               className="mt-1.5 w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 px-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium"
             >
-              <option value="">Select a programme (optional)</option>
               {programs.map(p => (
                 <option key={p.id} value={p.id}>{p.name || p.title}</option>
               ))}
