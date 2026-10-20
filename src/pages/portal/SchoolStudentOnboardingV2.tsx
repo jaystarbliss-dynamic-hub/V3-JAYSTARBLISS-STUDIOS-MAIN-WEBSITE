@@ -239,6 +239,20 @@ const SchoolStudentOnboardingV2: React.FC = () => {
               onChange={e => update('class', e.target.value)}
               className="mt-1.5 w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 px-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium"
             >
+              <option>Early Years</option>
+              <option>Nursery 1</option>
+              <option>Nursery 2</option>
+              <option>Nursery 3</option>
+              <option>Reception</option>
+              <option>Year 1</option>
+              <option>Year 2</option>
+              <option>Year 3</option>
+              <option>Year 4</option>
+              <option>Year 5</option>
+              <option>Year 6</option>
+              <option>Primary 1</option>
+              <option>Primary 2</option>
+              <option>Primary 3</option>
               <option>Primary 4</option>
               <option>Primary 5</option>
               <option>Primary 6</option>
