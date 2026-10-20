@@ -10,7 +10,7 @@ const hashCode = (salt: string, code: string) => createHash("sha256").update(sal
 const constantEqual = (a: string, b: string) => { const aa = Buffer.from(a, "hex"), bb = Buffer.from(b, "hex"); return aa.length === bb.length && timingSafeEqual(aa, bb); };
 const norm = (value: unknown) => String(value || "").trim().toUpperCase();
 const normaliseClass = (value: unknown) => {
-  const label = String(value || "").trim().toLowerCase().replace(/\\s+/g, " ");
+  const label = String(value || "").trim().toLowerCase();
   const aliases: Record<string, string> = {
     "primary 1": "year 1", "primary 2": "year 2", "primary 3": "year 3",
     "primary 4": "year 4", "primary 5": "year 5", "primary 6": "year 6",
