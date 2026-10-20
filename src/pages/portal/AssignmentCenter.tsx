@@ -33,6 +33,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
   const [showCreate, setShowCreate] = useState(false);
   const [reviewing, setReviewing] = useState<Assignment | null>(null);
   const [submittingId, setSubmittingId] = useState('');
+  const [uploadingId, setUploadingId] = useState('');
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [form, setForm] = useState({ title: '', instructions: '', dueDate: '', resourceTitle: '', resourceUrl: '' });
   const [reviewForm, setReviewForm] = useState({ grade: '', feedback: '', reviewStatus: 'COMPLETED' });
