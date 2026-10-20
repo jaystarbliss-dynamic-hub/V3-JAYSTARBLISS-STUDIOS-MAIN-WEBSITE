@@ -170,7 +170,7 @@ export const handler: Handler = async event => {
       const requestedTutorId = String(params.tutorId || '').trim();
       let records = await loadRecords();
 
-      if (role === 'SCHOOL') {
+      if (['SCHOOL', 'SCHOOL_ADMIN'].includes(role)) {
         let schoolId = String(user.schoolId || '').trim();
         let schoolName = String(user.schoolName || user.name || '').trim();
         if (!schoolId) {
