@@ -79,6 +79,7 @@ export const handler: Handler = async event => {
     } else if (resolvedProgram) {
       selectedPrograms.push(resolvedProgram);
     }
+    if (!selectedPrograms.length) selectedPrograms.push({ id: '', name: programName || track || 'General School Programme' });
     const finalProgramIds = selectedPrograms.map((p: any) => String(p.id || p.programId || '')).filter(Boolean);
     const finalProgramNames = selectedPrograms.map((p: any) => String(p.name || p.title || p.programName || p.id || 'Programme')).filter(Boolean);
     const finalProgramId = finalProgramIds[0] || '';
