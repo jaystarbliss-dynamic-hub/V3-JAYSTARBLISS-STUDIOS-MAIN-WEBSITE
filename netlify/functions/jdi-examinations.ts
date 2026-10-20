@@ -249,7 +249,7 @@ export const handler: Handler = async (event) => {
       const questions = Array.isArray(body.questions) ? body.questions : [];
       const durationMinutes = Number(body.durationMinutes || 30);
       if (!title || !subject || !questions.length || questions.length > 200 || !Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 300) return json(400, { error: "Provide a title, subject, 1–200 questions and a whole-number duration from 1 to 300 minutes." });
-      const normalized = normalizeQuestions(questions, body.gradingMode === "manual" ? "manual" : "automatic");
+      const normalized = normalizeQuestions(questions, body.gradingMode === "manual" || String(body.status || "draft") === "draft" ? "manual" : "automatic");
       if (normalized.error) return json(400, { error: normalized.error });
 
       const requestedMaxAttempts = Number(body.maxAttempts ?? 1);
