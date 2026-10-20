@@ -21,7 +21,7 @@ const safeText = (value: unknown, max = 4000) => String(value || '').trim().slic
 
 const notify = async (recipientId: string, title: string, message: string, data: Record<string, unknown> = {}) => {
   if (!recipientId) return;
-  await adminDb.collection('notifications').add({ recipientId, title, message, type: 'broadcast', read: false, priority: 'normal', assignmentId: data.assignmentId || null, studentId: data.studentId || null, link: data.assignmentId ? '/portal/student/assignments' : undefined, timestamp: now(), createdAt: now() });
+  await adminDb.collection('notifications').add({ recipientId, recipientUid: recipientId, recipientIds: [recipientId], title, message, type: 'private', visibility: 'private', read: false, priority: 'normal', assignmentId: data.assignmentId || null, studentId: data.studentId || null, link: data.assignmentId ? '/portal/student/assignments' : undefined, timestamp: now(), createdAt: now() });
 };
 
 const serialise = (id: string, data: Record<string, any>) => ({ id, ...data, createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || null, updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : data.updatedAt || null, dueDate: data.dueDate?.toDate ? data.dueDate.toDate().toISOString() : data.dueDate || null, submittedAt: data.submittedAt?.toDate ? data.submittedAt.toDate().toISOString() : data.submittedAt || null, reviewedAt: data.reviewedAt?.toDate ? data.reviewedAt.toDate().toISOString() : data.reviewedAt || null });
