@@ -42,8 +42,11 @@ export function getAdminDb(): Firestore | null {
   if (cachedDb) return cachedDb;
   const app = getAdminApp();
   if (!app) return null;
-  const databaseId = process.env.FIREBASE_DATABASE_ID;
-  cachedDb = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+  // The browser app uses this named Firestore database. Falling back to the
+  // default database when FIREBASE_DATABASE_ID is absent silently sends server
+  // lookups to a different database, making valid student credentials appear invalid.
+  const databaseId = (process.env.FIREBASE_DATABASE_ID || "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c").trim();
+  cachedDb = getFirestore(app, databaseId);
   return cachedDb;
 }
 

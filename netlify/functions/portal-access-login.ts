@@ -16,14 +16,18 @@ async function findStudent(identifier: string, db: FirebaseFirestore.Firestore) 
   // 1. Search in individualStudents
   const byUsername = await db.collection("individualStudents").where("username", "==", username).limit(1).get();
   if (!byUsername.empty) return byUsername.docs[0];
+  const byTaggedUsername = await db.collection("individualStudents").where("username", "==", `@${username}`).limit(1).get();
+  if (!byTaggedUsername.empty) return byTaggedUsername.docs[0];
 
   if (email.includes("@")) {
     const byEmail = await db.collection("individualStudents").where("email", "==", email).limit(1).get();
     if (!byEmail.empty) return byEmail.docs[0];
   }
 
-  const byCode = await db.collection("individualStudents").where("accessCode", "==", upperRaw).limit(1).get();
-  if (!byCode.empty) return byCode.docs[0];
+  for (const field of ["accessCode", "passcode", "code"]) {
+    const byCode = await db.collection("individualStudents").where(field, "==", upperRaw).limit(1).get();
+    if (!byCode.empty) return byCode.docs[0];
+  }
 
   try { 
     const byId = await db.collection("individualStudents").doc(raw).get(); 
@@ -33,14 +37,18 @@ async function findStudent(identifier: string, db: FirebaseFirestore.Firestore) 
   // 2. Search in students collection
   const legacyByUsername = await db.collection("students").where("username", "==", username).limit(1).get();
   if (!legacyByUsername.empty) return legacyByUsername.docs[0];
+  const legacyTaggedUsername = await db.collection("students").where("username", "==", `@${username}`).limit(1).get();
+  if (!legacyTaggedUsername.empty) return legacyTaggedUsername.docs[0];
 
   if (email.includes("@")) {
     const legacyByEmail = await db.collection("students").where("email", "==", email).limit(1).get();
     if (!legacyByEmail.empty) return legacyByEmail.docs[0];
   }
 
-  const legacyByCode = await db.collection("students").where("accessCode", "==", upperRaw).limit(1).get();
-  if (!legacyByCode.empty) return legacyByCode.docs[0];
+  for (const field of ["accessCode", "passcode", "code"]) {
+    const legacyByCode = await db.collection("students").where(field, "==", upperRaw).limit(1).get();
+    if (!legacyByCode.empty) return legacyByCode.docs[0];
+  }
 
   try { 
     const legacyById = await db.collection("students").doc(raw).get(); 
