@@ -115,7 +115,7 @@ const SchoolStudentOnboarding: React.FC = () => {
 
       setCredentials(issuedCredentials);
       setForm({ fullName: '', username: '', email: '', class: 'JSS 1', track: '', parentId: '' });
-      setProgramId('');
+      setProgramIds([]);
       toast.success(`Student account created successfully for ${trimmedName}!`);
     } catch (error: any) {
       console.error('School onboarding error:', error);
