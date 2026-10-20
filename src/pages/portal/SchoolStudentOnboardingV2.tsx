@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs, doc, getDoc, setDoc, addDoc, serverTimestamp, query, limit, where } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, limit } from 'firebase/firestore';
 import { Download, FileText, Loader2, UserPlus, Printer, ShieldCheck, BookOpen, Check, Copy } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
 import { auth, db } from '../../lib/firebase';
@@ -16,7 +16,7 @@ const generateAccessCode = (length = 8) => {
 const SchoolStudentOnboardingV2: React.FC = () => {
   const { toast } = useToast();
   const [programs, setPrograms] = useState<any[]>([]);
-  const [form, setForm] = useState({ fullName: '', username: '', email: '', class: 'JSS 1', programId: '', parentId: '' });
+  const [form, setForm] = useState({ fullName: '', username: '', email: '', class: 'JSS 1', programIds: [] as string[], parentId: '' });
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState<{ username: string; accessCode: string; portal: string } | null>(null);
   const [schoolInfo, setSchoolInfo] = useState<{ id: string; name: string }>({ id: '', name: '' });
@@ -82,110 +82,37 @@ const SchoolStudentOnboardingV2: React.FC = () => {
 
     setSaving(true);
     try {
-      const program = programs.find(p => p.id === form.programId);
-      const programName = program?.name || program?.title || 'General School Programme';
+      const selectedPrograms = programs.filter(p => form.programIds.includes(String(p.id)));
+      const programName = selectedPrograms.map(p => p.name || p.title).filter(Boolean).join(', ') || 'General School Programme';
       let issuedCredentials: { username: string; accessCode: string; portal: string } | null = null;
 
       // 1. Try Netlify function safely
-      if (auth.currentUser && !effective.isMasquerading) {
+      if (auth.currentUser) {
         try {
           const token = await auth.currentUser.getIdToken();
           const response = await fetch('/.netlify/functions/school-student-onboard', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...form, fullName: trimmedName, username: cleanUsername, programName })
+            body: JSON.stringify({ ...form, programIds: form.programIds, programId: form.programIds[0] || '', schoolId: schoolInfo.id || effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || '', fullName: trimmedName, username: cleanUsername, programName })
           });
           const contentType = response.headers.get('content-type') || '';
           if (contentType.includes('application/json')) {
             const result = await response.json().catch(() => ({}));
-            if (response.ok && result.credentials) {
-              issuedCredentials = result.credentials;
-            }
+            if (!response.ok) throw new Error(result.error || 'The server could not create the student login. No student record was created.');
+            if (!result.credentials) throw new Error('The server did not return login credentials. Please retry; no local-only account was created.');
+            issuedCredentials = result.credentials;
           }
         } catch (apiErr) {
-          console.warn('Netlify function onboard note (proceeding to direct Firestore fallback):', apiErr);
+          throw apiErr;
         }
       }
 
-      // 2. Direct Firestore fallback
-      if (!issuedCredentials) {
-        const studentId = `sch_${cleanUsername}_${Date.now().toString(36)}`;
-        const accessCode = generateAccessCode();
-        const targetSchoolId = schoolInfo.id || effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || auth.currentUser?.uid || '';
-        const targetSchoolName = schoolInfo.name || sessionStorage.getItem('schoolName') || 'Partner School';
-
-        // Compute hash
-        let accessCodeHash = '';
-        try {
-          const msgBuffer = new TextEncoder().encode(accessCode.toUpperCase());
-          const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-          accessCodeHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-        } catch {
-          accessCodeHash = accessCode.toLowerCase();
-        }
-
-        const studentRecord = {
-          fullName: trimmedName,
-          studentName: trimmedName,
-          name: trimmedName,
-          username: cleanUsername,
-          accessCode,
-          passcode: accessCode,
-          code: accessCode,
-          accessCodeHash,
-          schoolId: targetSchoolId,
-          schoolName: targetSchoolName,
-          class: form.class,
-          grade: form.class,
-          track: programName,
-          programId: form.programId || null,
-          programName: programName || null,
-          email: form.email.trim().toLowerCase() || null,
-          parentId: form.parentId.trim() || null,
-          portalAccessEnabled: true,
-          accountStatus: 'ACTIVE',
-          status: 'ACTIVE',
-          source: 'school_onboarding',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        };
-
-        await Promise.all([
-          setDoc(doc(db, 'individualStudents', studentId), studentRecord, { merge: true }),
-          setDoc(doc(db, 'students', studentId), studentRecord, { merge: true })
-        ]);
-
-        await addDoc(collection(db, 'enrollments'), {
-          studentId,
-          studentName: trimmedName,
-          schoolId: targetSchoolId,
-          programId: form.programId || null,
-          programName,
-          status: 'ACTIVE',
-          source: 'school_onboarding',
-          enrolledAt: serverTimestamp(),
-          createdAt: serverTimestamp()
-        }).catch(() => undefined);
-
-        await addDoc(collection(db, 'activityLogs'), {
-          actorId: auth.currentUser?.uid || effective.effectiveUid || 'school_admin',
-          action: 'SCHOOL_STUDENT_ONBOARDED',
-          targetId: studentId,
-          targetType: 'student',
-          schoolId: targetSchoolId,
-          timestamp: serverTimestamp(),
-          metadata: { username: cleanUsername, class: form.class, programName }
-        }).catch(() => undefined);
-
-        issuedCredentials = {
-          username: cleanUsername,
-          accessCode,
-          portal: '/portal/student'
-        };
-      }
+      // Never create a Firestore-only learner account: that record would not have a
+      // Firebase Authentication identity and the student could not sign in.
+      if (!issuedCredentials) throw new Error('Student login was not created. Please retry or contact the platform administrator.');
 
       setCredentials(issuedCredentials);
-      setForm({ fullName: '', username: '', email: '', class: 'JSS 1', programId: '', parentId: '' });
+      setForm({ fullName: '', username: '', email: '', class: 'JSS 1', programIds: [], parentId: '' });
       toast.success(`Student account created and enrolled in ${programName}!`);
     } catch (error: any) {
       console.error('School onboarding error:', error);
@@ -239,6 +166,20 @@ const SchoolStudentOnboardingV2: React.FC = () => {
               onChange={e => update('class', e.target.value)}
               className="mt-1.5 w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 px-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium"
             >
+              <option>Early Years</option>
+              <option>Nursery 1</option>
+              <option>Nursery 2</option>
+              <option>Nursery 3</option>
+              <option>Reception</option>
+              <option>Year 1</option>
+              <option>Year 2</option>
+              <option>Year 3</option>
+              <option>Year 4</option>
+              <option>Year 5</option>
+              <option>Year 6</option>
+              <option>Primary 1</option>
+              <option>Primary 2</option>
+              <option>Primary 3</option>
               <option>Primary 4</option>
               <option>Primary 5</option>
               <option>Primary 6</option>
@@ -252,18 +193,18 @@ const SchoolStudentOnboardingV2: React.FC = () => {
           </label>
 
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 md:col-span-2">
-            <span className="flex items-center gap-2">Programme <BookOpen size={14} className="text-brand-red" /></span>
+            <span className="flex items-center gap-2">Programmes <BookOpen size={14} className="text-brand-red" /></span>
             <select
-              value={form.programId}
-              onChange={e => update('programId', e.target.value)}
+              multiple
+              value={form.programIds}
+              onChange={e => setForm(p => ({ ...p, programIds: Array.from(e.currentTarget.selectedOptions, option => option.value) }))}
               className="mt-1.5 w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 px-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium"
             >
-              <option value="">Select a programme (optional)</option>
               {programs.map(p => (
                 <option key={p.id} value={p.id}>{p.name || p.title}</option>
               ))}
             </select>
-            <span className="mt-1 block text-[11px] font-normal text-slate-500">When selected, an active enrollment is created for this learner.</span>
+            <span className="mt-1 block text-[11px] font-normal text-slate-500">Choose every programme this learner is enrolled in. Hold Ctrl (Windows) or Cmd (Mac) to select multiple programmes. Each selected programme receives an enrollment and its configured learning track.</span>
           </label>
 
           <Field label="Parent account ID (optional)" value={form.parentId} onChange={v => update('parentId', v)} placeholder="Parent UID or email" />

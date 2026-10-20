@@ -59,6 +59,16 @@ service cloud.firestore {
         (request.auth.token.email != null && request.auth.token.email in ['johnrufai242@gmail.com','admin@jaystarbliss.com','admin@jaystar.com'])
       );
     }
+    function isParentUser() {
+      return isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['PARENT', 'parent'];
+    }
+    function isPrivatePaymentNotice(data) {
+      return data.get('type', '') in ['payment', 'PAYMENT', 'payment_success', 'PAYMENT_SUCCESS', 'payment_received', 'PAYMENT_RECEIVED', 'payment_confirmation', 'PAYMENT_CONFIRMATION', 'fee_payment', 'FEE_PAYMENT', 'invoice', 'INVOICE', 'transaction', 'TRANSACTION', 'receipt', 'RECEIPT', 'billing', 'BILLING'] ||
+        data.get('paymentId', null) != null ||
+        data.get('transactionId', null) != null ||
+        data.get('invoiceId', null) != null;
+    }
     function notificationTargetRoleMatches(targetRole) {
       // Broadcasts must explicitly name their audience. Missing/empty roles
       // are not a public broadcast and must never match every signed-in user.
@@ -418,11 +428,11 @@ service cloud.firestore {
         resource.data.get('targetUid', '') == request.auth.uid ||
         (isSchoolUser() && (resource.data.get('recipientId', '') == userSchoolId() || resource.data.get('recipientId', '') == 'school_' + userSchoolId())) ||
         (isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['STUDENT', 'student'] && resource.data.get('recipientId', '') == 'school_students_' + userSchoolId()) ||
-        (request.auth.token.email != null && resource.data.get('targetEmail', '') == request.auth.token.email) ||
-        (resource.data.get('recipientId', '') == 'all' && notificationTargetRoleMatches(resource.data.get('targetRole', '')) ) ||
-        (resource.data.get('recipientType', '') == 'all' && resource.data.get('targetRole', '') == 'all') ||
+        (!isParentUser() && request.auth.token.email != null && resource.data.get('targetEmail', '') == request.auth.token.email) ||
+        (resource.data.get('recipientId', '') == 'all' && notificationTargetRoleMatches(resource.data.get('targetRole', '')) && !(isParentUser() && isPrivatePaymentNotice(resource.data))) ||
+        (resource.data.get('recipientType', '') == 'all' && resource.data.get('targetRole', '') == 'all' && !(isParentUser() && isPrivatePaymentNotice(resource.data))) ||
         (resource.data.get('recipientId', '') == 'all_students' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['STUDENT','student']) ||
-        (resource.data.get('recipientId', '') == 'all_parents' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['PARENT','parent']) ||
+        (resource.data.get('recipientId', '') == 'all_parents' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['PARENT','parent'] && !isPrivatePaymentNotice(resource.data)) ||
         (resource.data.get('recipientId', '') == 'all_staff' && isStaffOrTutor()) ||
         (resource.data.get('recipientId', '') == 'all_schools' && isSchoolUser()) ||
         (isSchoolUser() && resource.data.get('schoolId', null) != null && resource.data.get('schoolId', null) == userSchoolId()) ||

@@ -9,6 +9,16 @@ const bearer = (event: any) => { const value = event.headers?.authorization || e
 const hashCode = (salt: string, code: string) => createHash("sha256").update(salt + ":" + code).digest("hex");
 const constantEqual = (a: string, b: string) => { const aa = Buffer.from(a, "hex"), bb = Buffer.from(b, "hex"); return aa.length === bb.length && timingSafeEqual(aa, bb); };
 const norm = (value: unknown) => String(value || "").trim().toUpperCase();
+const normaliseClass = (value: unknown) => {
+  const label = String(value || "").trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    "primary 1": "year 1", "primary 2": "year 2", "primary 3": "year 3",
+    "primary 4": "year 4", "primary 5": "year 5", "primary 6": "year 6",
+    "nursery 1": "nursery 1", "nursery 2": "nursery 2", "nursery 3": "nursery 3",
+    "ss1": "ss 1", "ss2": "ss 2", "ss3": "ss 3"
+  };
+  return aliases[label] || label;
+};
 const staffRoles = ["TUTOR", "STAFF", "INSTRUCTOR"];
 const adminRoles = ["SUPER_ADMIN", "SUPERADMIN", "ADMIN"];
 async function caller(event: any) {
@@ -42,10 +52,16 @@ async function permittedSchool(callerInfo: any, schoolId: string) {
   if (adminRoles.includes(callerInfo.role)) return true;
   if (callerInfo.role === "SCHOOL") return String(callerInfo.user.schoolId || callerInfo.uid) === schoolId;
   if (staffRoles.includes(callerInfo.role)) {
-    if (String(callerInfo.user.schoolId || callerInfo.user.school_id || "") === schoolId) return true;
+    const profileSchoolIds = [
+      callerInfo.user.schoolId, callerInfo.user.school_id,
+      ...(Array.isArray(callerInfo.user.schoolIds) ? callerInfo.user.schoolIds : []),
+      ...(Array.isArray(callerInfo.user.assignedSchoolIds) ? callerInfo.user.assignedSchoolIds : [])
+    ].filter(Boolean).map(String);
+    if (profileSchoolIds.includes(schoolId)) return true;
     const access = await adminDb.collection("staffSchoolAccess").doc(callerInfo.uid).get();
-    const data = access.data() || {};
-    return data.schoolId === schoolId || (Array.isArray(data.schoolIds) && data.schoolIds.includes(schoolId));
+    const data = access.exists ? (access.data() || {}) : {};
+    const accessSchoolIds = [data.schoolId, ...(Array.isArray(data.schoolIds) ? data.schoolIds : [])].filter(Boolean).map(String);
+    return accessSchoolIds.includes(schoolId);
   }
   return false;
 }
@@ -70,9 +86,9 @@ export const handler: Handler = async (event) => {
       const rows = Array.from(examDocs.values()).map(doc => { const raw = doc.data(); const metadata: any = { ...studentSafe(raw) }; delete metadata.questions; return { id: doc.id, ...metadata, _targetStudentIds: Array.isArray(raw.studentIds) ? raw.studentIds.map(String) : [], _targetStudentUids: Array.isArray(raw.studentUids) ? raw.studentUids.map(String) : [] }; }).filter((exam: any) => {
         const individual = exam.audienceType === "individual";
         const directlyAssigned = exam._targetStudentIds.includes(student.id) || exam._targetStudentUids.includes(c.uid);
-        const classes = Array.isArray(exam.classIds) && exam.classIds.length ? exam.classIds.map(String) : [String(exam.targetClass || "all")];
-        const classId = String(student.data.classId || student.data.class_id || student.data.classLevel || student.data.className || student.data.class || "");
-        const schoolEligible = Boolean(schoolId && exam.schoolId === schoolId && (!classes.length || classes.includes(classId) || classes.includes("all")));
+        const classes = Array.isArray(exam.classIds) && exam.classIds.length ? exam.classIds.map(normaliseClass) : [normaliseClass(exam.targetClass || "all")];
+        const classId = normaliseClass(student.data.classId || student.data.class_id || student.data.classLevel || student.data.className || student.data.class || "");
+        const schoolEligible = Boolean(schoolId && exam.schoolId === schoolId && (classes.includes("all") || classes.includes(classId)));
         return (individual ? directlyAssigned : schoolEligible) && exam.status !== "draft" && exam.status !== "archived";
       }).map((exam: any) => {
         const from = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
@@ -99,9 +115,9 @@ export const handler: Handler = async (event) => {
       const from = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
       const until = exam.availableUntil ? new Date(exam.availableUntil).getTime() : Number.MAX_SAFE_INTEGER;
       const schoolId = String(student.data.schoolId || student.data.school_id || student.data.schoolDocId || "");
-      const classes = Array.isArray(exam.classIds) && exam.classIds.length ? exam.classIds.map(String) : [String(exam.targetClass || "all")];
-      const classId = String(student.data.classId || student.data.class_id || student.data.classLevel || student.data.className || student.data.class || "");
-      const assigned = exam.audienceType === "individual" ? ((Array.isArray(exam.studentIds) && exam.studentIds.map(String).includes(student.id)) || (Array.isArray(exam.studentUids) && exam.studentUids.map(String).includes(c.uid))) : (exam.schoolId === schoolId && (!classes.length || classes.includes(classId) || classes.includes("all")));
+      const classes = Array.isArray(exam.classIds) && exam.classIds.length ? exam.classIds.map(normaliseClass) : [normaliseClass(exam.targetClass || "all")];
+      const classId = normaliseClass(student.data.classId || student.data.class_id || student.data.classLevel || student.data.className || student.data.class || "");
+      const assigned = exam.audienceType === "individual" ? ((Array.isArray(exam.studentIds) && exam.studentIds.map(String).includes(student.id)) || (Array.isArray(exam.studentUids) && exam.studentUids.map(String).includes(c.uid))) : (exam.schoolId === schoolId && (classes.includes("all") || classes.includes(classId)));
       const active = exam.status === "active" && now >= from && now < until;
       const validHash = typeof exam.passcodeHash === "string" && typeof exam.passcodeSalt === "string";
       const candidate = validHash ? hashCode(exam.passcodeSalt, passcode) : "";
@@ -233,7 +249,7 @@ export const handler: Handler = async (event) => {
       const questions = Array.isArray(body.questions) ? body.questions : [];
       const durationMinutes = Number(body.durationMinutes || 30);
       if (!title || !subject || !questions.length || questions.length > 200 || !Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 300) return json(400, { error: "Provide a title, subject, 1–200 questions and a whole-number duration from 1 to 300 minutes." });
-      const normalized = normalizeQuestions(questions, body.gradingMode === "manual" ? "manual" : "automatic");
+      const normalized = normalizeQuestions(questions, body.gradingMode === "manual" || String(body.status || "draft") === "draft" ? "manual" : "automatic");
       if (normalized.error) return json(400, { error: normalized.error });
 
       const requestedMaxAttempts = Number(body.maxAttempts ?? 1);

@@ -71,7 +71,7 @@ const SecurePortalLogin: React.FC = () => {
       body: JSON.stringify({ role: 'student', identifier: identifier.trim(), code: password.trim() }) 
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.customToken) throw new Error(data.error || 'Invalid portal credentials.');
+    if (!response.ok || !data.customToken) { const error: any = new Error(data.error || 'Invalid portal credentials.'); error.status = response.status; throw error; }
     const credential = await signInWithCustomToken(auth, data.customToken); 
     return { data, user: credential.user };
   };
@@ -141,7 +141,10 @@ const SecurePortalLogin: React.FC = () => {
       navigate('/portal/student');
       return;
     } catch (serverErr) {
-      console.warn('Server access lookup error notice, engaging direct client resolver:', serverErr);
+      if (Number((serverErr as any)?.status || 0) >= 500) {
+        throw new Error('Secure student login is temporarily unavailable. Please try again later or contact your school administrator.');
+      }
+      console.warn('Server access lookup rejected credentials; trying legacy account resolver:', serverErr);
     }
 
     // 2. Direct client Firestore lookup & authentication

@@ -7,7 +7,7 @@ import { DashboardGreeting } from '../../components/portal/DashboardGreeting';
 export type AssignmentCenterRole = 'student' | 'staff' | 'parent' | 'school';
 type Student = { id: string; fullName: string; username?: string; email?: string; plan?: string; schoolId?: string; parentId?: string; tutorId?: string; firebaseUid?: string };
 type Assignment = { id: string; title: string; instructions: string; tutorName?: string; studentName?: string; dueDate?: string | null; status: string; grade?: number | null; feedback?: string | null; submissionText?: string | null; submissionUrl?: string | null; submittedAt?: string | null; reviewedAt?: string | null; reviewStatus?: string | null; resourceUrl?: string | null; resourceTitle?: string | null; createdAt?: string | null };
-type Draft = { text: string; url: string };
+type Draft = { text: string; url: string; fileUrl: string; fileName: string };
 
 const api = async (path: string, options: RequestInit = {}) => {
   const user = auth.currentUser;
@@ -33,6 +33,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
   const [showCreate, setShowCreate] = useState(false);
   const [reviewing, setReviewing] = useState<Assignment | null>(null);
   const [submittingId, setSubmittingId] = useState('');
+  const [uploadingId, setUploadingId] = useState('');
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [form, setForm] = useState({ title: '', instructions: '', dueDate: '', resourceTitle: '', resourceUrl: '' });
   const [reviewForm, setReviewForm] = useState({ grade: '', feedback: '', reviewStatus: 'COMPLETED' });
@@ -73,17 +74,38 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not publish assignment.'); }
   };
 
-  const updateDraft = (assignmentId: string, patch: Partial<Draft>) => setDrafts(current => ({ ...current, [assignmentId]: { text: current[assignmentId]?.text || '', url: current[assignmentId]?.url || '', ...patch } }));
+  const updateDraft = (assignmentId: string, patch: Partial<Draft>) => setDrafts(current => ({ ...current, [assignmentId]: { text: current[assignmentId]?.text || '', url: current[assignmentId]?.url || '', fileUrl: current[assignmentId]?.fileUrl || '', fileName: current[assignmentId]?.fileName || '', ...patch } }));
   const submitAssignment = async (assignmentId: string) => {
-    const draft = drafts[assignmentId] || { text: '', url: '' };
+    const draft = drafts[assignmentId] || { text: '', url: '', fileUrl: '', fileName: '' };
     setSubmittingId(assignmentId); setError('');
     try {
-      await api('/api/academic-assignments', { method: 'POST', body: JSON.stringify({ action: 'submit', assignmentId, submissionText: draft.text, submissionUrl: draft.url }) });
+      await api('/api/academic-assignments', { method: 'POST', body: JSON.stringify({ action: 'submit', assignmentId, submissionText: draft.text, submissionUrl: draft.url, submissionFileUrl: draft.fileUrl, submissionFileName: draft.fileName }) });
       setSuccess('Your assignment has been submitted to your tutor.');
-      setDrafts(current => ({ ...current, [assignmentId]: { text: '', url: '' } }));
+      setDrafts(current => ({ ...current, [assignmentId]: { text: '', url: '', fileUrl: '', fileName: '' } }));
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not submit assignment.'); }
     finally { setSubmittingId(''); }
+  };
+
+  const uploadSubmissionFile = async (assignmentId: string, file?: File) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { setError('Please choose a file smaller than 10 MB.'); return; }
+    const cloudName = localStorage.getItem('cloudinary_cloud_name') || 'jaystarbliss';
+    const uploadPreset = localStorage.getItem('cloudinary_upload_preset') || 'jaystarbliss_cms';
+    if (!cloudName || !uploadPreset) { setError('File uploads are not configured. Please paste a share link instead.'); return; }
+    setUploadingId(assignmentId); setError('');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', uploadPreset);
+      formData.append('folder', 'jdi/assignment-submissions/' + assignmentId);
+      const response = await fetch('https://api.cloudinary.com/v1_1/' + encodeURIComponent(cloudName) + '/auto/upload', { method: 'POST', body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.secure_url) throw new Error(data.error?.message || 'Unable to upload this file. You can paste a share link instead.');
+      updateDraft(assignmentId, { fileUrl: data.secure_url, fileName: file.name });
+      setSuccess('File attached: ' + file.name);
+    } catch (error) { setError(error instanceof Error ? error.message : 'Unable to upload assignment file.'); }
+    finally { setUploadingId(''); }
   };
 
   const reviewAssignment = async (event: React.FormEvent) => {
@@ -127,7 +149,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
 
     <div className="pro-surface rounded-3xl p-5 md:p-7">
       <div className="mb-5"><h2 className="text-xl font-black text-slate-900 dark:text-white">Assignment inbox</h2><p className="text-xs text-slate-500 mt-1">Each assignment follows a real publish → submit → review lifecycle.</p></div>
-      {loading ? <div className="py-12 text-center text-sm text-slate-500"><Loader2 className="mx-auto animate-spin mb-2" size={22} />Loading assignments…</div> : assignments.length === 0 ? <div className="py-14 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl"><ClipboardList className="mx-auto text-slate-300 mb-3" size={38} /><p className="font-bold text-slate-900 dark:text-white">No assignments yet</p><p className="text-sm text-slate-500 mt-1">{role === 'staff' ? 'Choose an assigned student and create their first assignment.' : 'When a tutor publishes work for this learner, it will appear here.'}</p></div> : <div className="space-y-4">{assignments.map(a => <AssignmentCard key={a.id} assignment={a} role={role} draft={drafts[a.id] || { text: '', url: '' }} onDraftChange={patch => updateDraft(a.id, patch)} onSubmit={submitAssignment} submitting={submittingId === a.id} onReview={() => { setReviewing(a); setReviewForm({ grade: a.grade == null ? '' : String(a.grade), feedback: a.feedback || '', reviewStatus: a.status === 'RESUBMISSION_REQUIRED' ? 'RESUBMISSION_REQUIRED' : 'COMPLETED' }); }} />)}</div>}
+      {loading ? <div className="py-12 text-center text-sm text-slate-500"><Loader2 className="mx-auto animate-spin mb-2" size={22} />Loading assignments…</div> : assignments.length === 0 ? <div className="py-14 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl"><ClipboardList className="mx-auto text-slate-300 mb-3" size={38} /><p className="font-bold text-slate-900 dark:text-white">No assignments yet</p><p className="text-sm text-slate-500 mt-1">{role === 'staff' ? 'Choose an assigned student and create their first assignment.' : 'When a tutor publishes work for this learner, it will appear here.'}</p></div> : <div className="space-y-4">{assignments.map(a => <AssignmentCard key={a.id} assignment={a} role={role} draft={drafts[a.id] || { text: '', url: '', fileUrl: '', fileName: '' }} onDraftChange={patch => updateDraft(a.id, patch)} onSubmit={submitAssignment} submitting={submittingId === a.id} onReview={() => { setReviewing(a); setReviewForm({ grade: a.grade == null ? '' : String(a.grade), feedback: a.feedback || '', reviewStatus: a.status === 'RESUBMISSION_REQUIRED' ? 'RESUBMISSION_REQUIRED' : 'COMPLETED' }); }} />)}</div>}
     </div>
 
     {showCreate && <Modal title="Create assignment" onClose={() => setShowCreate(false)}><form onSubmit={createAssignment} className="space-y-4"><p className="text-xs text-slate-500">Publishing this assignment will notify the learner and linked parent when available.</p><Field label="Title"><input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="e.g. Build a Python calculator" className="input" /></Field><Field label="Instructions"><textarea required rows={6} value={form.instructions} onChange={e => setForm({ ...form, instructions: e.target.value })} placeholder="Explain exactly what the learner should do, what to submit and any requirements." className="input resize-y" /></Field><Field label="Due date"><input required type="datetime-local" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} className="input" /></Field><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><Field label="Resource title (optional)"><input value={form.resourceTitle} onChange={e => setForm({ ...form, resourceTitle: e.target.value })} placeholder="Lesson guide" className="input" /></Field><Field label="Resource URL (optional)"><input type="url" value={form.resourceUrl} onChange={e => setForm({ ...form, resourceUrl: e.target.value })} placeholder="https://…" className="input" /></Field></div><div className="flex justify-end gap-3 pt-3"><button type="button" onClick={() => setShowCreate(false)} className="btn-secondary">Cancel</button><button type="submit" className="btn-primary"><Send size={16} /> Publish Assignment</button></div></form></Modal>}

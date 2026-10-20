@@ -177,7 +177,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
         // Strict Audience Filtering: private notices are visible only to their actual recipient.
         let isRelevant = false;
-        if (notif.id.startsWith("jdi:")) {
+        const isPrivatePaymentNotice = /payment|invoice|fee|transaction|receipt|billing/i.test(`${notif.type} ${notif.title} ${String(data.category || '')}`);
+        if (role === 'parent' && isPrivatePaymentNotice) {
+          // Financial notices must be directly addressed to this parent account.
+          // Never treat a payment notice as a role-wide/all-parents broadcast.
+          isRelevant = data.recipientUid === uid || notif.recipientId === uid || notif.targetUid === uid;
+        } else if (notif.id.startsWith("jdi:")) {
           isRelevant = data.recipientUid === uid;
         } else if (notif.recipientId === 'all' || notif.recipientType === 'all') {
           const targetRole = String(notif.targetRole || '').trim().toLowerCase();
@@ -187,7 +192,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           isRelevant = roleMatches;
         } else if (notif.recipientId === uid || notif.targetUid === uid) {
           isRelevant = true;
-        } else if (notif.targetEmail && email && notif.targetEmail.toLowerCase() === email) {
+        } else if (role !== 'parent' && notif.targetEmail && email && notif.targetEmail.toLowerCase() === email) {
+          // Parent payment and account notices must be addressed to a specific UID;
+          // shared/contact email addresses are not a private account identifier.
           isRelevant = true;
         } else if (isAdmin) {
           isRelevant = false;

@@ -1,17 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Download, FileText, Image as ImageIcon, Loader2, UserPlus, Printer, ShieldCheck, Check, Copy } from 'lucide-react';
+import { FileText, Image as ImageIcon, Loader2, UserPlus, Printer, ShieldCheck, Check, Copy } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
 import { auth, db } from '../../lib/firebase';
-import { collection, getDocs, doc, getDoc, setDoc, addDoc, serverTimestamp, query, limit, where } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, limit } from 'firebase/firestore';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
-
-const generateAccessCode = (length = 8) => {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const arr = new Uint8Array(length);
-  crypto.getRandomValues(arr);
-  return 'JBS-' + Array.from(arr, b => chars[b % chars.length]).join('');
-};
 
 const SchoolStudentOnboarding: React.FC = () => {
   const { toast } = useToast();
@@ -19,7 +12,7 @@ const SchoolStudentOnboarding: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState<{ username: string; accessCode: string; portal: string } | null>(null);
   const [programs, setPrograms] = useState<{ id: string; name: string }[]>([]);
-  const [programId, setProgramId] = useState('');
+  const [programIds, setProgramIds] = useState<string[]>([]);
   const [schoolInfo, setSchoolInfo] = useState<{ id: string; name: string }>({ id: '', name: '' });
   const [copied, setCopied] = useState(false);
 
@@ -92,114 +85,37 @@ const SchoolStudentOnboarding: React.FC = () => {
 
     setSaving(true);
     try {
-      const selectedProg = programs.find(p => p.id === programId);
-      const programName = selectedProg?.name || form.track.trim() || 'General School Programme';
+      const selectedPrograms = programs.filter(p => programIds.includes(String(p.id)));
+      const programName = selectedPrograms.map(p => p.name).filter(Boolean).join(', ') || form.track.trim() || 'General School Programme';
       let issuedCredentials: { username: string; accessCode: string; portal: string } | null = null;
 
       // 1. Attempt backend Netlify function safely
-      if (auth.currentUser && !effective.isMasquerading) {
+      if (auth.currentUser) {
         try {
           const token = await auth.currentUser.getIdToken();
           const response = await fetch('/.netlify/functions/school-student-onboard', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...form, fullName: trimmedName, username: cleanUsername, programId, programName }),
+            body: JSON.stringify({ ...form, schoolId: schoolInfo.id || effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || '', fullName: trimmedName, username: cleanUsername, programId: programIds[0] || '', programIds, programName }),
           });
           const contentType = response.headers.get('content-type') || '';
           if (contentType.includes('application/json')) {
             const result = await response.json().catch(() => ({}));
-            if (response.ok && result.credentials) {
-              issuedCredentials = result.credentials;
-            }
+            if (!response.ok) throw new Error(result.error || 'The server could not create the student login. No student record was created.');
+            if (!result.credentials) throw new Error('The server did not return login credentials. Please retry; no local-only account was created.');
+            issuedCredentials = result.credentials;
           }
         } catch (apiErr) {
-          console.warn('Netlify function onboard note (proceeding to Firestore fallback):', apiErr);
+          throw apiErr;
         }
       }
 
-      // 2. Direct Firestore fallback
-      if (!issuedCredentials) {
-        const studentId = `sch_${cleanUsername}_${Date.now().toString(36)}`;
-        const accessCode = generateAccessCode();
-        const targetSchoolId = schoolInfo.id || effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || auth.currentUser?.uid || '';
-        const targetSchoolName = schoolInfo.name || sessionStorage.getItem('schoolName') || 'Partner School';
-
-        // Compute hash
-        let accessCodeHash = '';
-        try {
-          const msgBuffer = new TextEncoder().encode(accessCode.toUpperCase());
-          const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-          accessCodeHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-        } catch {
-          accessCodeHash = accessCode.toLowerCase();
-        }
-
-        const studentRecord = {
-          fullName: trimmedName,
-          studentName: trimmedName,
-          name: trimmedName,
-          username: cleanUsername,
-          accessCode,
-          passcode: accessCode,
-          code: accessCode,
-          accessCodeHash,
-          schoolId: targetSchoolId,
-          schoolName: targetSchoolName,
-          class: form.class,
-          grade: form.class,
-          track: programName,
-          programId: programId || null,
-          programName: programName || null,
-          email: form.email.trim().toLowerCase() || null,
-          parentId: form.parentId.trim() || null,
-          portalAccessEnabled: true,
-          accountStatus: 'ACTIVE',
-          status: 'ACTIVE',
-          source: 'school_onboarding',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        };
-
-        // Write to individualStudents and students
-        await Promise.all([
-          setDoc(doc(db, 'individualStudents', studentId), studentRecord, { merge: true }),
-          setDoc(doc(db, 'students', studentId), studentRecord, { merge: true })
-        ]);
-
-        // Write to enrollments
-        await addDoc(collection(db, 'enrollments'), {
-          studentId,
-          studentName: trimmedName,
-          schoolId: targetSchoolId,
-          programId: programId || null,
-          programName,
-          status: 'ACTIVE',
-          source: 'school_onboarding',
-          enrolledAt: serverTimestamp(),
-          createdAt: serverTimestamp()
-        }).catch(() => undefined);
-
-        // Activity log
-        await addDoc(collection(db, 'activityLogs'), {
-          actorId: auth.currentUser?.uid || effective.effectiveUid || 'school_admin',
-          action: 'SCHOOL_STUDENT_ONBOARDED',
-          targetId: studentId,
-          targetType: 'student',
-          schoolId: targetSchoolId,
-          timestamp: serverTimestamp(),
-          metadata: { username: cleanUsername, class: form.class, programName }
-        }).catch(() => undefined);
-
-        issuedCredentials = {
-          username: cleanUsername,
-          accessCode,
-          portal: '/portal/student'
-        };
-      }
+      // Only the server can create both the Firebase Authentication identity and its student record.
+      if (!issuedCredentials) throw new Error('Student login was not created. Please retry or contact the platform administrator.');
 
       setCredentials(issuedCredentials);
       setForm({ fullName: '', username: '', email: '', class: 'JSS 1', track: '', parentId: '' });
-      setProgramId('');
+      setProgramIds([]);
       toast.success(`Student account created successfully for ${trimmedName}!`);
     } catch (error: any) {
       console.error('School onboarding error:', error);
@@ -276,6 +192,20 @@ const SchoolStudentOnboarding: React.FC = () => {
               onChange={e => update('class', e.target.value)}
               className="mt-1.5 w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 px-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium"
             >
+              <option>Early Years</option>
+              <option>Nursery 1</option>
+              <option>Nursery 2</option>
+              <option>Nursery 3</option>
+              <option>Reception</option>
+              <option>Year 1</option>
+              <option>Year 2</option>
+              <option>Year 3</option>
+              <option>Year 4</option>
+              <option>Year 5</option>
+              <option>Year 6</option>
+              <option>Primary 1</option>
+              <option>Primary 2</option>
+              <option>Primary 3</option>
               <option>Primary 4</option>
               <option>Primary 5</option>
               <option>Primary 6</option>
@@ -291,17 +221,18 @@ const SchoolStudentOnboarding: React.FC = () => {
           <Field label="Learning track / notes (optional)" value={form.track} onChange={v => update('track', v)} placeholder="e.g. Robotics & IoT Track" />
           
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-            Programme Assignment
+            Programme Assignments
             <select
-              value={programId}
-              onChange={e => setProgramId(e.target.value)}
+              multiple
+              value={programIds}
+              onChange={e => setProgramIds(Array.from(e.currentTarget.selectedOptions, option => option.value))}
               className="mt-1.5 w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 px-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium"
             >
-              <option value="">Default School Tech Programme</option>
               {programs.map(program => (
                 <option key={program.id} value={program.id}>{program.name}</option>
               ))}
             </select>
+            <span className="mt-1 block text-[11px] font-normal text-slate-500">Select every programme for this learner. Hold Ctrl (Windows) or Cmd (Mac) to choose multiple; each selected programme creates its own enrollment.</span>
           </label>
 
           <Field label="Parent account ID (optional)" value={form.parentId} onChange={v => update('parentId', v)} placeholder="Parent UID or email" />

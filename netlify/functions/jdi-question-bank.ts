@@ -26,10 +26,18 @@ async function canAccessSchool(c: any, schoolId: string) {
   if (adminRoles.includes(c.role)) return true;
   if (c.role === "SCHOOL") return String(c.user.schoolId || c.uid) === schoolId;
   if (!tutorRoles.includes(c.role)) return false;
-  if (String(c.user.schoolId || c.user.school_id || "") === schoolId) return true;
+  const profileSchoolIds = [c.user.schoolId, c.user.school_id]
+    .concat(Array.isArray(c.user.schoolIds) ? c.user.schoolIds : [])
+    .concat(Array.isArray(c.user.assignedSchoolIds) ? c.user.assignedSchoolIds : [])
+    .filter(Boolean).map(String);
+  if (profileSchoolIds.includes(schoolId)) return true;
   const snap = await adminDb.collection("staffSchoolAccess").doc(c.uid).get();
-  const access = snap.data() || {};
-  return access.schoolId === schoolId || (Array.isArray(access.schoolIds) && access.schoolIds.includes(schoolId));
+  const access = snap.exists ? (snap.data() || {}) : {};
+  const accessSchoolIds = [access.schoolId]
+    .concat(Array.isArray(access.schoolIds) ? access.schoolIds : [])
+    .concat(Array.isArray(access.assignedSchoolIds) ? access.assignedSchoolIds : [])
+    .filter(Boolean).map(String);
+  return accessSchoolIds.includes(schoolId);
 }
 
 function validateQuestion(value: any) {
@@ -46,8 +54,9 @@ function validateQuestion(value: any) {
   if (["single_choice", "multiple_choice", "true_false"].includes(type) && (options.length < 2 || new Set(options.map((o: any) => o.id)).size !== options.length)) return null;
   const optionIds = new Set(options.map((o: any) => o.id));
   const correctOptionIds = Array.isArray(value.correctOptionIds) ? [...new Set(value.correctOptionIds.map(String))].filter((x: string) => optionIds.has(x)).slice(0, 10) : [];
-  if (["single_choice", "multiple_choice", "true_false"].includes(type) && !correctOptionIds.length) return null;
-  if (["single_choice", "true_false"].includes(type) && correctOptionIds.length !== 1) return null;
+  // The question bank is also used for work-in-progress drafts. Permit an
+  // unanswered marking key here; the exam publisher validates it before release.
+  if (["single_choice", "true_false"].includes(type) && correctOptionIds.length > 1) return null;
   return {
     ...(id ? { id } : {}),
     prompt,

@@ -7,7 +7,7 @@ const json = (statusCode: number, body: Record<string, unknown>) => ({
   body: JSON.stringify(body)
 });
 
-const classes = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Year 6', 'JSS 1', 'JSS 2', 'JSS 3', 'SS1', 'SS2', 'SS3'];
+const classes = ['Early Years', 'Nursery 1', 'Nursery 2', 'Nursery 3', 'Reception', 'Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Year 6', 'Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6', 'JSS 1', 'JSS 2', 'JSS 3', 'SS 1', 'SS 2', 'SS 3', 'SS1', 'SS2', 'SS3'];
 const statuses = ['SCHEDULED', 'ONGOING', 'COMPLETED', 'ATTENDED', 'ABSENT', 'CANCELLED', 'RESCHEDULED'];
 const adminRoles = ['ADMIN', 'SUPER_ADMIN', 'EDUCATION_ADMIN', 'CMS_ADMIN'];
 const tutorRoles = ['TUTOR', 'STAFF', 'INSTRUCTOR', 'FACULTY'];
@@ -170,7 +170,7 @@ export const handler: Handler = async event => {
       const requestedTutorId = String(params.tutorId || '').trim();
       let records = await loadRecords();
 
-      if (role === 'SCHOOL') {
+      if (['SCHOOL', 'SCHOOL_ADMIN'].includes(role)) {
         let schoolId = String(user.schoolId || '').trim();
         let schoolName = String(user.schoolName || user.name || '').trim();
         if (!schoolId) {
