@@ -20,7 +20,8 @@ export function getAdminApp(): App | null {
   const serviceAccountJson =
     process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
     process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT ||
-    process.env.FIREBASE_SERVICE_ACCOUNT;
+    process.env.FIREBASE_SERVICE_ACCOUNT ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
   if (serviceAccountJson) {
     try {
       const parsed = JSON.parse(serviceAccountJson);
@@ -31,9 +32,9 @@ export function getAdminApp(): App | null {
     }
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID || serviceAccount.project_id || serviceAccount.projectId;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL || serviceAccount.client_email || serviceAccount.clientEmail;
-  const rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY || serviceAccount.private_key || serviceAccount.privateKey;
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || serviceAccount.project_id || serviceAccount.projectId;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL || process.env.FIREBASE_ADMIN_CLIENT_EMAIL || serviceAccount.client_email || serviceAccount.clientEmail;
+  const rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY || process.env.FIREBASE_ADMIN_PRIVATE_KEY || serviceAccount.private_key || serviceAccount.privateKey;
   const privateKey = typeof rawPrivateKey === "string" ? rawPrivateKey.replace(/\\n/g, "\n") : "";
 
   if (!projectId || !clientEmail || !privateKey) {
