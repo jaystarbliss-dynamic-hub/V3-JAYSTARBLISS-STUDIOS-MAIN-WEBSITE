@@ -25,6 +25,11 @@ async function findStudent(identifier: string, db: FirebaseFirestore.Firestore) 
   const byCode = await db.collection("individualStudents").where("accessCode", "==", upperRaw).limit(1).get();
   if (!byCode.empty) return byCode.docs[0];
 
+  // Newer onboarding flows intentionally persist only a hash, not the plaintext
+  // access code. Support access-code-as-identifier without weakening verification.
+  const byCodeHash = await db.collection("individualStudents").where("accessCodeHash", "==", hashAccessCode(raw)).limit(1).get();
+  if (!byCodeHash.empty) return byCodeHash.docs[0];
+
   try { 
     const byId = await db.collection("individualStudents").doc(raw).get(); 
     if (byId.exists) return byId; 
@@ -41,6 +46,9 @@ async function findStudent(identifier: string, db: FirebaseFirestore.Firestore) 
 
   const legacyByCode = await db.collection("students").where("accessCode", "==", upperRaw).limit(1).get();
   if (!legacyByCode.empty) return legacyByCode.docs[0];
+
+  const legacyByCodeHash = await db.collection("students").where("accessCodeHash", "==", hashAccessCode(raw)).limit(1).get();
+  if (!legacyByCodeHash.empty) return legacyByCodeHash.docs[0];
 
   try { 
     const legacyById = await db.collection("students").doc(raw).get(); 
@@ -125,8 +133,12 @@ export const handler: Handler = async (event) => {
       if (existingUser.exists) {
         const existingRole = normaliseRole(existingUser.data.role);
         const existingStudentDocId = String(existingUser.data.studentDocId || "").trim();
-        if (existingRole && existingRole !== "student" && !existingRole.includes("student") && (existingStudentDocId && existingStudentDocId !== snap.id)) {
-          return { statusCode: 409, body: JSON.stringify({ error: "This student identity is already linked to another portal account." }) };
+        const isStudentRole = existingRole === "student" || existingRole === "students" || existingRole.includes("student");
+        if (existingRole && !isStudentRole && existingStudentDocId !== snap.id) {
+          return { statusCode: 409, body: JSON.stringify({ error: "This identity is already linked to a different portal role. Ask an administrator to correct the account link." }) };
+        }
+        if (isStudentRole && existingStudentDocId && existingStudentDocId !== snap.id) {
+          return { statusCode: 409, body: JSON.stringify({ error: "This student identity is already linked to another student record." }) };
         }
       }
       if (existingUser.exists && isBlocked(existingUser.data)) {
