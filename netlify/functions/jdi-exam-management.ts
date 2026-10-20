@@ -14,10 +14,12 @@ async function canSchool(c:any,schoolId:string){
  // School administrators may view reports for their own school, but do not manage exams.
  if(["SCHOOL","SCHOOL_ADMIN"].includes(c.role))return String(c.user.schoolId||c.user.school_id||c.uid)===schoolId;
  if(tutors.includes(c.role)){
-  if(String(c.user.schoolId||c.user.school_id||"")===schoolId)return true;
+  const profileSchoolIds=[c.user.schoolId,c.user.school_id,...(Array.isArray(c.user.schoolIds)?c.user.schoolIds:[]),...(Array.isArray(c.user.assignedSchoolIds)?c.user.assignedSchoolIds:[])].filter(Boolean).map(String);
+  if(profileSchoolIds.includes(schoolId))return true;
   const s=await adminDb.collection("staffSchoolAccess").doc(c.uid).get();
   const d=s.data()||{};
-  return d.schoolId===schoolId||(Array.isArray(d.schoolIds)&&d.schoolIds.includes(schoolId));
+  const accessSchoolIds=[d.schoolId,...(Array.isArray(d.schoolIds)?d.schoolIds:[]),...(Array.isArray(d.assignedSchoolIds)?d.assignedSchoolIds:[])].filter(Boolean).map(String);
+  return accessSchoolIds.includes(schoolId);
  }
  return false;
 }
