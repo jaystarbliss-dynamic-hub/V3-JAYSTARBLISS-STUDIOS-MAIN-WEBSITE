@@ -20,10 +20,14 @@ export const handler: Handler = async (event) => {
       (await adminDb.collection('schools').limit(300).get()).forEach(d => schools.set(d.id, { id: d.id, ...d.data() }));
     } else if (['TUTOR', 'STAFF', 'INSTRUCTOR'].includes(role)) {
       const access = await adminDb.collection('staffSchoolAccess').doc(decoded.uid).get();
-      if (access.exists) {
-        const data = access.data() || {}; const ids = Array.from(new Set([data.schoolId, ...(Array.isArray(data.schoolIds) ? data.schoolIds : [])].filter(Boolean).map(String)));
-        for (const id of ids) { const snap = await adminDb.collection('schools').doc(id).get(); if (snap.exists) schools.set(id, { id, ...snap.data() }); }
-      }
+      const data = access.exists ? (access.data() || {}) : {};
+      const ids = Array.from(new Set([
+        user.schoolId, user.school_id,
+        ...(Array.isArray(user.schoolIds) ? user.schoolIds : []),
+        ...(Array.isArray(user.assignedSchoolIds) ? user.assignedSchoolIds : []),
+        data.schoolId, ...(Array.isArray(data.schoolIds) ? data.schoolIds : [])
+      ].filter(Boolean).map(String)));
+      for (const id of ids) { const snap = await adminDb.collection('schools').doc(id).get(); if (snap.exists) schools.set(id, { id, ...snap.data() }); }
     } else if (role === 'SCHOOL') {
       const id = String(user.schoolId || decoded.uid); const snap = await adminDb.collection('schools').doc(id).get(); if (snap.exists) schools.set(id, { id, ...snap.data() });
     }
