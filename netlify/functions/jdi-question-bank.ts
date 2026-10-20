@@ -33,7 +33,10 @@ async function canAccessSchool(c: any, schoolId: string) {
   if (profileSchoolIds.includes(schoolId)) return true;
   const snap = await adminDb.collection("staffSchoolAccess").doc(c.uid).get();
   const access = snap.exists ? (snap.data() || {}) : {};
-  const accessSchoolIds = [access.schoolId].concat(Array.isArray(access.schoolIds) ? access.schoolIds : []).filter(Boolean).map(String);
+  const accessSchoolIds = [access.schoolId]
+    .concat(Array.isArray(access.schoolIds) ? access.schoolIds : [])
+    .concat(Array.isArray(access.assignedSchoolIds) ? access.assignedSchoolIds : [])
+    .filter(Boolean).map(String);
   return accessSchoolIds.includes(schoolId);
 }
 
