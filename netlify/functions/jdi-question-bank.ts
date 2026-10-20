@@ -26,10 +26,15 @@ async function canAccessSchool(c: any, schoolId: string) {
   if (adminRoles.includes(c.role)) return true;
   if (c.role === "SCHOOL") return String(c.user.schoolId || c.uid) === schoolId;
   if (!tutorRoles.includes(c.role)) return false;
-  if (String(c.user.schoolId || c.user.school_id || "") === schoolId) return true;
+  const profileSchoolIds = [c.user.schoolId, c.user.school_id]
+    .concat(Array.isArray(c.user.schoolIds) ? c.user.schoolIds : [])
+    .concat(Array.isArray(c.user.assignedSchoolIds) ? c.user.assignedSchoolIds : [])
+    .filter(Boolean).map(String);
+  if (profileSchoolIds.includes(schoolId)) return true;
   const snap = await adminDb.collection("staffSchoolAccess").doc(c.uid).get();
-  const access = snap.data() || {};
-  return access.schoolId === schoolId || (Array.isArray(access.schoolIds) && access.schoolIds.includes(schoolId));
+  const access = snap.exists ? (snap.data() || {}) : {};
+  const accessSchoolIds = [access.schoolId].concat(Array.isArray(access.schoolIds) ? access.schoolIds : []).filter(Boolean).map(String);
+  return accessSchoolIds.includes(schoolId);
 }
 
 function validateQuestion(value: any) {
