@@ -80,13 +80,20 @@ export const handler: Handler = async (event) => {
     const assignment = snap.data() || {}; if (!(await canAccessAssignment(assignment, decoded.uid, role))) return json(403, { error: 'You are not authorized to access this assignment.' });
 
     if (action === 'submit') {
-      if (role !== 'STUDENT') return json(403, { error: 'Only the assigned student can submit this assignment.' }); if (['COMPLETED'].includes(String(assignment.status || ''))) return json(409, { error: 'This assignment has already been completed.' });
-      const submissionText = safeText(body.submissionText, 12000); const submissionUrl = safeText(body.submissionUrl, 4000); if (!submissionText && !submissionUrl) return json(400, { error: 'Add your work or a submission link before submitting.' });
-      await ref.update({ submissionText: submissionText || null, submissionUrl: submissionUrl || null, submittedAt: now(), status: 'SUBMITTED', reviewStatus: 'AWAITING_REVIEW', updatedAt: now() });
-      await notify(String(assignment.tutorId || assignment.staffId || ''), 'Assignment submitted', `${assignment.studentName || 'A student'} submitted ${assignment.title}.`, { assignmentId, studentId: assignment.studentId });
-      return json(200, { assignment: serialise(assignmentId, { ...assignment, submissionText: submissionText || null, submissionUrl: submissionUrl || null, submittedAt: now(), status: 'SUBMITTED', reviewStatus: 'AWAITING_REVIEW', updatedAt: now() }) });
+      if (role !== 'STUDENT') return json(403, { error: 'Only the assigned student can submit this assignment.' });
+      if (['COMPLETED'].includes(String(assignment.status || ''))) return json(409, { error: 'This assignment has already been completed.' });
+      const submissionText = safeText(body.submissionText, 12000);
+      const submissionUrl = safeText(body.submissionUrl, 4000);
+      const submissionFileUrl = safeText(body.submissionFileUrl, 4000);
+      const submissionFileName = safeText(body.submissionFileName, 240);
+      const finalSubmissionUrl = submissionUrl || submissionFileUrl;
+      if (!submissionText && !finalSubmissionUrl) return json(400, { error: 'Add written work, a project link, or upload a file before submitting.' });
+      const submittedAt = now();
+      const patch = { submissionText: submissionText || null, submissionUrl: finalSubmissionUrl || null, submissionFileName: submissionFileUrl ? (submissionFileName || 'Uploaded file') : null, submittedAt, status: 'SUBMITTED', reviewStatus: 'AWAITING_REVIEW', updatedAt: now() };
+      await ref.update(patch);
+      await notify(String(assignment.tutorId || assignment.staffId || ''), 'Assignment submitted', String(assignment.studentName || 'A student') + ' submitted ' + String(assignment.title || 'an assignment') + '.', { assignmentId, studentId: assignment.studentId });
+      return json(200, { assignment: serialise(assignmentId, { ...assignment, ...patch }) });
     }
-
     if (action === 'review') {
       if (!['TUTOR', 'STAFF', 'INSTRUCTOR'].includes(role)) return json(403, { error: 'Only the assigned tutor/staff member can review this assignment.' });
       const grade = Number(body.grade); if (!Number.isFinite(grade) || grade < 0 || grade > 100) return json(400, { error: 'Grade must be between 0 and 100.' }); const feedback = safeText(body.feedback, 12000); if (!feedback) return json(400, { error: 'Feedback is required when reviewing an assignment.' });
