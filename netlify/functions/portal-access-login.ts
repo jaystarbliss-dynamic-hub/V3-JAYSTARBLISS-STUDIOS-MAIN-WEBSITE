@@ -16,10 +16,8 @@ async function findStudent(identifier: string, db: FirebaseFirestore.Firestore) 
   // 1. Search in individualStudents
   const byUsername = await db.collection("individualStudents").where("username", "==", username).limit(1).get();
   if (!byUsername.empty) return byUsername.docs[0];
-  if (raw.startsWith("@")) {
-    const byTaggedUsername = await db.collection("individualStudents").where("username", "==", `@${username}`).limit(1).get();
-    if (!byTaggedUsername.empty) return byTaggedUsername.docs[0];
-  }
+  const byTaggedUsername = await db.collection("individualStudents").where("username", "==", `@${username}`).limit(1).get();
+  if (!byTaggedUsername.empty) return byTaggedUsername.docs[0];
 
   if (email.includes("@")) {
     const byEmail = await db.collection("individualStudents").where("email", "==", email).limit(1).get();
@@ -39,10 +37,8 @@ async function findStudent(identifier: string, db: FirebaseFirestore.Firestore) 
   // 2. Search in students collection
   const legacyByUsername = await db.collection("students").where("username", "==", username).limit(1).get();
   if (!legacyByUsername.empty) return legacyByUsername.docs[0];
-  if (raw.startsWith("@")) {
-    const legacyTaggedUsername = await db.collection("students").where("username", "==", `@${username}`).limit(1).get();
-    if (!legacyTaggedUsername.empty) return legacyTaggedUsername.docs[0];
-  }
+  const legacyTaggedUsername = await db.collection("students").where("username", "==", `@${username}`).limit(1).get();
+  if (!legacyTaggedUsername.empty) return legacyTaggedUsername.docs[0];
 
   if (email.includes("@")) {
     const legacyByEmail = await db.collection("students").where("email", "==", email).limit(1).get();
