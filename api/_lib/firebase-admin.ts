@@ -21,24 +21,33 @@ export function getAdminApp(): App | null {
     process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
     process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT ||
     process.env.FIREBASE_SERVICE_ACCOUNT ||
-    process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
   if (serviceAccountJson) {
     try {
-      const parsed = JSON.parse(serviceAccountJson);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) serviceAccount = parsed;
-    } catch (error) {
-      console.error("Firebase service-account JSON could not be parsed.");
+      // Some deployment dashboards store JSON secrets as base64 to preserve
+      // newlines. Accept either representation without logging credential data.
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(serviceAccountJson);
+      } catch {
+        parsed = JSON.parse(Buffer.from(serviceAccountJson, "base64").toString("utf8"));
+      }
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) serviceAccount = parsed as Record<string, any>;
+      else throw new Error("Invalid service-account object");
+    } catch {
+      console.error("Firebase service-account JSON is invalid; check the Netlify secret format.");
       return null;
     }
   }
 
   const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || serviceAccount.project_id || serviceAccount.projectId;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL || process.env.FIREBASE_ADMIN_CLIENT_EMAIL || serviceAccount.client_email || serviceAccount.clientEmail;
-  const rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY || process.env.FIREBASE_ADMIN_PRIVATE_KEY || serviceAccount.private_key || serviceAccount.privateKey;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL || process.env.FIREBASE_ADMIN_CLIENT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL || serviceAccount.client_email || serviceAccount.clientEmail;
+  const rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY || process.env.FIREBASE_ADMIN_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY || serviceAccount.private_key || serviceAccount.privateKey;
   const privateKey = typeof rawPrivateKey === "string" ? rawPrivateKey.replace(/\\n/g, "\n") : "";
 
   if (!projectId || !clientEmail || !privateKey) {
-    console.error("Firebase Admin configuration is incomplete. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY, or set FIREBASE_SERVICE_ACCOUNT_JSON to the complete service-account JSON.");
+    console.error("Firebase Admin configuration is incomplete. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY, or set FIREBASE_SERVICE_ACCOUNT_JSON to the complete service-account JSON. Do not use VITE_ variables for private credentials.");
     return null;
   }
 
