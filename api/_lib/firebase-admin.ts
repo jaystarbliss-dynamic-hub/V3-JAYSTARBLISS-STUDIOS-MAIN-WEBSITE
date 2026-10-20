@@ -13,11 +13,31 @@ export function getAdminApp(): App | null {
     return cachedApp;
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  // Netlify projects may store the service-account JSON as one secret rather
+  // than three separate variables. Support both formats so every function uses
+  // the same, predictable Firebase Admin configuration.
+  let serviceAccount: Record<string, any> = {};
+  const serviceAccountJson =
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+    process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT ||
+    process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (serviceAccountJson) {
+    try {
+      const parsed = JSON.parse(serviceAccountJson);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) serviceAccount = parsed;
+    } catch (error) {
+      console.error("Firebase service-account JSON could not be parsed.");
+      return null;
+    }
+  }
+
+  const projectId = process.env.FIREBASE_PROJECT_ID || serviceAccount.project_id || serviceAccount.projectId;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL || serviceAccount.client_email || serviceAccount.clientEmail;
+  const rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY || serviceAccount.private_key || serviceAccount.privateKey;
+  const privateKey = typeof rawPrivateKey === "string" ? rawPrivateKey.replace(/\\n/g, "\n") : "";
 
   if (!projectId || !clientEmail || !privateKey) {
+    console.error("Firebase Admin configuration is incomplete. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY, or set FIREBASE_SERVICE_ACCOUNT_JSON to the complete service-account JSON.");
     return null;
   }
 
