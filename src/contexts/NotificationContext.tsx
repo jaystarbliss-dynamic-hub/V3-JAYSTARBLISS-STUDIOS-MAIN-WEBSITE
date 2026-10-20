@@ -187,7 +187,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           isRelevant = roleMatches;
         } else if (notif.recipientId === uid || notif.targetUid === uid) {
           isRelevant = true;
-        } else if (notif.targetEmail && email && notif.targetEmail.toLowerCase() === email) {
+        } else if (role !== 'parent' && notif.targetEmail && email && notif.targetEmail.toLowerCase() === email) {
+          // Parent payment and account notices must be addressed to a specific UID;
+          // shared/contact email addresses are not a private account identifier.
           isRelevant = true;
         } else if (isAdmin) {
           isRelevant = false;
