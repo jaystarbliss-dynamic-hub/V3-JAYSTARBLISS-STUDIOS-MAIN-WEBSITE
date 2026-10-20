@@ -63,7 +63,7 @@ export function getAdminDb(): Firestore | null {
   if (cachedDb) return cachedDb;
   const app = getAdminApp();
   if (!app) return null;
-  const databaseId = process.env.FIREBASE_DATABASE_ID;
+  const databaseId = process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID || "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
   cachedDb = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
   return cachedDb;
 }
