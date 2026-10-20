@@ -20,12 +20,19 @@ export const handler: Handler = async event => {
     const decoded = await adminAuth.verifyIdToken(rawToken);
     const callerSnap = await adminDb.collection('users').doc(decoded.uid).get(); if (!callerSnap.exists) return json(403, { error: 'Portal profile not found.' });
     const caller = callerSnap.data() || {}; const role = String(caller.role || '').trim().toUpperCase();
-    if (role !== 'SCHOOL' || blocked(caller.accountStatus || caller.status)) return json(403, { error: 'Only an active school account can onboard students.' });
-    const schoolId = clean(caller.schoolId || ''); if (!schoolId) return json(403, { error: 'This school account is not linked to a school.' });
+    const adminRoles = new Set(['ADMIN', 'SUPER_ADMIN', 'SUPERADMIN', 'EDUCATION_ADMIN']);
+    const schoolRoles = new Set(['SCHOOL', 'SCHOOL_ADMIN']);
+    if ((!adminRoles.has(role) && !schoolRoles.has(role)) || blocked(caller.accountStatus || caller.status)) return json(403, { error: 'An active school administrator or authorised platform administrator is required.' });
+
+    const body = JSON.parse(event.body || '{}');
+    const requestedSchoolId = clean(body.schoolId || '');
+    const callerSchoolId = clean(caller.schoolId || caller.school_id || '');
+    if (schoolRoles.has(role) && requestedSchoolId && requestedSchoolId !== callerSchoolId) return json(403, { error: 'You can only onboard students into your own school.' });
+    const schoolId = schoolRoles.has(role) ? callerSchoolId : (requestedSchoolId || callerSchoolId);
+    if (!schoolId) return json(400, { error: 'Select the school before onboarding a student.' });
     const schoolSnap = await adminDb.collection('schools').doc(schoolId).get(); if (!schoolSnap.exists) return json(404, { error: 'School record not found.' });
     const school = schoolSnap.data() || {}; if (blocked(school.accountStatus || school.status)) return json(403, { error: 'This school account is currently disabled.' });
 
-    const body = JSON.parse(event.body || '{}');
     const fullName = clean(body.fullName); const username = clean(body.username, 80).toLowerCase().replace(/\s+/g, ''); const email = clean(body.email, 160).toLowerCase(); const className = clean(body.class || body.grade || '', 80); const track = clean(body.track || '', 120); const parentId = clean(body.parentId || '', 160); const requestedCode = clean(body.accessCode || body.passcode || '', 40); const programId = clean(body.programId || '', 160); const programName = clean(body.programName || '', 180);
     if (!fullName || !username || !className) return json(400, { error: 'Student name, username and class are required.' });
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { error: 'Enter a valid student email or leave it blank.' });
