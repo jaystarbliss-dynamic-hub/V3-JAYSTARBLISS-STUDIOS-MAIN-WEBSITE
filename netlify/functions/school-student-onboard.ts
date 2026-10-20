@@ -39,9 +39,9 @@ export const handler: Handler = async event => {
     if (parentId) { const parentSnap = await adminDb.collection('users').doc(parentId).get(); if (!parentSnap.exists || String(parentSnap.data()?.role || '').toLowerCase() !== 'parent' || blocked(parentSnap.data()?.accountStatus || parentSnap.data()?.status)) return json(400, { error: 'The supplied parent account is not a valid active parent profile.' }); }
 
     let resolvedProgram: any = null;
-    let finalProgramId = programId;
-    if (finalProgramId) {
-      const programSnap = await adminDb.collection('programs').doc(finalProgramId).get();
+    let fallbackProgramId = programId;
+    if (fallbackProgramId) {
+      const programSnap = await adminDb.collection('programs').doc(fallbackProgramId).get();
       if (programSnap.exists) {
         resolvedProgram = { id: programSnap.id, ...programSnap.data() };
       }
@@ -52,10 +52,10 @@ export const handler: Handler = async event => {
         const general = schPrograms.find(p => p.isGeneralProgram) || schPrograms[0];
         if (general) {
           resolvedProgram = general;
-          finalProgramId = general.id || general.programId || '';
+          fallbackProgramId = general.id || general.programId || '';
         }
       } else if (school.programId || school.defaultProgramId) {
-        finalProgramId = school.programId || school.defaultProgramId;
+        fallbackProgramId = school.programId || school.defaultProgramId;
         const programSnap = await adminDb.collection('programs').doc(finalProgramId).get();
         if (programSnap.exists) {
           resolvedProgram = { id: programSnap.id, ...programSnap.data() };
