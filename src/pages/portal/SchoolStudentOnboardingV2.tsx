@@ -16,7 +16,7 @@ const generateAccessCode = (length = 8) => {
 const SchoolStudentOnboardingV2: React.FC = () => {
   const { toast } = useToast();
   const [programs, setPrograms] = useState<any[]>([]);
-  const [form, setForm] = useState({ fullName: '', username: '', email: '', class: 'JSS 1', programId: '', parentId: '' });
+  const [form, setForm] = useState({ fullName: '', username: '', email: '', class: 'JSS 1', programIds: [] as string[], parentId: '' });
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState<{ username: string; accessCode: string; portal: string } | null>(null);
   const [schoolInfo, setSchoolInfo] = useState<{ id: string; name: string }>({ id: '', name: '' });
@@ -82,8 +82,8 @@ const SchoolStudentOnboardingV2: React.FC = () => {
 
     setSaving(true);
     try {
-      const program = programs.find(p => p.id === form.programId);
-      const programName = program?.name || program?.title || 'General School Programme';
+      const selectedPrograms = programs.filter(p => form.programIds.includes(String(p.id)));
+      const programName = selectedPrograms.map(p => p.name || p.title).filter(Boolean).join(', ') || 'General School Programme';
       let issuedCredentials: { username: string; accessCode: string; portal: string } | null = null;
 
       // 1. Try Netlify function safely
@@ -93,7 +93,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
           const response = await fetch('/.netlify/functions/school-student-onboard', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...form, schoolId: schoolInfo.id || effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || '', fullName: trimmedName, username: cleanUsername, programName })
+            body: JSON.stringify({ ...form, programIds: form.programIds, programId: form.programIds[0] || '', schoolId: schoolInfo.id || effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || '', fullName: trimmedName, username: cleanUsername, programName })
           });
           const contentType = response.headers.get('content-type') || '';
           if (contentType.includes('application/json')) {
@@ -112,7 +112,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
       if (!issuedCredentials) throw new Error('Student login was not created. Please retry or contact the platform administrator.');
 
       setCredentials(issuedCredentials);
-      setForm({ fullName: '', username: '', email: '', class: 'JSS 1', programId: '', parentId: '' });
+      setForm({ fullName: '', username: '', email: '', class: 'JSS 1', programIds: [], parentId: '' });
       toast.success(`Student account created and enrolled in ${programName}!`);
     } catch (error: any) {
       console.error('School onboarding error:', error);
@@ -195,8 +195,9 @@ const SchoolStudentOnboardingV2: React.FC = () => {
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 md:col-span-2">
             <span className="flex items-center gap-2">Programme <BookOpen size={14} className="text-brand-red" /></span>
             <select
-              value={form.programId}
-              onChange={e => update('programId', e.target.value)}
+              multiple
+              value={form.programIds}
+              onChange={e => setForm(p => ({ ...p, programIds: Array.from(e.currentTarget.selectedOptions, option => option.value) }))}
               className="mt-1.5 w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 px-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium"
             >
               <option value="">Select a programme (optional)</option>
@@ -204,7 +205,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                 <option key={p.id} value={p.id}>{p.name || p.title}</option>
               ))}
             </select>
-            <span className="mt-1 block text-[11px] font-normal text-slate-500">When selected, an active enrollment is created for this learner.</span>
+            <span className="mt-1 block text-[11px] font-normal text-slate-500">Choose every programme this learner is enrolled in. Hold Ctrl (Windows) or Cmd (Mac) to select multiple programmes. Each selected programme receives an enrollment and its configured learning track.</span>
           </label>
 
           <Field label="Parent account ID (optional)" value={form.parentId} onChange={v => update('parentId', v)} placeholder="Parent UID or email" />
