@@ -116,6 +116,50 @@ const SecurePortalLogin: React.FC = () => {
       throw new Error('Enter your Student Username / Email and Access Code.');
     }
 
+    // Public student registration creates a regular Firebase email/password
+    // account. Verify that authenticated identity against the trusted student
+    // profile before routing it into the student portal.
+    if (rawInput.includes('@')) {
+      try {
+        const credential = await signInWithEmailAndPassword(auth, rawInput.toLowerCase(), inputCode);
+        const token = await credential.user.getIdToken();
+        const response = await fetch('/.netlify/functions/portal-authenticated-student', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          await signOut(auth).catch(() => undefined);
+          throw new Error(data.error || 'This email account is not registered as a student.');
+        }
+
+        const user = credential.user;
+        const name = data.name || rawInput.split('@')[0];
+        const type = data.isIndependent === true || (!data.schoolId && !data.parentId)
+          ? 'individual'
+          : data.parentId ? 'parent' : 'school';
+        storeSession('student', user.uid, name, {
+          studentDocId: data.studentDocId || '',
+          studentUsername: data.username || '',
+          studentClass: data.class || '',
+          schoolId: data.schoolId || '',
+          schoolName: data.schoolName || '',
+          studentRegistrationType: type
+        });
+        toast.success(`Welcome ${String(name).split(' ')[0]}! Logged in successfully.`);
+        navigate('/portal/student');
+        return;
+      } catch (err: any) {
+        const code = String(err?.code || '');
+        // Onboarded students may use an email address as their identifier but
+        // authenticate with their issued access code through the server path.
+        if (!['auth/invalid-credential', 'auth/invalid-login-credentials', 'auth/user-not-found', 'auth/wrong-password', 'auth/operation-not-allowed'].includes(code)) {
+          await signOut(auth).catch(() => undefined);
+          throw err;
+        }
+      }
+    }
+
     const result = await serverAccess();
     const name = result.data.name || rawInput;
     const type = result.data.isIndependent === true || (!result.data.schoolId && !result.data.parentId)
@@ -481,7 +525,7 @@ const SecurePortalLogin: React.FC = () => {
           <div className="field mb-2.5">
             <div className="flex items-center justify-between mb-1">
               <label className="text-[11px] font-bold text-white uppercase tracking-wider">
-                {portalMode === 'institute' && instituteTab === 'student' ? 'Access Code' : 'Password'}
+                {portalMode === 'institute' && instituteTab === 'student' ? 'Password / Access Code' : 'Password'}
               </label>
               {(portalMode === 'client' || instituteTab === 'school' || instituteTab === 'staff') && (
                 <button 
@@ -501,7 +545,7 @@ const SecurePortalLogin: React.FC = () => {
                 required 
                 value={password} 
                 onChange={e => setPassword(e.target.value)} 
-                placeholder={portalMode === 'institute' && instituteTab === 'student' ? 'e.g. JBS-XXXX-XXXX' : '••••••••••••'} 
+                placeholder={portalMode === 'institute' && instituteTab === 'student' ? 'Password or JBS-XXXX-XXXX' : '••••••••••••'}
                 className="glass-input has-eye" 
               />
               <button 
