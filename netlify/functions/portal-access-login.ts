@@ -54,9 +54,7 @@ async function findStudent(identifier: string, suppliedCode: string, db: Firebas
         snap,
         profile,
         sourceCollection,
-        studentDocId: sourceCollection === "users"
-          ? String(profile.studentDocId || profile.studentId || profile.individualStudentId || snap.id)
-          : snap.id,
+        studentDocId: snap.id,
         preferredUid: preferredUid || (sourceCollection === "users" ? snap.id : undefined) ||
           String(profile.firebaseUid || profile.userId || profile.authUid || "") || undefined,
         credentialProfiles: [profile]
@@ -240,9 +238,10 @@ async function findStudent(identifier: string, suppliedCode: string, db: Firebas
       }
     }
     for (const field of STUDENT_HASH_FIELDS) {
+      const rawHash = createHash("sha256").update(raw).digest("hex");
+      const normalizedHash = hashAccessCode(raw);
       for (const value of [...new Set([
-        createHash("sha256").update(raw).digest("hex"),
-        hashAccessCode(raw)
+        rawHash, rawHash.toUpperCase(), normalizedHash, normalizedHash.toUpperCase()
       ])]) {
         legacySpecs.push({ collectionName, field, value });
       }
