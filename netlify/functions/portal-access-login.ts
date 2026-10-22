@@ -169,21 +169,41 @@ async function findStudent(identifier: string, suppliedCode: string, db: Firebas
       unique.set([spec.collectionName, spec.field, spec.value].join("\u0000"), spec);
     }
     const entries = [...unique.values()];
-    const tasks = entries.map(spec => async () => {
+    let successfulQueries = 0;
+    const queryFailures: string[] = [];
+    const trackedTasks = entries.map(spec => async () => {
       try {
         const query = await db.collection(spec.collectionName).where(spec.field, "==", spec.value).limit(5).get();
+        successfulQueries += 1;
         return { collectionName: spec.collectionName, docs: query.docs };
-      } catch {
+      } catch (error) {
+        const code = String((error as any)?.code || "unknown");
+        queryFailures.push(code);
+        console.warn("[portal-access-login] Firestore student lookup query failed", {
+          collection: spec.collectionName,
+          field: spec.field,
+          code
+        });
         return { collectionName: spec.collectionName, docs: [] as any[] };
       }
     });
-    const results = await runLimited(tasks, 12);
+    const results = await runLimited(trackedTasks, 12);
+    if (successfulQueries === 0 && queryFailures.length > 0) {
+      throw new Error("Student lookup failed because every Firestore query failed.");
+    }
     for (const result of results) {
       if (!result) continue;
       for (const snap of result.docs || []) {
         if (result.collectionName === "users") await addUserProfile(snap);
         else addCandidate(snap);
       }
+    }
+    if (queryFailures.length > 0) {
+      console.warn("[portal-access-login] Some student lookup queries failed", {
+        successfulQueries,
+        failedQueries: queryFailures.length,
+        errorCodes: [...new Set(queryFailures)]
+      });
     }
     await enrichCandidates();
     return chooseMatch();
