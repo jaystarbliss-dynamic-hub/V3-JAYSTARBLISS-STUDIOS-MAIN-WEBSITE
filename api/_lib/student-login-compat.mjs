@@ -16,7 +16,7 @@ const clean = value => String(value ?? "").trim();
 const normalizeCode = value => clean(value).toUpperCase();
 
 export function normalizeStudentUsername(value) {
-  return clean(value).toLowerCase().replace(/^@/, "").replace(/\\s+/g, "");
+  return clean(value).toLowerCase().replace(/^@/, "").replace(/\s+/g, "");
 }
 
 export function hashStudentAccessCode(value) {
