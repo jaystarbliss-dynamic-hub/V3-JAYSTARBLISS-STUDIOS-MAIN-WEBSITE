@@ -3,9 +3,9 @@ import { createHash } from "node:crypto";
 import { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
 import { hashStudentAccessCode, matchesStudentCredentials, normalizeStudentUsername } from "../../api/_lib/student-login-compat.mjs";
 
-const normalizeUsername = (value: string) => value.toLowerCase().replace(/^@/, "").replace(/\s+/g, "");
+const normalizeUsername = (value: string) => normalizeStudentUsername(value);
 const normalizeCode = (value: string) => value.trim().toUpperCase();
-const hashAccessCode = (value: string) => createHash("sha256").update(normalizeCode(value)).digest("hex");
+const hashAccessCode = (value: string) => hashStudentAccessCode(value);
 const isBlocked = (data: Record<string, any>) => ["SUSPENDED", "BANNED", "DISABLED"].includes(String(data.accountStatus || data.status || "ACTIVE").toUpperCase());
 
 type StudentLoginCandidate = {
@@ -365,7 +365,7 @@ export const handler: Handler = async (event) => {
         name: profile.fullName || profile.studentName || profile.username || "Student",
         fullName: profile.fullName || profile.studentName || profile.username || "Student",
         role: "STUDENT",
-        studentDocId: snap.id,
+        studentDocId: recordId,
         schoolId: schoolId || null,
         schoolName: profile.schoolName || "",
         tutorId: tutorId || null,
@@ -377,7 +377,7 @@ export const handler: Handler = async (event) => {
 
       response = {
         role: "student",
-        studentDocId: snap.id,
+        studentDocId: recordId,
         name: profile.fullName || profile.studentName || profile.username,
         username: profile.username || "",
         class: profile.class || profile.grade || "",
