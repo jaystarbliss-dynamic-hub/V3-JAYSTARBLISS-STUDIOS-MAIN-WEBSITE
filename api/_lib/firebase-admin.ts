@@ -41,12 +41,19 @@ export function getAdminApp(): App | null {
   }
 
   const serviceAccount = readServiceAccount();
-  const projectId =
+  // Match the public browser Firebase config in src/lib/firebase.ts.
+  // A conflicting deployment variable can silently send Admin SDK reads to a
+  // different project, making every real student look like a missing record.
+  const projectId = "jaystarbliss-studios";
+  const configuredProjectId =
     process.env.FIREBASE_PROJECT_ID ||
     process.env.VITE_FIREBASE_PROJECT_ID ||
     process.env.GOOGLE_CLOUD_PROJECT ||
     serviceAccount.project_id ||
     serviceAccount.projectId;
+  if (configuredProjectId && configuredProjectId !== projectId) {
+    console.warn("[firebase-admin] Ignoring project ID override that differs from the browser project.");
+  }
   const clientEmail =
     process.env.FIREBASE_CLIENT_EMAIL ||
     process.env.FIREBASE_ADMIN_CLIENT_EMAIL ||
