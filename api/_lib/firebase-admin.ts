@@ -6,18 +6,65 @@ let cachedApp: App | null = null;
 let cachedAuth: Auth | null = null;
 let cachedDb: Firestore | null = null;
 
+function readServiceAccount(): Record<string, any> {
+  const raw =
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+    process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT ||
+    process.env.FIREBASE_SERVICE_ACCOUNT ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, any>;
+  } catch {
+    // Some deployment dashboards store JSON secrets as base64.
+    try {
+      const parsed: unknown = JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, any>;
+    } catch {
+      console.error("Firebase Admin service-account secret is invalid JSON/base64.");
+      return {};
+    }
+  }
+  console.error("Firebase Admin service-account secret must contain a JSON object.");
+  return {};
+}
+
 export function getAdminApp(): App | null {
   if (cachedApp) return cachedApp;
-  if (getApps().length > 0) {
-    cachedApp = getApps()[0];
+  const existing = getApps().find((app) => app.name === "[DEFAULT]");
+  if (existing) {
+    cachedApp = existing;
     return cachedApp;
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const serviceAccount = readServiceAccount();
+  const projectId =
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.VITE_FIREBASE_PROJECT_ID ||
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    serviceAccount.project_id ||
+    serviceAccount.projectId;
+  const clientEmail =
+    process.env.FIREBASE_CLIENT_EMAIL ||
+    process.env.FIREBASE_ADMIN_CLIENT_EMAIL ||
+    process.env.GOOGLE_CLIENT_EMAIL ||
+    serviceAccount.client_email ||
+    serviceAccount.clientEmail;
+  const rawPrivateKey =
+    process.env.FIREBASE_PRIVATE_KEY ||
+    process.env.FIREBASE_ADMIN_PRIVATE_KEY ||
+    process.env.GOOGLE_PRIVATE_KEY ||
+    serviceAccount.private_key ||
+    serviceAccount.privateKey;
+  const privateKey = typeof rawPrivateKey === "string" ? rawPrivateKey.replace(/\\n/g, "\n") : "";
 
   if (!projectId || !clientEmail || !privateKey) {
+    console.error(
+      "Firebase Admin configuration is incomplete. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY, or provide a complete FIREBASE_SERVICE_ACCOUNT_JSON secret."
+    );
     return null;
   }
 
@@ -25,7 +72,7 @@ export function getAdminApp(): App | null {
     cachedApp = initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
     return cachedApp;
   } catch (err) {
-    console.warn("Could not initialize Firebase Admin SDK:", err);
+    console.error("Could not initialize Firebase Admin SDK:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -42,19 +89,21 @@ export function getAdminDb(): Firestore | null {
   if (cachedDb) return cachedDb;
   const app = getAdminApp();
   if (!app) return null;
-  // Match the named Firestore database used by the browser client. Without this fallback,
-  // server-side student login and portal APIs silently query the default database instead.
-  const databaseId = process.env.FIREBASE_DATABASE_ID || "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
-  cachedDb = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+  // The browser uses this named database. Keep an explicit server-side override.
+  const databaseId =
+    process.env.FIREBASE_DATABASE_ID ||
+    process.env.VITE_FIREBASE_DATABASE_ID ||
+    "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
+  cachedDb = getFirestore(app, databaseId);
   return cachedDb;
 }
 
-// Proxied exports for backwards compatibility without crashing on import
+// Proxied exports preserve compatibility with existing API and Netlify function imports.
 export const adminAuth = new Proxy({} as Auth, {
   get(_, prop) {
     const auth = getAdminAuth();
     if (!auth) {
-      throw new Error("Firebase Admin Auth is not configured. Please set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY.");
+      throw new Error("Firebase Admin Auth is not configured. Check the Netlify Firebase Admin environment variables.");
     }
     const val = (auth as any)[prop];
     return typeof val === "function" ? val.bind(auth) : val;
@@ -65,10 +114,9 @@ export const adminDb = new Proxy({} as Firestore, {
   get(_, prop) {
     const db = getAdminDb();
     if (!db) {
-      throw new Error("Firebase Admin Firestore is not configured. Please set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY.");
+      throw new Error("Firebase Admin Firestore is not configured. Check the Netlify Firebase Admin environment variables.");
     }
     const val = (db as any)[prop];
     return typeof val === "function" ? val.bind(db) : val;
   }
 });
-
