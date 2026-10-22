@@ -9,43 +9,81 @@ const isBlocked = (data: Record<string, any>) => ["SUSPENDED", "BANNED", "DISABL
 
 async function findStudent(identifier: string, db: FirebaseFirestore.Firestore) {
   const raw = identifier.trim();
-  const email = raw.toLowerCase();
   const username = normalizeUsername(raw);
-  const upperRaw = raw.toUpperCase();
+  const email = raw.toLowerCase();
+  const codeHash = hashAccessCode(raw);
+  const candidates = [...new Set([raw, username, username.toUpperCase(), `@${username}`, `@${username.toUpperCase()}`].filter(Boolean))];
 
-  // 1. Search in individualStudents
-  const byUsername = await db.collection("individualStudents").where("username", "==", username).limit(1).get();
-  if (!byUsername.empty) return byUsername.docs[0];
+  // The canonical onboarding flow writes individualStudents.username in lowercase.
+  // Older imports and manually created records may use different casing or field names,
+  // so try known schema variants before falling back to linked user profiles.
+  for (const collectionName of ["individualStudents", "students"]) {
+    const collection = db.collection(collectionName);
+    for (const field of ["username", "studentUsername", "loginUsername", "userName"]) {
+      for (const candidate of candidates) {
+        const snap = await collection.where(field, "==", candidate).limit(1).get();
+        if (!snap.empty) return snap.docs[0];
+      }
+    }
 
-  if (email.includes("@")) {
-    const byEmail = await db.collection("individualStudents").where("email", "==", email).limit(1).get();
-    if (!byEmail.empty) return byEmail.docs[0];
+    if (email.includes("@")) {
+      for (const field of ["email", "studentEmail"]) {
+        const snap = await collection.where(field, "==", email).limit(1).get();
+        if (!snap.empty) return snap.docs[0];
+      }
+    }
+
+    // Legacy records may identify a student by a code field or hash rather than username.
+    for (const field of ["accessCode", "passcode", "code"]) {
+      for (const candidate of [...new Set([raw, raw.toUpperCase()])]) {
+        const snap = await collection.where(field, "==", candidate).limit(1).get();
+        if (!snap.empty) return snap.docs[0];
+      }
+    }
+    const hashed = await collection.where("accessCodeHash", "==", codeHash).limit(1).get();
+    if (!hashed.empty) return hashed.docs[0];
+
+    for (const docId of [...new Set([raw, username])]) {
+      try {
+        const snap = await collection.doc(docId).get();
+        if (snap.exists) return snap;
+      } catch {
+        // Ignore invalid document IDs and continue through supported legacy lookups.
+      }
+    }
   }
 
-  const byCode = await db.collection("individualStudents").where("accessCode", "==", upperRaw).limit(1).get();
-  if (!byCode.empty) return byCode.docs[0];
-
-  try { 
-    const byId = await db.collection("individualStudents").doc(raw).get(); 
-    if (byId.exists) return byId; 
-  } catch {}
-
-  // 2. Search in students collection
-  const legacyByUsername = await db.collection("students").where("username", "==", username).limit(1).get();
-  if (!legacyByUsername.empty) return legacyByUsername.docs[0];
-
-  if (email.includes("@")) {
-    const legacyByEmail = await db.collection("students").where("email", "==", email).limit(1).get();
-    if (!legacyByEmail.empty) return legacyByEmail.docs[0];
+  // Some older flows put the username on users/{uid} and link back to the student
+  // document. Use that profile only to locate the student record; the access code
+  // is still verified against the student document below.
+  for (const field of ["username", "studentUsername", "loginUsername"]) {
+    for (const candidate of candidates) {
+      const userSnap = await db.collection("users").where(field, "==", candidate).limit(1).get();
+      if (userSnap.empty) continue;
+      const user = userSnap.docs[0].data() || {};
+      const linkedId = String(user.studentDocId || user.studentId || user.individualStudentId || "").trim();
+      if (linkedId) {
+        for (const collectionName of ["individualStudents", "students"]) {
+          const linked = await db.collection(collectionName).doc(linkedId).get();
+          if (linked.exists) return linked;
+        }
+      }
+    }
   }
 
-  const legacyByCode = await db.collection("students").where("accessCode", "==", upperRaw).limit(1).get();
-  if (!legacyByCode.empty) return legacyByCode.docs[0];
-
-  try { 
-    const legacyById = await db.collection("students").doc(raw).get(); 
-    if (legacyById.exists) return legacyById; 
-  } catch {}
+  if (email.includes("@")) {
+    const userSnap = await db.collection("users").where("email", "==", email).limit(1).get();
+    if (!userSnap.empty) {
+      const user = userSnap.docs[0].data() || {};
+      const linkedId = String(user.studentDocId || user.studentId || user.individualStudentId || "").trim();
+      if (linkedId) {
+        for (const collectionName of ["individualStudents", "students"]) {
+          const linked = await db.collection(collectionName).doc(linkedId).get();
+          if (linked.exists) return linked;
+        }
+      }
+    }
+  }
 
   return null;
 }

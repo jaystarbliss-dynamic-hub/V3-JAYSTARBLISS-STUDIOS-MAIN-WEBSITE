@@ -3,8 +3,6 @@ import { useNavigate, Link } from 'react-router-dom';
 import { School, GraduationCap, Users, Mail, Lock, Eye, EyeOff, UserCheck, ShieldCheck } from 'lucide-react';
 import { 
   signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword,
-  signInAnonymously,
   GoogleAuthProvider, 
   signInWithPopup, 
   signInWithCustomToken, 
@@ -38,16 +36,6 @@ const storeSession = (role: string, uid: string, name: string, extras: Record<st
   localStorage.setItem('jaystar_cached_user_name', name);
 };
 
-async function computeSha256(message: string): Promise<string> {
-  try {
-    const msgBuffer = new TextEncoder().encode(message);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  } catch {
-    return message.toLowerCase();
-  }
-}
 
 const SecurePortalLogin: React.FC = () => {
   const navigate = useNavigate(); 
@@ -117,6 +105,10 @@ const SecurePortalLogin: React.FC = () => {
     navigate('/portal/parent');
   };
 
+  // Student accounts are provisioned by the trusted server-side onboarding flow.
+  // Never create browser-side users or fall back to anonymous authentication: doing so
+  // bypasses the issued access-code identity and causes auth/admin-restricted-operation
+  // when Firebase client account creation is disabled.
   const loginStudentWithFallback = async () => {
     const rawInput = identifier.trim();
     const inputCode = password.trim();
@@ -124,214 +116,21 @@ const SecurePortalLogin: React.FC = () => {
       throw new Error('Enter your Student Username / Email and Access Code.');
     }
 
-    // 1. Try server function first
-    try {
-      const result = await serverAccess();
-      const name = result.data.name || rawInput;
-      const type = result.data.isIndependent === true || (!result.data.schoolId && !result.data.parentId) ? 'individual' : result.data.parentId ? 'parent' : 'school';
-      storeSession('student', result.user.uid, name, { 
-        studentDocId: result.data.studentDocId || '', 
-        studentUsername: result.data.username || '', 
-        studentClass: result.data.class || '', 
-        schoolId: result.data.schoolId || '', 
-        schoolName: result.data.schoolName || '', 
-        studentRegistrationType: type 
-      });
-      toast.success(`Welcome ${String(name).split(' ')[0]}! Logged in successfully.`);
-      navigate('/portal/student');
-      return;
-    } catch (serverErr) {
-      console.warn('Server access lookup error notice, engaging direct client resolver:', serverErr);
-    }
+    const result = await serverAccess();
+    const name = result.data.name || rawInput;
+    const type = result.data.isIndependent === true || (!result.data.schoolId && !result.data.parentId)
+      ? 'individual'
+      : result.data.parentId ? 'parent' : 'school';
 
-    // 2. Direct client Firestore lookup & authentication
-    const cleanUsername = rawInput.toLowerCase().replace(/^@/, '').replace(/\s+/g, '');
-    const cleanEmail = rawInput.toLowerCase();
-    const cleanCode = rawInput.toUpperCase();
-    const isRealEmail = rawInput.includes('@') && !rawInput.endsWith('.local');
-
-    let studentDocId = '';
-    let studentData: any = null;
-
-    // Search individualStudents & students by multiple query vectors
-    try {
-      const queries = [
-        query(collection(db, 'individualStudents'), where('username', '==', cleanUsername), limit(1)),
-        query(collection(db, 'individualStudents'), where('username', '==', `@${cleanUsername}`), limit(1)),
-        query(collection(db, 'individualStudents'), where('accessCode', '==', cleanCode), limit(1)),
-        query(collection(db, 'students'), where('username', '==', cleanUsername), limit(1)),
-        query(collection(db, 'students'), where('username', '==', `@${cleanUsername}`), limit(1)),
-        query(collection(db, 'students'), where('accessCode', '==', cleanCode), limit(1)),
-        query(collection(db, 'users'), where('username', '==', cleanUsername), limit(1)),
-        query(collection(db, 'users'), where('accessCode', '==', cleanCode), limit(1))
-      ];
-
-      if (isRealEmail) {
-        queries.push(
-          query(collection(db, 'individualStudents'), where('email', '==', cleanEmail), limit(1)),
-          query(collection(db, 'students'), where('email', '==', cleanEmail), limit(1)),
-          query(collection(db, 'users'), where('email', '==', cleanEmail), limit(1))
-        );
-      }
-
-      const results = await Promise.all(queries.map(q => getDocs(q).catch(() => null)));
-      for (const snap of results) {
-        if (snap && !snap.empty) {
-          studentDocId = snap.docs[0].id;
-          studentData = snap.docs[0].data();
-          break;
-        }
-      }
-
-      // Direct doc ID check
-      if (!studentData) {
-        const [d1, d2] = await Promise.all([
-          getDoc(doc(db, 'individualStudents', rawInput)).catch(() => null),
-          getDoc(doc(db, 'students', rawInput)).catch(() => null)
-        ]);
-        if (d1 && d1.exists()) {
-          studentDocId = d1.id;
-          studentData = d1.data();
-        } else if (d2 && d2.exists()) {
-          studentDocId = d2.id;
-          studentData = d2.data();
-        }
-      }
-
-      // Broad scan fallback (in case username had unusual formatting or casing)
-      if (!studentData) {
-        const [indSnap, stdSnap] = await Promise.all([
-          getDocs(query(collection(db, 'individualStudents'), limit(200))).catch(() => ({ docs: [] } as any)),
-          getDocs(query(collection(db, 'students'), limit(200))).catch(() => ({ docs: [] } as any))
-        ]);
-
-        const allDocs = [...indSnap.docs, ...stdSnap.docs];
-        for (const d of allDocs) {
-          const sd = d.data();
-          const u = String(sd.username || '').toLowerCase().replace(/^@/, '').trim();
-          const e = String(sd.email || '').toLowerCase().trim();
-          const c = String(sd.accessCode || sd.passcode || sd.code || '').toUpperCase().trim();
-          const n = String(sd.fullName || sd.studentName || '').toLowerCase().trim();
-
-          if (
-            (cleanUsername && (u === cleanUsername || u === `@${cleanUsername}`)) ||
-            (isRealEmail && e === cleanEmail) ||
-            (cleanCode && c === cleanCode) ||
-            (cleanUsername.length > 2 && n === cleanUsername)
-          ) {
-            studentDocId = d.id;
-            studentData = sd;
-            break;
-          }
-        }
-      }
-    } catch (lookupErr) {
-      console.warn('Student lookup info:', lookupErr);
-    }
-
-    if (!studentData) {
-      throw new Error(`No student record found matching "${rawInput}". Please check the username or access code provided by your school.`);
-    }
-
-    if (blocked(studentData)) {
-      throw new Error('This student account is currently suspended or disabled. Please contact your instructor.');
-    }
-
-    // Verify Access Code (or check if user inverted username/access code)
-    const storedAccess = String(studentData.accessCode || studentData.passcode || studentData.code || '').trim();
-    const storedHash = String(studentData.accessCodeHash || '').trim().toLowerCase();
-    const storedPassword = String(studentData.password || studentData.customPassword || '').trim();
-    const storedUsername = String(studentData.username || '').toLowerCase().replace(/^@/, '').trim();
-
-    const inputHashExact = await computeSha256(inputCode);
-    const inputHashUpper = await computeSha256(inputCode.toUpperCase());
-    const rawInputUpper = rawInput.toUpperCase();
-
-    const isMatch =
-      (storedAccess && (storedAccess.toUpperCase() === inputCode.toUpperCase() || storedAccess === inputCode)) ||
-      (storedHash && (storedHash === inputHashExact || storedHash === inputHashUpper)) ||
-      (storedPassword && storedPassword === inputCode) ||
-      // Inverted input check: identifier was access code and password was username
-      (storedAccess && storedAccess.toUpperCase() === rawInputUpper && inputCode.toLowerCase().replace(/^@/, '').trim() === storedUsername);
-
-    if (!isMatch) {
-      throw new Error('Invalid access code for this student account. Please verify your access code with your school or administrator.');
-    }
-
-    // Establish Firebase Authentication session
-    const resolvedUsername = String(studentData.username || cleanUsername).toLowerCase().replace(/^@/, '').replace(/\s+/g, '');
-    const syntheticEmail = `${resolvedUsername.replace(/[^a-z0-9]/g, '')}@jdh-student.local`;
-    const effectiveAuthEmail = isRealEmail ? cleanEmail : syntheticEmail;
-    const effectivePassword = inputCode.length >= 6 ? inputCode : `jdh_std_${inputCode}_2024`;
-
-    let activeUser: any = null;
-
-    try {
-      const cred = await signInWithEmailAndPassword(auth, effectiveAuthEmail, effectivePassword);
-      activeUser = cred.user;
-    } catch (err1: any) {
-      if (err1.code === 'auth/user-not-found' || err1.code === 'auth/invalid-credential' || err1.code === 'auth/invalid-login-credentials') {
-        try {
-          const cred2 = await createUserWithEmailAndPassword(auth, effectiveAuthEmail, effectivePassword);
-          activeUser = cred2.user;
-        } catch (err2: any) {
-          if (err2.code === 'auth/email-already-in-use' || err2.code === 'auth/wrong-password') {
-            // Rotated access code — sign in anonymously
-            const credAnon = await signInAnonymously(auth);
-            activeUser = credAnon.user;
-          } else {
-            const credAnon = await signInAnonymously(auth);
-            activeUser = credAnon.user;
-          }
-        }
-      } else if (err1.code === 'auth/wrong-password' || err1.code === 'auth/email-already-in-use') {
-        // Rotated access code — sign in anonymously
-        const credAnon = await signInAnonymously(auth);
-        activeUser = credAnon.user;
-      } else {
-        const credAnon = await signInAnonymously(auth);
-        activeUser = credAnon.user;
-      }
-    }
-
-    if (!activeUser) {
-      throw new Error('Unable to establish a secure student session. Please try again.');
-    }
-
-    const studentName = studentData.fullName || studentData.studentName || studentData.name || resolvedUsername;
-    const schoolId = studentData.schoolId || '';
-    const schoolName = studentData.schoolName || '';
-    const studentClass = studentData.class || studentData.grade || 'General';
-    const regType = studentData.isIndependent === true || (!schoolId && !studentData.parentId) ? 'individual' : studentData.parentId ? 'parent' : 'school';
-
-    // Update users/{uid} profile so ProtectedRoute & App authorizations succeed
-    await setDoc(doc(db, 'users', activeUser.uid), {
-      uid: activeUser.uid,
-      name: studentName,
-      fullName: studentName,
-      email: effectiveAuthEmail,
-      role: 'STUDENT',
-      studentDocId: studentDocId || activeUser.uid,
-      username: resolvedUsername,
-      schoolId: schoolId || null,
-      schoolName: schoolName || '',
-      class: studentClass,
-      accountStatus: 'ACTIVE',
-      status: 'ACTIVE',
-      portalAccessEnabled: true,
-      updatedAt: serverTimestamp()
-    }, { merge: true });
-
-    storeSession('student', activeUser.uid, studentName, {
-      studentDocId: studentDocId || activeUser.uid,
-      studentUsername: resolvedUsername,
-      studentClass,
-      schoolId,
-      schoolName,
-      studentRegistrationType: regType
+    storeSession('student', result.user.uid, name, {
+      studentDocId: result.data.studentDocId || '',
+      studentUsername: result.data.username || '',
+      studentClass: result.data.class || '',
+      schoolId: result.data.schoolId || '',
+      schoolName: result.data.schoolName || '',
+      studentRegistrationType: type
     });
-
-    toast.success(`Welcome ${String(studentName).split(' ')[0]}! Logged in successfully.`);
+    toast.success(`Welcome ${String(name).split(' ')[0]}! Logged in successfully.`);
     navigate('/portal/student');
   };
 
