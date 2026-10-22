@@ -27,7 +27,8 @@
     "netlify/functions/tutor-examinations.ts",
     "netlify/functions/jdi-expire-exams.ts",
     "netlify/functions/jdi-question-bank.ts",
-    "netlify/functions/portal-access-login.ts"
+    "netlify/functions/portal-access-login.ts",
+    "netlify/functions/portal-authenticated-student.ts"
   ],
   "exclude": [
     "node_modules"
