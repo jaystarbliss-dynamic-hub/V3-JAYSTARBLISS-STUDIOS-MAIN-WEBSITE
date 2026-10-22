@@ -1,0 +1,39 @@
+name: Student Login Compatibility Tests
+
+on:
+  pull_request:
+    paths:
+      - "api/_lib/student-login-compat.mjs"
+      - "api/_lib/student-login-compat.d.mts"
+      - "netlify/functions/portal-access-login.ts"
+      - "tests/student-login-compat.test.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/student-login-compat.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "api/_lib/student-login-compat.mjs"
+      - "api/_lib/student-login-compat.d.mts"
+      - "netlify/functions/portal-access-login.ts"
+      - "tests/student-login-compat.test.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/student-login-compat.yml"
+
+jobs:
+  student-login-compat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Test legacy and current student login formats
+        run: npm run test:portal-login
