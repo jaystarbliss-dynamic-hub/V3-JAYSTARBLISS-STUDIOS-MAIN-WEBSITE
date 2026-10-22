@@ -266,6 +266,30 @@ async function findStudent(identifier: string, suppliedCode: string, db: Firebas
   matched = chooseMatch();
   if (matched) return matched;
 
+  // Last-resort compatibility scan for legacy records whose username/email
+  // was stored with unexpected whitespace, punctuation, or field formatting.
+  // This runs only on the trusted server and still requires the submitted
+  // access code/hash to match the same candidate record before issuing a token.
+  // The bounded scan mirrors the historical client resolver without restoring
+  // public Firestore reads or client-side account creation.
+  const scanResults = await Promise.all(collections.map(async (collectionName) => {
+    try {
+      return { collectionName, snapshot: await db.collection(collectionName).limit(500).get() };
+    } catch {
+      return { collectionName, snapshot: null };
+    }
+  }));
+  for (const result of scanResults) {
+    if (!result.snapshot) continue;
+    for (const snap of result.snapshot.docs) {
+      if (result.collectionName === "users") await addUserProfile(snap);
+      else addCandidate(snap);
+    }
+  }
+  await enrichCandidates();
+  matched = chooseMatch();
+  if (matched) return matched;
+
   console.info("[portal-access-login] student credential lookup failed", {
     outcome: candidates.size ? "record_found_code_mismatch" : "record_not_found",
     candidateCount: candidates.size
