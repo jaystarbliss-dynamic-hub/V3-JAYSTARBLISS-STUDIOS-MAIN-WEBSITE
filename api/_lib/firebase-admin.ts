@@ -89,11 +89,15 @@ export function getAdminDb(): Firestore | null {
   if (cachedDb) return cachedDb;
   const app = getAdminApp();
   if (!app) return null;
-  // The browser uses this named database. Keep an explicit server-side override.
-  const databaseId =
-    process.env.FIREBASE_DATABASE_ID ||
-    process.env.VITE_FIREBASE_DATABASE_ID ||
-    "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
+  // The browser application is pinned to this named Firestore database in
+  // src/lib/firebase.ts. Do not let Netlify environment variables silently
+  // point Admin SDK reads at a different database, which makes every student
+  // appear to have invalid credentials even when their records exist.
+  const databaseId = "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
+  const configuredDatabaseOverride = process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID;
+  if (configuredDatabaseOverride && configuredDatabaseOverride !== databaseId) {
+    console.warn("[firebase-admin] Ignoring database ID override that differs from the browser database.");
+  }
   cachedDb = getFirestore(app, databaseId);
   return cachedDb;
 }
