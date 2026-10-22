@@ -169,14 +169,6 @@ async function findStudent(identifier: string, suppliedCode: string, db: Firebas
       unique.set([spec.collectionName, spec.field, spec.value].join("\u0000"), spec);
     }
     const entries = [...unique.values()];
-    const tasks = entries.map(spec => async () => {
-      try {
-        const query = await db.collection(spec.collectionName).where(spec.field, "==", spec.value).limit(5).get();
-        return { collectionName: spec.collectionName, docs: query.docs };
-      } catch {
-        return { collectionName: spec.collectionName, docs: [] as any[] };
-      }
-    });
     let successfulQueries = 0;
     const queryFailures: string[] = [];
     const trackedTasks = entries.map(spec => async () => {
