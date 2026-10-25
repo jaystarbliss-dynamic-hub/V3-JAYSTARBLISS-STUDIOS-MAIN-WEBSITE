@@ -551,6 +551,15 @@ const AdminStudents: React.FC = () => {
       const parentObj = parents.find(p => p.id === form.parentId);
       const tutorObj = tutors.find(t => t.id === form.tutorId);
 
+      let accessCodeHash = '';
+      try {
+        const msgBuffer = new TextEncoder().encode(generatedCode.toUpperCase());
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        accessCodeHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch {
+        accessCodeHash = generatedCode.toLowerCase();
+      }
+
       const payload = {
         fullName: form.fullName.trim(),
         studentName: form.fullName.trim(),
@@ -571,14 +580,39 @@ const AdminStudents: React.FC = () => {
         assignedTutorId: form.tutorId || null,
         assignedStaffId: form.tutorId || null,
         accessCode: generatedCode,
+        passcode: generatedCode,
+        code: generatedCode,
+        accessCodeHash,
         portalAccessEnabled: true,
         accountStatus: 'ACTIVE',
+        status: 'ACTIVE',
         source: form.studentType === 'school' ? 'school_onboarding' : form.studentType === 'parent' ? 'parent_enrollment' : 'admin_direct',
         createdAt: now,
         updatedAt: now
       };
 
-      await setDoc(studentDocRef, payload);
+      await Promise.all([
+        setDoc(studentDocRef, payload, { merge: true }),
+        setDoc(doc(db, 'students', studentDocRef.id), payload, { merge: true }),
+        setDoc(doc(db, 'users', studentDocRef.id), {
+          uid: studentDocRef.id,
+          studentDocId: studentDocRef.id,
+          name: form.fullName.trim(),
+          fullName: form.fullName.trim(),
+          username: cleanUsername,
+          role: 'STUDENT',
+          schoolId: form.studentType === 'school' ? form.schoolId : null,
+          schoolName: form.studentType === 'school' ? (schoolObj?.name || form.schoolId) : null,
+          class: form.className.trim() || 'General',
+          accessCode: generatedCode,
+          accessCodeHash,
+          portalAccessEnabled: true,
+          accountStatus: 'ACTIVE',
+          status: 'ACTIVE',
+          createdAt: now,
+          updatedAt: now
+        }, { merge: true })
+      ]);
 
       setCredentials({
         fullName: form.fullName.trim(),

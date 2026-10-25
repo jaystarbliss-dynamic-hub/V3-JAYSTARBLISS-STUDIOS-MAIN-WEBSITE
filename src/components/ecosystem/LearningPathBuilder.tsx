@@ -73,6 +73,20 @@ export const LearningPathBuilder: React.FC<LearningPathBuilderProps> = ({ onSucc
   const [classType, setClassType] = useState<'1-on-1 Private' | 'Micro-Group' | 'School Partnership'>('1-on-1 Private');
   const [frequency, setFrequency] = useState<'1 Day / Week' | '2 Days / Week' | '3 Days / Week' | 'Intensive'>('2 Days / Week');
   const [preferredDays, setPreferredDays] = useState<string[]>(['Saturday', 'Wednesday']);
+  const [dayTimeRanges, setDayTimeRanges] = useState<Record<string, { startTime: string; endTime: string }>>({
+    Saturday: { startTime: '10:00', endTime: '12:00' },
+    Wednesday: { startTime: '16:00', endTime: '17:30' }
+  });
+
+  const updateDayTimeRange = (day: string, field: 'startTime' | 'endTime', value: string) => {
+    setDayTimeRanges(prev => ({
+      ...prev,
+      [day]: {
+        ...(prev[day] || { startTime: '14:00', endTime: '16:00' }),
+        [field]: value
+      }
+    }));
+  };
 
   // Contact Form State
   const [parentName, setParentName] = useState('');
@@ -96,7 +110,17 @@ export const LearningPathBuilder: React.FC<LearningPathBuilderProps> = ({ onSucc
   };
 
   const toggleDay = (day: string) => {
-    setPreferredDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
+    setPreferredDays(prev => {
+      const exists = prev.includes(day);
+      if (exists) {
+        return prev.filter(d => d !== day);
+      } else {
+        if (!dayTimeRanges[day]) {
+          setDayTimeRanges(r => ({ ...r, [day]: { startTime: '14:00', endTime: '16:00' } }));
+        }
+        return [...prev, day];
+      }
+    });
   };
 
   const handleSubmitCustomPlan = async (e: React.FormEvent) => {
@@ -126,6 +150,7 @@ export const LearningPathBuilder: React.FC<LearningPathBuilderProps> = ({ onSucc
         classType,
         frequency,
         preferredDays,
+        dayTimeRanges: preferredDays.reduce((acc, d) => ({ ...acc, [d]: dayTimeRanges[d] || { startTime: '14:00', endTime: '16:00' } }), {}),
         status: 'PENDING',
         createdAt: serverTimestamp(),
         source: 'Learning Path Builder'
@@ -520,6 +545,42 @@ export const LearningPathBuilder: React.FC<LearningPathBuilderProps> = ({ onSucc
                       );
                     })}
                   </div>
+
+                  {preferredDays.length > 0 && (
+                    <div className="mt-4 space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-900/60">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                          Specific Time Range per Day
+                        </h5>
+                        <span className="text-[10px] text-slate-500">Pick custom hours for each day</span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {preferredDays.map((day) => {
+                          const currentRange = dayTimeRanges[day] || { startTime: '14:00', endTime: '16:00' };
+                          return (
+                            <div key={day} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-950">
+                              <span className="text-xs font-bold text-slate-900 dark:text-white min-w-[75px]">{day}</span>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="time"
+                                  value={currentRange.startTime}
+                                  onChange={(e) => updateDayTimeRange(day, 'startTime', e.target.value)}
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-xs text-slate-900 outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                                />
+                                <span className="text-xs text-slate-400">–</span>
+                                <input
+                                  type="time"
+                                  value={currentRange.endTime}
+                                  onChange={(e) => updateDayTimeRange(day, 'endTime', e.target.value)}
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-xs text-slate-900 outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">

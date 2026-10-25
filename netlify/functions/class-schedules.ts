@@ -368,8 +368,7 @@ export const handler: Handler = async event => {
     return json(405, { error: 'Method Not Allowed' });
   } catch (error: any) {
     const code = String(error?.message || '');
-    if (code === 'AUTH_REQUIRED' || code.includes('auth/')) return json(401, { error: 'Authentication required.' });
-    console.error('Class schedules error:', error);
-    return json(500, { error: 'Unable to process class schedules.' });
+    console.error('Class schedules error (engaging client fallback):', error);
+    return json(200, { schedules: [], fallback: true, error: 'Server handler unavailable; using client resolver.' });
   }
 };

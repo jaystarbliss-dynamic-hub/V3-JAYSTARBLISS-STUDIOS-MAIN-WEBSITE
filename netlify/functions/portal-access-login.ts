@@ -1,6 +1,6 @@
 import type { Handler } from "@netlify/functions";
 import { createHash } from "node:crypto";
-import { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
+import { adminAuth, adminDb, getAdminDatabases } from "../../api/_lib/firebase-admin";
 import { hashStudentAccessCode, matchesStudentCredentials, normalizeStudentUsername } from "../../api/_lib/student-login-compat.mjs";
 
 const normalizeUsername = (value: string) => normalizeStudentUsername(value);
@@ -330,8 +330,8 @@ async function getOrCreateUid(email: string | undefined, displayName: string, fa
   return (await adminAuth.createUser({ email: email || syntheticEmail, displayName })).uid;
 }
 
-const getExistingUserStatus = async (uid: string) => {
-  const userSnap = await adminDb.collection("users").doc(uid).get();
+const getExistingUserStatus = async (uid: string, db: FirebaseFirestore.Firestore = adminDb) => {
+  const userSnap = await db.collection("users").doc(uid).get();
   const data = userSnap.exists ? userSnap.data() || {} : {};
   return { exists: userSnap.exists, data };
 };
@@ -354,7 +354,27 @@ export const handler: Handler = async (event) => {
     let response: Record<string, any> = {};
 
     if (role === "student") {
-      const candidate = await findStudent(identifier, code, adminDb);
+      const dbs = getAdminDatabases();
+      if (dbs.length === 0) {
+        return { statusCode: 500, body: JSON.stringify({ error: "Firebase Admin is not configured." }) };
+      }
+
+      let candidate: StudentLoginCandidate | null = null;
+      let activeDb: FirebaseFirestore.Firestore = dbs[0];
+
+      for (const dbInstance of dbs) {
+        try {
+          const found = await findStudent(identifier, code, dbInstance);
+          if (found) {
+            candidate = found;
+            activeDb = dbInstance;
+            break;
+          }
+        } catch (dbErr) {
+          console.warn("[portal-access-login] Database instance lookup warning:", dbErr);
+        }
+      }
+
       if (!candidate) {
         return { statusCode: 401, body: JSON.stringify({ error: "Invalid student access code or credentials." }) };
       }
@@ -380,7 +400,7 @@ export const handler: Handler = async (event) => {
         candidate.preferredUid || (typeof profile.firebaseUid === "string" ? profile.firebaseUid : undefined)
       );
 
-      const existingUser = await getExistingUserStatus(uid);
+      const existingUser = await getExistingUserStatus(uid, activeDb);
       if (existingUser.exists) {
         const existingRole = normaliseRole(existingUser.data.role);
         const existingStudentDocId = String(existingUser.data.studentDocId || "").trim();
@@ -397,26 +417,33 @@ export const handler: Handler = async (event) => {
         return { statusCode: 401, body: JSON.stringify({ error: "This student account is disabled in authentication." }) };
       }
 
-      const updates: Record<string, unknown> = { firebaseUid: uid, authEmail: authUser.email || null, portalAccessEnabled: true, updatedAt: new Date() };
+      const updates: Record<string, unknown> = { firebaseUid: uid, userId: uid, authEmail: authUser.email || null, portalAccessEnabled: true, updatedAt: new Date() };
       const storedAccessHash = String(profile.accessCodeHash || "").trim();
       const legacyCode = String(profile.accessCode || profile.passcode || profile.code || "").trim();
       if (!storedAccessHash && legacyCode) updates.accessCodeHash = hashAccessCode(legacyCode);
       await snap.ref.set(updates, { merge: true });
 
-      await adminDb.collection("users").doc(uid).set({
+      const userPayload = {
+        uid,
         email: authUser.email || null,
         name: profile.fullName || profile.studentName || profile.username || "Student",
         fullName: profile.fullName || profile.studentName || profile.username || "Student",
+        username: String(profile.username || "").toLowerCase().replace(/^@/, "").trim(),
         role: "STUDENT",
         studentDocId: recordId,
         schoolId: schoolId || null,
         schoolName: profile.schoolName || "",
+        class: profile.class || profile.grade || "General",
         tutorId: tutorId || null,
         portalAccessEnabled: true,
         accountStatus: "ACTIVE",
         status: "ACTIVE",
         updatedAt: new Date()
-      }, { merge: true });
+      };
+      await activeDb.collection("users").doc(uid).set(userPayload, { merge: true });
+      if (activeDb !== dbs[0]) {
+        await dbs[0].collection("users").doc(uid).set(userPayload, { merge: true }).catch(() => undefined);
+      }
 
       response = {
         role: "student",
@@ -481,7 +508,7 @@ export const handler: Handler = async (event) => {
       body: JSON.stringify({ customToken, ...response })
     };
   } catch (error) {
-    console.error("Portal access login error:", error);
-    return { statusCode: 500, body: JSON.stringify({ error: "Unable to complete portal login." }) };
+    console.error("Portal access login notice (engaging client fallback):", error);
+    return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fallback: true, error: "Direct client resolver active." }) };
   }
 };

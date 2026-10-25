@@ -14,6 +14,7 @@ const USERNAME_FIELDS = ["username", "studentUsername", "loginUsername", "userNa
 
 const clean = value => String(value ?? "").trim();
 const normalizeCode = value => clean(value).toUpperCase();
+const stripCodeFormatting = value => normalizeCode(value).replace(/[\s-]/g, "");
 
 export function normalizeStudentUsername(value) {
   return clean(value).toLowerCase().replace(/^@/, "").replace(/\s+/g, "");
@@ -27,15 +28,32 @@ const sha256 = value => createHash("sha256").update(String(value)).digest("hex")
 
 function hashesFor(value) {
   const raw = clean(value);
-  return new Set([sha256(raw), sha256(normalizeCode(raw))].map(hash => hash.toLowerCase()));
+  const normalized = normalizeCode(raw);
+  const stripped = stripCodeFormatting(raw);
+  const jbsHyphenated = stripped.startsWith("JBS") && stripped.length > 3 ? `JBS-${stripped.slice(3)}` : "";
+  return new Set(
+    [
+      sha256(raw),
+      sha256(normalized),
+      ...(stripped ? [sha256(stripped)] : []),
+      ...(jbsHyphenated ? [sha256(jbsHyphenated)] : []),
+    ].map(hash => hash.toLowerCase())
+  );
 }
 
 function matchesStoredPlainCode(profile, suppliedCode) {
   const raw = clean(suppliedCode);
   const normalized = normalizeCode(raw);
+  const stripped = stripCodeFormatting(raw);
   return CODE_FIELDS.some(field => {
     const stored = clean(profile?.[field]);
-    return !!stored && (stored === raw || normalizeCode(stored) === normalized);
+    if (!stored) return false;
+    const storedStripped = stripCodeFormatting(stored);
+    return (
+      stored === raw ||
+      normalizeCode(stored) === normalized ||
+      (!!stripped && storedStripped === stripped)
+    );
   });
 }
 

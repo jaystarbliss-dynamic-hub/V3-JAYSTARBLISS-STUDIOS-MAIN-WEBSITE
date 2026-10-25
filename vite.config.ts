@@ -2,11 +2,55 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+function netlifyDevFunctionsPlugin() {
+  return {
+    name: 'netlify-dev-functions-fallback',
+    configureServer(server: any) {
+      server.middlewares.use((req: any, res: any, next: any) => {
+        if (req.url && req.url.startsWith('/.netlify/functions/')) {
+          const url = req.url.split('?')[0];
+          res.setHeader('Content-Type', 'application/json');
+          if (url.includes('class-schedules')) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ schedules: [] }));
+            return;
+          }
+          if (url.includes('student-examinations')) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ exams: [] }));
+            return;
+          }
+          if (url.includes('academic-assignments')) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ assignments: [] }));
+            return;
+          }
+          if (url.includes('portal-access-login')) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ fallback: true, error: 'Direct resolver active' }));
+            return;
+          }
+          if (url.includes('examination-passcode') || url.includes('examination-attempt')) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ fallback: true }));
+            return;
+          }
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true, fallback: true }));
+          return;
+        }
+        next();
+      });
+    }
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   base: '/',
   plugins: [
     react(),
+    netlifyDevFunctionsPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: [

@@ -139,17 +139,29 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
         }
       }
 
-      // 3. If still not found, find in schools collection by matching ID or email or adminUid
+      // 3. If still not found, find in schools collection by matching ID, schoolCode, email, contactEmail, adminUid, firebaseUid, userId, or email prefix
       if (!schoolRecordData) {
         try {
           const schoolsSnap = await getDocs(collection(db, 'schools'));
-          const found = schoolsSnap.docs.find(d => 
-            d.id === schoolId || 
-            d.id === effective.effectiveUid ||
-            d.data().email?.toLowerCase() === effective.effectiveEmail?.toLowerCase() ||
-            d.data().firebaseUid === effective.effectiveUid ||
-            d.data().adminUid === effective.effectiveUid
-          );
+          const emailLower = String(effective.effectiveEmail || auth.currentUser?.email || '').toLowerCase().trim();
+          const emailPrefix = emailLower.split('@')[0].replace(/student(s)?|explorer|lily/g, '').trim();
+          const found = schoolsSnap.docs.find(d => {
+            const sd = d.data();
+            const docIdLower = d.id.toLowerCase();
+            return (
+              d.id === schoolId ||
+              d.id === effective.effectiveUid ||
+              String(sd.schoolId || '').trim() === schoolId ||
+              String(sd.schoolCode || '').trim() === schoolId ||
+              (emailLower && String(sd.email || '').toLowerCase().trim() === emailLower) ||
+              (emailLower && String(sd.contactEmail || '').toLowerCase().trim() === emailLower) ||
+              sd.firebaseUid === effective.effectiveUid ||
+              sd.adminUid === effective.effectiveUid ||
+              sd.userId === effective.effectiveUid ||
+              (emailLower && emailLower.startsWith(docIdLower)) ||
+              (emailPrefix.length >= 4 && docIdLower.includes(emailPrefix))
+            );
+          });
           if (found) {
             schoolId = found.id;
             schoolRecordData = { ...(found.data() as Omit<SchoolRecord, 'id'>), id: found.id };
@@ -178,6 +190,10 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
 
       setSchool(schoolRecordData);
       const activeSchoolId = schoolRecordData.id;
+      if (activeSchoolId && activeSchoolId !== 'school-default') {
+        sessionStorage.setItem('schoolId', activeSchoolId);
+        localStorage.setItem('jaystar_cached_school_id', activeSchoolId);
+      }
 
       // Collect all verified school ID aliases and names for this institution
       const validSchoolIds = new Set<string>();
@@ -185,6 +201,8 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
       if (schoolRecordData.id) validSchoolIds.add(schoolRecordData.id);
       if ((schoolRecordData as any).schoolId) validSchoolIds.add(String((schoolRecordData as any).schoolId).trim());
       if ((schoolRecordData as any).schoolCode) validSchoolIds.add(String((schoolRecordData as any).schoolCode).trim());
+      if ((schoolRecordData as any).adminUid) validSchoolIds.add(String((schoolRecordData as any).adminUid).trim());
+      if ((schoolRecordData as any).userId) validSchoolIds.add(String((schoolRecordData as any).userId).trim());
       if (effective.effectiveSchoolId) validSchoolIds.add(effective.effectiveSchoolId);
       const cachedSchoolId = sessionStorage.getItem('schoolId') || localStorage.getItem('jaystar_cached_school_id');
       if (cachedSchoolId) validSchoolIds.add(cachedSchoolId);
@@ -207,82 +225,73 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
         console.warn('Backend student count fetch notice:', backendErr);
       }
 
-      // If backend count is 0 or failed, run direct Firestore query with multi-alias matching
-      if (fetchedStudentCount === 0) {
-        try {
-          const targetIdsList = Array.from(validSchoolIds).filter(Boolean);
-          const queries: Promise<any>[] = [];
+      // Always verify with direct Firestore query across multi-alias matching so count matches SchoolRoster
+      try {
+        const targetIdsList = Array.from(validSchoolIds).filter(Boolean);
+        const queries: Promise<{ collName: string; docs: any[] }>[] = [];
 
-          targetIdsList.forEach(sId => {
-            queries.push(getDocs(query(collection(db, 'students'), where('schoolId', '==', sId))).catch(() => ({ docs: [] })));
-            queries.push(getDocs(query(collection(db, 'individualStudents'), where('schoolId', '==', sId))).catch(() => ({ docs: [] })));
-            queries.push(getDocs(query(collection(db, 'users'), where('schoolId', '==', sId))).catch(() => ({ docs: [] })));
-          });
+        targetIdsList.forEach(sId => {
+          queries.push(getDocs(query(collection(db, 'individualStudents'), where('schoolId', '==', sId))).then(s => ({ collName: 'individualStudents', docs: s.docs })).catch(() => ({ collName: 'individualStudents', docs: [] })));
+          queries.push(getDocs(query(collection(db, 'students'), where('schoolId', '==', sId))).then(s => ({ collName: 'students', docs: s.docs })).catch(() => ({ collName: 'students', docs: [] })));
+          queries.push(getDocs(query(collection(db, 'users'), where('schoolId', '==', sId))).then(s => ({ collName: 'users', docs: s.docs })).catch(() => ({ collName: 'users', docs: [] })));
+        });
 
-          // Also check by schoolName if available and not a generic placeholder
-          const cleanSchoolName = String(schoolRecordData.name || '').trim();
-          if (cleanSchoolName && !['School Portal', 'school-default', 'Partner School Institution'].includes(cleanSchoolName)) {
-            queries.push(getDocs(query(collection(db, 'students'), where('schoolName', '==', cleanSchoolName))).catch(() => ({ docs: [] })));
-            queries.push(getDocs(query(collection(db, 'individualStudents'), where('schoolName', '==', cleanSchoolName))).catch(() => ({ docs: [] })));
-            queries.push(getDocs(query(collection(db, 'users'), where('schoolName', '==', cleanSchoolName))).catch(() => ({ docs: [] })));
-          }
+        const cleanSchoolName = String(schoolRecordData.name || '').trim();
+        if (cleanSchoolName && !['School Portal', 'school-default', 'Partner School Institution'].includes(cleanSchoolName)) {
+          queries.push(getDocs(query(collection(db, 'individualStudents'), where('schoolName', '==', cleanSchoolName))).then(s => ({ collName: 'individualStudents', docs: s.docs })).catch(() => ({ collName: 'individualStudents', docs: [] })));
+          queries.push(getDocs(query(collection(db, 'students'), where('schoolName', '==', cleanSchoolName))).then(s => ({ collName: 'students', docs: s.docs })).catch(() => ({ collName: 'students', docs: [] })));
+          queries.push(getDocs(query(collection(db, 'users'), where('schoolName', '==', cleanSchoolName))).then(s => ({ collName: 'users', docs: s.docs })).catch(() => ({ collName: 'users', docs: [] })));
+        }
 
-          const querySnapshots = await Promise.all(queries);
+        const querySnapshots = await Promise.all(queries);
+        const seenKeys = new Set<string>();
+        let uniqueCount = 0;
 
-          const seenKeys = new Set<string>();
+        querySnapshots.forEach(({ collName, docs }) => {
+          docs.forEach((d: any) => {
+            const data = d.data();
+            const role = String(data.role || '').toUpperCase();
+            if (['SCHOOL', 'SCHOOL_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'STAFF', 'TUTOR', 'INSTRUCTOR', 'PARENT'].includes(role)) {
+              return;
+            }
+            if (collName === 'users' && !['STUDENT', 'SCHOLAR', 'CADET', 'INDIVIDUAL_STUDENT'].includes(role) && !data.isStudent) {
+              return;
+            }
+            const sId = String(data.schoolId || data.school_id || data.schoolDocId || '').trim();
+            const sName = String(data.schoolName || data.school || '').trim().toLowerCase();
+            const isMatch = (sId && validSchoolIds.has(sId)) || (cleanSchoolName && sName === cleanSchoolName.toLowerCase());
+            if (!isMatch) return;
 
-          const isDuplicate = (d: any, docId: string): boolean => {
-            const uname = String(d.username || '').toLowerCase().trim();
-            const email = String(d.email || '').toLowerCase().trim();
-            const uid = String(d.firebaseUid || d.userId || '').trim();
-            const sDocId = String(d.studentDocId || docId).trim();
-            const name = String(d.fullName || d.studentName || d.name || '').toLowerCase().trim();
+            const canonicalId = String((collName === 'users' && data.studentDocId) ? data.studentDocId : d.id).trim();
+            const uname = String(data.username || '').toLowerCase().trim();
+            const email = String(data.email || '').toLowerCase().trim();
+            const uid = String(data.firebaseUid || data.userId || '').trim();
+            const name = String(data.fullName || data.studentName || data.name || '').toLowerCase().trim();
 
-            if (docId && seenKeys.has(`id:${docId}`)) return true;
-            if (sDocId && seenKeys.has(`docId:${sDocId}`)) return true;
-            if (uid && seenKeys.has(`uid:${uid}`)) return true;
-            if (uname && seenKeys.has(`u:${uname}`)) return true;
-            if (email && !email.endsWith('.local') && seenKeys.has(`e:${email}`)) return true;
-            if (name && seenKeys.has(`name:${name}`)) return true;
-            return false;
-          };
+            if (
+              (canonicalId && seenKeys.has(`id:${canonicalId}`)) ||
+              (uid && seenKeys.has(`uid:${uid}`)) ||
+              (uname && seenKeys.has(`u:${uname}`)) ||
+              (email && !email.endsWith('.local') && seenKeys.has(`e:${email}`)) ||
+              (name && name !== 'student' && seenKeys.has(`name:${name}`))
+            ) {
+              return;
+            }
 
-          const recordSeen = (d: any, docId: string) => {
-            const uname = String(d.username || '').toLowerCase().trim();
-            const email = String(d.email || '').toLowerCase().trim();
-            const uid = String(d.firebaseUid || d.userId || '').trim();
-            const sDocId = String(d.studentDocId || docId).trim();
-            const name = String(d.fullName || d.studentName || d.name || '').toLowerCase().trim();
-
-            if (docId) seenKeys.add(`id:${docId}`);
-            if (sDocId) seenKeys.add(`docId:${sDocId}`);
+            if (canonicalId) seenKeys.add(`id:${canonicalId}`);
             if (uid) seenKeys.add(`uid:${uid}`);
             if (uname) seenKeys.add(`u:${uname}`);
             if (email && !email.endsWith('.local')) seenKeys.add(`e:${email}`);
-            if (name) seenKeys.add(`name:${name}`);
-          };
-
-          let uniqueCount = 0;
-
-          querySnapshots.forEach(snap => {
-            snap.docs.forEach((d: any) => {
-              const data = d.data();
-              const sId = String(data.schoolId || data.school_id || data.schoolDocId || '').trim();
-              const sName = String(data.schoolName || data.school || '').trim().toLowerCase();
-              const isMatch = (sId && validSchoolIds.has(sId)) || (cleanSchoolName && sName === cleanSchoolName.toLowerCase());
-
-              if (!isMatch) return;
-
-              if (isDuplicate(data, d.id)) return;
-              recordSeen(data, d.id);
-              uniqueCount += 1;
-            });
+            if (name && name !== 'student') seenKeys.add(`name:${name}`);
+            uniqueCount += 1;
           });
+        });
 
+        if (uniqueCount > fetchedStudentCount) {
           fetchedStudentCount = uniqueCount;
-        } catch (fsErr) {
-          console.warn('Firestore fallback student count error:', fsErr);
         }
+      } catch (fsErr) {
+        console.warn('Firestore fallback student count error:', fsErr);
       }
 
       try {

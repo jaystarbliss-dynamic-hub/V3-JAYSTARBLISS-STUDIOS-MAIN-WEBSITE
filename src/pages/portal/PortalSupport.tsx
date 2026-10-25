@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Headphones, MessageCircle, Phone, Mail, MapPin, Send, 
-  HelpCircle, Clock, CheckCircle2, ShieldCheck, Sparkles, 
+  HelpCircle, Clock, CheckCircle2, ShieldCheck, 
   ExternalLink, ChevronDown, ChevronUp, AlertCircle, MessageSquare
 } from 'lucide-react';
 import { collection, addDoc, serverTimestamp, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';

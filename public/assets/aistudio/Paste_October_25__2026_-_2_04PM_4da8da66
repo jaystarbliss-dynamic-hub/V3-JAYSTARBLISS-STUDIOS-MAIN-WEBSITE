@@ -1,0 +1,670 @@
+# Jaystarbliss Studios — Detailed Development History
+
+Review period: approximately 22 May – 22 October 2026 | Focus: website, LMS, portals, Firebase, student accounts, examinations, dashboards, payments, GitHub and Netlify
+
+Jaystarbliss Studios has gone through several major development phases over this period. What began as a website and multi-role learning platform has evolved into a much more interconnected system for students, parents, tutors, school administrators and platform administrators.
+
+The most important theme running through the work is this: we have been moving the platform away from a UI that merely looks functional and toward one where real records, permissions, workflows and server-side operations determine what users can actually do. That has required adding features, correcting old assumptions, tightening security and revisiting some earlier changes when they caused compatibility problems.
+
+I reviewed the available project history, remembered work and GitHub pull requests. One qualification: the detailed, verifiable development trail available to me is concentrated in August–October 2026, especially September and October. I can explain the work in those records with specific commits and pull requests, but I won't invent a day-by-day history for May–July where I don't have sufficient evidence.
+
+## 1. Executive summary
+
+Firebase and data integrity
+
+We aligned application data with the correct Firestore database, removed fabricated dashboard information, improved account provisioning and tightened access to student, parent and school records.
+
+LMS and academic workflows
+
+We developed assignments, submissions, grading, feedback, attendance and progress tracking, then integrated a comprehensive examination system into the existing portal.
+
+Authentication and permissions
+
+We moved sensitive student access-code verification to trusted server functions, restored compatibility for older student records and corrected a database mismatch affecting login.
+
+Billing, wallets and payouts
+
+We removed demo financial data, worked on Firebase-backed wallet records and implemented a bank-only withdrawal workflow with Paystack bank lookup and account resolution.
+
+UI, mobile usability and deployment
+
+We established a reusable design system, improved responsive layouts and repeatedly repaired Netlify build failures so the application could compile and deploy reliably.
+
+## 2. The technical foundation we were working with
+
+The main project is the Jaystarbliss Studios website and learning platform:
+
+- GitHub repository: [V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE?utm_source=chatgpt.com)
+- Production domain: [jaystarbliss-studios.name.ng](https://jaystarbliss-studios.name.ng/?utm_source=chatgpt.com)
+- Netlify project: `jaystarbliss-studios`
+- Frontend: React, TypeScript and Vite.
+- Backend and platform services: Firebase Authentication, Firestore, Firebase Admin SDK and Netlify Functions.
+- Additional services used in different workflows: Paystack, Resend and Cloudinary.
+
+The system has multiple types of users, rather than one generic dashboard: platform administrators, tutors/staff, school administrators, students and parents. Some student accounts are individual learners; others are associated with schools or parent-managed enrolments.
+
+That complexity is central to understanding why the work has been more involved than a normal website redesign. A change to a student lookup, school identifier, examination permission or parent relationship can affect several portals simultaneously.
+
+# 3. Chronological development history
+
+## Phase 1 — August 2026: Firestore database migration and alignment
+
+20 August
+
+One of the critical infrastructure decisions documented in the history was the migration from Firestore's default database to a named Firestore database.
+
+The database in question is:
+
+`ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c`
+
+The Firebase project is `jaystarbliss-studios`.
+
+### What changed
+
+The website's Firebase client configuration was using the named database through a call equivalent to:
+
+`getFirestore(app, "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8c")`
+
+The important distinction is that the browser and server must use the same Firestore database. Using the correct Firebase project alone is not enough if one side queries the default database and the other side queries a named one.
+
+The migration work was intended to preserve the target database's data, recursively copy collections and subcollections where required, and leave the original default database untouched.
+
+### Why it mattered
+
+The application has both browser-side Firebase access and trusted server-side operations. If these point to different databases, the system can exhibit confusing failures:
+
+- A student appears to exist in the database but cannot log in.
+- The browser can read some information while a server function cannot find it.
+- New records appear to have been created successfully but are unavailable to another workflow.
+- Authentication appears to reject valid credentials when the underlying record lookup is the real failure.
+
+The migration also made it necessary to check for accidental default-database initializations elsewhere in the codebase.
+
+Critical lesson: database alignment is a system-wide requirement, not merely a configuration detail in one file.
+
+## Phase 2 — 3–5 September: Backend repair, security hardening and real-data integrity
+
+This was the first substantial series of documented changes in the repository.
+
+### 2.1 Repairing Firebase Admin and Netlify Functions
+
+On 3 September, [PR #2 — Repair Netlify Firebase Admin Functions](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/2?utm_source=chatgpt.com) addressed a production build failure.
+
+The build was failing because a required server-side module, `api/_lib/firebase-admin.ts`, could not be resolved by Netlify's function bundler.
+
+The repair included:
+
+- Restoring the missing Firebase Admin initializer.
+- Adding `firebase-admin` to production dependencies.
+- Declaring Node.js 22 for the runtime.
+- Configuring the Netlify Functions directory.
+
+Why: the frontend compiling successfully did not mean the backend functions were ready to run. Student access, school access and other protected operations depend on server functions that must bundle and deploy correctly.
+
+The security principle was also important: Firebase Admin credentials belong on the server, not in publicly served browser code.
+
+### 2.2 Removing fabricated dashboard data
+
+[PR #3 — Security, real-data integrity and production readiness](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/3?utm_source=chatgpt.com) followed on 3 September.
+
+This addressed an important credibility problem: dashboard interfaces contained fabricated student progress, admin metrics, school telemetry and fallback chart values.
+
+The changes removed these fabricated values and tightened several access boundaries:
+
+- Student and parent notifications were scoped to the intended recipients.
+- Firestore rules for notifications, invitations, exams and enrolment requests were tightened.
+- `SUPER_ADMIN` authority was separated from delegated administrator permissions.
+- Client-created user records could no longer simply grant themselves privileged admin roles.
+- Delegated administrators were restricted from changing protected role and school-ownership fields.
+- School passcode records were updated to retain school ownership.
+
+### Why we made these changes
+
+A dashboard showing plausible numbers is not necessarily a functioning dashboard. If a metric is hardcoded, the user cannot rely on it to represent actual students, progress or transactions.
+
+The goal was to make the platform's displayed information correspond to real records and ensure users could not gain authority merely by changing client-side data.
+
+This principle continued into later wallet, school-reporting and examination work.
+
+### 2.3 Establishing a consistent design system
+
+[PR #4 — UI/UX Pro Max design system](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/4?utm_source=chatgpt.com) was merged on 3 September.
+
+It introduced a repository-level design-system foundation and an additional CSS refinement layer.
+
+The work included:
+
+- Brand, elevation and focus tokens.
+- Clearer dashboard hierarchy and card treatments.
+- Improved focus visibility and touch behaviour.
+- More responsive forms and text wrapping.
+- Reduced-motion support and mobile safe-area handling.
+
+Why: the platform contains many dashboards and shared components. Without consistent visual rules, fixes in one area can create a different visual experience elsewhere. A reusable design system was intended to make later interface changes more predictable.
+
+## Phase 3 — 4–10 September: Making academic workflows and permissions real
+
+The next phase concentrated on connecting the parts of the learning platform.
+
+### 3.1 Assignments, submissions, grading and feedback
+
+The audit on 4–5 September identified missing links in the academic workflow: assignment lifecycle management, grading and feedback, milestones, communication, attendance and assessment-progress integration.
+
+The implementation documented in commit `145a6ba898abcc3399cbc75f7e43f22c7a3988e7` added or connected several priority workflows:
+
+- Tutors could create and publish assignments.
+- Students could submit their work.
+- Tutors could grade submissions and provide feedback.
+- Resubmission could be requested.
+- Parent and student notifications were connected to relevant actions.
+- School monitoring, milestones and attendance-related capabilities were developed.
+
+The intent was to make these workflows operate across the appropriate student, parent, staff and school portals instead of leaving them as disconnected screens.
+
+### 3.2 Student access and school boundaries
+
+A series of September changes then focused on ensuring each user saw the correct records.
+
+Examples include:
+
+- [PR #5 — Parent accounts, billing assignment and seeded-data removal](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/5?utm_source=chatgpt.com)
+- [PR #9 — Student access scope and portal navigation](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/9?utm_source=chatgpt.com)
+- [PR #10 — Student schedule scope and parent enrolment flow](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/10?utm_source=chatgpt.com)
+
+The guiding rules were:
+
+- Platform super administrators could operate across the platform.
+- School administrators should be limited to learners belonging to their school.
+- Tutors and staff should see students within their assigned school or direct private-tutoring relationships.
+- Students should see their own schedules and permitted school/class information.
+- Parents should access records connected to their children rather than being able to request arbitrary learner records.
+
+These boundaries were applied to credential issuance, schedule retrieval and other student-facing functions as well as to the interface.
+
+### 3.3 Parent account provisioning
+
+PR #5 introduced a protected `admin-parent-family` Netlify Function to create or provision parent accounts through Firebase Admin and link children using real student records.
+
+It also addressed a dangerous form of false success: parent programme, tuition, billing-cycle and tutor assignments previously used `Promise.allSettled()` in a way that could allow the interface to report success even if some writes failed.
+
+The changes made failed writes visible rather than silently treating incomplete operations as successful.
+
+Why this mattered: parent enrolment is not just a form submission. It creates relationships that other features rely on, including billing, schedules and parent access to academic information. Those relationships must be persisted consistently.
+
+## Phase 4 — 26–30 September: Schedules, resources, tutor management and portal stability
+
+This was a particularly active period of targeted fixes.
+
+### 4.1 Schedule visibility and tutor schedule management
+
+[PR #6 — Tutor schedules, sidebar and Google sign-in](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/6?utm_source=chatgpt.com) and [PR #7 — Student class schedule visibility](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/7?utm_source=chatgpt.com) addressed schedule workflows.
+
+The work improved:
+
+- Chronological programme schedules with explicit dates.
+- Current and upcoming session status.
+- Tutor schedule editing and status controls.
+- Tutor identification when schedule records used a profile ID or name rather than the Firebase authentication UID.
+- Student visibility of relevant school-wide, class-specific and individually targeted schedules.
+- School administrator and staff Google sign-in options.
+- The shared portal sidebar and its expanded/collapsed behaviour.
+
+The underlying issue was that schedule records can refer to the same person using different identifiers. Assuming every schedule's tutor ID must equal the authentication UID can make valid schedules disappear.
+
+### 4.2 Restricting curriculum resource management
+
+[PR #8 — Restrict curriculum uploads and make resources read-first](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/8?utm_source=chatgpt.com) tightened resource permissions.
+
+The intended permission model was:
+
+- Tutors/instructors and the super administrator can manage curriculum resources.
+- School administrators, students and parents/private learners have read-only access where appropriate.
+- Firestore rules enforce the same restrictions as the interface.
+
+The resource interaction also moved toward a Read action that opens a document in a new tab, rather than making downloading the default action.
+
+The reason for enforcing permissions in Firestore as well as the UI is straightforward: hiding an upload button does not prevent a user from attempting a direct database write.
+
+### 4.3 Correcting schedule scope and navigation
+
+[PR #10](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/10?utm_source=chatgpt.com), [PR #14](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/14?utm_source=chatgpt.com) and [PR #16](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/16?utm_source=chatgpt.com) continued to refine schedule visibility and portal navigation.
+
+These changes included:
+
+- Removing broad client-side schedule reads in favour of protected server retrieval.
+- Removing unnecessary school/programme switching from student schedule views.
+- Restricting students to their own school, class and assigned programme context.
+- Deduplicating programme names and schedule cards.
+- Showing a clear empty state when no sessions are assigned.
+- Sorting sessions by start time.
+- Restoring the administrator impersonation banner and its exit-session action.
+- Making the floating WhatsApp control shrink after inactivity and expand on hover.
+
+The key distinction is that a student calendar should not be a global timetable with a student filter added on top. It should be a view of the schedule the authenticated student is actually allowed to see.
+
+### 4.4 Tutor subject approvals and profile management
+
+[PR #13 — Tutor subject approvals, profile settings and staff payouts](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/13?utm_source=chatgpt.com) covered another set of operational workflows.
+
+The changes included grouping pending subject requests by tutor, allowing administrators to approve a tutor's requested subjects together, requiring reasons for rejection, notifying tutors of decisions and exposing rejection reasons in the tutor portal.
+
+The work also separated phone and WhatsApp contact fields and improved Nigerian bank-directory fallback handling for staff payouts.
+
+### 4.5 Repairing repeated Netlify build failures
+
+During this same period, the production build repeatedly failed on TypeScript errors.
+
+The documented sequence was:
+
+- [PR #17](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/17?utm_source=chatgpt.com) addressed a missing icon reference and cascading status-badge type errors.
+- [PR #18](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/18?utm_source=chatgpt.com) then removed a brittle workaround that modified source files during the prebuild stage.
+- [PR #20](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/20?utm_source=chatgpt.com) corrected missing fields in the TypeScript types for learning-track data.
+
+The significant lesson from PR #17 and #18 was that a deployment should compile the actual committed source. A prebuild script that searches for an exact piece of source text can break when the source changes, even if the intended fix has already been applied.
+
+The project therefore moved away from source mutation during deployment and back toward fixing the underlying code and running the normal build command.
+
+## Phase 5 — Late September: Class modes, rescheduling and learning tracks
+
+The student and tutor experience also needed to reflect how classes are delivered in real life.
+
+The work around [PR #19 — Student class modes, rescheduling, Ed Club, learning tracks and billing](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/19?utm_source=chatgpt.com) addressed the relationship between class delivery mode and available portal features.
+
+The intended behaviour distinguished:
+
+- Online: live classrooms and sessions with actual meeting links.
+- Physical: normal scheduled classes that do not require an online meeting link.
+- Hybrid: access to both applicable experiences.
+
+This distinction matters because an in-person lesson should not be treated as a broken online lesson merely because it has no meeting URL.
+
+The same body of work addressed schedule rescheduling and status workflows, learning tracks, the Education Club and billing-related interfaces.
+
+The repository also received PR #20 to correct TypeScript definitions used by parent and tutor learning-track components. Those fixes were intended to align the declared data types with fields the implementation already used, rather than change runtime behaviour unnecessarily.
+
+## Phase 6 — 15–16 October: Integrating the examination system
+
+This was one of the largest feature additions in the recorded history.
+
+The goal was to integrate a comprehensive, MegaExams-style examination workflow inside the existing Jaystarbliss Studios/Jaystarbliss Dynamic Institute platform, not to build a disconnected examination website with a separate user database.
+
+### 6.1 The examination workflow
+
+[PR #24 — Comprehensive examination workflow and portal navigation](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/24?utm_source=chatgpt.com) was merged on 16 October.
+
+It covered the student, tutor/staff and administrator sides of examinations.
+
+### Student examination journey
+
+1. See upcoming, active and completed examinations.
+2. Validate the examination passcode and verify school, class or individual assignment eligibility.
+3. Start a timed attempt governed by server-side timing and attempt limits.
+4. Save answers, including automatic saves, and submit the attempt.
+5. Receive automatic marking for supported objective questions and manual marking where required.
+6. View results and tutor feedback only after authorised release.
+
+### Tutor and platform administrator journey
+
+1. Create examinations, prepare questions and maintain a question bank.
+2. Assign exams to classes or individual learners and configure passcodes and schedules.
+3. Preview and activate exams, then manage attempts and grading.
+4. Correct answer keys, mark manually, release results and review examination history.
+5. Produce reports and exports, including individual PDF reports and bulk exports.
+
+### 6.2 Why server-side controls were essential
+
+The examination work included several protections that are not merely cosmetic:
+
+- Passcode validation and eligibility checks happen on the trusted server.
+- Examination opening and closing times are enforced against server timestamps.
+- Attempt limits and activation windows are checked.
+- Answer keys remain hidden before result release.
+- Race-safe transactions prevent a timed-out or submitted attempt from being overwritten by a late save.
+- Published examination settings cannot simply be reset to draft to reopen a completed exam.
+- Examination data and passcode hashes are protected by server-side role checks and Firestore rules.
+
+The system also includes manual grading, explicit result release, audit records and notifications.
+
+Why: a timed exam has to remain consistent even if the browser is slow, a network request arrives late or a student submits while an autosave is still in progress. The server must be the authority on whether an attempt is open, submitted, expired or released.
+
+### 6.3 School reporting and progress monitoring
+
+[PR #25 — School role scope and learner progress reporting](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/25?utm_source=chatgpt.com) followed on 16 October.
+
+The School portal was adjusted toward a reporting workspace with:
+
+- Class and student filters.
+- Assessment and examination history.
+- Attendance and activity timelines.
+- Individual learner PDF reports.
+- School-specific access checks.
+
+A particularly important change was distinguishing the school's canonical `schoolId` from a human-readable school code. A display code is useful to people, but the application needs a consistent identifier to determine record ownership.
+
+The server must reject a request for a learner who is not part of the authenticated school's roster.
+
+### 6.4 Parent examination results
+
+[PR #26 — Examination parity across the portals](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/26?utm_source=chatgpt.com) extended the examination system to parents.
+
+It added a read-only parent results view for linked children, with the parent identity derived from a verified Firebase ID token. The endpoint returns only results that have been explicitly released.
+
+The design intentionally does not trust a learner ID supplied by the browser to determine which child's results a parent may access.
+
+It also improved tutor/admin question authoring through pasted-question templates and validation for question numbering, answer keys, options and objective-answer mappings.
+
+### 6.5 Grading and result privacy
+
+[PR #27 — Assessment grading, privacy and role boundaries](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/27?utm_source=chatgpt.com) tightened the integrity of examination data.
+
+The work included:
+
+- Validating question definitions before persistence.
+- Rejecting duplicate question IDs, invalid options, unsupported question types and marks outside permitted ranges.
+- Using the same grading logic for normal submission and scheduled expiry.
+- Restricting answer keys, explanations and raw student responses from school-level reports.
+- Binding parent result lookup to both the linked learner record and the learner's portal UID.
+- Failing closed when a learner record ID is ambiguous across legacy collections.
+
+This was necessary because incorrect question data can lead to incorrect grades, and a school report should not accidentally expose the examination's answer key.
+
+### 6.6 First-test readiness and mobile usability
+
+[PR #28 — Assessment first-test readiness](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/28?utm_source=chatgpt.com) fixed additional role and timing issues. It included support for the portal's individual-student role aliases, deadline handling and serialised answer autosaves.
+
+[PR #29 — Assessment submission and mobile portal UX](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/29?utm_source=chatgpt.com) addressed a particularly important timeout edge case: unsaved browser answers submitted after the deadline must not replace answers already persisted by the server.
+
+It also improved narrow-screen layouts with fluid content, single-column grids, wrapped action groups, compact spacing, scrollable tab bars and mobile navigation for parent examination results.
+
+### What was verified at this stage
+
+The PR #29 record reports that the Assessment Quality Gate passed 11 assessment tests, lint, serverless-function typechecking and the production build. The existing Quality Gate and Firestore Rules Tests also passed.
+
+However, the recorded deployment notes still flagged Netlify preview failure and stated that real-account end-to-end acceptance was not yet verified. Those are separate requirements from passing automated tests.
+
+## Phase 7 — 19–22 September: Wallets, billing, withdrawals and payment integrity
+
+The financial work was driven by a clear requirement: do not show fictional money, transactions, account identities or payout states as if they were real.
+
+The major dashboard and withdrawal overhaul is documented in commit `a830cdcf6e88afec310fd9b214906242a57300fd`.
+
+### What changed
+
+| Area                    | Change and reason                                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Wallets                 | Move balances and transaction history toward Firebase-backed records rather than hardcoded demo figures.                          |
+| Fake data               | Remove fabricated names, demo transactions and misleading wallet or verification cards.                                           |
+| Withdrawals             | Restrict the withdrawal flow to bank accounts instead of retaining OPay/MoMo options that were not part of the intended workflow. |
+| Nigerian bank directory | Add searchable, paginated bank-directory retrieval through Paystack.                                                              |
+| Account resolution      | Add a bank-account resolution workflow to verify the selected account details.                                                    |
+| Saved accounts          | Support saving bank-account details for later use.                                                                                |
+| Impersonation           | Correct identity display and dark-mode contrast while an administrator is impersonating another account.                          |
+| Terminology             | Replace “Cadets” with “Students” in the relevant user-facing interfaces.                                                          |
+| Billing labels          | Remove stale or misleading billing labels and payout UI.                                                                          |
+
+The work was intended to make the financial interface reflect actual application records and the intended payment-provider workflow.
+
+A wallet balance, however, is only genuinely trustworthy when the underlying transaction lifecycle is also correct. A UI connected to Firestore does not, by itself, prove that deposits, earnings, deductions and withdrawals are reconciled properly. Those need their own end-to-end verification.
+
+### Netlify compilation problems that followed
+
+The initial September build fixes were followed by further TypeScript failures. On 21–22 September, missing imports and type-only import problems were corrected. After that, older `'bank' | 'opay'` type definitions in `AdminBilling.tsx` and `BillingCenter.tsx` still conflicted with the new bank-only withdrawal flow.
+
+Additional fixes were committed to align those interfaces with the intended payout model.
+
+The lesson was that a change to a shared financial type can break several screens even when the main withdrawal component has already been updated. Every consumer of that type must be checked before calling the workflow complete.
+
+## Phase 8 — 19 October: Resolving the Netlify secrets-scanning failure
+
+[PR #30 — Netlify deploy error due to exposed Firebase secrets in build output](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/30?utm_source=chatgpt.com) was merged on 19 October.
+
+The build had been failing because Netlify's secrets scanner was flagging the Firebase project ID in tracked files or the build output.
+
+The investigation distinguished two very different kinds of values:
+
+- Firebase web configuration: the project ID and Firestore database ID are used by the browser application and are not equivalent to private service-account credentials.
+- Private server credentials: the Firebase service-account private key and client email must remain protected and must not be exposed in public client bundles.
+
+The fix configured the scanner to skip only the public project and database identifiers, with an explanation for the exception. The real private credentials remained subject to scanning.
+
+### Why this was important
+
+The wrong solution would have been to remove the public Firebase configuration indiscriminately and break the site's Firebase connection.
+
+The other wrong solution would have been to disable secrets scanning entirely.
+
+The targeted exception was intended to preserve the security check for actual secrets while avoiding a false positive on values that the web application necessarily uses.
+
+The recorded investigation also noted domain-restriction hardening for the public Firebase web API key as an optional security improvement.
+
+## Phase 9 — 22 October: The student login incident and successive repairs
+
+This is the most recent and most operationally critical part of the history.
+
+The student portal login problem is not a single isolated code defect in the available records. It developed across several interacting changes involving server-side authentication, legacy student records, database selection and error handling.
+
+### 9.1 The earlier security change
+
+On 3 September, student access-code verification was moved to the trusted server. A subsequent change on 5 September introduced SHA-256 verification for normalised access codes.
+
+The security objective was valid: student credentials and privileged Firestore operations should not depend on unrestricted browser-side reads or client-side account creation.
+
+The complication was backward compatibility. Over time, student records had been created using different field names, username formats, access-code storage formats and profile-linking patterns.
+
+The historical login implementation had supported several of those older formats.
+
+### 9.2 PR #33 — Correcting the database and credential lookup
+
+[PR #33 — Fix onboarded student login and named Firestore database access](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/33?utm_source=chatgpt.com) was merged on 22 October.
+
+It addressed several problems:
+
+- Firebase Admin could query the default Firestore database while the browser was using the named database.
+- New student records could contain only an `accessCodeHash`.
+- Username casing and legacy field names were not always handled.
+- Some older records linked student details through `users/{uid}`.
+- The login interface had a browser-side account-creation and anonymous-auth fallback that could produce `auth/admin-restricted-operation`.
+
+The repair aligned the server-side database configuration, expanded the lookup logic and removed the insecure browser-side fallback.
+
+Why the fallback was removed: student login should not attempt to create or elevate Firebase accounts in the browser simply because the trusted authentication endpoint failed. That hides the actual problem and can introduce a separate authentication failure.
+
+### 9.3 PR #34 — Restoring legacy credential compatibility
+
+[PR #34 — Restore legacy-compatible student portal login](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/34?utm_source=chatgpt.com) was merged later on 22 October.
+
+The next investigation found that correcting the database selection was not sufficient to guarantee compatibility with existing records.
+
+The repair expanded the trusted server-side lookup to handle historical variations, including:
+
+- Canonical and legacy username/email fields.
+- Linked student and user profiles.
+- Older access-code, passcode, code and password fields.
+- SHA-256 hashes generated from exact or uppercase-normalised input.
+- Legacy records with historical field arrangements.
+- Multiple candidate records, so an early username match would not automatically prevent checking the correct credential match.
+
+It also retained account-status and role checks.
+
+The important design decision was to restore the old compatibility behaviour inside the trusted server, rather than reopening unrestricted student-record reads in the browser.
+
+### 9.4 PR #35 — Restoring the bounded legacy scan
+
+[PR #35 — Restore legacy student login lookup](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/35?utm_source=chatgpt.com) was merged on 22 October.
+
+Some older student records could still be missed by exact-field queries because their usernames or email fields used unusual casing or formatting.
+
+The repair added a bounded fallback scan across the relevant student collections. The lookup uses the normal exact-field and compatibility paths first, then falls back to the scan when those paths fail.
+
+The security requirement remained unchanged: credential verification and token issuance stay on the trusted server. The repair did not restore public Firestore reads or client-side account creation.
+
+### 9.5 PR #36 — Correcting the database mismatch and false invalid-credential responses
+
+[PR #36 — Fix student login Firestore database mismatch](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/36?utm_source=chatgpt.com) was merged on 22 October.
+
+This addressed another critical distinction: a failed database lookup is not necessarily a wrong password or access code.
+
+The previous query helper could suppress Firestore lookup failures and return a response that looked like invalid credentials even when the underlying database query had failed.
+
+The final repair in this sequence:
+
+- Pinned Firebase Admin to the exact named Firestore database used by the browser application.
+- Added sanitised warnings when environment variables disagree with that configuration.
+- Recorded Firestore query failures without logging student credentials or access-code hashes.
+- Returned a server error when every primary lookup query failed, rather than falsely reporting invalid credentials.
+- Kept sensitive lookup and authentication operations server-side.
+
+The merge commit is `cbb7b6ddaa477464e78fc12835220ff6560b851c`.
+
+[View the merged PR #36 commit](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/commit/cbb7b6ddaa477464e78fc12835220ff6560b851c?utm_source=chatgpt.com)
+
+### What the login sequence tells us
+
+Correct direction: security
+
+Moving credential verification to a trusted server and keeping Firestore rules restrictive was the appropriate security direction.
+
+Compatibility problem: historical data
+
+Existing and newly onboarded students did not necessarily have identical record structures. Exact-field lookup alone was insufficient for every historical record.
+
+Infrastructure problem: database selection
+
+Browser and server-side Firebase code could query different Firestore databases, causing valid records to appear missing.
+
+Diagnostic problem: misleading errors
+
+Suppressing lookup failures could make a database or configuration problem look like a student entering incorrect credentials.
+
+The lesson is that all four layers must work together: database selection, record discovery, credential verification and session issuance. Fixing only one layer does not prove the whole login journey is healthy.
+
+Most importantly, I will not claim that the latest merge proves every existing and newly registered student can log in. The repository records confirm the changes and automated checks, but the latest history does not establish a successful production sign-in for both an existing and a newly onboarded student.
+
+# 4. Critical technical decisions across the project
+
+The following decisions recur throughout the development history because they affect multiple portals.
+
+| Decision                                               | Why it was made                                                          | What it protects or improves                                                     |
+| ------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| Use a named Firestore database consistently            | Browser and server lookups must target the same records.                 | Student login, enrolment, reporting and other database-backed workflows.         |
+| Keep privileged operations server-side                 | Client code cannot be trusted to grant its own privileges.               | Student authentication, parent provisioning, examinations and protected updates. |
+| Remove fake dashboard values                           | Users must not mistake demo data for real platform activity.             | Trustworthiness of dashboards, reports and wallets.                              |
+| Enforce permissions in the backend and Firestore rules | Hiding controls in the UI is not sufficient access control.              | School boundaries, student privacy and resource permissions.                     |
+| Support legacy records deliberately                    | Historical records may not match the newest schema.                      | Existing student accounts and historical parent/student relationships.           |
+| Use server-side timestamps for exams                   | Browser timing and network delays can create inconsistent attempts.      | Exam deadlines, submission state and grading.                                    |
+| Validate exam definitions before saving                | Invalid options, duplicate IDs or incorrect marks can corrupt grading.   | Examination correctness and result integrity.                                    |
+| Remove brittle build-time source rewriting             | Deployment should compile committed source, not mutate it unpredictably. | Netlify build reliability and maintainability.                                   |
+| Align financial interfaces with real workflows         | Demo values and unsupported payout methods are misleading.               | Wallets, withdrawal forms and billing interfaces.                                |
+| Design shared portal components consistently           | Many roles share navigation and UI infrastructure.                       | Responsive behaviour, visual consistency and easier maintenance.                 |
+
+## 5. How the development and deployment workflow evolved
+
+The project has not simply involved adding features. A substantial portion of the work has been responding to failures that appeared during compilation, deployment or integration.
+
+The recorded workflow includes:
+
+1. Inspect the repository and identify the failing workflow. Examples include missing Firebase Admin modules, student schedule visibility and examination submission races.
+2. Change the relevant implementation. This could mean fixing a type, adding a server endpoint, correcting a Firestore query or changing role validation.
+3. Run automated checks. The project has used linting, TypeScript checks, production builds, Firestore Rules Tests and dedicated assessment or student-login compatibility tests.
+4. Merge changes into `main` when the applicable review and merge process permits.
+5. Verify the deployed application separately. A successful build or merged pull request does not establish that production functions, Firebase rules, indexes and real-user workflows are all working.
+
+That last distinction is especially important. The October records repeatedly note cases where automated checks passed but the Netlify deploy preview was still failing or production acceptance was not yet confirmed.
+
+# 6. Current state as of 22 October 2026
+
+This is a summary of what the available records establish, not a claim that every workflow has been tested in production.
+
+Merged implementation work
+
+The repository records show merged changes for the dashboard/data-integrity work, portal access boundaries, schedule and resource workflows, examination integration, financial UI changes, deployment fixes and the student-login repairs through PR #36.
+
+Automated verification
+
+The documented October examination work reports successful assessment tests, lint, serverless-function typechecking, production builds and Firestore Rules Tests. The latest student-login repair sequence also had compatibility and quality checks reported as passing on its branch.
+
+Production deployment and real-user acceptance
+
+The available records do not establish a confirmed successful production sign-in for both an existing and a new student after PR #36. Nor do they prove that every role's full end-to-end workflow has been accepted in the live deployment.
+
+The current source of truth for the implementation is the [GitHub repository](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE?utm_source=chatgpt.com). The production site is [jaystarbliss-studios.name.ng](https://jaystarbliss-studios.name.ng/?utm_source=chatgpt.com), but a live site being accessible is not equivalent to proving that every backend operation works correctly.
+
+## 7. The most important outstanding verification areas
+
+Based on the recorded work, these are the areas where a complete acceptance pass matters most.
+
+- Student login: test existing accounts and newly onboarded accounts against the production deployment; distinguish incorrect credentials from Firestore, configuration and server errors.
+- School access: verify that school administrators see only their own school's learners, reports and schedules.
+- Parent accounts: verify parent-child links, billing/programme assignment and examination-result visibility.
+- Examinations: test creation, passcodes, opening and closing times, autosave, submission, expiry, manual marking, result release and reporting.
+- Tutor and staff workflows: test schedules, assignments, grading, feedback, resource permissions and payout flows.
+- Wallets and withdrawals: verify actual transaction records, balance calculations, account resolution and withdrawal status handling.
+- Netlify and Firebase: confirm the deployed commit, function configuration, named database, Firestore rules and any required indexes.
+
+These are verification targets, not a claim that each item is currently failing.
+
+# 8. Key repository references
+
+Here are the principal records behind this history, grouped by what they document.
+
+[GitHub official Logo PNG Vector (EPS) Free Download](https://images.openai.com/static-rsc-4/j6DnFoGR1MfnOBr9lIK962EQdYyxmY8SyJ9-28a69vOkM2BzMHwDekYl2JG6WLr8JTUKKPjN98M-z-HFImt0j5nyukd1e120mDGQLqeLKnLZ8JVrrifApGVGwSFY2cM3RpPDf7Km3KmgvbycYPvr2t5PuRLGFKmpzE2a9ikOtUk?purpose=inline)
+
+Foundation and security
+
+[PR #2 — Firebase Admin and Netlify repair](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/2?utm_source=chatgpt.com)
+
+[PR #3 — Security and real-data integrity](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/3?utm_source=chatgpt.com)
+
+[PR #4 — UI/UX design system](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/4?utm_source=chatgpt.com)
+
+[GitHub official Logo PNG Vector (EPS) Free Download](https://images.openai.com/static-rsc-4/j6DnFoGR1MfnOBr9lIK962EQdYyxmY8SyJ9-28a69vOkM2BzMHwDekYl2JG6WLr8JTUKKPjN98M-z-HFImt0j5nyukd1e120mDGQLqeLKnLZ8JVrrifApGVGwSFY2cM3RpPDf7Km3KmgvbycYPvr2t5PuRLGFKmpzE2a9ikOtUk?purpose=inline)
+
+Parent, school, student and schedule workflows
+
+[PR #5 — Parent accounts and billing integrity](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/5?utm_source=chatgpt.com)
+
+[PR #8 — Curriculum resource permissions](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/8?utm_source=chatgpt.com)
+
+[PR #10 — Student schedules and parent enrolment](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/10?utm_source=chatgpt.com)
+
+[PR #16 — Schedule behaviour and UI refinements](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/16?utm_source=chatgpt.com)
+
+[GitHub official Logo PNG Vector (EPS) Free Download](https://images.openai.com/static-rsc-4/j6DnFoGR1MfnOBr9lIK962EQdYyxmY8SyJ9-28a69vOkM2BzMHwDekYl2JG6WLr8JTUKKPjN98M-z-HFImt0j5nyukd1e120mDGQLqeLKnLZ8JVrrifApGVGwSFY2cM3RpPDf7Km3KmgvbycYPvr2t5PuRLGFKmpzE2a9ikOtUk?purpose=inline)
+
+Examination system
+
+[PR #24 — Examination workflow](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/24?utm_source=chatgpt.com)
+
+[PR #25 — School reporting](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/25?utm_source=chatgpt.com)
+
+[PR #26 — Parent examination results](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/26?utm_source=chatgpt.com)
+
+[PR #27 — Grading and result privacy](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/27?utm_source=chatgpt.com)
+
+[PR #29 — Submission integrity and mobile UX](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/29?utm_source=chatgpt.com)
+
+[GitHub official Logo PNG Vector (EPS) Free Download](https://images.openai.com/static-rsc-4/j6DnFoGR1MfnOBr9lIK962EQdYyxmY8SyJ9-28a69vOkM2BzMHwDekYl2JG6WLr8JTUKKPjN98M-z-HFImt0j5nyukd1e120mDGQLqeLKnLZ8JVrrifApGVGwSFY2cM3RpPDf7Km3KmgvbycYPvr2t5PuRLGFKmpzE2a9ikOtUk?purpose=inline)
+
+Deployment and student authentication
+
+[PR #30 — Netlify secrets scanning](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/30?utm_source=chatgpt.com)
+
+[PR #33 — Named database and student login](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/33?utm_source=chatgpt.com)
+
+[PR #34 — Legacy credential compatibility](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/34?utm_source=chatgpt.com)
+
+[PR #35 — Legacy lookup fallback](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/35?utm_source=chatgpt.com)
+
+[PR #36 — Firestore database mismatch and lookup errors](https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE/pull/36?utm_source=chatgpt.com)
+
+## Final assessment
+
+The major development effort has been about making Jaystarbliss Studios a coherent learning platform rather than a collection of separate dashboards. The academic workflows, examination system, parent/school reporting, real-data integrity, role-based permissions and server-side authentication are all parts of that same goal.
+
+Three lessons stand out:
+
+1. Correct data and correct permissions matter as much as the interface. A polished dashboard is not reliable if it displays invented values or accesses the wrong records.
+2. Security changes must preserve legitimate historical workflows. Moving authentication to the server was the right architectural direction, but the older student-record formats still needed deliberate compatibility support.
+3. A merged PR and passing CI are not the finish line. The final proof is a successful deployed application with real, authorised accounts and complete workflows.
+
+The most urgent unresolved question in the latest recorded history is therefore not whether another student-login patch was merged. It is whether the deployed production version now allows both existing and newly onboarded students to authenticate, and whether their schedules, examinations and other protected records load correctly after authentication. That remains unconfirmed by the evidence available here.

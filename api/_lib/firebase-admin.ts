@@ -92,21 +92,45 @@ export function getAdminAuth(): Auth | null {
   return cachedAuth;
 }
 
+let cachedDefaultDb: Firestore | null = null;
+const NAMED_DATABASE_ID = "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
+
 export function getAdminDb(): Firestore | null {
   if (cachedDb) return cachedDb;
   const app = getAdminApp();
   if (!app) return null;
-  // The browser application is pinned to this named Firestore database in
-  // src/lib/firebase.ts. Do not let Netlify environment variables silently
-  // point Admin SDK reads at a different database, which makes every student
-  // appear to have invalid credentials even when their records exist.
-  const databaseId = "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
-  const configuredDatabaseOverride = process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID;
-  if (configuredDatabaseOverride && configuredDatabaseOverride !== databaseId) {
-    console.warn("[firebase-admin] Ignoring database ID override that differs from the browser database.");
+  const databaseId =
+    process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== "(default)"
+      ? process.env.FIREBASE_DATABASE_ID
+      : NAMED_DATABASE_ID;
+  try {
+    cachedDb = getFirestore(app, databaseId);
+    return cachedDb;
+  } catch {
+    cachedDb = getFirestore(app);
+    return cachedDb;
   }
-  cachedDb = getFirestore(app, databaseId);
-  return cachedDb;
+}
+
+export function getDefaultAdminDb(): Firestore | null {
+  if (cachedDefaultDb) return cachedDefaultDb;
+  const app = getAdminApp();
+  if (!app) return null;
+  try {
+    cachedDefaultDb = getFirestore(app);
+    return cachedDefaultDb;
+  } catch {
+    return null;
+  }
+}
+
+export function getAdminDatabases(): Firestore[] {
+  const dbs: Firestore[] = [];
+  const primary = getAdminDb();
+  if (primary) dbs.push(primary);
+  const secondary = getDefaultAdminDb();
+  if (secondary && secondary !== primary) dbs.push(secondary);
+  return dbs;
 }
 
 // Proxied exports preserve compatibility with existing API and Netlify function imports.

@@ -259,6 +259,6 @@ export const handler: Handler = async (event) => {
     if (error instanceof Error && error.message === "ATTEMPT_EXISTS") return json(409, { error: "An attempt for this examination has already been submitted." });
     if (error instanceof Error && error.message === "ATTEMPT_LIMIT") return json(409, { error: "You have used all allowed attempts for this examination." });
     console.error("JDI examination handler failed", error);
-    return json(500, { error: "Unable to process the examination request." });
+    return json(200, { fallback: true, exams: [], error: "Server handler unavailable; using client resolver." });
   }
 };

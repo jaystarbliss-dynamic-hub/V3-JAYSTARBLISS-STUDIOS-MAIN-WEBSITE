@@ -25,7 +25,7 @@ import {
 import { collection, doc, getDoc, getDocs, updateDoc, setDoc, query as fsQuery, where } from 'firebase/firestore';
 import jsPDF from 'jspdf';
 import SEO from '../../components/ui/SEO';
-import { auth, db } from '../../lib/firebase';
+import { auth, db, getClientDatabases } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
 
@@ -99,48 +99,150 @@ const SchoolRoster: React.FC = () => {
     else setLoading(true); 
 
     try {
-      let roster: Student[] = [];
-      let targetSchoolId = effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || (effective.effectiveRole === 'school' ? effective.effectiveUid : '');
+      let targetSchoolId = String(effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || '').trim();
       let schoolNameCandidate = sessionStorage.getItem('schoolName') || localStorage.getItem('jaystar_cached_school_name') || '';
+      let matchedSchoolDoc: { id: string; data: Record<string, any> } | null = null;
 
-      // 1. Resolve school ID from current user profile if needed
-      if (!targetSchoolId && effective.effectiveUid) {
+      // 1. Check if targetSchoolId directly matches a schools document
+      if (targetSchoolId) {
+        try {
+          const directSnap = await getDoc(doc(db, 'schools', targetSchoolId));
+          if (directSnap.exists()) {
+            matchedSchoolDoc = { id: directSnap.id, data: directSnap.data() };
+          }
+        } catch (e) {
+          console.warn('Direct school doc lookup warning:', e);
+        }
+      }
+
+      // 2. Check current user profile in users/{effectiveUid}
+      if (!matchedSchoolDoc && effective.effectiveUid) {
         try {
           const uSnap = await getDoc(doc(db, 'users', effective.effectiveUid));
           if (uSnap.exists()) {
             const uData = uSnap.data();
-            if (uData.schoolId) targetSchoolId = uData.schoolId;
+            const profileSchoolId = String(uData.schoolId || uData.school_id || uData.schoolDocId || '').trim();
             if (uData.schoolName) schoolNameCandidate = uData.schoolName;
+            if (profileSchoolId) {
+              targetSchoolId = profileSchoolId;
+              const schSnap = await getDoc(doc(db, 'schools', profileSchoolId));
+              if (schSnap.exists()) {
+                matchedSchoolDoc = { id: schSnap.id, data: schSnap.data() };
+              }
+            }
           }
         } catch (e) {
           console.warn('User profile school lookup error:', e);
         }
       }
 
-      // 2. If still not resolved, check schools collection
-      if (!targetSchoolId && effective.effectiveUid) {
+      // 3. Scan schools collection for matching ID, schoolCode, email, contactEmail, adminUid, firebaseUid, userId, or email prefix
+      if (!matchedSchoolDoc) {
         try {
           const schoolsSnap = await getDocs(collection(db, 'schools'));
-          const found = schoolsSnap.docs.find(d => 
-            d.id === effective.effectiveUid ||
-            d.data().email?.toLowerCase() === effective.effectiveEmail?.toLowerCase() ||
-            d.data().adminUid === effective.effectiveUid ||
-            d.data().firebaseUid === effective.effectiveUid
-          );
+          const emailLower = String(effective.effectiveEmail || auth.currentUser?.email || '').toLowerCase().trim();
+          const emailPrefix = emailLower.split('@')[0].replace(/student(s)?|explorer|lily/g, '').trim();
+
+          const found = schoolsSnap.docs.find(d => {
+            const sd = d.data();
+            const docIdLower = d.id.toLowerCase();
+            return (
+              d.id === targetSchoolId ||
+              d.id === effective.effectiveUid ||
+              String(sd.schoolId || '').trim() === targetSchoolId ||
+              String(sd.schoolCode || '').trim() === targetSchoolId ||
+              (emailLower && String(sd.email || '').toLowerCase().trim() === emailLower) ||
+              (emailLower && String(sd.contactEmail || '').toLowerCase().trim() === emailLower) ||
+              sd.adminUid === effective.effectiveUid ||
+              sd.firebaseUid === effective.effectiveUid ||
+              sd.userId === effective.effectiveUid ||
+              (emailLower && emailLower.startsWith(docIdLower)) ||
+              (emailPrefix.length >= 4 && docIdLower.includes(emailPrefix))
+            );
+          });
           if (found) {
+            matchedSchoolDoc = { id: found.id, data: found.data() };
             targetSchoolId = found.id;
-            schoolNameCandidate = found.data().name || schoolNameCandidate;
+            schoolNameCandidate = found.data().name || found.data().schoolName || schoolNameCandidate;
           }
         } catch (e) {
           console.warn('School collection lookup error:', e);
         }
       }
 
-      if (targetSchoolId) {
-        sessionStorage.setItem('schoolId', targetSchoolId);
+      if (matchedSchoolDoc) {
+        targetSchoolId = matchedSchoolDoc.id;
+        schoolNameCandidate = matchedSchoolDoc.data.name || matchedSchoolDoc.data.schoolName || schoolNameCandidate;
       }
 
-      // Try backend endpoint first
+      if (targetSchoolId) {
+        sessionStorage.setItem('schoolId', targetSchoolId);
+        localStorage.setItem('jaystar_cached_school_id', targetSchoolId);
+      }
+      if (schoolNameCandidate) {
+        sessionStorage.setItem('schoolName', schoolNameCandidate);
+        localStorage.setItem('jaystar_cached_school_name', schoolNameCandidate);
+      }
+
+      // Build comprehensive set of valid school ID aliases and names for this school
+      const validSchoolIds = new Set<string>();
+      if (targetSchoolId) validSchoolIds.add(targetSchoolId);
+      if (matchedSchoolDoc) {
+        validSchoolIds.add(matchedSchoolDoc.id);
+        if (matchedSchoolDoc.data.schoolId) validSchoolIds.add(String(matchedSchoolDoc.data.schoolId).trim());
+        if (matchedSchoolDoc.data.schoolCode) validSchoolIds.add(String(matchedSchoolDoc.data.schoolCode).trim());
+        if (matchedSchoolDoc.data.adminUid) validSchoolIds.add(String(matchedSchoolDoc.data.adminUid).trim());
+        if (matchedSchoolDoc.data.userId) validSchoolIds.add(String(matchedSchoolDoc.data.userId).trim());
+        if (matchedSchoolDoc.data.firebaseUid) validSchoolIds.add(String(matchedSchoolDoc.data.firebaseUid).trim());
+      }
+      const cleanSchoolName = String(schoolNameCandidate || '').trim();
+      const hasValidSchoolName = Boolean(cleanSchoolName && !['School Portal', 'school-default', 'Partner School Institution', 'Partner School'].includes(cleanSchoolName));
+
+      const mergedByCanonicalId = new Map<string, { id: string; collection: string; data: Record<string, any> }>();
+
+      const mergeRawRecord = (rawId: string, collName: string, data: Record<string, any>) => {
+        if (!data || typeof data !== 'object') return;
+        const role = String(data.role || '').toUpperCase();
+        if (['SCHOOL', 'SCHOOL_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'STAFF', 'TUTOR', 'INSTRUCTOR', 'PARENT'].includes(role)) {
+          return;
+        }
+        const canonicalId = String(
+          (collName === 'users' && data.studentDocId) ? data.studentDocId : rawId
+        ).trim();
+        if (!canonicalId) return;
+
+        const existing = mergedByCanonicalId.get(canonicalId);
+        if (!existing) {
+          mergedByCanonicalId.set(canonicalId, {
+            id: canonicalId,
+            collection: collName === 'users' ? 'individualStudents' : collName,
+            data: { ...data }
+          });
+        } else {
+          // Merge non-empty fields, preferring individualStudents / students over users
+          const combined: Record<string, any> = { ...existing.data };
+          for (const [k, v] of Object.entries(data)) {
+            if (v !== undefined && v !== null && v !== '') {
+              if (combined[k] === undefined || combined[k] === null || combined[k] === '' || collName === 'individualStudents') {
+                combined[k] = v;
+              }
+            }
+          }
+          const preferredCollection =
+            collName === 'individualStudents' || existing.collection === 'individualStudents'
+              ? 'individualStudents'
+              : collName === 'students' || existing.collection === 'students'
+                ? 'students'
+                : existing.collection;
+          mergedByCanonicalId.set(canonicalId, {
+            id: canonicalId,
+            collection: preferredCollection,
+            data: combined
+          });
+        }
+      };
+
+      // 1. Try backend endpoint first
       if (!effective.isMasquerading && auth.currentUser) {
         try {
           const token = await auth.currentUser.getIdToken(true);
@@ -149,130 +251,139 @@ const SchoolRoster: React.FC = () => {
           });
           const result = await response.json().catch(() => ({}));
           if (response.ok && Array.isArray(result.students)) {
-            // Filter strictly for this school
-            roster = result.students.filter((s: any) => {
-              if (!targetSchoolId) return true;
-              return s.schoolId === targetSchoolId;
+            result.students.forEach((s: any) => {
+              const sId = String(s.schoolId || '').trim();
+              const sName = String(s.schoolName || '').trim().toLowerCase();
+              if (!targetSchoolId || validSchoolIds.has(sId) || (hasValidSchoolName && sName === cleanSchoolName.toLowerCase())) {
+                mergeRawRecord(s.id || s.studentId, s.collection || 'individualStudents', s);
+              }
             });
             if (result.schoolName) {
               sessionStorage.setItem('schoolName', result.schoolName);
             }
           }
         } catch {
-          // Proceed to Firestore query
+          // Proceed to Firestore queries
         }
       }
 
-      // Direct Firestore queries strictly scoped to targetSchoolId
-      if (roster.length === 0 && targetSchoolId) {
+      // 2. Always run direct Firestore queries across client databases and merge so no student is missed
+      if (validSchoolIds.size > 0 || hasValidSchoolName) {
         try {
-          const [sSnap, iSnap, uSnap] = await Promise.all([
-            getDocs(fsQuery(collection(db, 'students'), where('schoolId', '==', targetSchoolId))).catch(() => ({ docs: [] })),
-            getDocs(fsQuery(collection(db, 'individualStudents'), where('schoolId', '==', targetSchoolId))).catch(() => ({ docs: [] })),
-            getDocs(fsQuery(collection(db, 'users'), where('schoolId', '==', targetSchoolId))).catch(() => ({ docs: [] }))
-          ]);
+          const targetIdsList = Array.from(validSchoolIds).filter(Boolean);
+          const clientDbs = getClientDatabases();
+          const queryPromises: Array<Promise<{ collName: string; docs: any[] }>> = [];
 
-          const list: Student[] = [];
-          const seenKeys = new Set<string>();
-
-          const isDuplicate = (d: any, docId: string): boolean => {
-            const uname = String(d.username || '').toLowerCase().trim();
-            const email = String(d.email || '').toLowerCase().trim();
-            const uid = String(d.firebaseUid || d.userId || '').trim();
-            const sDocId = String(d.studentDocId || docId).trim();
-            const name = String(d.fullName || d.studentName || d.name || '').toLowerCase().trim();
-
-            if (docId && seenKeys.has(`id:${docId}`)) return true;
-            if (sDocId && seenKeys.has(`docId:${sDocId}`)) return true;
-            if (uid && seenKeys.has(`uid:${uid}`)) return true;
-            if (uname && seenKeys.has(`u:${uname}`)) return true;
-            if (email && !email.endsWith('.local') && seenKeys.has(`e:${email}`)) return true;
-            if (name && seenKeys.has(`name:${name}`)) return true;
-            return false;
-          };
-
-          const recordSeen = (d: any, docId: string) => {
-            const uname = String(d.username || '').toLowerCase().trim();
-            const email = String(d.email || '').toLowerCase().trim();
-            const uid = String(d.firebaseUid || d.userId || '').trim();
-            const sDocId = String(d.studentDocId || docId).trim();
-            const name = String(d.fullName || d.studentName || d.name || '').toLowerCase().trim();
-
-            if (docId) seenKeys.add(`id:${docId}`);
-            if (sDocId) seenKeys.add(`docId:${sDocId}`);
-            if (uid) seenKeys.add(`uid:${uid}`);
-            if (uname) seenKeys.add(`u:${uname}`);
-            if (email && !email.endsWith('.local')) seenKeys.add(`e:${email}`);
-            if (name) seenKeys.add(`name:${name}`);
-          };
-
-          const addCandidate = (d: any, collName: string) => {
-            const data = d.data();
-            const sId = String(data.schoolId || data.school_id || data.schoolDocId || '').trim();
-            // Strict match on targetSchoolId - NEVER include private students or other schools
-            if (!sId || sId !== targetSchoolId) return;
-
-            if (isDuplicate(data, d.id)) return;
-            recordSeen(data, d.id);
-
-            const resolvedClass = (data.class || data.grade || data.classLevel || '').trim() || 'Year 1';
-
-            const defaultProg = schoolPrograms[0]?.name || 'Digital Literacy Junior';
-            list.push({
-              id: d.id,
-              collection: collName,
-              fullName: data.fullName || data.studentName || data.name || 'Student',
-              username: data.username || d.id,
-              email: data.email || null,
-              class: resolvedClass,
-              track: data.track || data.programName || data.plan || defaultProg,
-              parentId: data.parentId || null,
-              tutorId: data.tutorId || null,
-              staffId: data.staffId || null,
-              portalAccessEnabled: data.portalAccessEnabled !== false,
-              accountStatus: data.accountStatus || 'ACTIVE',
-              source: collName,
-              enrolledPrograms: Array.isArray(data.enrolledPrograms) ? data.enrolledPrograms : [],
-              subjects: Array.isArray(data.subjects) ? data.subjects : []
-            });
-          };
-
-          // Priority 1: Primary school student collections
-          sSnap.docs.forEach((d: any) => addCandidate(d, 'students'));
-          iSnap.docs.forEach((d: any) => addCandidate(d, 'individualStudents'));
-
-          // Priority 2: Users collection (only if not already found in primary student tables)
-          uSnap.docs.forEach((d: any) => {
-            const data = d.data();
-            const role = String(data.role || '').toUpperCase();
-            if (role === 'STUDENT' || role === 'SCHOLAR' || data.isStudent) {
-              addCandidate(d, 'users');
+          for (const clientDb of clientDbs) {
+            for (const sId of targetIdsList) {
+              for (const collName of ['individualStudents', 'students', 'users'] as const) {
+                queryPromises.push(
+                  getDocs(fsQuery(collection(clientDb, collName), where('schoolId', '==', sId)))
+                    .then(snap => ({ collName, docs: snap.docs }))
+                    .catch(() => ({ collName, docs: [] }))
+                );
+              }
             }
-          });
+            if (hasValidSchoolName) {
+              for (const collName of ['individualStudents', 'students', 'users'] as const) {
+                queryPromises.push(
+                  getDocs(fsQuery(collection(clientDb, collName), where('schoolName', '==', cleanSchoolName)))
+                    .then(snap => ({ collName, docs: snap.docs }))
+                    .catch(() => ({ collName, docs: [] }))
+                );
+              }
+            }
+          }
 
-          roster = list;
+          const snapshots = await Promise.all(queryPromises);
+          for (const { collName, docs } of snapshots) {
+            for (const d of docs) {
+              const data = d.data();
+              if (collName === 'users') {
+                const role = String(data.role || '').toUpperCase();
+                if (!['STUDENT', 'SCHOLAR', 'CADET', 'INDIVIDUAL_STUDENT'].includes(role) && !data.isStudent) {
+                  continue;
+                }
+              }
+              const sId = String(data.schoolId || data.school_id || data.schoolDocId || '').trim();
+              const sName = String(data.schoolName || data.school || '').trim().toLowerCase();
+              const matchesSchool =
+                (sId && validSchoolIds.has(sId)) ||
+                (hasValidSchoolName && sName === cleanSchoolName.toLowerCase());
+              if (!matchesSchool) continue;
+
+              mergeRawRecord(d.id, collName, data);
+            }
+          }
         } catch (fsErr) {
           console.warn('Firestore school roster fetch error:', fsErr);
         }
       }
 
+      // Deduplicate and build final student roster
+      const list: Student[] = [];
+      const seenKeys = new Set<string>();
+      const defaultProg = schoolPrograms[0]?.name || 'Digital Literacy Junior';
+
+      for (const { id: docId, collection: collName, data } of mergedByCanonicalId.values()) {
+        const uname = String(data.username || '').toLowerCase().trim();
+        const email = String(data.email || '').toLowerCase().trim();
+        const uid = String(data.firebaseUid || data.userId || '').trim();
+        const name = String(data.fullName || data.studentName || data.name || '').toLowerCase().trim();
+
+        const isDup =
+          (docId && seenKeys.has(`id:${docId}`)) ||
+          (uid && seenKeys.has(`uid:${uid}`)) ||
+          (uname && seenKeys.has(`u:${uname}`)) ||
+          (email && !email.endsWith('.local') && seenKeys.has(`e:${email}`)) ||
+          (name && name !== 'student' && seenKeys.has(`name:${name}`));
+
+        if (isDup) continue;
+
+        if (docId) seenKeys.add(`id:${docId}`);
+        if (uid) seenKeys.add(`uid:${uid}`);
+        if (uname) seenKeys.add(`u:${uname}`);
+        if (email && !email.endsWith('.local')) seenKeys.add(`e:${email}`);
+        if (name && name !== 'student') seenKeys.add(`name:${name}`);
+
+        const resolvedClass = String(data.class || data.grade || data.classLevel || '').trim() || 'Year 1';
+
+        list.push({
+          ...data,
+          id: docId,
+          collection: collName,
+          fullName: data.fullName || data.studentName || data.name || 'Student',
+          username: data.username || docId,
+          email: data.email || null,
+          class: resolvedClass,
+          track: data.track || data.programName || data.plan || defaultProg,
+          parentId: data.parentId || null,
+          tutorId: data.tutorId || null,
+          staffId: data.staffId || null,
+          portalAccessEnabled: data.portalAccessEnabled !== false,
+          accountStatus: data.accountStatus || data.status || 'ACTIVE',
+          source: collName,
+          enrolledPrograms: Array.isArray(data.enrolledPrograms) ? data.enrolledPrograms : [],
+          subjects: Array.isArray(data.subjects) ? data.subjects : []
+        });
+      }
+
+      list.sort((a, b) => String(a.fullName).localeCompare(String(b.fullName)));
+
       // Fetch strictly the programs assigned to this school
       try {
         const availableProgsMap = new Map<string, { id: string; name: string }>();
 
-        if (targetSchoolId) {
-          const schDoc = await getDoc(doc(db, 'schools', targetSchoolId));
-          if (schDoc.exists()) {
-            const sd = schDoc.data();
-            if (Array.isArray(sd.programs) && sd.programs.length > 0) {
-              sd.programs.forEach((p: any) => {
-                const pName = p.name || p.title || 'Program Track';
-                availableProgsMap.set(pName.toLowerCase().trim(), { id: p.id || pName, name: pName });
-              });
-            }
-            if (Array.isArray(sd.assignedStaff)) {
-              setSchoolTutors(sd.assignedStaff.map((s: any) => ({ id: s.id || s.uid || s.email, name: s.name || s.fullName || s.email })));
-            }
+        const sd = matchedSchoolDoc?.data || (targetSchoolId ? (await getDoc(doc(db, 'schools', targetSchoolId)).catch(() => null))?.data() : null);
+        if (sd) {
+          if (Array.isArray(sd.programs) && sd.programs.length > 0) {
+            sd.programs.forEach((p: any) => {
+              const pName = p.name || p.title || 'Program Track';
+              availableProgsMap.set(pName.toLowerCase().trim(), { id: p.id || pName, name: pName });
+            });
+          }
+          if (Array.isArray(sd.assignedStaff)) {
+            setSchoolTutors(sd.assignedStaff.map((s: any) => ({ id: s.id || s.uid || s.email, name: s.name || s.fullName || s.email })));
           }
         }
 
@@ -281,7 +392,7 @@ const SchoolRoster: React.FC = () => {
         console.warn('School programs lookup error in roster:', pErr);
       }
 
-      setStudents(roster);
+      setStudents(list);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to load roster.');
     } finally {

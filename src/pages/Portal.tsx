@@ -16,7 +16,7 @@ import {
 } from 'firebase/auth';
 import { 
   doc, getDoc, setDoc, updateDoc, collection, 
-  query, where, getDocs, serverTimestamp, deleteDoc 
+  query, where, getDocs, serverTimestamp, deleteDoc, limit 
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { useTheme } from '../hooks/useTheme';
@@ -36,7 +36,8 @@ const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 function studentAuthEmail(username: string): string {
-  return username.toLowerCase().replace(/[^a-z0-9]/g, '') + '@jdh-student.local';
+  const clean = username.toLowerCase().replace(/[^a-z0-9]/g, '') || 'std';
+  return `student_${clean}@jaystarbliss-studios.firebaseapp.com`;
 }
 
 function deriveStudentAuthPassword(code: string): string {
@@ -176,41 +177,35 @@ const Portal: React.FC = () => {
     let sdata: any = null;
 
     try {
-      // Check by username
+      // Check by username (lowercase, uppercase, raw, with @)
       const cleanUsername = rawInput.toLowerCase().replace(/^@/, '').replace(/\s+/g, '');
-      const usernameQuery = query(
-        collection(db, 'individualStudents'),
-        where('username', '==', cleanUsername)
-      );
-      const uSnap = await getDocs(usernameQuery);
-      if (!uSnap.empty) {
-        sdoc = uSnap.docs[0];
-        sdata = sdoc.data();
+      const queries = [
+        query(collection(db, 'individualStudents'), where('username', '==', cleanUsername), limit(1)),
+        query(collection(db, 'individualStudents'), where('username', '==', cleanUsername.toUpperCase()), limit(1)),
+        query(collection(db, 'individualStudents'), where('username', '==', rawInput), limit(1)),
+        query(collection(db, 'individualStudents'), where('username', '==', `@${cleanUsername}`), limit(1)),
+        query(collection(db, 'individualStudents'), where('accessCode', '==', rawInput.toUpperCase()), limit(1)),
+        query(collection(db, 'individualStudents'), where('accessCode', '==', code.trim().toUpperCase()), limit(1)),
+        query(collection(db, 'students'), where('username', '==', cleanUsername), limit(1)),
+        query(collection(db, 'students'), where('username', '==', cleanUsername.toUpperCase()), limit(1)),
+        query(collection(db, 'students'), where('username', '==', rawInput), limit(1)),
+        query(collection(db, 'students'), where('accessCode', '==', rawInput.toUpperCase()), limit(1)),
+        query(collection(db, 'students'), where('accessCode', '==', code.trim().toUpperCase()), limit(1))
+      ];
+
+      if (isRealEmail) {
+        queries.push(
+          query(collection(db, 'individualStudents'), where('email', '==', rawInput.toLowerCase()), limit(1)),
+          query(collection(db, 'students'), where('email', '==', rawInput.toLowerCase()), limit(1))
+        );
       }
 
-      // Check by email
-      if (!sdoc && isRealEmail) {
-        const emailQuery = query(
-          collection(db, 'individualStudents'),
-          where('email', '==', rawInput.toLowerCase())
-        );
-        const eSnap = await getDocs(emailQuery);
-        if (!eSnap.empty) {
-          sdoc = eSnap.docs[0];
-          sdata = eSnap.docs[0].data();
-        }
-      }
-
-      // Check by accessCode if input was access code
-      if (!sdoc) {
-        const codeQuery = query(
-          collection(db, 'individualStudents'),
-          where('accessCode', '==', rawInput.toUpperCase())
-        );
-        const cSnap = await getDocs(codeQuery);
-        if (!cSnap.empty) {
-          sdoc = cSnap.docs[0];
-          sdata = cSnap.docs[0].data();
+      const results = await Promise.all(queries.map(q => getDocs(q).catch(() => null)));
+      for (const snap of results) {
+        if (snap && !snap.empty) {
+          sdoc = snap.docs[0];
+          sdata = sdoc.data();
+          break;
         }
       }
 
@@ -221,22 +216,48 @@ const Portal: React.FC = () => {
           if (directDocSnap.exists()) {
             sdoc = directDocSnap;
             sdata = directDocSnap.data();
+          } else {
+            const legDocSnap = await getDoc(doc(db, 'students', rawInput));
+            if (legDocSnap.exists()) {
+              sdoc = legDocSnap;
+              sdata = legDocSnap.data();
+            }
           }
         } catch {
           // Not a doc ID
         }
       }
 
-      // Check in legacy students collection
+      // Broad scan fallback (case insensitive & stripped hyphen match)
       if (!sdoc) {
-        const legacyQuery = query(
-          collection(db, 'students'),
-          where('email', '==', rawInput.toLowerCase())
-        );
-        const lSnap = await getDocs(legacyQuery);
-        if (!lSnap.empty) {
-          sdoc = lSnap.docs[0];
-          sdata = lSnap.docs[0].data();
+        const [indSnap, stdSnap] = await Promise.all([
+          getDocs(query(collection(db, 'individualStudents'), limit(300))).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'students'), limit(300))).catch(() => ({ docs: [] } as any))
+        ]);
+
+        const allDocs = [...indSnap.docs, ...stdSnap.docs];
+        for (const d of allDocs) {
+          const sd = d.data();
+          const u = String(sd.username || '').toLowerCase().replace(/^@/, '').trim();
+          const e = String(sd.email || '').toLowerCase().trim();
+          const c = String(sd.accessCode || sd.passcode || sd.code || '').toUpperCase().trim();
+          const cStripped = c.replace(/[\s-]/g, '');
+          const rawUpper = rawInput.toUpperCase().trim();
+          const rawStripped = rawUpper.replace(/[\s-]/g, '');
+          const codeUpper = code.toUpperCase().trim();
+          const codeStripped = codeUpper.replace(/[\s-]/g, '');
+
+          if (
+            (cleanUsername && (u === cleanUsername || u === `@${cleanUsername}`)) ||
+            (isRealEmail && e === rawInput.toLowerCase()) ||
+            (rawUpper && (c === rawUpper || cStripped === rawStripped)) ||
+            (codeUpper && (c === codeUpper || cStripped === codeStripped)) ||
+            (d.id.toLowerCase() === cleanUsername)
+          ) {
+            sdoc = d;
+            sdata = sd;
+            break;
+          }
         }
       }
     } catch (lookupErr) {
@@ -290,24 +311,27 @@ const Portal: React.FC = () => {
             const cred = await createUserWithEmailAndPassword(auth, authEmailToUse, authPassword);
             firebaseUid = cred.user.uid;
           } catch (createErr: any) {
-            if (createErr.code === 'auth/email-already-in-use' || createErr.code === 'auth/wrong-password') {
-              const anonCred = await signInAnonymously(auth);
-              firebaseUid = anonCred.user.uid;
-            } else if (createErr.code === 'auth/weak-password') {
-              const anonCred = await signInAnonymously(auth);
-              firebaseUid = anonCred.user.uid;
+            if (createErr.code === 'auth/email-already-in-use') {
+              try {
+                const cred2 = await signInWithEmailAndPassword(auth, authEmailToUse, authPassword);
+                firebaseUid = cred2.user.uid;
+              } catch {
+                const uniqueEmail = `std_${effectiveUsername}_${Date.now().toString(36)}@jaystarbliss-studios.firebaseapp.com`;
+                const cred3 = await createUserWithEmailAndPassword(auth, uniqueEmail, authPassword).catch(() => null);
+                firebaseUid = cred3 ? cred3.user.uid : (sdata?.firebaseUid || sdata?.id || auth.currentUser?.uid || 'student');
+              }
             } else {
-              const anonCred = await signInAnonymously(auth);
-              firebaseUid = anonCred.user.uid;
+              const uniqueEmail = `std_${effectiveUsername}_${Date.now().toString(36)}@jaystarbliss-studios.firebaseapp.com`;
+              const cred3 = await createUserWithEmailAndPassword(auth, uniqueEmail, authPassword).catch(() => null);
+              firebaseUid = cred3 ? cred3.user.uid : (sdata?.firebaseUid || sdata?.id || auth.currentUser?.uid || 'student');
             }
           }
         } else if (authErr.code === 'auth/wrong-password' || authErr.code === 'auth/email-already-in-use') {
-          // Rotated access code — sign in anonymously
-          const anonCred = await signInAnonymously(auth);
-          firebaseUid = anonCred.user.uid;
+          const uniqueEmail = `std_${effectiveUsername}_${Date.now().toString(36)}@jaystarbliss-studios.firebaseapp.com`;
+          const cred3 = await createUserWithEmailAndPassword(auth, uniqueEmail, authPassword).catch(() => null);
+          firebaseUid = cred3 ? cred3.user.uid : (sdata?.firebaseUid || sdata?.id || auth.currentUser?.uid || 'student');
         } else {
-          const anonCred = await signInAnonymously(auth);
-          firebaseUid = anonCred.user.uid;
+          firebaseUid = sdata?.firebaseUid || sdata?.id || auth.currentUser?.uid || 'student';
         }
       }
     }

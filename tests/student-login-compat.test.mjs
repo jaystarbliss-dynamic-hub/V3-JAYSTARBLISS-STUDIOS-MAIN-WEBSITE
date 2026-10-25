@@ -59,3 +59,13 @@ test("rejects a wrong code and never authenticates on username alone", () => {
   assert.equal(matchesStudentCredentials([profile], "wrong-code", "student"), false);
   assert.equal(matchesStudentCredentials([{ username: "student" }], "student", "student"), false);
 });
+
+test("accepts access codes entered with or without hyphens and spaces", () => {
+  const hashedProfile = { username: "jaystarbliss", accessCodeHash: hashStudentAccessCode("JBS-4829") };
+  assert.equal(matchesStudentCredentials([hashedProfile], "JBS4829", "jaystarbliss"), true);
+  assert.equal(matchesStudentCredentials([hashedProfile], "jbs 4829", "JAYSTARBLISS"), true);
+
+  const plainProfile = { username: "JAYSTARBLISS", accessCode: "JBS-4829" };
+  assert.equal(matchesStudentCredentials([plainProfile], "jbs4829", "jaystarbliss"), true);
+});
+

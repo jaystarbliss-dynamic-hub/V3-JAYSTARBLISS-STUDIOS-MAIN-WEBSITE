@@ -1,24 +1,204 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, AlertCircle, BookOpenCheck, CalendarCheck, Download, FileBarChart2, GraduationCap, Loader2, RefreshCw, Search, ShieldCheck, UserRound, Users } from 'lucide-react';
 import jsPDF from 'jspdf';
-import { auth } from '../../lib/firebase';
+import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
+import { auth, db, getClientDatabases } from '../../lib/firebase';
+import { getEffectiveAuth } from '../../utils/impersonation';
 import SEO from '../../components/ui/SEO';
 
-type Learner = { id: string; fullName: string; username: string; email?: string; className: string; track?: string; accountStatus?: string };
+type Learner = { id: string; fullName: string; username: string; email?: string; className: string; track?: string; accountStatus?: string; studentUid?: string };
 type Assessment = { id: string; title: string; subject: string; assessmentType: string; score: number | null; feedback?: string; createdAt?: string | null; updatedAt?: string | null };
 type ExamResult = { id: string; title: string; subject: string; status: string; score: number | null; maxScore: number; submittedAt?: string | null; releasedAt?: string | null; feedback?: string };
 type Attendance = { id: string; date?: string | null; status: string; notes?: string; className?: string };
 type ActivityRecord = { id: string; type: string; action: string; message: string; route?: string; createdAt?: string | null; actorRole?: string };
 type Detail = { learner: Learner; assessments: Assessment[]; examinations: ExamResult[]; attendance: Attendance[]; activities: ActivityRecord[]; summary: { assessments: number; examinations: number; attendanceRecords: number; activities: number; averageAssessmentScore: number | null; attendanceRate: number | null } };
 
+const asIso = (v: any) => v?.toDate ? v.toDate().toISOString() : v instanceof Date ? v.toISOString() : typeof v === 'string' ? v : null;
+
+const clientFallbackApi = async (studentId?: string) => {
+  const effective = getEffectiveAuth();
+  const uid = effective.effectiveUid || auth.currentUser?.uid || '';
+  if (!uid) throw new Error('Please sign in again.');
+
+  const dbs = getClientDatabases();
+  const validSchoolIds = new Set<string>();
+  let schoolName = sessionStorage.getItem('schoolName') || '';
+  let schoolCode = '';
+  let primarySchoolId = sessionStorage.getItem('schoolId') || '';
+
+  if (primarySchoolId) validSchoolIds.add(primarySchoolId);
+
+  for (const clientDb of dbs) {
+    const uSnap = await getDoc(doc(clientDb, 'users', uid)).catch(() => null);
+    let userEmailFromDoc = '';
+    if (uSnap?.exists()) {
+      const u = uSnap.data() || {};
+      userEmailFromDoc = String(u.email || '').toLowerCase().trim();
+      if (u.schoolId) { validSchoolIds.add(String(u.schoolId).trim()); if (!primarySchoolId) primarySchoolId = String(u.schoolId).trim(); }
+      if (u.school_id) validSchoolIds.add(String(u.school_id).trim());
+      if (u.schoolDocId) validSchoolIds.add(String(u.schoolDocId).trim());
+      if (u.schoolName && !schoolName) schoolName = String(u.schoolName);
+      if (u.schoolCode && !schoolCode) schoolCode = String(u.schoolCode);
+    }
+
+    const email = (auth.currentUser?.email || userEmailFromDoc || '').toLowerCase().trim();
+    const emailPrefix = email.includes('@') ? email.split('@')[0].replace(/[^a-z0-9_-]/gi, '') : '';
+    const candidateDocIds = Array.from(new Set([uid, primarySchoolId, emailPrefix, ...Array.from(validSchoolIds)].filter(Boolean)));
+    for (const cid of candidateDocIds) {
+      const sDoc = await getDoc(doc(clientDb, 'schools', cid)).catch(() => null);
+      if (sDoc?.exists()) {
+        const s = sDoc.data() || {};
+        validSchoolIds.add(sDoc.id);
+        if (!primarySchoolId || primarySchoolId === uid) primarySchoolId = sDoc.id;
+        if (s.name && !schoolName) schoolName = String(s.name);
+        if (s.schoolCode) { validSchoolIds.add(String(s.schoolCode).trim()); if (!schoolCode) schoolCode = String(s.schoolCode).trim(); }
+        if (s.schoolId) validSchoolIds.add(String(s.schoolId).trim());
+      }
+    }
+    if (email) {
+      for (const f of ['email', 'contactEmail']) {
+        const qSnap = await getDocs(query(collection(clientDb, 'schools'), where(f, '==', email), limit(5))).catch(() => null);
+        qSnap?.docs.forEach(d => {
+          const s = d.data() || {};
+          validSchoolIds.add(d.id);
+          if (!primarySchoolId || primarySchoolId === uid) primarySchoolId = d.id;
+          if (s.name && !schoolName) schoolName = String(s.name);
+          if (s.schoolCode) { validSchoolIds.add(String(s.schoolCode).trim()); if (!schoolCode) schoolCode = String(s.schoolCode).trim(); }
+          if (s.schoolId) validSchoolIds.add(String(s.schoolId).trim());
+        });
+      }
+    }
+  }
+
+  validSchoolIds.add(uid);
+  const schoolAliases = Array.from(validSchoolIds).filter(Boolean);
+  const resolvedSchoolId = primarySchoolId || schoolAliases[0] || uid;
+
+  const rosterMap = new Map<string, Learner>();
+  const serialise = (id: string, d: any): Learner => ({
+    id,
+    fullName: String(d.fullName || d.studentName || d.name || [d.firstName, d.lastName].filter(Boolean).join(' ') || 'Learner').trim(),
+    username: String(d.username || d.admissionNumber || id).trim(),
+    email: d.email ? String(d.email).trim() : undefined,
+    className: String(d.className || d.class || d.grade || d.classLevel || d.classId || 'Unassigned').trim() || 'Unassigned',
+    track: String(d.track || d.programName || d.plan || '').trim(),
+    accountStatus: String(d.accountStatus || d.status || 'ACTIVE').trim(),
+    studentUid: String(d.firebaseUid || d.userId || d.uid || '').trim()
+  });
+
+  for (const clientDb of dbs) {
+    for (const sid of schoolAliases) {
+      for (const collName of ['individualStudents', 'students']) {
+        for (const field of ['schoolId', 'school_id', 'schoolDocId']) {
+          const snap = await getDocs(query(collection(clientDb, collName), where(field, '==', sid), limit(500))).catch(() => null);
+          snap?.docs.forEach(d => {
+            const incoming = serialise(d.id, d.data());
+            const existing = rosterMap.get(d.id);
+            if (existing) {
+              if (existing.fullName === 'Learner' && incoming.fullName !== 'Learner') existing.fullName = incoming.fullName;
+              if (existing.className === 'Unassigned' && incoming.className !== 'Unassigned') existing.className = incoming.className;
+              if (!existing.track && incoming.track) existing.track = incoming.track;
+              if (!existing.studentUid && incoming.studentUid) existing.studentUid = incoming.studentUid;
+            } else {
+              rosterMap.set(d.id, incoming);
+            }
+          });
+        }
+      }
+      for (const field of ['schoolId', 'school_id', 'schoolDocId']) {
+        const uSnap = await getDocs(query(collection(clientDb, 'users'), where(field, '==', sid), limit(500))).catch(() => null);
+        uSnap?.docs.forEach(d => {
+          const data = d.data() || {};
+          const r = String(data.role || '').toUpperCase().trim();
+          const isExplicitStudent = ['STUDENT', 'SCHOLAR', 'CADET', 'INDIVIDUAL_STUDENT'].includes(r);
+          const isOtherRole = ['SCHOOL', 'SCHOOL_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'STAFF', 'TUTOR', 'INSTRUCTOR', 'TEACHER', 'PARENT'].includes(r);
+          if (!isExplicitStudent && (isOtherRole || (!data.studentDocId && !data.isStudent))) return;
+          const id = String(data.studentDocId || d.id).trim();
+          const incoming = serialise(id, { ...data, firebaseUid: d.id });
+          const existing = rosterMap.get(id);
+          if (existing) {
+            if (!existing.studentUid) existing.studentUid = d.id;
+            if (existing.fullName === 'Learner' && incoming.fullName !== 'Learner') existing.fullName = incoming.fullName;
+            if (existing.className === 'Unassigned' && incoming.className !== 'Unassigned') existing.className = incoming.className;
+          } else {
+            rosterMap.set(id, incoming);
+          }
+        });
+      }
+    }
+  }
+
+  const roster = Array.from(rosterMap.values()).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const schoolObj = { id: resolvedSchoolId, schoolId: resolvedSchoolId, schoolCode: schoolCode || resolvedSchoolId, name: schoolName || 'School' };
+
+  if (!studentId) {
+    return {
+      school: schoolObj,
+      learners: roster,
+      totals: { learners: roster.length, classes: new Set(roster.map(s => s.className).filter(v => v && v !== 'Unassigned')).size }
+    };
+  }
+
+  const learner = rosterMap.get(studentId) || roster[0];
+  if (!learner) throw new Error('That learner does not belong to your school.');
+
+  const [assessmentSnap, attendanceSnap, examAttempts] = await Promise.all([
+    getDocs(query(collection(db, 'academic_assessments'), where('studentId', '==', studentId), limit(200))).catch(() => null),
+    getDocs(query(collection(db, 'attendance'), where('studentId', '==', studentId), limit(300))).catch(() => null),
+    getDocs(query(collection(db, 'jdiExamAttempts'), where('studentId', '==', studentId), limit(300))).catch(() => null),
+  ]);
+
+  const assessments: Assessment[] = (assessmentSnap?.docs || []).map(d => {
+    const a = d.data() || {};
+    return { id: d.id, title: String(a.title || 'Assessment'), subject: String(a.subject || 'General'), assessmentType: String(a.assessmentType || 'OTHER'), score: typeof a.score === 'number' ? a.score : null, feedback: String(a.feedback || ''), createdAt: asIso(a.createdAt), updatedAt: asIso(a.updatedAt) };
+  }).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+
+  const attendance: Attendance[] = (attendanceSnap?.docs || []).map(d => {
+    const a = d.data() || {};
+    return { id: d.id, date: asIso(a.date || a.createdAt), status: String(a.status || 'UNKNOWN'), notes: String(a.notes || ''), className: String(a.className || a.class || learner.className) };
+  }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+  const examinations: ExamResult[] = (examAttempts?.docs || []).map(d => {
+    const a = d.data() || {};
+    return { id: d.id, title: String(a.examTitle || a.title || 'Examination'), subject: String(a.subject || 'General'), status: String(a.status || 'submitted'), score: typeof a.score === 'number' ? a.score : null, maxScore: Number(a.maxScore || 100), submittedAt: asIso(a.submittedAt), releasedAt: asIso(a.releasedAt), feedback: String(a.feedback || '') };
+  }).sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')));
+
+  const activities: ActivityRecord[] = [];
+  return {
+    school: schoolObj,
+    learner,
+    assessments,
+    examinations,
+    attendance,
+    activities,
+    summary: {
+      assessments: assessments.length,
+      examinations: examinations.length,
+      attendanceRecords: attendance.length,
+      activities: activities.length,
+      averageAssessmentScore: assessments.filter(a => typeof a.score === 'number').length
+        ? assessments.filter(a => typeof a.score === 'number').reduce((sum, a) => sum + Number(a.score), 0) / assessments.filter(a => typeof a.score === 'number').length
+        : null,
+      attendanceRate: attendance.length ? attendance.filter(a => ['PRESENT', 'LATE'].includes(a.status.toUpperCase())).length / attendance.length * 100 : null
+    }
+  };
+};
+
 const api = async (studentId?: string) => {
   if (!auth.currentUser) throw new Error('Please sign in again.');
-  const token = await auth.currentUser.getIdToken();
-  const query = studentId ? '?studentId=' + encodeURIComponent(studentId) : '';
-  const response = await fetch('/.netlify/functions/school-learner-insights' + query, { headers: { Authorization: 'Bearer ' + token } });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Unable to load learner progress.');
-  return data;
+  try {
+    const token = await auth.currentUser.getIdToken();
+    const q = studentId ? '?studentId=' + encodeURIComponent(studentId) : '';
+    const response = await fetch('/.netlify/functions/school-learner-insights' + q, { headers: { Authorization: 'Bearer ' + token } });
+    const contentType = response.headers.get('content-type') || '';
+    if (response.ok && contentType.includes('application/json')) {
+      const data = await response.json();
+      if (data && (Array.isArray(data.learners) || data.learner)) return data;
+    }
+  } catch {
+    // Fallback to client-side Firestore below
+  }
+  return clientFallbackApi(studentId);
 };
 const dateLabel = (value?: string | null) => {
   if (!value) return '—';

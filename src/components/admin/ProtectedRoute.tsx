@@ -117,12 +117,166 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
           }
         }
 
-        if (!userSnap.exists()) {
+        // Direct self-heal for student accounts if user profile is missing or incomplete
+        const cachedRole = (sessionStorage.getItem('userRole') || localStorage.getItem('jaystar_cached_user_role') || '').toLowerCase();
+        const isStudentContext =
+          location.pathname.startsWith('/portal/student') ||
+          cachedRole === 'student' ||
+          (currentUser.email || '').toLowerCase().startsWith('student_') ||
+          String(userSnap.data()?.role || '').toUpperCase() === 'STUDENT' ||
+          String(userSnap.data()?.role || '').toUpperCase() === 'INDIVIDUAL_STUDENT';
+
+        let fallbackProfileData: Record<string, any> | null = null;
+
+        if (!userSnap.exists() || !userSnap.data()?.role || (isStudentContext && !userSnap.data()?.studentDocId)) {
+          try {
+            let matchedStudentDoc: { id: string; collectionName: 'individualStudents' | 'students'; data: Record<string, any> } | null = null;
+            const candidateDocId = String(
+              userSnap.data()?.studentDocId ||
+              sessionStorage.getItem('studentDocId') ||
+              localStorage.getItem('jaystar_cached_student_doc_id') ||
+              ''
+            ).trim();
+
+            if (candidateDocId) {
+              for (const colName of ['individualStudents', 'students'] as const) {
+                const snap = await getDoc(doc(db, colName, candidateDocId));
+                if (snap.exists()) {
+                  matchedStudentDoc = { id: snap.id, collectionName: colName, data: snap.data() };
+                  break;
+                }
+              }
+            }
+
+            if (!matchedStudentDoc) {
+              for (const colName of ['individualStudents', 'students'] as const) {
+                for (const uidField of ['firebaseUid', 'userId'] as const) {
+                  const q = query(collection(db, colName), where(uidField, '==', currentUser.uid), limit(1));
+                  const snap = await getDocs(q);
+                  if (!snap.empty) {
+                    matchedStudentDoc = { id: snap.docs[0].id, collectionName: colName, data: snap.docs[0].data() };
+                    break;
+                  }
+                }
+                if (matchedStudentDoc) break;
+              }
+            }
+
+            if (!matchedStudentDoc) {
+              const candidateUsername = String(
+                userSnap.data()?.username ||
+                sessionStorage.getItem('studentUsername') ||
+                ''
+              ).trim();
+              if (candidateUsername) {
+                const usernameVariants = Array.from(new Set([
+                  candidateUsername,
+                  candidateUsername.toUpperCase(),
+                  candidateUsername.toLowerCase(),
+                ]));
+                for (const colName of ['individualStudents', 'students'] as const) {
+                  for (const variant of usernameVariants) {
+                    const q = query(collection(db, colName), where('username', '==', variant), limit(1));
+                    const snap = await getDocs(q);
+                    if (!snap.empty) {
+                      matchedStudentDoc = { id: snap.docs[0].id, collectionName: colName, data: snap.docs[0].data() };
+                      break;
+                    }
+                  }
+                  if (matchedStudentDoc) break;
+                }
+              }
+            }
+
+            if (matchedStudentDoc || (isStudentContext && !userSnap.exists())) {
+              const sData = matchedStudentDoc?.data || {};
+              const resolvedName = String(
+                sData.name ||
+                sData.fullName ||
+                userSnap.data()?.name ||
+                currentUser.displayName ||
+                sessionStorage.getItem('userName') ||
+                localStorage.getItem('jaystar_cached_user_name') ||
+                'Student'
+              );
+              const resolvedSchoolId = String(
+                sData.schoolId ||
+                sData.school_id ||
+                userSnap.data()?.schoolId ||
+                sessionStorage.getItem('schoolId') ||
+                ''
+              );
+              const resolvedClass = String(
+                sData.class ||
+                sData.classLevel ||
+                userSnap.data()?.class ||
+                sessionStorage.getItem('studentClass') ||
+                ''
+              );
+              const resolvedStudentDocId = String(
+                matchedStudentDoc?.id ||
+                candidateDocId ||
+                ''
+              );
+              const resolvedUsername = String(
+                sData.username ||
+                userSnap.data()?.username ||
+                sessionStorage.getItem('studentUsername') ||
+                ''
+              );
+
+              const healedStudentProfile: Record<string, any> = {
+                uid: currentUser.uid,
+                name: resolvedName,
+                fullName: resolvedName,
+                email: currentUser.email || sData.email || sessionStorage.getItem('userEmail') || '',
+                username: resolvedUsername,
+                role: 'STUDENT',
+                accountStatus: String(sData.accountStatus || sData.status || userSnap.data()?.accountStatus || 'ACTIVE').toUpperCase(),
+                status: String(sData.status || sData.accountStatus || userSnap.data()?.status || 'ACTIVE').toUpperCase(),
+                schoolId: resolvedSchoolId,
+                schoolName: String(sData.schoolName || sData.school || userSnap.data()?.schoolName || ''),
+                class: resolvedClass,
+                studentDocId: resolvedStudentDocId,
+                updatedAt: serverTimestamp(),
+              };
+
+              fallbackProfileData = healedStudentProfile;
+
+              try {
+                await setDoc(doc(db, 'users', currentUser.uid), healedStudentProfile, { merge: true });
+                userSnap = await getDoc(doc(db, 'users', currentUser.uid));
+              } catch (userHealErr) {
+                console.warn('Student user profile self-heal write warning:', userHealErr);
+              }
+
+              if (matchedStudentDoc && matchedStudentDoc.data.firebaseUid !== currentUser.uid) {
+                try {
+                  await setDoc(doc(db, matchedStudentDoc.collectionName, matchedStudentDoc.id), {
+                    firebaseUid: currentUser.uid,
+                    userId: currentUser.uid,
+                    portalAccessEnabled: true,
+                    lastLoginAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                  }, { merge: true });
+                } catch (studentLinkErr) {
+                  console.warn('Student record UID link warning:', studentLinkErr);
+                }
+              }
+            }
+          } catch (studentHealErr) {
+            console.warn('Student self-heal lookup warning:', studentHealErr);
+          }
+        }
+
+        if (!userSnap.exists() && !fallbackProfileData) {
           await signOut(auth).catch(() => undefined);
           throw new Error('Authenticated user has no authoritative portal profile.');
         }
 
-        let data = userSnap.data() || {};
+        let data: Record<string, any> = userSnap.exists()
+          ? { ...(fallbackProfileData || {}), ...(userSnap.data() || {}) }
+          : (fallbackProfileData || {});
         const accountStatus = String(data.accountStatus || data.status || 'ACTIVE').toUpperCase();
         if (blockedStatuses.includes(accountStatus.toLowerCase())) {
           if (mounted) setBlockedMessage(`Your account is currently ${accountStatus.toLowerCase()}. Please contact Jaystarbliss Studios support.`);
@@ -130,7 +284,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
           return;
         }
 
-        let role = String(data.role || '').trim().toUpperCase();
+        let role = String(data.role || fallbackProfileData?.role || '').trim().toUpperCase();
+        if (role === 'INDIVIDUAL_STUDENT') {
+          role = 'STUDENT';
+        }
+        if (role === 'SCHOOL_ADMIN' || role === 'INSTITUTION') {
+          role = 'SCHOOL';
+        }
 
         // Check if active user is an Admin impersonating another role
         const isUserAdmin = adminRoles.includes(role) || currentUser.email === 'johnrufai242@gmail.com';
@@ -218,7 +378,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
         sessionStorage.setItem('userEmail', currentUser.email || String(data.email || ''));
         if (data.name) sessionStorage.setItem('userName', String(data.name));
         if (data.schoolId) sessionStorage.setItem('schoolId', String(data.schoolId));
-        if (data.studentDocId) sessionStorage.setItem('studentDocId', String(data.studentDocId));
+        if (data.studentDocId) {
+          sessionStorage.setItem('studentDocId', String(data.studentDocId));
+          localStorage.setItem('jaystar_cached_student_doc_id', String(data.studentDocId));
+        }
+        if (data.class) sessionStorage.setItem('studentClass', String(data.class));
+        if (data.username) sessionStorage.setItem('studentUsername', String(data.username));
         localStorage.setItem('jaystar_cached_user_role', role.toLowerCase());
         localStorage.setItem('jaystar_cached_user_id', currentUser.uid);
         if (data.name) localStorage.setItem('jaystar_cached_user_name', String(data.name));

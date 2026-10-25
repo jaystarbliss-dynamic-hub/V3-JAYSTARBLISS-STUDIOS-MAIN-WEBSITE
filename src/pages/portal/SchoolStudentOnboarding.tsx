@@ -160,10 +160,28 @@ const SchoolStudentOnboarding: React.FC = () => {
           updatedAt: serverTimestamp()
         };
 
-        // Write to individualStudents and students
+        // Write to individualStudents, students, and users
         await Promise.all([
           setDoc(doc(db, 'individualStudents', studentId), studentRecord, { merge: true }),
-          setDoc(doc(db, 'students', studentId), studentRecord, { merge: true })
+          setDoc(doc(db, 'students', studentId), studentRecord, { merge: true }),
+          setDoc(doc(db, 'users', studentId), {
+            uid: studentId,
+            studentDocId: studentId,
+            name: trimmedName,
+            fullName: trimmedName,
+            username: cleanUsername,
+            role: 'STUDENT',
+            schoolId: targetSchoolId,
+            schoolName: targetSchoolName,
+            class: form.class,
+            accessCode,
+            accessCodeHash,
+            portalAccessEnabled: true,
+            accountStatus: 'ACTIVE',
+            status: 'ACTIVE',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          }, { merge: true })
         ]);
 
         // Write to enrollments

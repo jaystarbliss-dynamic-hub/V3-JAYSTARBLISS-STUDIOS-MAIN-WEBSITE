@@ -129,9 +129,9 @@ export const handler: Handler = async event => {
     }
 
     const studentsMap = new Map<string, any>();
-    const seenIdentity = new Set<string>();
+    const canonicalIdByIdentity = new Map<string, string>();
 
-    const recordIdentity = (d: any, id: string) => {
+    const getIdentities = (d: any, id: string): string[] => {
       const uname = String(d.username || '').toLowerCase().trim();
       const email = String(d.email || '').toLowerCase().trim();
       const uid = String(d.firebaseUid || d.userId || '').trim();
@@ -139,63 +139,89 @@ export const handler: Handler = async event => {
       const name = String(d.fullName || d.studentName || d.name || '').toLowerCase().trim();
       const sId = String(d.schoolId || '').trim();
 
-      if (id) seenIdentity.add(`id:${id}`);
-      if (docId) seenIdentity.add(`docId:${docId}`);
-      if (uid) seenIdentity.add(`uid:${uid}`);
-      if (uname) seenIdentity.add(`u:${uname}`);
-      if (email && !email.endsWith('.local')) seenIdentity.add(`e:${email}`);
-      if (name && sId) seenIdentity.add(`name:${sId}:${name}`);
+      const keys: string[] = [];
+      if (id) keys.push(`id:${id}`);
+      if (docId) keys.push(`docId:${docId}`);
+      if (uid) keys.push(`uid:${uid}`);
+      if (uname) keys.push(`u:${uname}`);
+      if (email && !email.endsWith('.local')) keys.push(`e:${email}`);
+      if (name && name !== 'student' && sId) keys.push(`name:${sId}:${name}`);
+      return keys;
     };
 
-    const isDuplicate = (d: any, id: string): boolean => {
-      const uname = String(d.username || '').toLowerCase().trim();
-      const email = String(d.email || '').toLowerCase().trim();
-      const uid = String(d.firebaseUid || d.userId || '').trim();
-      const docId = String(d.studentDocId || id).trim();
-      const name = String(d.fullName || d.studentName || d.name || '').toLowerCase().trim();
-      const sId = String(d.schoolId || '').trim();
-
-      if (id && seenIdentity.has(`id:${id}`)) return true;
-      if (docId && seenIdentity.has(`docId:${docId}`)) return true;
-      if (uid && seenIdentity.has(`uid:${uid}`)) return true;
-      if (uname && seenIdentity.has(`u:${uname}`)) return true;
-      if (email && !email.endsWith('.local') && seenIdentity.has(`e:${email}`)) return true;
-      if (name && sId && seenIdentity.has(`name:${sId}:${name}`)) return true;
-      return false;
-    };
+    const mergeSerialised = (existing: any, incoming: any) => ({
+      ...incoming,
+      ...existing,
+      id: existing.id || incoming.id,
+      studentId: existing.studentId || incoming.studentId,
+      fullName: (existing.fullName && existing.fullName !== 'Student') ? existing.fullName : (incoming.fullName || existing.fullName || 'Student'),
+      username: (existing.username && existing.username !== existing.id) ? existing.username : (incoming.username || existing.username),
+      email: existing.email || incoming.email || null,
+      class: existing.class || incoming.class || '',
+      track: existing.track || incoming.track || '',
+      enrolledPrograms: existing.enrolledPrograms?.length ? existing.enrolledPrograms : (incoming.enrolledPrograms || []),
+      subjects: existing.subjects?.length ? existing.subjects : (incoming.subjects || []),
+      schoolId: existing.schoolId || incoming.schoolId || null,
+      schoolName: existing.schoolName || incoming.schoolName || '',
+      parentId: existing.parentId || incoming.parentId || null,
+      tutorId: existing.tutorId || incoming.tutorId || null,
+      staffId: existing.staffId || incoming.staffId || null,
+    });
 
     const addStudent = (id: string, d: any, source: string) => {
-      if (isDuplicate(d, id)) return;
-      recordIdentity(d, id);
-      studentsMap.set(id, serialise(id, d, source));
+      const keys = getIdentities(d, id);
+      let existingCanonicalId: string | undefined;
+      for (const k of keys) {
+        const found = canonicalIdByIdentity.get(k);
+        if (found && studentsMap.has(found)) {
+          existingCanonicalId = found;
+          break;
+        }
+      }
+      const serialised = serialise(existingCanonicalId || id, d, source);
+      const targetId = existingCanonicalId || id;
+      if (existingCanonicalId && studentsMap.has(existingCanonicalId)) {
+        studentsMap.set(existingCanonicalId, mergeSerialised(studentsMap.get(existingCanonicalId), serialised));
+      } else {
+        studentsMap.set(targetId, serialised);
+      }
+      for (const k of keys) {
+        if (!canonicalIdByIdentity.has(k)) canonicalIdByIdentity.set(k, targetId);
+      }
     };
 
     for (const sid of schoolIds) {
-      // 1. Primary school student tables
-      for (const coll of ['students', 'individualStudents']) {
-        const snap = await adminDb.collection(coll).where('schoolId', '==', sid).limit(500).get();
-        snap.docs.forEach(x => addStudent(x.id, x.data(), coll));
+      // 1. Primary school student tables (prioritise individualStudents where full onboarding data lives)
+      for (const coll of ['individualStudents', 'students']) {
+        for (const field of ['schoolId', 'school_id', 'schoolDocId']) {
+          const snap = await adminDb.collection(coll).where(field, '==', sid).limit(500).get().catch(() => ({ docs: [] as any[] }));
+          snap.docs.forEach(x => addStudent(x.id, x.data(), coll));
+        }
       }
 
-      // 2. User accounts table (only if student hasn't been added from primary tables)
-      const uSnap = await adminDb.collection('users').where('schoolId', '==', sid).limit(500).get();
-      uSnap.docs.forEach(x => {
-        const d = x.data() || {};
-        const r = String(d.role || '').toUpperCase();
-        if (['STUDENT', 'SCHOLAR', 'CADET'].includes(r) || d.studentDocId || d.isStudent) {
-          const primaryId = String(d.studentDocId || x.id);
-          addStudent(primaryId, { ...d, firebaseUid: x.id }, 'users');
-        }
-      });
+      // 2. User accounts table (merge or add if student profile only exists in users)
+      for (const field of ['schoolId', 'school_id', 'schoolDocId']) {
+        const uSnap = await adminDb.collection('users').where(field, '==', sid).limit(500).get().catch(() => ({ docs: [] as any[] }));
+        uSnap.docs.forEach(x => {
+          const d = x.data() || {};
+          const r = String(d.role || '').toUpperCase().trim();
+          const isExplicitStudent = ['STUDENT', 'SCHOLAR', 'CADET', 'INDIVIDUAL_STUDENT'].includes(r);
+          const isOtherRole = ['SCHOOL', 'SCHOOL_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'STAFF', 'TUTOR', 'INSTRUCTOR', 'TEACHER', 'PARENT'].includes(r);
+          if (isExplicitStudent || (!isOtherRole && (d.studentDocId || d.isStudent))) {
+            const primaryId = String(d.studentDocId || x.id);
+            addStudent(primaryId, { ...d, firebaseUid: x.id }, 'users');
+          }
+        });
+      }
     }
 
     if (isStaff) {
       // Resolve linked tutor/staff profile IDs as older student records may not store the Firebase UID.
       const staffIds = Array.from(new Set([decoded.uid, caller.uid, caller.userId, caller.staffId, caller.tutorId, caller.profileId, caller.staffProfileId, caller.tutorProfileId].filter((value: any) => typeof value === 'string' && value.trim()).map((value: string) => value.trim())));
-      for (const coll of ['students', 'individualStudents']) {
+      for (const coll of ['individualStudents', 'students']) {
         for (const field of ['tutorId', 'staffId', 'assignedTutorId', 'assignedStaffId', 'instructorId']) {
           for (const staffId of staffIds) {
-            const snap = await adminDb.collection(coll).where(field, '==', staffId).limit(500).get();
+            const snap = await adminDb.collection(coll).where(field, '==', staffId).limit(500).get().catch(() => ({ docs: [] as any[] }));
             snap.docs.forEach(x => addStudent(x.id, x.data(), coll));
           }
         }

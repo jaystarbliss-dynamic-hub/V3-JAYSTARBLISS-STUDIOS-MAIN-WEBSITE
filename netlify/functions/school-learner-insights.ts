@@ -136,20 +136,34 @@ export const handler: Handler = async event => {
       queryBySchoolAliases('users', school.aliases)
     ]);
     const rosterMap = new Map<string, any>();
-    for (const item of [...students, ...individuals]) {
+    for (const item of [...individuals, ...students]) {
       const learner = serialiseStudent(item.id, item.data, item.source, school.id);
-      rosterMap.set(item.id, learner);
+      const existing = rosterMap.get(item.id);
+      if (existing) {
+        if (existing.fullName === 'Learner' && learner.fullName !== 'Learner') existing.fullName = learner.fullName;
+        if (existing.className === 'Unassigned' && learner.className !== 'Unassigned') existing.className = learner.className;
+        if (!existing.track && learner.track) existing.track = learner.track;
+        if (!existing.studentUid && learner.studentUid) existing.studentUid = learner.studentUid;
+      } else {
+        rosterMap.set(item.id, learner);
+      }
     }
     for (const item of userRecords) {
       const data = item.data || {};
-      if (!['STUDENT', 'SCHOLAR', 'CADET', 'INDIVIDUAL_STUDENT'].includes(roleOf(data.role)) && !data.studentDocId) continue;
+      const r = roleOf(data.role);
+      const isExplicitStudent = ['STUDENT', 'SCHOLAR', 'CADET', 'INDIVIDUAL_STUDENT'].includes(r);
+      const isOtherRole = ['SCHOOL', 'SCHOOL_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'STAFF', 'TUTOR', 'INSTRUCTOR', 'TEACHER', 'PARENT'].includes(r);
+      if (!isExplicitStudent && (isOtherRole || (!data.studentDocId && !data.isStudent))) continue;
       const id = text(data.studentDocId || item.id);
+      const learner = serialiseStudent(id, data, 'users', school.id);
       const existingLearner = rosterMap.get(id);
       if (existingLearner) {
         if (!existingLearner.studentUid) existingLearner.studentUid = item.id;
+        if (existingLearner.fullName === 'Learner' && learner.fullName !== 'Learner') existingLearner.fullName = learner.fullName;
+        if (existingLearner.className === 'Unassigned' && learner.className !== 'Unassigned') existingLearner.className = learner.className;
+        if (!existingLearner.track && learner.track) existingLearner.track = learner.track;
         continue;
       }
-      const learner = serialiseStudent(id, data, 'users', school.id);
       learner.studentUid = item.id;
       rosterMap.set(id, learner);
     }

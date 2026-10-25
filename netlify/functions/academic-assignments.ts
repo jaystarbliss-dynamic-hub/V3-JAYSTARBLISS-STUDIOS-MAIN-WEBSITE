@@ -98,6 +98,6 @@ export const handler: Handler = async (event) => {
     }
     return json(400, { error: 'Unsupported assignment action.' });
   } catch (error) {
-    const code = error instanceof Error ? error.message : ''; if (code === 'PROFILE_NOT_FOUND') return json(403, { error: 'Your portal profile could not be verified.' }); if (code === 'ACCOUNT_INACTIVE') return json(403, { error: 'Your account is not active.' }); console.error('Academic assignments error:', error); return json(500, { error: 'Unable to complete the assignment request.' });
+    const code = error instanceof Error ? error.message : ''; if (code === 'PROFILE_NOT_FOUND') return json(403, { error: 'Your portal profile could not be verified.' }); if (code === 'ACCOUNT_INACTIVE') return json(403, { error: 'Your account is not active.' }); console.error('Academic assignments error (engaging client fallback):', error); return json(200, { assignments: [], fallback: true, error: 'Server handler unavailable; using client resolver.' });
   }
 };

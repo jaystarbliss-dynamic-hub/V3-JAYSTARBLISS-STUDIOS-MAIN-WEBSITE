@@ -6,7 +6,7 @@ import {
   GraduationCap, PlusCircle, CreditCard, Bell, CheckCircle2, AlertCircle, 
   ArrowRight, ChevronRight, Download, Receipt, Calendar, ExternalLink,
   Clock, User, BookOpen, Headphones, MessageCircle, KeyRound, Copy, Check,
-  Sparkles, ShieldCheck
+  ShieldCheck
 } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
 import DashboardGreeting from '../../components/portal/DashboardGreeting';
