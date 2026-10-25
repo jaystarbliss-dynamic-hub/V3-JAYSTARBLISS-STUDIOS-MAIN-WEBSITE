@@ -13,11 +13,10 @@ import {
 } from 'firebase/firestore';
 import { useToast } from '../../contexts/ToastContext';
 import { resolveRealName, formatTutorDropdownLabel } from '../../utils/userNames';
+import { CANONICAL_CLASSES, normalizeClassList, normalizeClassName } from '../../lib/classes';
+import { migrateAllFirestoreClasses } from '../../lib/classMigration';
 
-const CLASS_OPTIONS = [
-  'Early Years', 'Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Year 6',
-  'JSS 1', 'JSS 2', 'JSS 3', 'SS 1', 'SS 2', 'SS 3'
-];
+const CLASS_OPTIONS: string[] = [...CANONICAL_CLASSES];
 
 const DAYS_OF_WEEK = [
   { id: 'Monday', label: 'Mon', full: 'Monday', dayIndex: 1 },
@@ -295,14 +294,14 @@ const AdminClassSchedules: React.FC = () => {
     programId: '',
     programName: '',
     scope: 'range',
-    rangeStart: 'JSS 2',
-    rangeEnd: 'JSS 3',
-    classLevels: ['JSS 2', 'JSS 3'],
+    rangeStart: 'Grade 7',
+    rangeEnd: 'Grade 8',
+    classLevels: ['Grade 7', 'Grade 8'],
     daySchedules: [
       { dayName: 'Thursday', startTime: '14:00', endTime: '15:00', active: true }
     ],
     slotGroups: [
-      { id: 'slot-1', classes: ['JSS 2', 'JSS 3'], startTime: '14:00', endTime: '15:00', label: 'JSS 2 & JSS 3 Combined' }
+      { id: 'slot-1', classes: ['Grade 7', 'Grade 8'], startTime: '14:00', endTime: '15:00', label: 'Grade 7 & Grade 8 Combined' }
     ],
     parentId: '',
     studentId: '',
@@ -319,6 +318,7 @@ const AdminClassSchedules: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      void migrateAllFirestoreClasses().catch(() => undefined);
       const [
         schoolSnap, 
         usersSnap, 
@@ -479,12 +479,28 @@ const AdminClassSchedules: React.FC = () => {
       });
       setIndividuals(indivList.sort((a, b) => a.name.localeCompare(b.name)));
 
-      // 4. Process Class Schedules occurrences and group them
+      // 4. Process Class Schedules occurrences and group them (normalizing and deduplicating all class labels)
       const rawOccurrences: ScheduleOccurrence[] = schedSnap.docs.map((d: any) => {
         const data = d.data();
+        const normClassLevel = data.classLevel ? normalizeClassList(data.classLevel).join(', ') || normalizeClassName(data.classLevel) : data.classLevel;
+        const normClassLevels = Array.isArray(data.classLevels) ? normalizeClassList(data.classLevels) : (normClassLevel ? normalizeClassList(normClassLevel) : undefined);
+        const normCombined = Array.isArray(data.combinedClasses) ? normalizeClassList(data.combinedClasses) : undefined;
+        const normSlots = Array.isArray(data.slotGroups)
+          ? data.slotGroups.map((sg: any) => ({
+              ...sg,
+              classes: normalizeClassList(sg.classes || []),
+              label: normalizeClassList(sg.classes || []).length > 1
+                ? `${normalizeClassList(sg.classes || []).join(' & ')} Combined`
+                : normalizeClassList(sg.classes || [])[0] || sg.label
+            }))
+          : data.slotGroups;
         return {
           id: d.id,
           ...data,
+          ...(normClassLevel ? { classLevel: normClassLevel } : {}),
+          ...(normClassLevels ? { classLevels: normClassLevels } : {}),
+          ...(normCombined ? { combinedClasses: normCombined } : {}),
+          ...(normSlots ? { slotGroups: normSlots } : {}),
           // Calculate dayOfWeek timezone-neutrally from date if missing
           dayOfWeek: data.dayOfWeek || getWeekdayFromDateStr(data.date)
         };
@@ -511,7 +527,7 @@ const AdminClassSchedules: React.FC = () => {
             targetType: occ.targetType || (occ.schoolId ? 'school' : occ.parentId ? 'parent' : 'individual'),
             schoolId: occ.schoolId,
             schoolName: occ.schoolName,
-            classLevels: occ.classLevels || (occ.classLevel ? [occ.classLevel] : []),
+            classLevels: normalizeClassList(occ.classLevels || (occ.classLevel ? [occ.classLevel] : [])),
             parentId: occ.parentId,
             parentName: occ.parentName,
             studentId: occ.studentId,
@@ -533,9 +549,9 @@ const AdminClassSchedules: React.FC = () => {
         if (!existingOcc) {
           grp.occurrences.push(occ);
         } else {
-          // Merge classes into combined list if needed
-          if (occ.classLevel && !existingOcc.combinedClasses?.includes(occ.classLevel)) {
-            existingOcc.combinedClasses = Array.from(new Set([...(existingOcc.combinedClasses || [existingOcc.classLevel || '']), occ.classLevel]));
+          // Merge classes into combined list if needed (deduplicated)
+          if (occ.classLevel) {
+            existingOcc.combinedClasses = normalizeClassList([...(existingOcc.combinedClasses || [existingOcc.classLevel || '']), occ.classLevel]);
           }
         }
 
@@ -634,10 +650,10 @@ const AdminClassSchedules: React.FC = () => {
     setEditing(null);
     const defaultSchool = filterSchool ? schools.find(s => s.id === filterSchool) : schools[0];
     const defaultProg = defaultSchool?.programs?.[0];
-    const initialClasses = ['JSS 2', 'JSS 3'];
+    const initialClasses = ['Grade 7', 'Grade 8'];
     
     const initialSlots: ClassSlotGroup[] = [
-      { id: 'slot-1', classes: ['JSS 2', 'JSS 3'], startTime: '14:00', endTime: '15:00', label: 'JSS 2 & JSS 3 Combined' }
+      { id: 'slot-1', classes: ['Grade 7', 'Grade 8'], startTime: '14:00', endTime: '15:00', label: 'Grade 7 & Grade 8 Combined' }
     ];
 
     setForm({
@@ -646,8 +662,8 @@ const AdminClassSchedules: React.FC = () => {
       programId: defaultProg?.id || '',
       programName: defaultProg?.name || '',
       scope: 'range',
-      rangeStart: 'JSS 2',
-      rangeEnd: 'JSS 3',
+      rangeStart: 'Grade 7',
+      rangeEnd: 'Grade 8',
       classLevels: initialClasses,
       daySchedules: [
         { dayName: 'Thursday', startTime: '14:00', endTime: '15:00', active: true }
@@ -670,7 +686,7 @@ const AdminClassSchedules: React.FC = () => {
   const openEdit = (g: ScheduleGroup) => {
     setEditing(g);
     const firstOcc = g.occurrences[0];
-    const levels = g.classLevels?.length ? g.classLevels : ['Year 1'];
+    const levels = g.classLevels?.length ? normalizeClassList(g.classLevels) : ['Grade 1'];
     const distinctDates = Array.from(new Set(g.occurrences.map(o => o.date).filter(Boolean))).sort();
     
     // Extract unique days and their start/end times from occurrences or group
@@ -717,8 +733,8 @@ const AdminClassSchedules: React.FC = () => {
       programId: g.programId || firstOcc?.programId || '',
       programName: g.programName || firstOcc?.programName || '',
       scope: levels.length === CLASS_OPTIONS.length ? 'all' : levels.length > 1 ? 'range' : 'specific',
-      rangeStart: levels[0] || 'Year 1',
-      rangeEnd: levels[levels.length - 1] || 'Year 5',
+      rangeStart: levels[0] || 'Grade 1',
+      rangeEnd: levels[levels.length - 1] || 'Grade 5',
       classLevels: levels,
       daySchedules: activeDaysList,
       slotGroups: currentSlots,
@@ -778,7 +794,7 @@ const AdminClassSchedules: React.FC = () => {
         ...prev.slotGroups,
         {
           id: `slot-${Date.now()}`,
-          classes: [resolvedClasses[0] || 'Year 1'],
+          classes: [resolvedClasses[0] || 'Grade 1'],
           startTime: '08:00',
           endTime: '09:00',
           label: 'Class Cohort'

@@ -5,6 +5,7 @@ import { auth, db } from '../../lib/firebase';
 import { collection, getDocs, doc, getDoc, setDoc, addDoc, serverTimestamp, query, limit, where } from 'firebase/firestore';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
+import { CANONICAL_CLASSES, normalizeClassName } from '../../lib/classes';
 
 const generateAccessCode = (length = 8) => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -15,7 +16,7 @@ const generateAccessCode = (length = 8) => {
 
 const SchoolStudentOnboarding: React.FC = () => {
   const { toast } = useToast();
-  const [form, setForm] = useState({ fullName: '', username: '', email: '', class: 'JSS 1', track: '', parentId: '' });
+  const [form, setForm] = useState({ fullName: '', username: '', email: '', class: 'Grade 7', track: '', parentId: '' });
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState<{ username: string; accessCode: string; portal: string } | null>(null);
   const [programs, setPrograms] = useState<{ id: string; name: string }[]>([]);
@@ -96,6 +97,7 @@ const SchoolStudentOnboarding: React.FC = () => {
       const programName = selectedProg?.name || form.track.trim() || 'General School Programme';
       let issuedCredentials: { username: string; accessCode: string; portal: string } | null = null;
 
+      const canonicalClass = normalizeClassName(form.class, 'Grade 7') || 'Grade 7';
       // 1. Attempt backend Netlify function safely
       if (auth.currentUser && !effective.isMasquerading) {
         try {
@@ -103,7 +105,7 @@ const SchoolStudentOnboarding: React.FC = () => {
           const response = await fetch('/.netlify/functions/school-student-onboard', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...form, fullName: trimmedName, username: cleanUsername, programId, programName }),
+            body: JSON.stringify({ ...form, class: canonicalClass, fullName: trimmedName, username: cleanUsername, programId, programName }),
           });
           const contentType = response.headers.get('content-type') || '';
           if (contentType.includes('application/json')) {
@@ -145,8 +147,8 @@ const SchoolStudentOnboarding: React.FC = () => {
           accessCodeHash,
           schoolId: targetSchoolId,
           schoolName: targetSchoolName,
-          class: form.class,
-          grade: form.class,
+          class: canonicalClass,
+          grade: canonicalClass,
           track: programName,
           programId: programId || null,
           programName: programName || null,
@@ -173,7 +175,8 @@ const SchoolStudentOnboarding: React.FC = () => {
             role: 'STUDENT',
             schoolId: targetSchoolId,
             schoolName: targetSchoolName,
-            class: form.class,
+            class: canonicalClass,
+            grade: canonicalClass,
             accessCode,
             accessCodeHash,
             portalAccessEnabled: true,
@@ -216,7 +219,7 @@ const SchoolStudentOnboarding: React.FC = () => {
       }
 
       setCredentials(issuedCredentials);
-      setForm({ fullName: '', username: '', email: '', class: 'JSS 1', track: '', parentId: '' });
+      setForm({ fullName: '', username: '', email: '', class: 'Grade 7', track: '', parentId: '' });
       setProgramId('');
       toast.success(`Student account created successfully for ${trimmedName}!`);
     } catch (error: any) {
@@ -290,19 +293,13 @@ const SchoolStudentOnboarding: React.FC = () => {
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
             Class Level
             <select
-              value={form.class}
+              value={normalizeClassName(form.class) || form.class}
               onChange={e => update('class', e.target.value)}
               className="mt-1.5 w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 px-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium"
             >
-              <option>Primary 4</option>
-              <option>Primary 5</option>
-              <option>Primary 6</option>
-              <option>JSS 1</option>
-              <option>JSS 2</option>
-              <option>JSS 3</option>
-              <option>SS 1</option>
-              <option>SS 2</option>
-              <option>SS 3</option>
+              {CANONICAL_CLASSES.map(cls => (
+                <option key={cls} value={cls}>{cls}</option>
+              ))}
             </select>
           </label>
 

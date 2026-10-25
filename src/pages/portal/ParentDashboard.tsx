@@ -16,6 +16,8 @@ import { FintechTransactionDetailsModal } from '../../components/portal/FintechT
 import type { TransactionReceiptData } from '../../lib/receiptGenerator';
 import { getEffectiveAuth } from '../../utils/impersonation';
 import { formatNaira } from '../../lib/billing';
+import { CANONICAL_CLASSES, formatNormalizedClassDisplay, normalizeClassName } from '../../lib/classes';
+import { migrateAllFirestoreClasses } from '../../lib/classMigration';
 
 interface ChildRecord {
   id: string;
@@ -55,7 +57,7 @@ const ParentDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [studentName, setStudentName] = useState('');
-  const [studentAge, setStudentAge] = useState('');
+  const [studentAge, setStudentAge] = useState<string>('Grade 1');
   const [availablePrograms, setAvailablePrograms] = useState<{ id: string; title: string }[]>([]);
   const [selectedPlan, setSelectedPlan] = useState('');
   const [preferredSubjects, setPreferredSubjects] = useState('');
@@ -69,6 +71,7 @@ const ParentDashboard: React.FC = () => {
     const fetchParentData = async () => {
       setLoading(true);
       setEnrollError('');
+      void migrateAllFirestoreClasses().catch(() => undefined);
       try {
         const effective = getEffectiveAuth();
         const user = auth.currentUser;
@@ -87,7 +90,12 @@ const ParentDashboard: React.FC = () => {
             const key = studentIdentityKey(studentDoc, data);
             const existing = allStudentsMap.get(key);
             if (!existing || (String(data.status || '').toLowerCase() === 'active' && String(existing.status || '').toLowerCase() !== 'active')) {
-              allStudentsMap.set(key, { id: studentDoc.id, ...data } as ChildRecord);
+              const normalizedClass = formatNormalizedClassDisplay(data.class || data.grade || data.studentAge, '');
+              allStudentsMap.set(key, {
+                id: studentDoc.id,
+                ...data,
+                ...(normalizedClass ? { class: normalizedClass, grade: normalizedClass } : {})
+              } as ChildRecord);
             }
           });
         };
@@ -166,10 +174,10 @@ const ParentDashboard: React.FC = () => {
     event.preventDefault();
     setSubmitting(true); setEnrollSuccess(''); setEnrollError('');
     const trimmedName = studentName.trim();
-    const trimmedAge = studentAge.trim();
+    const trimmedAge = normalizeClassName(studentAge.trim(), 'Grade 1');
     const subjects = preferredSubjects.split(',').map(subject => subject.trim()).filter(Boolean);
     if (!trimmedName || !trimmedAge || subjects.length === 0) {
-      setEnrollError('Please complete the student name, age/grade, and at least one subject.'); setSubmitting(false); return;
+      setEnrollError('Please complete the student name, class/grade, and at least one subject.'); setSubmitting(false); return;
     }
     try {
       const user = auth.currentUser;
@@ -207,6 +215,9 @@ const ParentDashboard: React.FC = () => {
         const docPayload = {
           studentName: trimmedName,
           studentAge: trimmedAge,
+          studentClass: trimmedAge,
+          class: trimmedAge,
+          grade: trimmedAge,
           plan: selectedPlan,
           subjects,
           parentId: userUid,
@@ -235,7 +246,7 @@ const ParentDashboard: React.FC = () => {
 
       setEnrollments(current => [requestCreated, ...current.filter(e => e.id !== requestCreated.id)]);
       setEnrollSuccess(`Enrollment request submitted for ${trimmedName}! The admissions team can now review it from Admin Approvals, configure billing, assign a mentor, and schedule class times.`);
-      setStudentName(''); setStudentAge(''); setPreferredSubjects('Scratch, Python, Web Development'); setShowEnrollModal(false);
+      setStudentName(''); setStudentAge('Grade 1'); setPreferredSubjects('Scratch, Python, Web Development'); setShowEnrollModal(false);
     } catch (error: any) {
       console.error('Enrollment request submission failed:', error);
       setEnrollError(error?.message || 'Could not submit the enrollment request.');
@@ -411,7 +422,7 @@ const ParentDashboard: React.FC = () => {
                         </p>
                       </div>
 
-                      {(child.class || child.grade) && <InfoRow label="Class / Grade" value={child.class || child.grade || '—'} />}
+                      {(child.class || child.grade) && <InfoRow label="Class / Grade" value={formatNormalizedClassDisplay(child.class || child.grade, 'Grade 1')} />}
                       {child.schedule && <InfoRow label="Class Schedule" value={child.schedule} />}
                       {(child.tutorName || child.mentorName) && <InfoRow label="Assigned Mentor" value={child.tutorName || child.mentorName || 'Faculty Instructor'} />}
                       {child.plan && <InfoRow label="Programme Track" value={child.plan} />}
@@ -473,7 +484,7 @@ const ParentDashboard: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-900 dark:text-white">{sched.title || sched.programName || sched.subject || 'Coding Lab'}</span>
                   <span className="text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-brand-red/10 text-brand-red">
-                    {sched.classLevel || sched.class || sched.dayOfWeek || 'Scheduled'}
+                    {sched.classLevel || sched.class ? formatNormalizedClassDisplay(sched.classLevel || sched.class, 'Grade 1') : (sched.dayOfWeek || 'Scheduled')}
                   </span>
                 </div>
                 <div className="text-xs text-slate-500 space-y-1">
@@ -525,7 +536,7 @@ const ParentDashboard: React.FC = () => {
                 <div key={request.id} className="flex flex-col gap-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-3.5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-xs font-bold text-slate-900 dark:text-white">{request.studentName || 'Child enrollment'}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{request.plan || 'Learning plan'} • {request.studentAge || 'Age/grade not supplied'}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{request.plan || 'Learning plan'} • {formatNormalizedClassDisplay(request.class || request.grade || request.studentClass || request.studentAge, 'Grade 1')}</p>
                     {status === 'approved' && request.accessCode && (
                       <div className="mt-1.5 flex items-center gap-2 text-[11px]">
                         <span className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-mono font-bold">
@@ -569,8 +580,12 @@ const ParentDashboard: React.FC = () => {
               <Field label="Student Full Name" htmlFor="parent-student-name">
                 <input id="parent-student-name" type="text" required value={studentName} onChange={event => setStudentName(event.target.value)} placeholder="e.g. David Johnson" className="w-full min-h-9 rounded-xl border border-slate-200 dark:border-slate-800 px-3 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white" autoComplete="name" />
               </Field>
-              <Field label="Age / Grade" htmlFor="parent-student-age">
-                <input id="parent-student-age" type="text" required value={studentAge} onChange={event => setStudentAge(event.target.value)} placeholder="e.g. 10 years / Grade 5" className="w-full min-h-9 rounded-xl border border-slate-200 dark:border-slate-800 px-3 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white" />
+              <Field label="Class / Grade Level" htmlFor="parent-student-age">
+                <select id="parent-student-age" required value={normalizeClassName(studentAge, 'Grade 1')} onChange={event => setStudentAge(event.target.value)} className="w-full min-h-9 rounded-xl border border-slate-200 dark:border-slate-800 px-3 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                  {CANONICAL_CLASSES.map(cls => (
+                    <option key={cls} value={cls}>{cls}</option>
+                  ))}
+                </select>
               </Field>
               <Field label="Learning Track / Plan" htmlFor="parent-plan">
                 <select id="parent-plan" value={selectedPlan} onChange={event => setSelectedPlan(event.target.value)} className="w-full min-h-9 rounded-xl border border-slate-200 dark:border-slate-800 px-3 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white">

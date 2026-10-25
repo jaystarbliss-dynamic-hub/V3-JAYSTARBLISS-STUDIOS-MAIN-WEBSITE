@@ -1,16 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpenCheck, CalendarClock, ClipboardCheck, Loader2, RefreshCw, Download } from "lucide-react";
+import {
+  BookOpenCheck,
+  CalendarClock,
+  ClipboardCheck,
+  Loader2,
+  RefreshCw,
+  Download,
+} from "lucide-react";
 import { auth, db } from "../../lib/firebase";
 import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 import { generateExamReportPdf } from "../../lib/examReportPdfGenerator";
+import {
+  computeExamMaxScore,
+  calculateScorePercentage,
+  normalizeClassName,
+  resolvePartnerSchoolName,
+} from "../../lib/classes";
 
-type Child = { id: string; name: string; className: string };
+type Child = { id: string; name: string; className: string; schoolId?: string; schoolName?: string };
 type Result = {
   attemptId: string;
   examId: string;
   studentId: string;
   studentName: string;
   className: string;
+  schoolId?: string;
+  schoolName?: string;
   title: string;
   subject: string;
   status: string;
@@ -60,10 +75,15 @@ export default function ParentExaminationResults() {
       const parentUid = auth.currentUser.uid;
       const parentEmail = auth.currentUser.email?.toLowerCase() || "";
 
-      // Find children linked to parent
       const [byUidSnap, byEmailSnap] = await Promise.all([
-        getDocs(query(collection(db, "individualStudents"), where("parentId", "==", parentUid))).catch(() => ({ docs: [] } as any)),
-        parentEmail ? getDocs(query(collection(db, "individualStudents"), where("parentEmail", "==", parentEmail))).catch(() => ({ docs: [] } as any)) : Promise.resolve({ docs: [] } as any)
+        getDocs(query(collection(db, "individualStudents"), where("parentId", "==", parentUid))).catch(
+          () => ({ docs: [] } as any)
+        ),
+        parentEmail
+          ? getDocs(
+              query(collection(db, "individualStudents"), where("parentEmail", "==", parentEmail))
+            ).catch(() => ({ docs: [] } as any))
+          : Promise.resolve({ docs: [] } as any),
       ]);
 
       const childMap = new Map<string, Child>();
@@ -72,40 +92,71 @@ export default function ParentExaminationResults() {
         childMap.set(d.id, {
           id: d.id,
           name: data.fullName || data.studentName || "Student",
-          className: data.class || data.grade || ""
+          className: normalizeClassName(data.class || data.grade || "") || data.class || "",
+          schoolId: data.schoolId || "",
+          schoolName: resolvePartnerSchoolName(data.schoolName),
         });
       });
 
       loadedChildren = Array.from(childMap.values());
 
-      // If children found, load released attempts
       if (loadedChildren.length > 0) {
-        const attemptsSnap = await getDocs(collection(db, "jdiExamAttempts")).catch(() => ({ docs: [] } as any));
-        const childIds = new Set(loadedChildren.map(c => c.id));
+        const attemptsSnap = await getDocs(collection(db, "jdiExamAttempts")).catch(
+          () => ({ docs: [] } as any)
+        );
+        const childIds = new Set(loadedChildren.map((c) => c.id));
         const examDocsMap = new Map<string, any>();
 
         const [jdiSnap, schExamSnap] = await Promise.all([
           getDocs(collection(db, "jdiExams")).catch(() => ({ docs: [] } as any)),
-          getDocs(collection(db, "schoolExams")).catch(() => ({ docs: [] } as any))
+          getDocs(collection(db, "schoolExams")).catch(() => ({ docs: [] } as any)),
         ]);
         [...jdiSnap.docs, ...schExamSnap.docs].forEach((d: any) => examDocsMap.set(d.id, d.data()));
 
+        const schoolNameCache = new Map<string, string>();
+        const resolveSchoolNameById = async (schId?: string, fallback?: string) => {
+          const clean = String(schId || "").trim();
+          if (clean && schoolNameCache.has(clean)) return schoolNameCache.get(clean)!;
+          if (clean) {
+            const sSnap = await getDoc(doc(db, "schools", clean)).catch(() => null);
+            if (sSnap?.exists()) {
+              const s = sSnap.data();
+              const resolved = resolvePartnerSchoolName(s.name, s.schoolName, fallback);
+              if (resolved) {
+                schoolNameCache.set(clean, resolved);
+                return resolved;
+              }
+            }
+          }
+          return resolvePartnerSchoolName(fallback, "Assigned Partner School");
+        };
+
         const foundResults: Result[] = [];
-        attemptsSnap.docs?.forEach((ad: any) => {
+        for (const ad of attemptsSnap.docs || []) {
           const a = ad.data();
           if (childIds.has(a.studentId) && a.releasedAt) {
             const exam = examDocsMap.get(a.examId) || {};
             const child = childMap.get(a.studentId);
             const score = typeof a.score === "number" ? a.score : 0;
-            const maxScore = exam.questions?.length ? exam.questions.reduce((sum: number, q: any) => sum + (Number(q.points) || 1), 0) : 100;
-            const percentage = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+            const maxScore = computeExamMaxScore(exam, a);
+            const percentage = calculateScorePercentage(score, maxScore);
+            const schoolName = await resolveSchoolNameById(
+              a.schoolId || exam.schoolId || child?.schoolId,
+              a.schoolName || exam.schoolName || child?.schoolName
+            );
 
             foundResults.push({
               attemptId: ad.id,
               examId: a.examId,
               studentId: a.studentId,
               studentName: child?.name || a.studentName || "Student",
-              className: child?.className || a.className || "",
+              className:
+                normalizeClassName(child?.className || a.className || "") ||
+                child?.className ||
+                a.className ||
+                "",
+              schoolId: a.schoolId || exam.schoolId || child?.schoolId,
+              schoolName,
               title: exam.title || a.examTitle || "Examination Assessment",
               subject: exam.subject || "General",
               status: a.status || "graded",
@@ -116,11 +167,11 @@ export default function ParentExaminationResults() {
               releasedAt: a.releasedAt ? String(a.releasedAt) : undefined,
               feedback: a.feedback || undefined,
               answers: a.answers,
-              questions: exam.questions || a.questions,
-              questionResults: a.questionResults
+              questions: a.questionsSnapshot || exam.questions || a.questions,
+              questionResults: a.questionResults,
             });
           }
-        });
+        }
 
         loadedResults = foundResults;
       }
@@ -150,13 +201,19 @@ export default function ParentExaminationResults() {
   }, []);
 
   const visibleResults = useMemo(
-    () => results.filter(result => selectedChild === "all" || result.studentId === selectedChild),
+    () =>
+      results.filter((result) => selectedChild === "all" || result.studentId === selectedChild),
     [results, selectedChild]
   );
 
   const average = useMemo(() => {
-    const scored = visibleResults.filter(result => typeof result.percentage === "number");
-    return scored.length ? Math.round(scored.reduce((sum, result) => sum + Number(result.percentage), 0) / scored.length) : null;
+    const scored = visibleResults.filter((result) => typeof result.percentage === "number");
+    return scored.length
+      ? Math.round(
+          (scored.reduce((sum, result) => sum + Number(result.percentage), 0) / scored.length) *
+            100
+        ) / 100
+      : null;
   }, [visibleResults]);
 
   const handleDownloadPdf = async (result: Result) => {
@@ -169,28 +226,41 @@ export default function ParentExaminationResults() {
           studentId: result.studentId,
           studentName: result.studentName,
           className: result.className,
+          schoolId: result.schoolId,
+          schoolName: result.schoolName,
           status: result.status,
           score: result.score,
           maxScore: result.maxScore,
+          percentage: result.percentage,
           submittedAt: result.submittedAt,
           releasedAt: result.releasedAt,
           answers: result.answers,
           questions: result.questions,
           questionResults: result.questionResults,
-          feedback: result.feedback
+          feedback: result.feedback,
         },
         {
+          id: result.examId,
           title: result.title,
-          subject: result.subject
+          subject: result.subject,
+          schoolId: result.schoolId,
+          schoolName: result.schoolName,
+          maxScore: result.maxScore,
+          questions: result.questions,
         }
       );
-      const url = URL.createObjectURL(new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" }));
+      const url = URL.createObjectURL(
+        new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" })
+      );
       const link = document.createElement("a");
       link.href = url;
-      link.download = `JDI-Report-${result.studentName.replace(/[^a-z0-9]+/gi, "-")}-${result.attemptId.slice(-6)}.pdf`;
+      link.download = `JDI-Report-${result.studentName.replace(
+        /[^a-z0-9]+/gi,
+        "-"
+      )}-${result.attemptId.slice(-6)}.pdf`;
       link.click();
       URL.revokeObjectURL(url);
-    } catch (e) {
+    } catch {
       setError("Could not generate report PDF. Please try again.");
     } finally {
       setDownloadingId(null);
@@ -208,10 +278,20 @@ export default function ParentExaminationResults() {
       <header className="rounded-2xl bg-slate-900 p-6 text-white md:p-8">
         <p className="text-sm font-semibold tracking-wide text-blue-200">PARENT PORTAL</p>
         <h1 className="mt-2 text-3xl font-bold">Official Examination Results</h1>
-        <p className="mt-2 max-w-2xl text-slate-200">Review your linked children's released CBT examination results, download official institutional transcripts, and view teacher feedback.</p>
+        <p className="mt-2 max-w-2xl text-slate-200">
+          Review your linked children's released CBT examination results, download official
+          institutional transcripts, and view teacher feedback.
+        </p>
       </header>
 
-      {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">{error}</div>}
+      {error && (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800"
+        >
+          {error}
+        </div>
+      )}
 
       <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-end md:justify-between md:p-6">
         <label className="block min-w-0 flex-1 text-sm font-semibold text-slate-700">
@@ -219,12 +299,13 @@ export default function ParentExaminationResults() {
           <select
             className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 font-normal text-slate-900 outline-none focus:border-blue-500"
             value={selectedChild}
-            onChange={event => setSelectedChild(event.target.value)}
+            onChange={(event) => setSelectedChild(event.target.value)}
           >
             <option value="all">All Linked Children</option>
-            {children.map(child => (
+            {children.map((child) => (
               <option key={child.id} value={child.id}>
-                {child.name}{child.className ? ` — ${child.className}` : ""}
+                {child.name}
+                {child.className ? ` — ${child.className}` : ""}
               </option>
             ))}
           </select>
@@ -235,7 +316,11 @@ export default function ParentExaminationResults() {
           disabled={loading || refreshing}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
-          {refreshing || loading ? <Loader2 className="animate-spin text-blue-600" size={16} /> : <RefreshCw size={16} />}
+          {refreshing || loading ? (
+            <Loader2 className="animate-spin text-blue-600" size={16} />
+          ) : (
+            <RefreshCw size={16} />
+          )}
           Refresh Results
         </button>
       </section>
@@ -244,17 +329,25 @@ export default function ParentExaminationResults() {
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <BookOpenCheck size={22} className="text-blue-700" />
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Released Results</p>
+            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Released Results
+            </p>
             <p className="mt-1 text-2xl font-bold text-slate-900">{visibleResults.length}</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <ClipboardCheck size={22} className="text-emerald-700" />
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Average Performance</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{average === null ? "—" : `${average}%`}</p>
+            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Average Performance
+            </p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">
+              {average === null ? "—" : `${average}%`}
+            </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <CalendarClock size={22} className="text-indigo-700" />
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Linked Children</p>
+            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Linked Children
+            </p>
             <p className="mt-1 text-2xl font-bold text-slate-900">{children.length}</p>
           </div>
         </section>
@@ -268,22 +361,33 @@ export default function ParentExaminationResults() {
       ) : !error && children.length === 0 ? (
         <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
           <h2 className="text-lg font-bold text-slate-900">No linked learner profiles found</h2>
-          <p className="mt-2 text-sm text-slate-600">When your parent account is linked to a learner profile, their released examination results will appear here.</p>
+          <p className="mt-2 text-sm text-slate-600">
+            When your parent account is linked to a learner profile, their released examination
+            results will appear here.
+          </p>
         </section>
       ) : !error && visibleResults.length === 0 ? (
         <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
           <h2 className="text-lg font-bold text-slate-900">No released results yet</h2>
-          <p className="mt-2 text-sm text-slate-600">Submitted examinations remain pending here until verified and released by your child's tutor or school.</p>
+          <p className="mt-2 text-sm text-slate-600">
+            Submitted examinations remain pending here until verified and released by your child's
+            tutor or school.
+          </p>
         </section>
       ) : (
         !error && (
           <section className="space-y-4">
-            {visibleResults.map(result => (
-              <article key={result.attemptId} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6 hover:border-slate-300 transition-all">
+            {visibleResults.map((result) => (
+              <article
+                key={result.attemptId}
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6 hover:border-slate-300 transition-all"
+              >
                 <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider text-blue-700">
-                      {result.subject || "Examination"}{result.className ? ` · ${result.className}` : ""}
+                      {result.subject || "Examination"}
+                      {result.className ? ` · ${result.className}` : ""}
+                      {result.schoolName ? ` · ${result.schoolName}` : ""}
                     </p>
                     <h2 className="mt-1 text-lg font-bold text-slate-900">{result.title}</h2>
                     <p className="mt-1 text-sm text-slate-600">
@@ -297,7 +401,9 @@ export default function ParentExaminationResults() {
                       {typeof result.maxScore === "number" ? ` / ${result.maxScore}` : ""}
                     </p>
                     {typeof result.percentage === "number" && (
-                      <p className="text-xs font-bold text-emerald-700">{result.percentage}% Grade</p>
+                      <p className="text-xs font-bold text-emerald-700">
+                        {result.percentage}% Grade
+                      </p>
                     )}
                   </div>
                 </div>
@@ -315,7 +421,9 @@ export default function ParentExaminationResults() {
                     className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 font-bold text-slate-800 hover:bg-slate-50 shadow-sm"
                   >
                     <Download size={14} className="text-blue-600" />
-                    {downloadingId === result.attemptId ? "Generating PDF…" : "Download Official Report PDF"}
+                    {downloadingId === result.attemptId
+                      ? "Generating PDF…"
+                      : "Download Official Report PDF"}
                   </button>
                 </div>
               </article>

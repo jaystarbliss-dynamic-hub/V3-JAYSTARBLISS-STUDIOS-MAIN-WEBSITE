@@ -31,11 +31,9 @@ const SUBJECTS = [
   'Chess Strategy & Cognitive Logic'
 ];
 
-const STUDENT_CLASSES = [
-  'JSS 1 (Grade 7)', 'JSS 2 (Grade 8)', 'JSS 3 (Grade 9)',
-  'SS 1 (Grade 10)', 'SS 2 (Grade 11)', 'SS 3 (Grade 12)',
-  'Undergraduate / University Student', 'Adult / Professional Tech Learner'
-];
+import { CANONICAL_CLASSES, normalizeClassName } from '../lib/classes';
+
+const STUDENT_CLASSES: string[] = [...CANONICAL_CLASSES];
 
 const QUALIFICATIONS = [
   'B.Sc / B.Eng in Computer Science / Engineering',
@@ -94,7 +92,7 @@ const Register: React.FC = () => {
   const [parentNotes, setParentNotes] = useState('');
   
   // Student Fields
-  const [studentClass, setStudentClass] = useState(STUDENT_CLASSES[0]);
+  const [studentClass, setStudentClass] = useState<string>('Grade 7');
   const [isAdultOrIndependent, setIsAdultOrIndependent] = useState(true);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([
     'Coding & Scratch (Kids & Beginners)', 
@@ -347,6 +345,7 @@ const Register: React.FC = () => {
         const cred = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
         await sendEmailVerification(cred.user).catch(() => undefined);
 
+        const normalizedStudentClass = normalizeClassName(studentClass, 'Grade 7');
         const data = {
           name: fullName.trim(),
           email: email.trim().toLowerCase(),
@@ -354,7 +353,8 @@ const Register: React.FC = () => {
           dateOfBirth,
           age: calculateAge(dateOfBirth),
           role: 'student',
-          class: studentClass.trim(),
+          class: normalizedStudentClass,
+          grade: normalizedStudentClass,
           isIndependent: true,
           subjects: selectedSubjects,
           goals: studentGoals.trim(),
@@ -766,19 +766,19 @@ const Register: React.FC = () => {
                 </>
               )}
 
-              {/* STUDENT DETAILS (NO PRIMARY CLASSES) */}
+              {/* STUDENT DETAILS */}
               {mode === 'student' && (
                 <>
                   <div className="mb-2">
                     <h2 className="text-base font-bold text-white">Academic Stage &amp; Learning Goals</h2>
                     <p className="text-xs text-slate-300 mt-0.5">
-                      Select your educational level and desired coding/technology tracks.
+                      Select your class or educational level and desired coding/technology tracks.
                     </p>
                   </div>
 
                   <div className="field">
                     <label className="text-xs font-bold text-slate-300 block mb-1.5">
-                      Educational Level (Secondary to Adult)
+                      Class / Educational Level
                     </label>
                     <div className="input-wrap relative flex items-center">
                       <span className="input-icon absolute left-3 text-slate-400"><BookOpen size={15} /></span>
@@ -792,9 +792,6 @@ const Register: React.FC = () => {
                         ))}
                       </select>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      * Primary school learners require a parent account for enrollment.
-                    </p>
                   </div>
 
                   <div className="field">

@@ -1,4 +1,10 @@
 import jsPDF from 'jspdf';
+import {
+  computeExamMaxScore,
+  calculateScorePercentage,
+  normalizeClassName,
+  resolvePartnerSchoolName,
+} from './classes';
 
 export interface ExamReportQuestion {
   id: string;
@@ -29,6 +35,7 @@ export interface ExamReportAttempt {
   autoGraded?: boolean;
   answers?: Record<string, string | string[]>;
   questions?: ExamReportQuestion[];
+  questionsSnapshot?: ExamReportQuestion[];
   questionResults?: {
     questionId: string;
     answer?: string | string[];
@@ -49,10 +56,49 @@ export interface ExamReportExamMeta {
   id?: string;
   title: string;
   subject: string;
+  schoolId?: string;
+  schoolName?: string;
+  maxScore?: number;
   seriesName?: string;
   courseName?: string;
   durationMinutes?: number;
   instructions?: string;
+  questions?: ExamReportQuestion[];
+}
+
+export interface ExamReportQuestionRow {
+  index: number;
+  questionId: string;
+  prompt: string;
+  studentAnswerText: string;
+  officialAnswerText: string;
+  pointsAwarded: number;
+  maxPoints: number;
+  status: 'PASS' | 'PART' | 'FAIL';
+  isCorrect: boolean;
+  explanation?: string;
+}
+
+export interface ExamReportViewModel {
+  attemptId: string;
+  examId: string;
+  studentId: string;
+  studentName: string;
+  studentClass: string;
+  schoolName: string;
+  examTitle: string;
+  examSubject: string;
+  submittedAtText: string;
+  releasedAtText: string;
+  isReleased: boolean;
+  evaluationMode: string;
+  rawScore: number;
+  maxScore: number;
+  percentage: number;
+  grade: string;
+  remarks: string;
+  feedbackText: string;
+  questionRows: ExamReportQuestionRow[];
 }
 
 // Convert image url to base64 data url safely in browser
@@ -83,19 +129,42 @@ async function getReportLogos() {
   return cachedLogos;
 }
 
-function formatDateTime(val: any): string {
+export function formatReportDateTime(val: any): string {
   if (!val) return '—';
   if (typeof val === 'string') {
     const d = new Date(val);
-    return isNaN(d.getTime()) ? val : d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return isNaN(d.getTime())
+      ? val
+      : d.toLocaleString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
   }
   if (val.toDate && typeof val.toDate === 'function') {
-    return val.toDate().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return val.toDate().toLocaleString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  if (typeof val === 'object' && typeof val._seconds === 'number') {
+    return new Date(val._seconds * 1000).toLocaleString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
   return String(val);
 }
 
-function getPerformanceGrade(percentage: number): { grade: string; remarks: string } {
+export function getPerformanceGrade(percentage: number): { grade: string; remarks: string } {
   if (percentage >= 85) return { grade: 'Distinction (A*)', remarks: 'Exceptional mastery and analytical proficiency' };
   if (percentage >= 75) return { grade: 'Excellent (A)', remarks: 'Very strong subject comprehension' };
   if (percentage >= 65) return { grade: 'Very Good (B)', remarks: 'Solid understanding of key curriculum competencies' };
@@ -104,10 +173,135 @@ function getPerformanceGrade(percentage: number): { grade: string; remarks: stri
   return { grade: 'Needs Improvement (F)', remarks: 'Targeted support and structured intervention advised' };
 }
 
+function formatAnswerText(q: ExamReportQuestion, val: any): string {
+  if (val === undefined || val === null || val === '') return 'No Answer Provided';
+  const ids = Array.isArray(val) ? val.map(String) : [String(val)];
+  return ids
+    .map((id) => {
+      const match = q.options?.find((o) => String(o.id).toUpperCase() === id.trim().toUpperCase());
+      return match ? `${match.id}. ${match.text}` : id;
+    })
+    .join('; ');
+}
+
+function formatCorrectText(q: ExamReportQuestion): string {
+  if (q.correctOptionIds && q.correctOptionIds.length > 0) {
+    return q.correctOptionIds
+      .map((id) => {
+        const match = q.options?.find((o) => String(o.id).toUpperCase() === String(id).trim().toUpperCase());
+        return match ? `${match.id}. ${match.text}` : id;
+      })
+      .join('; ');
+  }
+  if (q.acceptedAnswers && q.acceptedAnswers.length > 0) {
+    return q.acceptedAnswers.join(' / ');
+  }
+  return 'Subjective / Manual Review';
+}
+
+export function buildExamReportViewModel(
+  attempt: ExamReportAttempt,
+  examMeta?: ExamReportExamMeta
+): ExamReportViewModel {
+  const examTitle = examMeta?.title || 'Examination Assessment';
+  const examSubject = examMeta?.subject || 'Computer & Digital Technology';
+  const schoolName = resolvePartnerSchoolName(
+    attempt.schoolName,
+    examMeta?.schoolName,
+    'Assigned Partner School'
+  );
+  const studentName = (attempt.studentName || 'Student').trim() || 'Student';
+  const studentClass =
+    normalizeClassName(attempt.className || '') ||
+    (attempt.className || '').trim() ||
+    'General Class';
+
+  const questions: ExamReportQuestion[] =
+    Array.isArray(attempt.questionsSnapshot) && attempt.questionsSnapshot.length > 0
+      ? attempt.questionsSnapshot
+      : Array.isArray(attempt.questions) && attempt.questions.length > 0
+      ? attempt.questions
+      : Array.isArray(examMeta?.questions) && examMeta!.questions!.length > 0
+      ? examMeta!.questions!
+      : [];
+
+  const questionResults = Array.isArray(attempt.questionResults) ? attempt.questionResults : [];
+  const manualMarks = Array.isArray(attempt.manualMarks) ? attempt.manualMarks : [];
+
+  const maxScore = computeExamMaxScore(
+    { questions, maxScore: examMeta?.maxScore },
+    attempt
+  );
+  const rawScore = typeof attempt.score === 'number' && Number.isFinite(attempt.score) ? attempt.score : 0;
+  const percentage = calculateScorePercentage(rawScore, maxScore);
+  const gradeInfo = getPerformanceGrade(percentage);
+
+  const questionRows: ExamReportQuestionRow[] = questions.map((q, idx) => {
+    const maxPoints = Math.max(0.5, Number(q.points ?? 1) || 1);
+    const result = questionResults.find((r) => r.questionId === q.id);
+    const manual = manualMarks.find((r) => r.questionId === q.id);
+    const rawAwarded = manual?.pointsAwarded ?? result?.pointsAwarded;
+    const isCorrect =
+      result?.correct === true ||
+      (rawAwarded !== undefined && Number(rawAwarded) >= maxPoints);
+    const pointsAwarded =
+      rawAwarded !== undefined
+        ? Number(rawAwarded)
+        : isCorrect
+        ? maxPoints
+        : 0;
+    const status: 'PASS' | 'PART' | 'FAIL' = isCorrect
+      ? 'PASS'
+      : pointsAwarded > 0
+      ? 'PART'
+      : 'FAIL';
+
+    return {
+      index: idx + 1,
+      questionId: q.id || `q_${idx + 1}`,
+      prompt: q.prompt || `Question ${idx + 1}`,
+      studentAnswerText: formatAnswerText(q, attempt.answers?.[q.id] ?? result?.answer),
+      officialAnswerText: formatCorrectText(q),
+      pointsAwarded,
+      maxPoints,
+      status,
+      isCorrect,
+      explanation: q.explanation,
+    };
+  });
+
+  const feedbackText =
+    attempt.feedback?.trim() ||
+    `${gradeInfo.remarks}. Continued engagement with course practicals is highly encouraged.`;
+
+  return {
+    attemptId: attempt.id || '',
+    examId: attempt.examId || examMeta?.id || '',
+    studentId: attempt.studentId || '',
+    studentName,
+    studentClass,
+    schoolName,
+    examTitle,
+    examSubject,
+    submittedAtText: formatReportDateTime(attempt.submittedAt),
+    releasedAtText: attempt.releasedAt ? formatReportDateTime(attempt.releasedAt) : '',
+    isReleased: Boolean(attempt.releasedAt),
+    evaluationMode: attempt.autoGraded !== false ? 'Standard CBT Auto' : 'Instructor Verified',
+    rawScore,
+    maxScore,
+    percentage,
+    grade: gradeInfo.grade,
+    remarks: gradeInfo.remarks,
+    feedbackText,
+    questionRows,
+  };
+}
+
 export async function generateExamReportPdf(
   attempt: ExamReportAttempt,
   examMeta?: ExamReportExamMeta
 ): Promise<Uint8Array> {
+  const vm = buildExamReportViewModel(attempt, examMeta);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const logos = await getReportLogos();
 
@@ -116,31 +310,15 @@ export async function generateExamReportPdf(
   const marginX = 14;
   const contentWidth = pageWidth - marginX * 2; // 182mm
 
-  const examTitle = examMeta?.title || 'Examination Assessment';
-  const examSubject = examMeta?.subject || 'Computer & Digital Technology';
-  const schoolName = attempt.schoolName || 'Jaystarbliss Dynamic Institute Partner School';
-  const studentName = attempt.studentName || 'Student';
-  const studentClass = attempt.className || 'General Class';
-
-  const questions = attempt.questions || [];
-  const questionResults = attempt.questionResults || [];
-  const manualMarks = attempt.manualMarks || [];
-
-  const calculatedMax = questions.reduce((sum, q) => sum + Math.max(0, Number(q.points) || 0), 0);
-  const maxScore = attempt.maxScore ?? (calculatedMax > 0 ? calculatedMax : 100);
-  const rawScore = attempt.score ?? 0;
-  const percentage = maxScore > 0 ? Math.min(100, Math.round((rawScore / maxScore) * 100)) : 0;
-  const gradeInfo = getPerformanceGrade(percentage);
-
   // Helper to draw standard header on any page
-  const drawHeader = (_pageNumber?: number, _totalPagesPlaceholder = false) => {
+  const drawHeader = (_pageNumber?: number) => {
     // Top Navy Accent Bar
     doc.setFillColor(15, 23, 42); // slate-900
     doc.rect(0, 0, pageWidth, 5, 'F');
     doc.setFillColor(37, 99, 235); // blue-600
     doc.rect(0, 5, pageWidth, 1.5, 'F');
 
-    let currentY = 11;
+    const currentY = 11;
 
     // Logos on left and right
     if (logos.emblemLogo) {
@@ -190,7 +368,7 @@ export async function generateExamReportPdf(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(148, 163, 184); // slate-400
-    doc.text('Jaystarbliss Dynamic Institute  -  Official Confidential Examination Record', marginX, footerY);
+    doc.text(`${vm.schoolName}  ·  Jaystarbliss Dynamic Institute Official Examination Record`, marginX, footerY);
     doc.text(`Page ${pageNumber} of ${totalPages}`, pageWidth - marginX, footerY, { align: 'right' });
   };
 
@@ -221,14 +399,14 @@ export async function generateExamReportPdf(
   doc.text('Student Full Name:', col1X, y + 5.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(studentName, col1X + 34, y + 5.5);
+  doc.text(vm.studentName, col1X + 34, y + 5.5);
 
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(71, 85, 105);
   doc.text('Examination Title:', col2X, y + 5.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  const examTitleShort = examTitle.length > 32 ? examTitle.slice(0, 31) + '…' : examTitle;
+  const examTitleShort = vm.examTitle.length > 32 ? vm.examTitle.slice(0, 31) + '…' : vm.examTitle;
   doc.text(examTitleShort, col2X + 34, y + 5.5);
 
   // Row 2
@@ -237,22 +415,22 @@ export async function generateExamReportPdf(
   doc.text('Candidate Class:', col1X, y + 14);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(15, 23, 42);
-  doc.text(studentClass, col1X + 34, y + 14);
+  doc.text(vm.studentClass, col1X + 34, y + 14);
 
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(71, 85, 105);
   doc.text('Subject / Domain:', col2X, y + 14);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(15, 23, 42);
-  doc.text(examSubject, col2X + 34, y + 14);
+  doc.text(vm.examSubject, col2X + 34, y + 14);
 
   // Row 3
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(71, 85, 105);
   doc.text('Partner School:', col1X, y + 22.5);
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  const schNameShort = schoolName.length > 30 ? schoolName.slice(0, 29) + '…' : schoolName;
+  const schNameShort = vm.schoolName.length > 32 ? vm.schoolName.slice(0, 31) + '…' : vm.schoolName;
   doc.text(schNameShort, col1X + 34, y + 22.5);
 
   doc.setFont('helvetica', 'bold');
@@ -260,7 +438,7 @@ export async function generateExamReportPdf(
   doc.text('Submitted At:', col2X, y + 22.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(15, 23, 42);
-  doc.text(formatDateTime(attempt.submittedAt), col2X + 34, y + 22.5);
+  doc.text(vm.submittedAtText, col2X + 34, y + 22.5);
 
   // Row 4
   doc.setFont('helvetica', 'bold');
@@ -268,14 +446,18 @@ export async function generateExamReportPdf(
   doc.text('Candidate ID / Ref:', col1X, y + 31);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(15, 23, 42);
-  doc.text(attempt.studentId.slice(0, 24), col1X + 34, y + 31);
+  doc.text(vm.studentId.slice(0, 24), col1X + 34, y + 31);
 
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(71, 85, 105);
   doc.text('Release Status:', col2X, y + 31);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(attempt.releasedAt ? 16 : 180, attempt.releasedAt ? 185 : 83, attempt.releasedAt ? 129 : 9);
-  doc.text(attempt.releasedAt ? `Released on ${formatDateTime(attempt.releasedAt)}` : 'Provisional / Verification in Progress', col2X + 34, y + 31);
+  doc.setTextColor(vm.isReleased ? 16 : 180, vm.isReleased ? 185 : 83, vm.isReleased ? 129 : 9);
+  doc.text(
+    vm.isReleased ? `Released on ${vm.releasedAtText}` : 'Provisional / Verification in Progress',
+    col2X + 34,
+    y + 31
+  );
 
   y += 38;
 
@@ -294,7 +476,7 @@ export async function generateExamReportPdf(
   doc.text('SCORE OBTAINED', marginX + metricW * 0.5, y + 6, { align: 'center' });
   doc.setFontSize(14);
   doc.setTextColor(12, 74, 110); // sky-900
-  doc.text(`${rawScore} / ${maxScore}`, marginX + metricW * 0.5, y + 15, { align: 'center' });
+  doc.text(`${vm.rawScore} / ${vm.maxScore}`, marginX + metricW * 0.5, y + 15, { align: 'center' });
 
   // Metric 2: Percentage
   doc.setFontSize(7.5);
@@ -302,7 +484,7 @@ export async function generateExamReportPdf(
   doc.text('PERCENTAGE', marginX + metricW * 1.5, y + 6, { align: 'center' });
   doc.setFontSize(14);
   doc.setTextColor(12, 74, 110);
-  doc.text(`${percentage}%`, marginX + metricW * 1.5, y + 15, { align: 'center' });
+  doc.text(`${vm.percentage}%`, marginX + metricW * 1.5, y + 15, { align: 'center' });
 
   // Metric 3: Grade
   doc.setFontSize(7.5);
@@ -310,7 +492,7 @@ export async function generateExamReportPdf(
   doc.text('ASSESSMENT GRADE', marginX + metricW * 2.5, y + 6, { align: 'center' });
   doc.setFontSize(10.5);
   doc.setTextColor(12, 74, 110);
-  doc.text(gradeInfo.grade, marginX + metricW * 2.5, y + 14.5, { align: 'center' });
+  doc.text(vm.grade, marginX + metricW * 2.5, y + 14.5, { align: 'center' });
 
   // Metric 4: Method
   doc.setFontSize(7.5);
@@ -318,7 +500,7 @@ export async function generateExamReportPdf(
   doc.text('EVALUATION MODE', marginX + metricW * 3.5, y + 6, { align: 'center' });
   doc.setFontSize(9.5);
   doc.setTextColor(12, 74, 110);
-  doc.text(attempt.autoGraded !== false ? 'Standard CBT Auto' : 'Instructor Verified', marginX + metricW * 3.5, y + 14.5, { align: 'center' });
+  doc.text(vm.evaluationMode, marginX + metricW * 3.5, y + 14.5, { align: 'center' });
 
   y += 26;
 
@@ -330,7 +512,7 @@ export async function generateExamReportPdf(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(100, 116, 139);
-  doc.text(`Total Questions: ${questions.length}`, pageWidth - marginX, y, { align: 'right' });
+  doc.text(`Total Questions: ${vm.questionRows.length}  |  Total Marks: ${vm.maxScore}`, pageWidth - marginX, y, { align: 'right' });
 
   y += 4;
 
@@ -368,47 +550,19 @@ export async function generateExamReportPdf(
 
   y = drawTableHeader(y);
 
-  const formatAnswerText = (q: ExamReportQuestion, val: any): string => {
-    if (val === undefined || val === null || val === '') return 'No Answer Provided';
-    const ids = Array.isArray(val) ? val.map(String) : [String(val)];
-    return ids.map(id => {
-      const match = q.options?.find(o => o.id === id);
-      return match ? `${match.id}. ${match.text}` : id;
-    }).join('; ');
-  };
-
-  const formatCorrectText = (q: ExamReportQuestion): string => {
-    if (q.correctOptionIds && q.correctOptionIds.length > 0) {
-      return q.correctOptionIds.map(id => {
-        const match = q.options?.find(o => o.id === id);
-        return match ? `${match.id}. ${match.text}` : id;
-      }).join('; ');
-    }
-    if (q.acceptedAnswers && q.acceptedAnswers.length > 0) {
-      return q.acceptedAnswers.join(' / ');
-    }
-    return 'Subjective / Manual Review';
-  };
-
-  if (!questions || questions.length === 0) {
+  if (vm.questionRows.length === 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(100, 116, 139);
     doc.text('Question detail is preserved in the central CBT audit ledger and available in the digital portal.', marginX + 3, y + 8);
     y += 16;
   } else {
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
-      const result = questionResults.find(r => r.questionId === q.id);
-      const manual = manualMarks.find(r => r.questionId === q.id);
-      const awarded = manual?.pointsAwarded ?? result?.pointsAwarded;
-      const isCorrect = result?.correct === true || (awarded !== undefined && awarded === q.points);
+    for (let i = 0; i < vm.questionRows.length; i++) {
+      const row = vm.questionRows[i];
 
-      const promptLines = doc.splitTextToSize(q.prompt, colPromptW - 4);
-      const studentAnsText = formatAnswerText(q, attempt.answers?.[q.id]);
-      const studentAnsLines = doc.splitTextToSize(studentAnsText, colStudentAnsW - 4);
-      const correctAnsText = formatCorrectText(q);
-      const correctAnsLines = doc.splitTextToSize(correctAnsText, colCorrectAnsW - 4);
+      const promptLines = doc.splitTextToSize(row.prompt, colPromptW - 4);
+      const studentAnsLines = doc.splitTextToSize(row.studentAnswerText, colStudentAnsW - 4);
+      const correctAnsLines = doc.splitTextToSize(row.officialAnswerText, colCorrectAnsW - 4);
 
       const maxLines = Math.max(promptLines.length, studentAnsLines.length, correctAnsLines.length, 1);
       const rowHeight = Math.max(7, maxLines * 3.8 + 3);
@@ -442,14 +596,14 @@ export async function generateExamReportPdf(
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
       doc.setTextColor(30, 41, 59);
-      doc.text(String(i + 1), colQNumX + colQNumW / 2, y + 4.5, { align: 'center' });
+      doc.text(String(row.index), colQNumX + colQNumW / 2, y + 4.5, { align: 'center' });
 
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(15, 23, 42);
       doc.text(promptLines, colPromptX + 2, y + 4.2);
 
       // Student Answer styling
-      doc.setTextColor(isCorrect ? 16 : 185, isCorrect ? 149 : 28, isCorrect ? 193 : 28);
+      doc.setTextColor(row.isCorrect ? 16 : 185, row.isCorrect ? 149 : 28, row.isCorrect ? 193 : 28);
       doc.text(studentAnsLines, colStudentAnsX + 2, y + 4.2);
 
       // Correct Answer styling
@@ -459,13 +613,13 @@ export async function generateExamReportPdf(
       // Marks
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(15, 23, 42);
-      doc.text(`${awarded ?? (isCorrect ? q.points : 0)} / ${q.points}`, colMarksX + colMarksW / 2, y + 4.5, { align: 'center' });
+      doc.text(`${row.pointsAwarded} / ${row.maxPoints}`, colMarksX + colMarksW / 2, y + 4.5, { align: 'center' });
 
       // Result symbol
-      if (isCorrect) {
+      if (row.status === 'PASS') {
         doc.setTextColor(16, 185, 129); // emerald-500
         doc.text('PASS', colResultX + colResultW / 2, y + 4.5, { align: 'center' });
-      } else if (awarded !== undefined && awarded > 0) {
+      } else if (row.status === 'PART') {
         doc.setTextColor(217, 119, 6); // amber-600
         doc.text('PART', colResultX + colResultW / 2, y + 4.5, { align: 'center' });
       } else {
@@ -478,8 +632,7 @@ export async function generateExamReportPdf(
   }
 
   // TUTOR REMARKS & FEEDBACK BOX
-  const feedbackText = attempt.feedback?.trim() || `${gradeInfo.remarks}. Continued engagement with course practicals is highly encouraged.`;
-  const feedbackLines = doc.splitTextToSize(feedbackText, contentWidth - 8);
+  const feedbackLines = doc.splitTextToSize(vm.feedbackText, contentWidth - 8);
   const feedbackBoxHeight = Math.max(14, feedbackLines.length * 4 + 7);
 
   if (y + feedbackBoxHeight + 25 > pageHeight - 12) {
@@ -528,12 +681,12 @@ export async function generateExamReportPdf(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
   doc.setTextColor(71, 85, 105);
-  doc.text('Institution Verification & Audit Seal:', marginX + halfW + 3, y + 5);
+  doc.text('Partner School & Institutional Verification:', marginX + halfW + 3, y + 5);
   doc.line(marginX + halfW + 3, y + 13, marginX + contentWidth - 4, y + 13);
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(6.5);
   doc.setTextColor(148, 163, 184);
-  doc.text(`Official Transcript Issued: ${new Date().toLocaleDateString('en-GB')}`, marginX + halfW + 3, y + 16.5);
+  doc.text(`${vm.schoolName} · Issued ${new Date().toLocaleDateString('en-GB')}`, marginX + halfW + 3, y + 16.5);
 
   // Apply Footers to ALL pages
   const totalPages = doc.getNumberOfPages();

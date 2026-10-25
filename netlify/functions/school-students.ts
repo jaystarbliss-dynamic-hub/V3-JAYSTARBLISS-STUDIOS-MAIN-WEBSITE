@@ -1,5 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
+import { normalizeClassName } from '../../api/_lib/jdi-assessment.js';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -16,14 +17,16 @@ const blocked = (v: unknown) => ['SUSPENDED', 'BANNED', 'DISABLED'].includes(Str
 const adminRoles = ['admin', 'super_admin', 'content_admin', 'education_admin', 'services_admin', 'marketing_admin', 'support_admin'];
 const staffRoles = ['staff', 'tutor', 'instructor', 'teacher'];
 
-const serialise = (id: string, d: any, source: string) => ({
-  id,
-  studentId: id,
-  collection: source,
-  fullName: d.fullName || d.studentName || d.name || 'Student',
-  username: d.username || id,
-  email: d.email || null,
-  class: (d.class || d.grade || d.classLevel || '').trim() || '',
+const serialise = (id: string, d: any, source: string) => {
+  const rawClass = (d.class || d.grade || d.classLevel || '').trim() || '';
+  return {
+    id,
+    studentId: id,
+    collection: source,
+    fullName: d.fullName || d.studentName || d.name || 'Student',
+    username: d.username || id,
+    email: d.email || null,
+    class: normalizeClassName(rawClass) || rawClass,
   track: d.track || d.programName || d.plan || '',
   enrolledPrograms: Array.isArray(d.enrolledPrograms) ? d.enrolledPrograms : [],
   subjects: Array.isArray(d.subjects) ? d.subjects : [],
@@ -32,9 +35,10 @@ const serialise = (id: string, d: any, source: string) => ({
   parentId: d.parentId || null,
   tutorId: d.tutorId || d.assignedTutorId || d.instructorId || null,
   staffId: d.staffId || d.assignedStaffId || null,
-  portalAccessEnabled: d.portalAccessEnabled !== false,
-  accountStatus: d.accountStatus || d.status || 'ACTIVE'
-});
+    portalAccessEnabled: d.portalAccessEnabled !== false,
+    accountStatus: d.accountStatus || d.status || 'ACTIVE'
+  };
+};
 
 export const handler: Handler = async event => {
   if (event.httpMethod !== 'GET') return json(405, { error: 'Method Not Allowed' });

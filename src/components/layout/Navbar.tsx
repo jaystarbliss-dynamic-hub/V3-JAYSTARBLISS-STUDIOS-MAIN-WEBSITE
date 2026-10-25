@@ -7,21 +7,7 @@ import {
   ChevronDown,
   Sun, 
   Moon, 
-  Search,
-  GraduationCap,
-  Laptop,
-  Palette,
-  School,
-  Gamepad2,
-  Briefcase,
-  Zap,
-  Newspaper,
-  BookOpen,
-  HelpCircle,
-  ArrowRight,
-  Music,
-  Brain,
-  Compass
+  Search
 } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useSearch } from '../../contexts/SearchContext';
@@ -152,105 +138,73 @@ const Navbar: React.FC = () => {
                 {/* Programs Dropdown Menu */}
                 {activeDropdown === 'programs' && (
                   <div 
-                    className="absolute top-full left-0 w-80 pt-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
+                    className="absolute top-full left-0 w-72 pt-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
                   >
-                    <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/60 dark:border-white/10 p-3 space-y-1">
+                    <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/60 dark:border-white/10 p-3 space-y-1">
                       <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                         Explore Learning Tracks
                       </div>
                       
                       <Link 
                         to="/programs?school=academic-excellence#programs-content" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <GraduationCap size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Academics & Tutoring</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Foundational sciences, math & WAEC/JAMB</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Academics &amp; Tutoring</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Foundational sciences, math &amp; WAEC/JAMB</div>
                       </Link>
 
                       <Link 
                         to="/programs?school=technology-programming#programs-content" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <Laptop size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Tech, Coding & AI</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Scratch, Python, Web Dev & Artificial Intelligence</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Tech, Coding &amp; AI</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Scratch, Python, Web Dev &amp; Artificial Intelligence</div>
                       </Link>
 
                       <Link 
                         to="/programs?school=digital-literacy#programs-content" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <Brain size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Digital Literacy & Tools</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Touch typing, Microsoft Office, Excel & Smart Search</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Digital Literacy &amp; Tools</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Touch typing, Microsoft Office, Excel &amp; Smart Search</div>
                       </Link>
 
                       <Link 
                         to="/programs?school=creative-design#programs-content" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <Palette size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Creative Arts & Design</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Graphic design, branding & digital illustrations</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Creative Arts &amp; Design</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Graphic design, branding &amp; digital illustrations</div>
                       </Link>
 
                       <Link 
                         to="/programs?school=music-performing-arts#programs-content" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <Music size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Music & Performing Arts</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Keyboard, piano, recorder, violin & music theory</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Music &amp; Performing Arts</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Keyboard, piano, recorder, violin &amp; music theory</div>
                       </Link>
 
                       <Link 
                         to="/school-partnership" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <School size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">School Coding &amp; Tech Clubs</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Custom coding and robotics labs for partner schools</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">School Coding &amp; Tech Clubs</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Custom coding and robotics labs for partner schools</div>
                       </Link>
 
                       <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
                         <Link 
                           to="/programs?tab=roadmap#roadmap-section" 
-                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 text-xs font-bold text-brand-red hover:bg-brand-red/10 transition-colors"
+                          className="block px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 text-xs font-bold text-brand-red hover:bg-brand-red/10 transition-colors"
                         >
-                          <span className="flex items-center gap-1.5"><Compass size={13} /> Visual Learning Roadmap</span>
-                          <ArrowRight size={13} />
+                          Visual Learning Roadmap
                         </Link>
                         <Link 
                           to="/programs?tab=catalog#catalog-section" 
-                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-brand-red hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          className="block px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-brand-red hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                         >
-                          <span>View Full Program Catalog</span>
-                          <ArrowRight size={13} />
+                          View Full Program Catalog
                         </Link>
                       </div>
                     </div>
@@ -286,50 +240,35 @@ const Navbar: React.FC = () => {
                 {/* Portfolio Dropdown Menu */}
                 {activeDropdown === 'portfolio' && (
                   <div 
-                    className="absolute top-full left-0 w-80 pt-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
+                    className="absolute top-full left-0 w-72 pt-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
                   >
-                    <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/60 dark:border-white/10 p-3 space-y-1">
+                    <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/60 dark:border-white/10 p-3 space-y-1">
                       <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        Showcase & Playgrounds
+                        Showcase &amp; Playgrounds
                       </div>
                       
                       <Link 
                         to="/portfolio" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <Gamepad2 size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Kids Corner & Arcade</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Interactive games built by young student coders</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Kids Corner &amp; Arcade</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Interactive games built by young student coders</div>
                       </Link>
 
                       <Link 
                         to="/portfolio" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <Briefcase size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Organisation Solutions</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Enterprise platforms, LMS, and institutional tools</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Organisation Solutions</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Enterprise platforms, LMS, and institutional tools</div>
                       </Link>
 
                       <Link 
                         to="/magic-particles" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <Zap size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Magic 3D Particles Lab</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Real-time Three.js gesture & particle simulation</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Magic 3D Particles Lab</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Real-time Three.js gesture &amp; particle simulation</div>
                       </Link>
                     </div>
                   </div>
@@ -360,59 +299,43 @@ const Navbar: React.FC = () => {
                 {/* Resources Dropdown Menu */}
                 {activeDropdown === 'resources' && (
                   <div 
-                    className="absolute top-full left-0 w-80 pt-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
+                    className="absolute top-full left-0 w-72 pt-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
                   >
-                    <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/60 dark:border-white/10 p-3 space-y-1">
+                    <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/60 dark:border-white/10 p-3 space-y-1">
                       <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        Insights & Knowledge
+                        Insights &amp; Knowledge
                       </div>
                       
                       <Link 
                         to="/blog" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <Newspaper size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">News Corner & Bulletins</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Live announcements, events, and awards</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">News Corner &amp; Bulletins</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Live announcements, events, and awards</div>
                       </Link>
 
                       <Link 
                         to="/blog" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <BookOpen size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Blog & Coding Guides</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">In-depth technical tutorials & education articles</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Blog &amp; Coding Guides</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">In-depth technical tutorials &amp; education articles</div>
                       </Link>
 
                       <Link 
                         to="/faq" 
-                        className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
+                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="p-2 rounded-lg bg-brand-red/10 text-brand-red dark:bg-brand-red/20 shrink-0 group-hover:scale-110 transition-transform">
-                          <HelpCircle size={16} />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">FAQ & Help Center</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Common questions about admissions and services</div>
-                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">FAQ &amp; Help Center</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Common questions about admissions and services</div>
                       </Link>
 
                       <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
                         <Link 
                           to="/resources" 
-                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-brand-red hover:bg-brand-red/10 transition-colors"
+                          className="block px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-brand-red hover:bg-brand-red/10 transition-colors"
                         >
-                          <span>Explore All Resources</span>
-                          <ArrowRight size={13} />
+                          Explore All Resources
                         </Link>
                       </div>
                     </div>
@@ -574,30 +497,30 @@ const Navbar: React.FC = () => {
                   <ChevronDown size={16} className={`transition-transform duration-200 ${mobileExpanded.programs ? 'rotate-180 text-brand-red' : 'text-slate-400'}`} />
                 </button>
                 {mobileExpanded.programs && (
-                  <div className="pl-3 pr-2 py-2 space-y-1.5 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
-                    <Link to="/programs?tab=roadmap#roadmap-section" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-brand-red bg-red-50 dark:bg-red-950/40 rounded-lg">
-                      <Compass size={14} className="text-brand-red" /> Visual Learning Roadmap
+                  <div className="pl-3 pr-2 py-2 space-y-1 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
+                    <Link to="/programs?tab=roadmap#roadmap-section" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-bold text-brand-red bg-red-50 dark:bg-red-950/40 rounded-lg">
+                      Visual Learning Roadmap
                     </Link>
-                    <Link to="/programs?tab=catalog#catalog-section" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <ArrowRight size={13} /> Full Programs Catalog
+                    <Link to="/programs?tab=catalog#catalog-section" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      Full Programs Catalog
                     </Link>
-                    <Link to="/programs?school=academic-excellence#programs-content" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <GraduationCap size={15} className="text-brand-red" /> Academics & Tutoring
+                    <Link to="/programs?school=academic-excellence#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      Academics &amp; Tutoring
                     </Link>
-                    <Link to="/programs?school=technology-programming#programs-content" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <Laptop size={15} className="text-brand-red" /> Coding, Tech & AI
+                    <Link to="/programs?school=technology-programming#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      Coding, Tech &amp; AI
                     </Link>
-                    <Link to="/programs?school=digital-literacy#programs-content" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <Brain size={15} className="text-brand-red" /> Digital Literacy & Tools
+                    <Link to="/programs?school=digital-literacy#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      Digital Literacy &amp; Tools
                     </Link>
-                    <Link to="/programs?school=creative-design#programs-content" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <Palette size={15} className="text-brand-red" /> Creative Arts & Design
+                    <Link to="/programs?school=creative-design#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      Creative Arts &amp; Design
                     </Link>
-                    <Link to="/programs?school=music-performing-arts#programs-content" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <Music size={15} className="text-brand-red" /> Music & Performing Arts
+                    <Link to="/programs?school=music-performing-arts#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      Music &amp; Performing Arts
                     </Link>
-                    <Link to="/school-partnership" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <School size={15} className="text-brand-red" /> School Coding &amp; Tech Clubs
+                    <Link to="/school-partnership" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      School Coding &amp; Tech Clubs
                     </Link>
                   </div>
                 )}
@@ -627,15 +550,15 @@ const Navbar: React.FC = () => {
                   <ChevronDown size={16} className={`transition-transform duration-200 ${mobileExpanded.portfolio ? 'rotate-180 text-brand-red' : 'text-slate-400'}`} />
                 </button>
                 {mobileExpanded.portfolio && (
-                  <div className="pl-3 pr-2 py-2 space-y-1.5 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
-                    <Link to="/portfolio" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <Gamepad2 size={15} className="text-brand-red" /> Kids Corner & Arcade Games
+                  <div className="pl-3 pr-2 py-2 space-y-1 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
+                    <Link to="/portfolio" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      Kids Corner &amp; Arcade Games
                     </Link>
-                    <Link to="/portfolio" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <Briefcase size={15} className="text-brand-red" /> Organisation Case Studies
+                    <Link to="/portfolio" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      Organisation Case Studies
                     </Link>
-                    <Link to="/magic-particles" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <Zap size={15} className="text-brand-red" /> Magic 3D Particles Playground
+                    <Link to="/magic-particles" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      Magic 3D Particles Playground
                     </Link>
                   </div>
                 )}
@@ -652,15 +575,15 @@ const Navbar: React.FC = () => {
                   <ChevronDown size={16} className={`transition-transform duration-200 ${mobileExpanded.resources ? 'rotate-180 text-brand-red' : 'text-slate-400'}`} />
                 </button>
                 {mobileExpanded.resources && (
-                  <div className="pl-3 pr-2 py-2 space-y-1.5 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
-                    <Link to="/blog" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <Newspaper size={15} className="text-brand-red" /> News Corner Bulletins
+                  <div className="pl-3 pr-2 py-2 space-y-1 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
+                    <Link to="/blog" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      News Corner Bulletins
                     </Link>
-                    <Link to="/blog" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <BookOpen size={15} className="text-brand-red" /> Tech Blog & Tutorials
+                    <Link to="/blog" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      Tech Blog &amp; Tutorials
                     </Link>
-                    <Link to="/faq" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      <HelpCircle size={15} className="text-brand-red" /> FAQ & Help Center
+                    <Link to="/faq" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      FAQ &amp; Help Center
                     </Link>
                   </div>
                 )}

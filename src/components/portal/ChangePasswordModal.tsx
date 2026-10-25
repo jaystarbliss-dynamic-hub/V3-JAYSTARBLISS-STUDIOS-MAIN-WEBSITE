@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Lock, ShieldCheck, Eye, EyeOff, X, CheckCircle2, AlertCircle } from 'lucide-react';
-import { updatePassword } from 'firebase/auth';
-import { doc, updateDoc } from 'firebase/firestore';
-import { auth, db } from '../../lib/firebase';
+import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { collection, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { auth, db, getClientDatabases } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 
 interface ChangePasswordModalProps {
@@ -12,6 +12,17 @@ interface ChangePasswordModalProps {
   onSuccess?: () => void;
 }
 
+async function computeSha256(value: string): Promise<string> {
+  try {
+    const msgBuffer = new TextEncoder().encode(value);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return value.toLowerCase();
+  }
+}
+
 export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
   isOpen,
   onClose,
@@ -19,6 +30,8 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
   onSuccess
 }) => {
   const { toast } = useToast();
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [needsReauth, setNeedsReauth] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -45,7 +58,8 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     e.preventDefault();
     setError('');
 
-    if (newPassword.length < 8) {
+    const cleanPassword = newPassword.trim();
+    if (cleanPassword.length < 8) {
       setError('Password must be at least 8 characters long.');
       return;
     }
@@ -62,42 +76,147 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         throw new Error('No active user session. Please sign in again.');
       }
 
-      // 1. Direct Auth update if available
+      const [sha256Hash, upperSha256Hash] = await Promise.all([
+        computeSha256(cleanPassword),
+        computeSha256(cleanPassword.toUpperCase())
+      ]);
+      const nowIso = new Date().toISOString();
+
+      // 1. Direct Firebase Auth password update
+      let authUpdated = false;
       try {
-        await updatePassword(user, newPassword);
+        if (needsReauth && currentPassword.trim() && user.email) {
+          const cred = EmailAuthProvider.credential(user.email, currentPassword.trim());
+          await reauthenticateWithCredential(user, cred);
+        }
+        await updatePassword(user, cleanPassword);
+        authUpdated = true;
+        setNeedsReauth(false);
       } catch (authErr: any) {
-        console.warn('Direct updatePassword note:', authErr?.message);
-        if (authErr?.code === 'auth/requires-recent-login') {
-          // Continue to backend sync or report
+        console.warn('Direct updatePassword note:', authErr?.code || authErr?.message);
+        if (authErr?.code === 'auth/requires-recent-login' && user.email && !user.email.endsWith('.local') && !user.email.endsWith('.firebaseapp.com')) {
+          setNeedsReauth(true);
         }
       }
 
-      // 2. Call backend endpoint to sync password hash to student and user records
-      const token = await user.getIdToken(true);
-      const res = await fetch('/.netlify/functions/student-change-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ newPassword })
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || 'Unable to complete password update.');
+      // 2. Try backend endpoint to sync password hash via Admin SDK when available
+      let serverUpdated = false;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/.netlify/functions/student-change-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ newPassword: cleanPassword })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success && !data.fallback) {
+          serverUpdated = true;
+        }
+      } catch (srvErr) {
+        console.warn('Backend password sync fallback active:', srvErr);
       }
 
-      // 3. Update local flag in Firestore if applicable
-      const userDocRef = doc(db, 'users', user.uid);
-      try {
-        await updateDoc(userDocRef, {
-          forcePasswordReset: false,
-          mustResetPassword: false,
-          passwordUpdatedAt: new Date().toISOString()
-        });
-      } catch (err) {
-        console.warn('Could not update user doc flag (non-fatal):', err);
+      // If Firebase Auth required re-authentication for a standard email account and server Admin SDK wasn't available
+      if (!authUpdated && !serverUpdated && needsReauth && !currentPassword.trim()) {
+        setError('Please enter your current password above to confirm this security change.');
+        setLoading(false);
+        return;
+      }
+
+      // 3. Direct client-side Firestore sync across primary and fallback databases
+      const userPatch: Record<string, any> = {
+        passwordHash: sha256Hash,
+        customPasswordHash: sha256Hash,
+        accessCodeHash: upperSha256Hash,
+        customPassword: cleanPassword,
+        forcePasswordReset: false,
+        mustResetPassword: false,
+        passwordUpdatedAt: nowIso,
+        updatedAt: nowIso
+      };
+
+      const studentPatch: Record<string, any> = {
+        passwordHash: sha256Hash,
+        customPasswordHash: sha256Hash,
+        accessCodeHash: upperSha256Hash,
+        customPassword: cleanPassword,
+        accessCode: cleanPassword,
+        passcode: cleanPassword,
+        code: cleanPassword,
+        forcePasswordReset: false,
+        mustResetPassword: false,
+        passwordUpdatedAt: nowIso,
+        updatedAt: nowIso
+      };
+
+      const cachedStudentDocId = sessionStorage.getItem('studentDocId') || localStorage.getItem('jaystar_cached_student_doc_id') || '';
+      const userEmail = (user.email || '').toLowerCase().trim();
+
+      for (const dbInstance of getClientDatabases()) {
+        let resolvedStudentDocId = cachedStudentDocId;
+        try {
+          const uRef = doc(dbInstance, 'users', user.uid);
+          const uSnap = await getDoc(uRef).catch(() => null);
+          if (uSnap?.exists()) {
+            const uData = uSnap.data() || {};
+            if (uData.studentDocId) resolvedStudentDocId = String(uData.studentDocId);
+            await updateDoc(uRef, userPatch).catch(async () => {
+              await setDoc(uRef, userPatch, { merge: true }).catch(() => undefined);
+            });
+          } else {
+            await setDoc(uRef, {
+              uid: user.uid,
+              email: user.email || null,
+              role: (sessionStorage.getItem('userRole') || 'student').toUpperCase(),
+              ...userPatch
+            }, { merge: true }).catch(() => undefined);
+          }
+        } catch (uErr) {
+          console.warn('Could not update user doc flag (non-fatal):', uErr);
+        }
+
+        let updatedStudent = false;
+        if (resolvedStudentDocId) {
+          for (const coll of ['individualStudents', 'students']) {
+            try {
+              const sRef = doc(dbInstance, coll, resolvedStudentDocId);
+              const sSnap = await getDoc(sRef);
+              if (sSnap.exists()) {
+                await updateDoc(sRef, studentPatch).catch(async () => {
+                  await setDoc(sRef, studentPatch, { merge: true }).catch(() => undefined);
+                });
+                updatedStudent = true;
+              }
+            } catch {
+              // Ignore if not found or not student
+            }
+          }
+        }
+
+        if (!updatedStudent) {
+          for (const coll of ['individualStudents', 'students']) {
+            try {
+              let qSnap = await getDocs(query(collection(dbInstance, coll), where('firebaseUid', '==', user.uid), limit(1)));
+              if (qSnap.empty) {
+                qSnap = await getDocs(query(collection(dbInstance, coll), where('userId', '==', user.uid), limit(1)));
+              }
+              if (qSnap.empty && userEmail) {
+                qSnap = await getDocs(query(collection(dbInstance, coll), where('email', '==', userEmail), limit(1)));
+              }
+              if (!qSnap.empty) {
+                const targetRef = doc(dbInstance, coll, qSnap.docs[0].id);
+                await updateDoc(targetRef, studentPatch).catch(async () => {
+                  await setDoc(targetRef, studentPatch, { merge: true }).catch(() => undefined);
+                });
+              }
+            } catch {
+              // Non-fatal
+            }
+          }
+        }
       }
 
       sessionStorage.setItem('forcePasswordReset', 'false');
@@ -112,8 +231,11 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
     } catch (err: any) {
       console.error('Password update error:', err);
-      if (err.code === 'auth/requires-recent-login') {
-        setError('For security reasons, please log out and log in again before changing your password.');
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setError('The current password you entered is incorrect.');
+      } else if (err.code === 'auth/requires-recent-login') {
+        setNeedsReauth(true);
+        setError('Please enter your current password to confirm this change.');
       } else {
         setError(err.message || 'Failed to update password. Please try again.');
       }
@@ -168,6 +290,24 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {needsReauth && (
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
+                  Current Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter your current password"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-red"
+                  />
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
                 New Password

@@ -10,6 +10,7 @@ import { useToast } from '../../contexts/ToastContext';
 import SEO from '../../components/ui/SEO';
 import { StudentEnrollmentApprovalModal } from '../../components/admin/StudentEnrollmentApprovalModal';
 import { resolveRealName } from '../../utils/userNames';
+import { formatNormalizedClassDisplay, normalizeClassName } from '../../lib/classes';
 
 const AdminApprovals: React.FC = () => {
   const { toast } = useToast();
@@ -85,13 +86,15 @@ const AdminApprovals: React.FC = () => {
       const accessCode = generateAccessCode();
       const subjects = Array.isArray(req.subjects) ? req.subjects : (req.subjects || '').split(',').map((s: string) => s.trim()).filter(Boolean);
       
+      const canonicalStudentClass = normalizeClassName(req.class || req.grade, 'Grade 7');
       await addDoc(collection(db, 'students'), {
         fullName: req.name,
         username: makeUniqueUsername(req.name, req.email, req.id),
         email: (req.email || '').toLowerCase(),
         phone: req.phone || '',
         parentPhone: req.parentPhone || '',
-        grade: req.class || 'Cadet',
+        class: canonicalStudentClass,
+        grade: canonicalStudentClass,
         accessCode,
         parentId: req.parentId || null,
         subjects,
@@ -147,8 +150,8 @@ const AdminApprovals: React.FC = () => {
         parentName: req.parentName || '',
         subjects,
         plan: req.plan || '',
-        grade: req.studentAge || 'Cadet',
-        class: req.studentAge || '',
+        grade: normalizeClassName(req.class || req.grade || req.studentClass || req.studentAge, 'Grade 1'),
+        class: normalizeClassName(req.class || req.grade || req.studentClass || req.studentAge, 'Grade 1'),
         accessCode,
         status: 'ACTIVE',
         registrationSource: 'parent-enrollment',
@@ -494,7 +497,7 @@ const AdminApprovals: React.FC = () => {
                     {req.parentPhone && <div className="text-[10px] text-slate-400">Parent: {req.parentPhone}</div>}
                   </td>
                   <td className="py-3 px-3.5">
-                    <div className="text-[11px] font-bold text-brand-red mb-0.5">Class: {req.class || 'N/A'}</div>
+                    <div className="text-[11px] font-bold text-brand-red mb-0.5">Class: {formatNormalizedClassDisplay(req.class || req.grade, 'Grade 7')}</div>
                     <div className="text-[11px] text-slate-700 dark:text-slate-300">{Array.isArray(req.subjects) ? req.subjects.join(', ') : req.subjects}</div>
                     {req.notes && <div className="text-[10px] text-slate-400 mt-0.5 italic">"{req.notes}"</div>}
                   </td>
@@ -533,7 +536,7 @@ const AdminApprovals: React.FC = () => {
                   </td>
                   <td className="py-3 px-3.5">
                     <div className="text-[11px] font-bold text-brand-red mb-0.5">Plan: {req.plan || '—'}</div>
-                    <div className="text-[10px] text-slate-500">Age / Grade: {req.studentAge || '—'}</div>
+                    <div className="text-[10px] text-slate-500">Class / Grade: {formatNormalizedClassDisplay(req.class || req.grade || req.studentClass || req.studentAge, 'Grade 1')}</div>
                     <div className="text-[10px] text-slate-500">Subjects: {Array.isArray(req.subjects) ? req.subjects.join(', ') : req.subjects || '—'}</div>
                   </td>
                   <td className="py-3 px-3.5 whitespace-nowrap text-[11px] text-slate-400">

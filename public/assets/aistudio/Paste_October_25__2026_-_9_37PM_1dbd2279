@@ -1,0 +1,689 @@
+# JAYSTARBLISS STUDIOS — COMPREHENSIVE EXAMINATION SYSTEM, SCHOOL PERMISSIONS AND CLASS STANDARDISATION REPAIR
+
+## ROLE AND EXPECTATIONS
+
+Act as a senior full-stack engineer, Firebase security specialist, assessment-platform architect and QA engineer working on the existing **Jaystarbliss Studios / Jaystarbliss Dynamic Institute (JDI)** platform.
+
+Use **Claude Opus 5.5** for analysis and implementation if it is actually available in the model selector. Otherwise, use the strongest suitable model available and proceed without waiting.
+
+This is an existing production-oriented application, not a new project. The repository already contains examination creation, student examination attempts, automatic and manual grading, result release, school reporting, parent result views, Firebase security rules, Netlify Functions and multiple user portals.
+
+Your responsibility is to understand how these existing components work together, identify the actual causes of the problems described below, implement the corrections, and verify them thoroughly.
+
+**Do not merely produce a plan, audit report or list of recommendations. Carry out the implementation in the current workspace.** Work through the issues systematically, run the available tests, resolve regressions introduced by your changes and provide a truthful final report.
+
+## 1. FIRST: INSPECT THE EXISTING REPOSITORY
+
+Before editing anything, inspect the entire relevant implementation and establish how the application currently works.
+
+Pay particular attention to:
+
+- Examination creation, editing, publishing, republishing, deletion and scheduling.
+- Examination questions, options, answer keys, point allocations, grading and result release.
+- Student exam lists, upcoming exams, class assignments, individual assignments and attempt histories.
+- Tutor/staff examination management.
+- School administrator examinations, school lists and school reporting.
+- Parent examination results and released-result visibility.
+- Shared examination components and report-generation templates.
+- Student, school, tutor, parent and platform administrator authentication and role resolution.
+- Firestore collections, document schemas, database selection, indexes and security rules.
+- Netlify Functions and any scheduled backend functions supporting examinations.
+- School identity resolution, school IDs, school names and class assignment logic.
+- Existing PDF, ZIP and Excel export functionality.
+- Existing tests, build configuration and deployment requirements.
+
+The main repository, when available through the connected Git workspace, is:
+
+https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE
+
+Inspect the actual current workspace first. Do not assume that the exported project is identical to the current GitHub `main` branch. Preserve existing local changes and determine the current branch and repository status before performing Git operations.
+
+Read the history of the relevant implementations and previous fixes. In particular, understand the existing examination integration and subsequent work on grading, result privacy, timeout handling, parent results, mobile usability and role boundaries.
+
+Do not create a separate exam application, a parallel examination database, a second set of duplicate components or an unnecessary replacement authentication system.
+
+## 2. REPAIR THE COMPLETE EXAMINATION LIFECYCLE
+
+### 2.1 Tutors must see and manage examinations they own
+
+At present, tutors need a reliable way to find examinations they previously created, whether those examinations are drafts, scheduled, published, closed or completed.
+
+Implement a clear examination-management workspace with appropriate status filters.
+
+Tutors must be able to:
+
+- View examinations they created.
+- Open an existing examination and inspect its questions, marks, assignment targets, class, schedule and publication status.
+- Edit an existing examination.
+- Save changes to the existing examination.
+- Change an eligible examination's status.
+- Publish an examination.
+- Republish an eligible examination after making changes.
+- Preview the examination before publishing.
+- Delete examinations they own when permitted by the examination's current state.
+- View assigned schools and classes that they are authorised to manage.
+- See the examinations they are responsible for and their relevant access codes.
+
+The existing-examination list must load real persisted records, not mock data or a local-only list.
+
+### 2.2 Editing must never accidentally create duplicate examinations
+
+This requirement is critical.
+
+When a tutor opens an existing examination, modifies it and clicks Save, the system must update the existing examination record rather than creating a second record.
+
+Investigate the current create/update logic carefully. Check whether the form resets its examination ID, whether the save handler always invokes the create endpoint, or whether publishing creates a new document.
+
+Correct the underlying cause.
+
+Expected behaviour:
+
+1. Creating a genuinely new examination creates one examination record.
+2. Opening an existing examination retains its document ID.
+3. Saving changes updates the same examination record.
+4. Republishing updates the existing record and its eligible status fields.
+5. Repeatedly clicking Save or Publish does not create additional examination documents.
+6. Refreshing the browser does not make the examination disappear or duplicate.
+7. The same examination remains associated with its intended school, class, questions and schedule.
+
+Use the application's existing schema and server-side authorisation approach. Ensure the backend distinguishes authorised updates to existing records from the creation of new ones.
+
+### 2.3 Editing, publishing and republishing must be state-aware
+
+Create a proper, consistent lifecycle covering the statuses already supported by the application, such as draft, scheduled, published/active, closed and completed.
+
+Do not introduce conflicting status names or allow the interface and backend to disagree.
+
+A tutor should be able to edit and republish an examination where the lifecycle allows it.
+
+However, protect historical attempts. If a published examination already has student attempts, changing its questions or point allocations must not silently corrupt previously submitted work, alter a historical report unexpectedly or change which answer key was used for previous grading.
+
+Inspect how the existing application stores attempts and their relationship to an examination definition. Implement the smallest safe solution, using the existing versioning or snapshot mechanism if one exists. Where necessary, preserve an immutable definition or revision for submitted attempts.
+
+Changes to future attempts must not rewrite historical results without an explicit, authorised regrading workflow.
+
+Do not allow a completed examination to be reopened or reset through an accidental status update if the existing lifecycle is designed to prevent that. Respect the intended state transitions.
+
+### 2.4 Examination deletion must preserve integrity
+
+Tutors may delete examinations they created, subject to ownership and lifecycle restrictions.
+
+If an examination has no attempts and the current design permits deletion, allow deletion through a properly authorised operation.
+
+If student attempts, released results, reports or audit records already exist, prefer the application's supported archive/soft-delete mechanism where available. Otherwise, implement a safe deletion policy that prevents historical records from becoming orphaned or inaccessible.
+
+A delete action must not permit one tutor to delete another tutor's examination.
+
+The interface must show appropriate confirmation before destructive actions.
+
+## 3. FIX SCHOOL ASSIGNMENT AND TUTOR SCHOOL SCOPE
+
+### 3.1 Tutors must only see their assigned schools
+
+A tutor must see only the schools that are actually assigned to that tutor or that the tutor is otherwise explicitly authorised to manage through the established platform relationship.
+
+Apply this consistently to:
+
+- School selectors when creating or editing examinations.
+- Examination lists and filters.
+- Class selectors.
+- Examination access codes.
+- Student and school examination reports.
+- Any school dropdown, search interface or management list within the tutor portal.
+
+Do not simply filter schools in React while leaving unrestricted school retrieval available in backend functions.
+
+The server must derive the tutor's verified identity and permitted school relationships from trusted records. It must not trust a browser-supplied school ID as proof that the tutor owns or manages that school.
+
+Retain legitimate private-tutoring and individual-student workflows.
+
+### 3.2 School administrators must never see other schools' private records
+
+Investigate the existing School portal, especially the school list and examination sections.
+
+A school administrator must not be able to list, browse, select, query or modify another school's private records merely because the records exist in a shared collection.
+
+The school administrator should see the school associated with the authenticated account, not a global directory of partner schools that exposes other schools' identities and data.
+
+Apply this to:
+
+- School lists.
+- School profile and settings.
+- Examination lists and access codes.
+- Student rosters.
+- Classes and enrolments.
+- Reports and progress records.
+- Search and filter endpoints.
+- Any shared administrative list displayed within the School portal.
+
+Use the authenticated account's trusted canonical school relationship and the application's existing server-side role checks.
+
+A browser-supplied `schoolId`, URL parameter, query parameter or modified request must not allow a user to switch into another school's scope.
+
+Preserve the platform administrator's legitimate cross-school access and the tutor's legitimate assigned-school access. Do not break existing role boundaries while tightening the School portal.
+
+Add or extend negative security tests proving that one school administrator cannot retrieve another school's records.
+
+## 4. SCHOOL ADMINISTRATORS MUST NOT AUTHOR EXAMINATIONS
+
+The School portal currently exposes examination-related functionality that appears to let a school administrator create or set examinations.
+
+Correct this across both the UI and backend.
+
+School administrators should be able to:
+
+- View their own school's examination history.
+- View their own school's upcoming examinations.
+- View eligible examination access codes needed to administer an assigned exam.
+- See appropriate examination schedules, class assignments and result/report information within their authorised scope.
+
+They must not be able to:
+
+- Create examinations.
+- Edit examination questions or answer keys.
+- Publish or republish tutor examinations.
+- Delete examinations.
+- Change examination ownership or assignment targets.
+- Access examination-authoring or question-bank management operations reserved for tutors/staff or platform administrators.
+
+Remove or disable inappropriate authoring controls in the School portal navigation and pages. More importantly, enforce the same restrictions inside the relevant Netlify Functions or other server-side endpoints and ensure Firestore rules do not allow an unauthorised bypass.
+
+Do not broaden permissions simply to make a screen work.
+
+## 5. FIX PARTNER SCHOOL NAMES IN EXAMINATION REPORTS
+
+There is a serious reporting error.
+
+When a tutor assigns an examination to a partner school and a student from that school takes it, the examination report sometimes displays **Jaystarbliss** as the partner school.
+
+That is incorrect.
+
+Jaystarbliss is the platform/brand. The report must identify the actual partner school to which the examination was assigned.
+
+Trace the complete data path:
+
+1. Tutor selects a school.
+2. The school and class are saved on the examination assignment.
+3. Student becomes eligible for the examination.
+4. Student starts and completes an attempt.
+5. Result is graded and released.
+6. School and tutor portals retrieve the result.
+7. The student report sheet is generated or downloaded.
+
+Identify why the reporting code is using a generic platform name, an incorrect fallback, or the wrong school field.
+
+Resolve the actual partner-school record using the correct canonical `schoolId` or other established trusted relationship, then obtain the authoritative school name from its record.
+
+Ensure the correct school name appears consistently in:
+
+- Student examination report sheets.
+- Tutor examination reports.
+- School administrator reports.
+- Individual student PDF downloads.
+- Bulk-generated report PDFs.
+- Excel exports where school identity is included.
+- Any downloadable or printable examination result sheet.
+
+Do not hardcode a school name to solve this issue. Do not rely solely on a free-text school name supplied by the browser if a trusted school record is available.
+
+Existing historical examination records may contain legacy school identifiers. Follow the application's existing school-ID compatibility strategy and resolve those records correctly without granting cross-school access.
+
+If a historical record genuinely cannot be resolved, handle that case explicitly rather than silently labelling another school as Jaystarbliss.
+
+## 6. FIX EXAMINATION MARKS, DENOMINATORS AND GRADING
+
+This is another critical problem affecting the integrity of examination reports.
+
+For example, a tutor sets an examination with a total of three available marks. A student earns one mark.
+
+The student report correctly shows:
+
+- Score: 1 out of 3.
+- Percentage: approximately 33.33%.
+
+However, the tutor and School portals sometimes show 1 out of 100.
+
+This is incorrect. The denominator must not default to 100 when the actual examination is worth three marks.
+
+### 6.1 Let tutors set marks for each question
+
+Review the existing question editor and grading interfaces.
+
+Tutors should be able to configure the marks or points allocated to each question, within any reasonable restrictions already imposed by the platform.
+
+The total possible mark for an examination must be calculated from its actual question definitions or from the application's established authoritative total-mark field.
+
+Support the application's existing objective-question and manual-grading workflows. Ensure partial marks, question-level marks and accepted answers behave consistently where those features are supported.
+
+Do not introduce a separate grading system that contradicts the existing question model.
+
+### 6.2 Store and calculate the score correctly
+
+Establish one consistent scoring model.
+
+Where appropriate, preserve distinct values for:
+
+- Marks earned.
+- Total possible marks.
+- Percentage.
+- Letter grade or grade band, if configured.
+- Examination result/release status.
+
+The percentage must be calculated from the actual total possible marks, not from a hardcoded denominator.
+
+For example:
+
+| Actual result | Required display |
+|---|---|
+| 1 out of 3 | 1/3; 33.33% |
+| 4 out of 10 | 4/10; 40% |
+| 18 out of 20 | 18/20; 90% |
+| 75 out of 100 | 75/100; 75% |
+
+Use sensible rounding for display only. Do not use rounded percentages as the authoritative values for grading.
+
+If an examination is explicitly configured to use a 100-mark scale, respect that configuration. Do not silently convert every examination to 100 marks.
+
+### 6.3 Keep grades consistent across every portal
+
+The student, tutor and school views must use the same authoritative attempt/result data and calculation logic.
+
+A score must not be interpreted one way in the student portal and another way in the School portal.
+
+Review:
+
+- Automatic grading.
+- Manual grading and mark adjustments.
+- Timeout and automatic finalisation.
+- Answer-key correction and any authorised regrading.
+- Result release.
+- Examination history.
+- Parent results.
+- PDF and Excel reports.
+- Bulk report exports.
+
+For historical attempts whose `maxScore` or equivalent field is missing, inspect the stored question definition or attempt snapshot and derive the correct denominator from trusted data where possible.
+
+Do not automatically replace a missing denominator with 100. If the historical denominator cannot be reliably reconstructed, handle it explicitly rather than inventing a score.
+
+Where examination definitions change after an attempt, use the definition applicable to that attempt, not a newly edited version of the exam.
+
+### 6.4 Letter grades and grade configuration
+
+Inspect whether the application already has a grade-band configuration.
+
+If it does, make sure the configured grading boundaries are respected consistently. If it doesn't, first fix the existing point allocation and total-mark integrity without introducing an unnecessary platform-wide grading configuration that could disrupt existing reports.
+
+Any exam-specific grades or scales must be clearly defined and consistently applied.
+
+## 7. MAKE THE DOWNLOADED REPORT MATCH THE RELEASED STUDENT REPORT
+
+The examination report sheet the student sees after the result has been released must be the same report design used for the staff-side individual PDF download.
+
+Do not create two independently implemented versions of the same report.
+
+Inspect the currently released student report layout and identify the component/template or data transformation responsible for rendering it.
+
+Reuse that renderer, or a shared reporting component, so that the student-facing released result and staff-generated individual PDF agree on:
+
+- Student identity.
+- Partner school name.
+- Class.
+- Examination title and relevant date.
+- Marks earned and total possible marks.
+- Percentage and grade where configured.
+- Question-level details and feedback that are authorised for release.
+- Any existing branding and report metadata.
+
+Use the correct authoritative result data. The staff download must not calculate its own different denominator or accidentally include an answer key, unreleased feedback or private data.
+
+Maintain the application's intended branding and printable layout. Ensure that the report fits properly on paper and that long names or questions do not overflow the page.
+
+## 8. ADD BULK PDF REPORT DOWNLOADS FOR SCHOOL ADMINISTRATORS
+
+The School administrator currently has other download options, including Excel and ZIP-related exports, but needs a dedicated way to bulk-download examination report PDFs for all applicable students.
+
+Implement a clear action such as **Download All PDF Reports** in the appropriate examination/reporting view.
+
+The workflow should:
+
+1. Identify the examination and the authenticated school.
+2. Retrieve only report records that the school administrator is authorised to access.
+3. Include the eligible students' individual result reports for that examination.
+4. Generate one PDF report per student using the same template as the released student report and individual staff PDF download.
+5. Package the PDFs into one ZIP archive.
+6. Download the archive with a useful filename identifying the examination and school, where practical.
+
+The feature must generate actual PDFs, not HTML files renamed as PDFs or placeholder documents.
+
+It should handle large classes without trying to render every report in one enormous browser operation that may freeze or time out.
+
+Reuse existing ZIP, PDF and export utilities where practical. If necessary, implement bounded batches or a suitable server-side generation workflow consistent with the application's current architecture.
+
+Handle missing results, incomplete reports, empty classes, duplicate student records and failures gracefully. Make it clear if some reports could not be generated.
+
+Respect result-release permissions. Do not expose answer keys, unreleased marks or private tutor feedback through the ZIP export.
+
+Do not remove or break the existing Excel download or other legitimate export options.
+
+Test the contents of the generated archive and verify that each student's report is correct.
+
+## 9. SCHOOL EXAMINATION HISTORY, UPCOMING EXAMS AND ACCESS CODES
+
+The School administrator needs an examination dashboard that helps the school administer examinations assigned to it.
+
+Provide distinct, clearly labelled views or filters for:
+
+- Upcoming examinations.
+- Active examinations.
+- Completed or closed examinations.
+- Examination history.
+- Released results, where authorised.
+
+School administrators should be able to see which exams are coming up for their own school and which classes or students have been assigned to them.
+
+### Access codes
+
+School administrators must be able to see the access codes for examinations assigned to their school so they can distribute them to the appropriate students.
+
+The access-code interface must display only codes the school is authorised to administer.
+
+Do not show codes belonging to unrelated schools, unrelated tutors or unassigned examinations.
+
+Keep answer keys, correct answers and private question-authoring data protected. An examination access code is not permission to retrieve the exam's answers or modify the exam.
+
+Where the existing system stores a passcode hash rather than a displayable code, inspect the current design and determine the safest compatible way to support the required school workflow. Do not pretend that a hash can be converted back into its original code. If a secure operational change is necessary, implement it without exposing secrets or weakening authentication.
+
+Do not expose sensitive access codes in public logs, URLs or unauthorised API responses.
+
+## 10. TUTOR EXAMINATION LISTS AND ACCESS CODES
+
+Tutors also need a reliable overview of the examinations they have created or are authorised to manage.
+
+Provide an examination list that can distinguish ownership, assignment, class and status.
+
+Tutors must be able to see relevant access codes for examinations they created or that are assigned to a school they are authorised to manage under the established permission model.
+
+A tutor must not be able to obtain an examination access code merely by changing a school ID, exam ID or other browser-supplied parameter.
+
+Apply the same ownership and assignment checks on the backend as in the UI.
+
+Ensure that creating, editing, publishing or republishing an examination refreshes the relevant list and status without generating duplicate entries.
+
+## 11. STANDARDISE CLASSES ACROSS THE ENTIRE PLATFORM
+
+The current platform contains inconsistent class labels such as Year 5 appearing more than once or equivalent classes appearing under different naming systems.
+
+We need one standard class system across all relevant portals and workflows.
+
+The canonical class options should be exactly:
+
+- Early Years
+- Grade 1
+- Grade 2
+- Grade 3
+- Grade 4
+- Grade 5
+- Grade 6
+- Grade 7
+- Grade 8
+- Grade 9
+- Grade 10
+- Grade 11
+- Grade 12
+
+Use consistent spelling, casing and stored values. Do not create separate entries for different labels that represent the same class.
+
+### 11.1 Centralise the class definitions
+
+Inspect all places where class names or class options are defined.
+
+Create or reuse a single shared class-definition utility or equivalent source of truth. Do not maintain independent lists with subtly different options in different components.
+
+Apply the canonical list to every relevant area, including:
+
+- Student enrolment and onboarding.
+- School registration and class setup.
+- Parent enrolment.
+- Tutor student management.
+- Examination creation and class assignment.
+- Student examination eligibility.
+- Schedules and timetables.
+- Assignments and learning tracks.
+- School reports and student progress.
+- Attendance and other class-scoped workflows.
+- Search filters and dropdowns.
+- Any relevant exports, summaries and reporting interfaces.
+
+Search for hardcoded class lists and labels across the repository. Fix the underlying reuse problem rather than changing only the dropdown currently visible.
+
+### 11.2 Map legacy class names correctly
+
+Existing records may contain names such as:
+
+- Year 1, Year 2 and Year 5.
+- Primary 1 through Primary 6.
+- Basic 1 through Basic 9.
+- JSS1, JSS2 and JSS3.
+- SS1, SS2 and SS3.
+- Grade 1 and other existing variants.
+- Nursery or other Early Years labels.
+
+Inspect the actual values used by this application and create an explicit, tested normalisation map.
+
+Where the meaning is unambiguous, use the intended equivalence:
+
+- Primary 1 / Basic 1 / Year 1 → Grade 1.
+- Primary 5 / Basic 5 / Year 5 → Grade 5.
+- JSS1 → Grade 7.
+- JSS2 → Grade 8.
+- JSS3 → Grade 9.
+- SS1 → Grade 10.
+- SS2 → Grade 11.
+- SS3 → Grade 12.
+- Existing nursery or early-childhood classes → Early Years, where appropriate.
+
+Handle other genuine legacy labels according to their actual meaning. Do not blindly convert ambiguous values into the wrong grade.
+
+Create one canonical representation for newly created or updated data while preserving compatibility with existing student records, schedules, examinations and enrolments.
+
+### 11.3 Migrate historical records safely
+
+Do not simply change the display label and leave backend eligibility checks comparing incompatible values.
+
+Trace how class values are stored, queried and matched. Ensure a class assigned to an examination can still match the correct legacy student record after standardisation.
+
+Plan and implement any required data normalisation or migration using the existing Firebase architecture.
+
+The migration must be:
+
+- Safe and repeatable.
+- Restricted to the intended fields and collections.
+- Compatible with existing valid records.
+- Logged without exposing sensitive student information.
+- Reversible or recoverable from an appropriate backup or recorded migration plan.
+- Tested against representative legacy data before being applied broadly.
+
+If the current environment does not have authorised access to production data, create and test the migration logic without pretending that the production migration has run.
+
+Do not create duplicate canonical classes or merge different schools' class rosters merely because their class labels match. Class identity must remain appropriately scoped to the relevant school and academic context.
+
+## 12. STUDENT UPCOMING EXAMINATIONS AND NOTIFICATIONS
+
+When a tutor assigns an examination to a class, every eligible student in that class must be able to discover the examination through the appropriate student-facing interfaces.
+
+Implement or correct the existing functionality so that:
+
+- The assigned examination appears in the student's examination list.
+- An upcoming examination is shown in the appropriate Upcoming Exams view or tab.
+- The student sees a clear notification or dashboard indication that an examination has been assigned to their class.
+- The notification includes appropriate information such as the exam title, class or scheduled date.
+- The student can open the examination details when the assignment, publication status and activation window permit it.
+- Access-code and attempt rules are still enforced at the correct point.
+- Students cannot view examinations assigned exclusively to another class, school or individual student.
+
+Use the existing notification and examination infrastructure. Do not create a duplicate notification or exam-assignment system unnecessarily.
+
+Ensure that a class assignment continues to work when student and examination records contain legacy class labels that normalise to the same canonical grade.
+
+Notifications should be idempotent and should not produce repeated alerts whenever a page is refreshed or an examination list is loaded.
+
+Respect scheduled opening times, closing times, exam activation windows and maximum attempt limits. Do not expose answer keys before the appropriate result-release stage.
+
+## 13. DATA INTEGRITY, SECURITY AND COMPATIBILITY REQUIREMENTS
+
+These requirements apply to every change above.
+
+1. Preserve the existing Firebase project and intended named Firestore database.
+2. Do not change authentication architecture unnecessarily.
+3. Never restore unrestricted browser-side Firestore reads as a shortcut around a failing server function.
+4. Never loosen Firestore rules globally to make examination or class queries work.
+5. Do not trust browser-supplied user roles, school IDs, tutor IDs or ownership claims without server-side validation.
+6. Keep student, tutor, parent and school permissions distinct.
+7. Preserve existing valid users, examination records, attempts, historical scores and released reports.
+8. Do not delete collections, reset databases or reseed the application with fake student data.
+9. Do not replace actual data with demo data or claim that missing information exists.
+10. Keep secrets, credentials, access codes and private keys out of source control, public logs and generated client bundles.
+11. Do not break the existing payment, wallet, enrolment, scheduling, resource or parent-account functionality while making examination changes.
+12. Follow existing coding conventions and reuse established utilities where appropriate.
+13. Preserve mobile responsiveness and the existing design language.
+14. Make backend endpoints idempotent where repeated requests could otherwise create duplicates.
+15. Ensure that authorised users receive useful error messages without exposing private data or internal secrets.
+
+## 14. REQUIRED TESTS
+
+Do not stop after implementing the UI. Add or extend automated tests for the underlying workflows and security boundaries.
+
+At a minimum, test the following.
+
+### Examination creation and editing
+
+- Creating an examination creates exactly one record.
+- Editing an existing exam retains the original record ID.
+- Saving multiple times does not create duplicate examinations.
+- Publishing and republishing update the correct examination.
+- Existing attempts remain linked to the correct examination.
+- A tutor cannot edit or delete another tutor's exam.
+- Deletion or archiving preserves required historical results.
+
+### Role and school access
+
+- A tutor sees only schools they are authorised to manage.
+- A tutor cannot retrieve another school's exam codes by changing a request parameter.
+- A school administrator sees only their own school and its assigned examinations.
+- A school administrator cannot list another school's students or examinations.
+- A school administrator cannot create, edit, publish or delete an examination.
+- Platform administrators retain their legitimate cross-school capabilities.
+
+### Grading and reports
+
+- An exam worth three marks does not silently acquire a denominator of 100.
+- Question marks sum to the correct examination total.
+- Automatic grading and manual grading produce consistent score data.
+- Timeout finalisation uses the same authoritative grading rules.
+- Editing a future examination does not corrupt historical attempts.
+- The school and tutor portals display the same score and denominator as the student report.
+- The correct partner school name appears on every applicable report.
+- The staff PDF matches the released student report template.
+- Bulk PDF ZIP exports contain the correct report for each eligible student.
+- Unreleased answer keys and protected feedback never leak into school reports.
+
+### Class standardisation
+
+- Every relevant selector uses the canonical list.
+- Duplicate labels normalise to the same canonical grade.
+- Legacy class aliases continue to match eligible students.
+- Class-scoped examinations still work for legacy student records.
+- The same grade label does not expose other schools' student records.
+- Migration logic can be safely rerun without duplicating or corrupting records.
+
+### Notifications and upcoming exams
+
+- An examination assigned to a class appears for eligible students.
+- An examination assigned to another class does not appear.
+- An upcoming examination is shown in the correct student interface.
+- Notifications are not duplicated on page refresh.
+- A student cannot bypass opening-time, access-code or attempt restrictions.
+
+Run the relevant existing test suites, Firestore Rules Tests, assessment-domain tests, lint, TypeScript checks, serverless-function typechecking and production build wherever available.
+
+Add regression tests for defects discovered during the investigation. Do not delete or weaken existing tests just to make the new implementation pass.
+
+## 15. IMPLEMENTATION STRATEGY
+
+Work in a controlled sequence, making each stage testable.
+
+**Stage A — Audit and map the existing architecture.**
+Identify the actual components, endpoints, data models and security rules involved. Record the defects and affected files before modifying them.
+
+**Stage B — Repair examination ownership and lifecycle.**
+Implement existing-exam retrieval, duplicate-free editing, status management, republishing and safe deletion.
+
+**Stage C — Repair scoring, school identity and report consistency.**
+Correct denominator calculations, preserve historical attempts, display the correct partner school and share the released-result report template.
+
+**Stage D — Implement bulk reports and school examination administration.**
+Add authorised upcoming/history views, access-code visibility and bulk PDF ZIP exports. Enforce school-only scope on both the UI and backend.
+
+**Stage E — Standardise classes.**
+Introduce the canonical Early Years and Grade 1–12 system, trace every relevant consumer and implement the necessary compatibility and migration logic.
+
+**Stage F — Connect student exam discovery and notifications.**
+Make class-assigned exams appear consistently in upcoming exam views and student notifications.
+
+**Stage G — Regression and integration testing.**
+Run the relevant tests, fix failures introduced by this work and verify that the existing unrelated portal features remain intact.
+
+Do not stop merely because one stage compiles. Continue through the remaining stages unless a genuine external blocker prevents implementation, in which case complete all work possible and document the exact blocker.
+
+## 16. GIT AND DEPLOYMENT SAFETY
+
+Before modifying files, inspect Git status and protect existing changes.
+
+If the workspace is connected to the existing repository, work on a separate feature branch when possible. Do not force-push, reset the repository, discard uncommitted changes or overwrite the `main` branch.
+
+If the current workspace is an unconnected AI Studio export, work safely in that workspace and report that fact. Do not initialise an unrelated Git history or pretend that changes have been pushed to GitHub.
+
+Do not deploy to production, run destructive production migrations, or change live Firebase rules without the required authorisation and a verified safe procedure.
+
+If a GitHub push or deployment is attempted, report the actual result. Do not claim that the production application has been updated just because local code changes or automated tests succeeded.
+
+## 17. FINAL ACCEPTANCE CRITERIA
+
+This work is complete only when the relevant implementation and verification evidence demonstrate that:
+
+- Tutors can manage their own existing examinations without creating duplicates.
+- Examination editing and republishing behave correctly.
+- Tutors see only their authorised schools and examinations.
+- School administrators cannot author exams or access other schools' information.
+- Schools can see their own upcoming examinations, history and authorised access codes.
+- Scores and denominators agree across the student, tutor, school and report interfaces.
+- The correct partner school's name appears throughout examination reports.
+- The released student report and individual staff PDF share the same presentation and authoritative result data.
+- School administrators can bulk-download eligible individual PDF reports in a ZIP.
+- Class names are standardised to Early Years and Grade 1–12 across relevant workflows.
+- Legacy class records remain compatible with correct examination assignment.
+- Eligible students receive accurate upcoming-exam visibility and assignment notifications.
+- Security boundaries, existing valid data and unrelated portal workflows remain intact.
+- Automated checks pass, and any outstanding production-only verification is explicitly identified.
+
+## 18. HOW TO REPORT BACK
+
+At completion, provide a practical engineering report with:
+
+1. The root cause of each problem discovered.
+2. The important files and functions changed.
+3. The database schema, query, migration or security-rule decisions made.
+4. The examination lifecycle and grading changes implemented.
+5. The school and tutor permission changes implemented.
+6. The class-standardisation and compatibility work completed.
+7. The PDF/ZIP export and student-notification changes implemented.
+8. Tests run, with actual pass/fail results.
+9. Build and Git status.
+10. Any outstanding issues, required production migration or deployment steps.
+
+Clearly distinguish between implemented, automated-test-verified and production-end-to-end-verified functionality.
+
+**Do not tell me everything is fixed unless the evidence supports that conclusion. Do the work, inspect the result, fix the regressions you discover and report the actual outcome.**
+
+Start with the repository audit, then proceed directly to implementation.

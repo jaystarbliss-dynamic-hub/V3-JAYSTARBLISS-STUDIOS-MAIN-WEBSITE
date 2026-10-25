@@ -28,6 +28,8 @@ import SEO from '../../components/ui/SEO';
 import { auth, db, getClientDatabases } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
+import { CANONICAL_CLASSES, normalizeClassName, formatNormalizedClassDisplay } from '../../lib/classes';
+import { migrateAllFirestoreClasses } from '../../lib/classMigration';
 
 type Student = { 
   id: string; 
@@ -99,6 +101,7 @@ const SchoolRoster: React.FC = () => {
     else setLoading(true); 
 
     try {
+      await migrateAllFirestoreClasses().catch(() => null);
       let targetSchoolId = String(effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || '').trim();
       let schoolNameCandidate = sessionStorage.getItem('schoolName') || localStorage.getItem('jaystar_cached_school_name') || '';
       let matchedSchoolDoc: { id: string; data: Record<string, any> } | null = null;
@@ -346,7 +349,7 @@ const SchoolRoster: React.FC = () => {
         if (email && !email.endsWith('.local')) seenKeys.add(`e:${email}`);
         if (name && name !== 'student') seenKeys.add(`name:${name}`);
 
-        const resolvedClass = String(data.class || data.grade || data.classLevel || '').trim() || 'Year 1';
+        const resolvedClass = formatNormalizedClassDisplay(data.class || data.grade || data.classLevel, 'Grade 1');
 
         list.push({
           ...data,
@@ -414,7 +417,7 @@ const SchoolRoster: React.FC = () => {
 
     setEditForm({
       fullName: student.fullName || '',
-      class: student.class || 'Year 1',
+      class: normalizeClassName(student.class, 'Grade 1') || 'Grade 1',
       selectedPrograms: existingProgs,
       customProgram: '',
       email: student.email || '',
@@ -441,11 +444,12 @@ const SchoolRoster: React.FC = () => {
       const primaryProgram = finalPrograms[0];
       const trackString = finalPrograms.join(', ');
 
+      const normalizedEditedClass = normalizeClassName(editForm.class, 'Grade 1') || editForm.class.trim();
       const payload: any = {
         fullName: editForm.fullName.trim(),
         name: editForm.fullName.trim(),
-        class: editForm.class.trim(),
-        grade: editForm.class.trim(),
+        class: normalizedEditedClass,
+        grade: normalizedEditedClass,
         track: trackString,
         plan: primaryProgram,
         programName: primaryProgram,
@@ -696,16 +700,10 @@ Important Security Notice:
   const classGroups = useMemo(() => {
     const map = new Map<string, number>();
     students.forEach(s => {
-      const key = (s.class || s.grade || '').trim() || 'Year 1';
+      const key = formatNormalizedClassDisplay(s.class || s.grade, 'Grade 1');
       map.set(key, (map.get(key) || 0) + 1);
     });
-    const ordered = [
-      'Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6',
-      'Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Year 6',
-      'JSS 1', 'JSS 2', 'JSS 3',
-      'SS 1', 'SS 2', 'SS 3',
-      'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'
-    ];
+    const ordered: readonly string[] = CANONICAL_CLASSES;
     return [...map.entries()].sort((a, b) => {
       const ia = ordered.indexOf(a[0]), ib = ordered.indexOf(b[0]);
       if (ia >= 0 && ib >= 0) return ia - ib;
@@ -742,7 +740,7 @@ Important Security Notice:
     return students.filter(student => {
       // 1. Tab-based scoping
       if (filterTab === 'classes' && selectedClass !== 'All Classes') {
-        const sClass = (student.class || student.grade || '').trim();
+        const sClass = formatNormalizedClassDisplay(student.class || student.grade, 'Grade 1');
         if (sClass !== selectedClass) return false;
       }
 
@@ -1019,7 +1017,7 @@ Important Security Notice:
                 {/* Class */}
                 <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
                   <span className="md:hidden text-[10px] uppercase text-slate-400 mr-2 font-normal">Class:</span>
-                  {student.class || student.grade || 'Year 1'}
+                  {formatNormalizedClassDisplay(student.class || student.grade, 'Grade 1')}
                 </div>
 
                 {/* Track / Programs */}
@@ -1153,14 +1151,16 @@ Important Security Notice:
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                     Class Cohort
                   </label>
-                  <input
-                    type="text"
+                  <select
                     required
-                    value={editForm.class}
+                    value={normalizeClassName(editForm.class) || editForm.class || 'Grade 7'}
                     onChange={e => setEditForm({ ...editForm, class: e.target.value })}
-                    placeholder="e.g. Year 1, JSS 2..."
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-red"
-                  />
+                  >
+                    {CANONICAL_CLASSES.map(cls => (
+                      <option key={cls} value={cls}>{cls}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>

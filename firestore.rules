@@ -178,9 +178,19 @@ service cloud.firestore {
       allow update: if isAnyAdmin() ||
         (isSchoolUser() && isSameSchool(resource.data.get('schoolId', request.resource.data.get('schoolId', null)))) ||
         (isStaffOrTutor() && (isAssignedStaffToStudent(studentId) || hasStaffSchoolAccess(resource.data.get('schoolId', null)))) ||
-        (isAuth() && (resource.data.get('firebaseUid', '') == request.auth.uid || resource.data.get('userId', '') == request.auth.uid)) ||
-        (isAuth() && request.resource.data.get('firebaseUid', '') == request.auth.uid &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['firebaseUid', 'userId', 'authEmail', 'portalAccessEnabled', 'lastLoginAt', 'updatedAt']));
+        (isAuth() && (
+          resource.data.get('firebaseUid', '') == request.auth.uid ||
+          resource.data.get('userId', '') == request.auth.uid ||
+          studentId == request.auth.uid ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('studentDocId', '') == studentId)
+        )) ||
+        (isAuth() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'firebaseUid', 'userId', 'authEmail', 'portalAccessEnabled', 'lastLoginAt', 'updatedAt',
+            'passwordHash', 'customPasswordHash', 'accessCodeHash', 'customPassword', 'accessCode', 'passcode', 'code',
+            'forcePasswordReset', 'mustResetPassword', 'passwordUpdatedAt'
+          ]));
       allow delete: if isAnyAdmin() || (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null)));
     }
     match /students/{studentId} {
@@ -191,9 +201,19 @@ service cloud.firestore {
       allow update: if isAnyAdmin() ||
         (isSchoolUser() && isSameSchool(resource.data.get('schoolId', request.resource.data.get('schoolId', null)))) ||
         (isStaffOrTutor() && (isAssignedStaffToStudent(studentId) || hasStaffSchoolAccess(resource.data.get('schoolId', null)))) ||
-        (isAuth() && (resource.data.get('firebaseUid', '') == request.auth.uid || resource.data.get('userId', '') == request.auth.uid)) ||
-        (isAuth() && request.resource.data.get('firebaseUid', '') == request.auth.uid &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['firebaseUid', 'userId', 'authEmail', 'portalAccessEnabled', 'lastLoginAt', 'updatedAt']));
+        (isAuth() && (
+          resource.data.get('firebaseUid', '') == request.auth.uid ||
+          resource.data.get('userId', '') == request.auth.uid ||
+          studentId == request.auth.uid ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('studentDocId', '') == studentId)
+        )) ||
+        (isAuth() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'firebaseUid', 'userId', 'authEmail', 'portalAccessEnabled', 'lastLoginAt', 'updatedAt',
+            'passwordHash', 'customPasswordHash', 'accessCodeHash', 'customPassword', 'accessCode', 'passcode', 'code',
+            'forcePasswordReset', 'mustResetPassword', 'passwordUpdatedAt'
+          ]));
       allow delete: if isAnyAdmin() || (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null)));
     }
     match /studentModules/{docId} { 
@@ -401,22 +421,23 @@ service cloud.firestore {
     // JDI examination records
     match /jdiExams/{examId} {
       allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
-      allow create, update: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser();
-      allow delete: if isAnyAdmin();
+      allow create, update: if isAnyAdmin() || isStaffOrTutor();
+      allow delete: if isAnyAdmin() || isStaffOrTutor();
     }
     match /schoolExams/{examId} {
       allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
-      allow create, update: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser();
-      allow delete: if isAnyAdmin();
+      allow create, update: if isAnyAdmin() || isStaffOrTutor();
+      allow delete: if isAnyAdmin() || isStaffOrTutor();
     }
     match /jdiExamAttempts/{attemptId} {
       allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
       allow create: if isAuth();
-      allow update: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
+      allow update: if isAnyAdmin() || isStaffOrTutor() || isAuth();
       allow delete: if isAnyAdmin();
     }
     match /jdiQuestionBank/{questionId} {
-      allow read, write: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser();
+      allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser();
+      allow write: if isAnyAdmin() || isStaffOrTutor();
     }
     match /jdiAttemptLimits/{limitId} {
       allow read, write: if isAuth();
@@ -425,11 +446,10 @@ service cloud.firestore {
       allow read, write: if isAuth();
     }
     match /jdiNotifications/{notificationId} {
-      allow read: if isAuth() && resource.data.recipientUid == request.auth.uid;
-      allow create, delete: if isAnyAdmin();
-      allow update: if isAuth() && resource.data.recipientUid == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt','isRead'])
-        ;
+      allow read: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && (resource.data.get('recipientUid', '') == request.auth.uid || resource.data.get('userId', '') == request.auth.uid));
+      allow create: if isAnyAdmin() || isStaffOrTutor();
+      allow delete: if isAnyAdmin();
+      allow update: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && (resource.data.get('recipientUid', '') == request.auth.uid || resource.data.get('userId', '') == request.auth.uid));
     }
     match /notifications/{notificationId} {
       allow read: if isNotificationAdmin() || (isAuth() && (

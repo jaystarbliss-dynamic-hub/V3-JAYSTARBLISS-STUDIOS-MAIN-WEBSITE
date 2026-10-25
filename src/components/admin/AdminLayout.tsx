@@ -10,7 +10,7 @@ import {
   Bell, Activity, Search, ChevronsUpDown,
   ExternalLink, CalendarDays, Library, ShieldCheck,
   SlidersHorizontal, Trophy, Radio, GraduationCap, Award,
-  HelpCircle, Headphones
+  HelpCircle, Headphones, PanelLeftClose
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
@@ -22,6 +22,7 @@ import ImpersonateUserModal from './ImpersonateUserModal';
 import { JaystarblissIcon } from '../common/JaystarblissLogo';
 import NotificationBell from '../common/NotificationBell';
 import SEO from '../ui/SEO';
+import { migrateAllFirestoreClasses } from '../../lib/classMigration';
 import adminBgWallpaper from '../../assets/landscape hex design.png';
 
 interface NavItem {
@@ -42,6 +43,10 @@ const AdminLayout: React.FC = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [impersonateModalOpen, setImpersonateModalOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    void migrateAllFirestoreClasses().catch(() => null);
+  }, []);
 
   // Collapsible Section Accordion State
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
@@ -231,17 +236,17 @@ const AdminLayout: React.FC = () => {
               <div>
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-white/10">
-                  <Link to="/" onClick={() => setSidebarOpen(false)} className="flex items-center gap-2">
+                  <button type="button" onClick={() => setSidebarOpen(false)} className="flex items-center gap-2 text-left cursor-pointer">
                     <JaystarblissIcon className="w-7 h-7 shrink-0" />
                     <span className="font-bold text-xs tracking-tight uppercase">JAYSTARBLISS ADMIN</span>
-                  </Link>
+                  </button>
                   <button 
                     type="button" 
                     onClick={() => setSidebarOpen(false)}
-                    className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:text-white"
-                    aria-label="Close menu"
+                    className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:text-white cursor-pointer"
+                    aria-label="Close sidebar"
                   >
-                    <X size={18} />
+                    <PanelLeftClose size={18} />
                   </button>
                 </div>
 
@@ -309,35 +314,52 @@ const AdminLayout: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Desktop Sidebar: Framer Motion fluid Chrome-style hover expansion (w-20 -> w-72) */}
+      {/* Desktop Sidebar */}
       <motion.aside 
         initial={false}
         animate={{ width: isHovered ? 280 : 80 }}
         transition={{ type: 'spring', stiffness: 350, damping: 32, mass: 0.8 }}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
         className="hidden lg:flex bg-white/95 dark:bg-[#0c1220]/95 backdrop-blur-2xl text-slate-900 dark:text-white flex-col h-full max-h-screen border-r border-slate-200/80 dark:border-white/10 shrink-0 select-none overflow-hidden relative z-30 shadow-lg"
       >
-        {/* Header with Logo */}
-        <div className="flex items-center h-16 px-4 border-b border-slate-200/60 dark:border-white/10 shrink-0 overflow-hidden">
-          <Tooltip content="Return to Public Website" placement="right">
-            <Link to="/" className="flex items-center gap-3 group w-full">
+        {/* Header with Logo Toggle */}
+        <div className="flex items-center justify-between gap-2 h-16 px-4 border-b border-slate-200/60 dark:border-white/10 shrink-0 overflow-hidden">
+          <Tooltip content={isHovered ? "Sidebar Open" : "Click logo to open sidebar"} placement="right">
+            <button
+              type="button"
+              onClick={() => setIsHovered(prev => !prev)}
+              className="flex items-center gap-3 group flex-1 min-w-0 text-left cursor-pointer"
+              aria-label={isHovered ? "Toggle sidebar" : "Open sidebar"}
+            >
               <div className="w-10 h-10 flex items-center justify-center shrink-0">
                 <JaystarblissIcon className="w-8 h-8 group-hover:scale-105 transition-transform shrink-0 drop-shadow-sm" />
               </div>
-              <motion.div 
-                animate={{ opacity: isHovered ? 1 : 0 }}
-                transition={{ duration: 0.2 }}
-                className={`flex flex-col min-w-0 whitespace-nowrap ${isHovered ? 'pointer-events-auto' : 'pointer-events-none'}`}
-              >
-                <span className="font-bold text-xs sm:text-sm tracking-tight text-gray-900 dark:text-white flex items-center gap-1">
-                  JAYSTARBLISS
-                  <ExternalLink size={12} className="opacity-0 group-hover:opacity-70 transition-opacity text-slate-400" />
-                </span>
-                <span className="text-[10px] text-sky-600 dark:text-sky-400 font-mono font-semibold">Admin Console</span>
-              </motion.div>
-            </Link>
+              {isHovered && (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex flex-col min-w-0 whitespace-nowrap"
+                >
+                  <span className="font-bold text-xs sm:text-sm tracking-tight text-gray-900 dark:text-white truncate">
+                    JAYSTARBLISS
+                  </span>
+                  <span className="text-[10px] text-sky-600 dark:text-sky-400 font-mono font-semibold truncate">Admin Console</span>
+                </motion.div>
+              )}
+            </button>
           </Tooltip>
+          {isHovered && (
+            <Tooltip content="Close sidebar" placement="right">
+              <button
+                type="button"
+                onClick={() => setIsHovered(false)}
+                aria-label="Close sidebar"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors shrink-0 cursor-pointer"
+              >
+                <PanelLeftClose size={18} />
+              </button>
+            </Tooltip>
+          )}
         </div>
 
         {/* Sidebar Nav Items */}
@@ -484,13 +506,14 @@ const AdminLayout: React.FC = () => {
         {/* Topbar */}
         <div className="relative z-20 flex-shrink-0 flex items-center justify-between h-14 sm:h-16 bg-white/80 dark:bg-[#0c1220]/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 px-3 sm:px-6 lg:px-8 transition-colors shadow-xs">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Tooltip content="Open navigation menu" placement="right">
+            <Tooltip content="Click logo to open sidebar" placement="right">
               <button 
-                className="lg:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors shrink-0" 
-                onClick={() => setSidebarOpen(true)}
-                aria-label="Open navigation menu"
+                type="button"
+                className="lg:hidden flex items-center gap-2 p-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer" 
+                onClick={() => setSidebarOpen(prev => !prev)}
+                aria-label="Toggle navigation sidebar"
               >
-                <Menu size={20} />
+                <JaystarblissIcon className="w-7 h-7 shrink-0" />
               </button>
             </Tooltip>
 
@@ -562,7 +585,7 @@ const AdminLayout: React.FC = () => {
         </div>
 
         {/* Main Content Area */}
-        <main className="admin-main-content flex-1 relative z-10 overflow-y-auto overscroll-contain focus:outline-none custom-scrollbar pb-16 lg:pb-0">
+        <main className="admin-main-content flex-1 relative z-10 overflow-y-auto overscroll-contain focus:outline-none custom-scrollbar">
           <div className="py-5 sm:py-6">
             <div className="max-w-7xl mx-auto px-3 sm:px-6 md:px-8">
               <AnimatePresence mode="wait">
@@ -579,28 +602,6 @@ const AdminLayout: React.FC = () => {
             </div>
           </div>
         </main>
-      </div>
-
-      {/* Horizontally Scrollable Mobile Bottom Navigation for Admin */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-[#0c1220]/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 px-2 py-1.5 flex items-center overflow-x-auto no-scrollbar gap-1 z-30 shadow-lg select-none">
-        {flatNavList.map(item => {
-          const isActive = location.pathname === item.href;
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.name}
-              to={item.href}
-              className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all shrink-0 min-w-[62px] ${
-                isActive
-                  ? 'text-sky-600 dark:text-sky-400 font-bold'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Icon size={18} />
-              <span className="text-[9px] mt-0.5 tracking-tight truncate max-w-[65px]">{item.name}</span>
-            </Link>
-          );
-        })}
       </div>
 
       <SearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} />

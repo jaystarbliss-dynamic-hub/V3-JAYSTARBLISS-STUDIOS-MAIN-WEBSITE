@@ -264,16 +264,19 @@ const Portal: React.FC = () => {
       console.warn('Firestore student lookup info:', lookupErr);
     }
 
-    // Verify access code if student record found with accessCode
+    // Verify access code or custom password if student record found
     if (sdoc && sdata) {
       if (isBlockedAccount(sdata)) {
         throw new Error('This student account is currently disabled or suspended. Please contact your administrator.');
       }
-      if (sdata.accessCode) {
-        const storedCode = String(sdata.accessCode).trim().toUpperCase();
-        const enteredCode = code.trim().toUpperCase();
-        if (storedCode !== enteredCode && sdata.accessCode !== code) {
-          throw new Error('Invalid access code for this student profile. Please verify your access code or contact your instructor.');
+      const storedCode = String(sdata.accessCode || sdata.passcode || sdata.code || '').trim().toUpperCase();
+      const storedCustomPw = String(sdata.customPassword || sdata.password || '').trim();
+      const enteredCode = code.trim().toUpperCase();
+      if (storedCode || storedCustomPw) {
+        const matchesAccess = storedCode && (storedCode === enteredCode || sdata.accessCode === code);
+        const matchesCustomPw = storedCustomPw && (storedCustomPw === code.trim() || storedCustomPw.toUpperCase() === enteredCode);
+        if (!matchesAccess && !matchesCustomPw) {
+          throw new Error('Invalid access code or password for this student profile. Please verify your credentials or contact your instructor.');
         }
       }
     }

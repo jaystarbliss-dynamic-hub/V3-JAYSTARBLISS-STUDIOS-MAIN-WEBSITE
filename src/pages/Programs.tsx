@@ -3,6 +3,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import MainLayout from '../components/layout/MainLayout';
 import SEO from '../components/ui/SEO';
+import { motion, AnimatePresence } from 'motion/react';
 import { Card, CardContent, CardFooter } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { CardSkeleton } from '../components/ui/Skeleton';
@@ -184,72 +185,173 @@ const Programs: React.FC = () => {
       {/* Hero Header */}
       <PageHeader
         eyebrow=""
-        title={heroData.title || "One Ecosystem."}
-        description={heroData.subtitle}
+        title={heroData.title ? heroData.title.replace(/\.$/, '') : "One Ecosystem"}
+        description={heroData.subtitle || "find a specialised learning pathway"}
         image={heroData.bannerImage}
         fallbackImage={pageHeaderImages.programs}
         size="lg"
       >
-        {/* Quick Actions */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-10">
+        {/* Two Main Calls to Action */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5 mb-12">
           <button
             type="button"
             onClick={() => {
               setActiveView('pathfinder');
-              const el = document.getElementById('pathfinder-section');
-              if (el) el.scrollIntoView({ behavior: 'smooth' });
+              setTimeout(() => {
+                const el = document.getElementById('pathfinder-section') || document.getElementById('programs-content');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }, 60);
             }}
-            className="bg-brand-red hover:bg-red-700 text-white px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-brand-red/20 transition-all text-center"
+            className="bg-[#e11d48] hover:bg-red-700 text-white px-7 py-3.5 rounded-full font-extrabold text-xs uppercase tracking-wider flex items-center justify-center shadow-[0_10px_30px_-6px_rgba(225,29,72,0.55)] transition-all text-center cursor-pointer"
           >
-            <Compass size={16} />
-            <span>Build My Child's Pathway</span>
+            <span>Build My Child&apos;s Pathway</span>
           </button>
 
           <Link
             to="/tutors"
-            className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all text-center"
+            className="bg-white/[0.04] hover:bg-white/[0.1] text-white border border-white/20 px-7 py-3.5 rounded-full font-extrabold text-xs uppercase tracking-wider flex items-center justify-center transition-all text-center"
           >
-            <UserCheck size={16} />
             <span>Find a Dedicated Mentor</span>
           </Link>
         </div>
 
-        {/* 4-Way Mode Selector */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { id: 'ecosystem', label: '8 Core Programs', hint: 'Browse every subject we teach, organized by program', icon: Layers },
-            { id: 'roadmap', label: 'Visual Roadmap', hint: 'Interactive step-by-step milestone path across all tracks', icon: Compass },
-            { id: 'pathfinder', label: 'Custom Pathfinder', hint: 'Answer a few questions, get a tailored schedule', icon: UserCheck },
-            { id: 'catalog', label: 'Program Catalog', hint: 'Search & filter all courses & workshops directly', icon: BookOpen }
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeView === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setActiveView(tab.id as any);
-                  const el = document.getElementById('programs-content');
-                  if (el) el.scrollIntoView({ behavior: 'smooth' });
-                }}
-                className={`text-left p-5 rounded-2xl border transition-all duration-200 flex flex-col gap-3 ${
-                  isActive
-                    ? 'bg-white text-brand-slate border-white shadow-xl scale-[1.02]'
-                    : 'bg-white/[0.06] text-white border-white/15 hover:bg-white/[0.12] hover:border-white/30'
-                }`}
+        {/* Minimal Editorial Horizontal Tab System */}
+        {(() => {
+          const heroTabs: Array<{
+            id: 'ecosystem' | 'roadmap' | 'pathfinder' | 'catalog';
+            label: string;
+            number: string;
+            title: string;
+            description: string;
+            actionLabel: string;
+            targetSectionId: string;
+          }> = [
+            {
+              id: 'ecosystem',
+              label: 'Core Programs',
+              number: '08',
+              title: 'Core Programs',
+              description: 'Explore every learning pathway in one place.',
+              actionLabel: 'Explore programs',
+              targetSectionId: 'programs-content'
+            },
+            {
+              id: 'roadmap',
+              label: 'Visual Roadmap',
+              number: '05',
+              title: 'Visual Roadmap',
+              description: 'Interactive step-by-step milestone progression across all 5 mastery stages.',
+              actionLabel: 'Explore roadmap',
+              targetSectionId: 'roadmap-section'
+            },
+            {
+              id: 'pathfinder',
+              label: 'Custom Pathfinder',
+              number: '01',
+              title: 'Custom Pathfinder',
+              description: 'Answer a few quick questions to build a tailored learning schedule.',
+              actionLabel: 'Start pathfinder',
+              targetSectionId: 'pathfinder-section'
+            },
+            {
+              id: 'catalog',
+              label: 'Program Catalog',
+              number: String(programs.length || 24).padStart(2, '0'),
+              title: 'Program Catalog',
+              description: 'Search and filter every specialized course, track, and workshop directly.',
+              actionLabel: 'Browse catalog',
+              targetSectionId: 'catalog-section'
+            }
+          ];
+
+          const selectedTab = heroTabs.find(t => t.id === activeView) || heroTabs[0];
+
+          return (
+            <div className="max-w-3xl">
+              {/* Horizontal Text Selector with Animated Red Active Underline */}
+              <div
+                className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-4 sm:gap-8 border-b border-white/15"
+                role="tablist"
+                aria-label="Ecosystem section selector"
               >
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isActive ? 'bg-brand-red text-white' : 'bg-white/10 text-white'}`}>
-                  <Icon size={18} />
-                </div>
-                <div>
-                  <div className="font-black text-sm">{tab.label}</div>
-                  <div className={`text-xs mt-0.5 ${isActive ? 'text-brand-slate/60' : 'text-white/60'}`}>{tab.hint}</div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+                {heroTabs.map((tab) => {
+                  const isActive = activeView === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      onClick={() => setActiveView(tab.id)}
+                      className={`relative pb-3.5 pt-1 text-sm sm:text-base transition-colors cursor-pointer whitespace-nowrap select-none ${
+                        isActive
+                          ? 'text-white font-extrabold'
+                          : 'text-white/65 hover:text-white font-medium'
+                      }`}
+                    >
+                      <span>{tab.label}</span>
+                      {isActive && (
+                        <motion.div
+                          layoutId="programsHeroActiveUnderline"
+                          transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                          className="absolute bottom-[-1.5px] left-0 right-0 h-[3px] rounded-full bg-[#ef4444] shadow-[0_0_16px_rgba(239,68,68,0.85)]"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Focused Content Area with Large Numerical Accent */}
+              <div className="pt-8 sm:pt-10 min-h-[140px]">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={selectedTab.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex flex-col sm:flex-row sm:items-center gap-6 sm:gap-8"
+                  >
+                    <div className="flex items-center gap-6 sm:gap-8">
+                      <span
+                        className="text-6xl sm:text-7xl lg:text-[5.25rem] font-black tracking-tight leading-none bg-gradient-to-r from-[#ef4444] via-[#dc2626] to-white/25 bg-clip-text text-transparent drop-shadow-[0_0_28px_rgba(239,68,68,0.4)] select-none"
+                        aria-hidden="true"
+                      >
+                        {selectedTab.number}
+                      </span>
+                      <div className="h-16 sm:h-20 w-px bg-white/15 shrink-0" />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                        {selectedTab.title}
+                      </h2>
+                      <p className="text-sm sm:text-base text-white/75 leading-relaxed max-w-lg">
+                        {selectedTab.description}
+                      </p>
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const targetEl =
+                              document.getElementById(selectedTab.targetSectionId) ||
+                              document.getElementById('programs-content');
+                            if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-[#ef4444] hover:text-red-400 transition-colors cursor-pointer group"
+                        >
+                          <span>{selectedTab.actionLabel}</span>
+                          <ArrowRight size={15} className="transition-transform group-hover:translate-x-1" />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            </div>
+          );
+        })()}
       </PageHeader>
 
       {/* Main Section Content based on active view */}

@@ -14,6 +14,8 @@ import {
   Filter, ChevronDown, Plus, Settings, ChevronRight
 } from 'lucide-react';
 import { resolveRealName, formatTutorDropdownLabel } from '../../utils/userNames';
+import { CANONICAL_CLASSES, formatNormalizedClassDisplay, normalizeClassName } from '../../lib/classes';
+import { migrateAllFirestoreClasses } from '../../lib/classMigration';
 
 export interface AssignedStudentTutor {
   tutorId: string;
@@ -126,7 +128,7 @@ const AdminStudents: React.FC = () => {
     fullName: '',
     username: '',
     email: '',
-    className: '',
+    className: 'Grade 1',
     track: 'Technology & Hardware & Electronics Foundation',
     subjects: 'Coding, Mathematics, Hardware & Electronics',
     schoolId: '',
@@ -155,6 +157,7 @@ const AdminStudents: React.FC = () => {
   const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
+      void migrateAllFirestoreClasses().catch(() => undefined);
       // 1. Fetch from Firestore collections directly
       const [
         studentsSnap,
@@ -289,14 +292,19 @@ const AdminStudents: React.FC = () => {
           ? data.subjects.join(', ')
           : (data.subjects || data.track || data.course || '');
 
+        const canonicalClass = formatNormalizedClassDisplay(
+          data.class || data.className || data.grade || data.classLevel || data.studentAge,
+          'Grade 1'
+        );
+
         return {
           id,
           docSource: defaultSource,
           fullName: data.fullName || data.studentName || data.name || data.displayName || 'Student',
           username: data.username || data.studentUsername || (data.email ? data.email.split('@')[0] : `student_${id.slice(-4)}`),
           email: data.email || data.studentEmail || '',
-          class: data.class || data.className || data.grade || 'General',
-          grade: data.grade || data.class || 'General',
+          class: canonicalClass,
+          grade: canonicalClass,
           track: data.track || data.learningTrack || data.program || data.course || '',
           subjects: subjectsStr,
           schoolId,
@@ -371,8 +379,8 @@ const AdminStudents: React.FC = () => {
                 fullName: child.name || child.fullName || `Child ${idx + 1}`,
                 username: child.username || (child.email ? child.email.split('@')[0] : `child_${idx + 1}`),
                 email: child.email || '',
-                class: child.class || child.grade || 'General',
-                grade: child.grade || child.class || 'General',
+                class: formatNormalizedClassDisplay(child.class || child.grade, 'Grade 1'),
+                grade: formatNormalizedClassDisplay(child.grade || child.class, 'Grade 1'),
                 track: child.track || child.program || '',
                 subjects: Array.isArray(child.subjects) ? child.subjects.join(', ') : (child.subjects || 'Coding, Mathematics'),
                 schoolId: child.schoolId || '',
@@ -515,7 +523,7 @@ const AdminStudents: React.FC = () => {
             fullName: form.fullName.trim(),
             username: cleanUsername,
             email: form.email.trim() || undefined,
-            class: form.className.trim() || 'General',
+            class: normalizeClassName(form.className, 'Grade 1'),
             track: form.track.trim() || '',
             subjects: subjectsArray,
             schoolId: form.studentType === 'school' ? form.schoolId : undefined,
@@ -560,13 +568,14 @@ const AdminStudents: React.FC = () => {
         accessCodeHash = generatedCode.toLowerCase();
       }
 
+      const canonicalStudentClass = normalizeClassName(form.className, 'Grade 1');
       const payload = {
         fullName: form.fullName.trim(),
         studentName: form.fullName.trim(),
         username: cleanUsername,
         email: form.email.trim() || null,
-        class: form.className.trim() || 'General',
-        grade: form.className.trim() || 'General',
+        class: canonicalStudentClass,
+        grade: canonicalStudentClass,
         track: form.track.trim() || 'Technology & Coding',
         subjects: subjectsArray,
         schoolId: form.studentType === 'school' ? form.schoolId : null,
@@ -603,7 +612,8 @@ const AdminStudents: React.FC = () => {
           role: 'STUDENT',
           schoolId: form.studentType === 'school' ? form.schoolId : null,
           schoolName: form.studentType === 'school' ? (schoolObj?.name || form.schoolId) : null,
-          class: form.className.trim() || 'General',
+          class: canonicalStudentClass,
+          grade: canonicalStudentClass,
           accessCode: generatedCode,
           accessCodeHash,
           portalAccessEnabled: true,
@@ -640,7 +650,7 @@ const AdminStudents: React.FC = () => {
       fullName: '',
       username: '',
       email: '',
-      className: '',
+      className: 'Grade 1',
       track: 'Technology & Hardware & Electronics Foundation',
       subjects: 'Coding, Mathematics, Hardware & Electronics',
       schoolId: '',
@@ -1608,13 +1618,15 @@ const AdminStudents: React.FC = () => {
                   <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
                     Class / Grade Level
                   </label>
-                  <input
-                    type="text"
-                    value={form.className}
+                  <select
+                    value={normalizeClassName(form.className, 'Grade 1')}
                     onChange={e => setForm(prev => ({ ...prev, className: e.target.value }))}
-                    placeholder="e.g. Primary 5, Year 7, Student Alpha"
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
+                  >
+                    {CANONICAL_CLASSES.map(cls => (
+                      <option key={cls} value={cls}>{cls}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -1819,9 +1831,34 @@ const AdminStudents: React.FC = () => {
               {/* Class & Track */}
               <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/50">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Class &amp; Learning Track</span>
-                <p className="mt-1 text-xs font-semibold text-slate-900 dark:text-white truncate">
-                  {managingStudent.class || 'General'} · <strong className="text-slate-800 dark:text-slate-200">{managingStudent.track || 'Technology & Coding'}</strong>
-                </p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <select
+                    value={normalizeClassName(managingStudent.class, 'Grade 1')}
+                    onChange={async (e) => {
+                      const nextClass = normalizeClassName(e.target.value, 'Grade 1');
+                      setManagingStudent(prev => prev ? { ...prev, class: nextClass, grade: nextClass } : null);
+                      setStudents(prev => prev.map(s => s.id === managingStudent.id ? { ...s, class: nextClass, grade: nextClass } : s));
+                      try {
+                        await Promise.all([
+                          updateDoc(doc(db, 'students', managingStudent.id), { class: nextClass, grade: nextClass }).catch(() => undefined),
+                          updateDoc(doc(db, 'individualStudents', managingStudent.id), { class: nextClass, grade: nextClass }).catch(() => undefined),
+                          updateDoc(doc(db, 'users', managingStudent.id), { class: nextClass, grade: nextClass }).catch(() => undefined),
+                        ]);
+                        toast.success(`Updated class to ${nextClass}`);
+                      } catch {
+                        toast.error('Failed to update class');
+                      }
+                    }}
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-brand-red"
+                  >
+                    {CANONICAL_CLASSES.map(cls => (
+                      <option key={cls} value={cls}>{cls}</option>
+                    ))}
+                  </select>
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">
+                    · <strong>{managingStudent.track || 'Technology & Coding'}</strong>
+                  </span>
+                </div>
               </div>
 
               {/* School / Parent Info */}

@@ -1,5 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
+import { computeExamMaxScore, normalizeClassName, resolvePartnerSchoolName } from '../../api/_lib/jdi-assessment.js';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -73,26 +74,29 @@ async function resolveSchool(uid: string, profile: Record<string, any>, email: s
   }
   return {
     id: doc.id,
-    name: text(data.name || data.schoolName || profile.schoolName || 'School'),
+    name: resolvePartnerSchoolName(data.name, data.schoolName, profile.schoolName) || 'School',
     schoolCode: text(data.schoolCode || data.schoolId || doc.id),
     aliases: Array.from(aliases),
     data
   };
 }
 
-const serialiseStudent = (id: string, data: Record<string, any>, source: string, schoolId: string) => ({
-  id,
-  collection: source,
-  fullName: text(data.fullName || data.studentName || data.name || [data.firstName, data.lastName].filter(Boolean).join(' ') || 'Learner'),
-  username: text(data.username || data.admissionNumber || id),
-  email: text(data.email),
-  className: text(data.className || data.class || data.grade || data.classLevel || data.classId || 'Unassigned'),
-  track: text(data.track || data.programName || data.plan),
-  schoolId,
-  accountStatus: text(data.accountStatus || data.status || 'ACTIVE'),
-  studentUid: text(data.firebaseUid || data.userId || data.uid),
-  parentId: text(data.parentId || data.guardianId)
-});
+const serialiseStudent = (id: string, data: Record<string, any>, source: string, schoolId: string) => {
+  const rawClass = text(data.className || data.class || data.grade || data.classLevel || data.classId || '');
+  return {
+    id,
+    collection: source,
+    fullName: text(data.fullName || data.studentName || data.name || [data.firstName, data.lastName].filter(Boolean).join(' ') || 'Learner'),
+    username: text(data.username || data.admissionNumber || id),
+    email: text(data.email),
+    className: normalizeClassName(rawClass) || rawClass || 'Unassigned',
+    track: text(data.track || data.programName || data.plan),
+    schoolId,
+    accountStatus: text(data.accountStatus || data.status || 'ACTIVE'),
+    studentUid: text(data.firebaseUid || data.userId || data.uid),
+    parentId: text(data.parentId || data.guardianId)
+  };
+};
 
 async function queryBySchoolAliases(collectionName: string, aliases: string[]) {
   const found = new Map<string, any>();
@@ -223,7 +227,7 @@ export const handler: Handler = async event => {
       return {
         id: d.id, examId, title: examNames.get(examId) || 'Examination', subject: text(exam.subject || 'General'),
         status: text(a.status || 'unknown'), score: released || autoFinal ? (typeof a.score === 'number' ? a.score : null) : null,
-        maxScore: (Array.isArray(exam.questions) ? exam.questions : []).reduce((sum: number, q: any) => sum + Math.max(0, Number(q.points) || 0), 0),
+        maxScore: computeExamMaxScore(exam, a),
         submittedAt: asIso(a.submittedAt), releasedAt: asIso(a.releasedAt), feedback: released ? text(a.feedback, 1200) : ''
       };
     }).filter(Boolean).sort((a: any, b: any) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')));

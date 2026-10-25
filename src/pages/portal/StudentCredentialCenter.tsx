@@ -10,6 +10,8 @@ import { useToast } from '../../contexts/ToastContext';
 import SEO from '../../components/ui/SEO';
 import { auth, db } from '../../lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
+import { CANONICAL_CLASSES, formatNormalizedClassDisplay } from '../../lib/classes';
+import { migrateAllFirestoreClasses } from '../../lib/classMigration';
 
 type Props = { role: 'staff' | 'school' };
 type Student = { 
@@ -47,6 +49,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
     const combinedMap = new Map<string, Student>();
 
     try {
+      await migrateAllFirestoreClasses().catch(() => null);
       const currentUser = auth.currentUser;
       const targetSchoolId = sessionStorage.getItem('schoolId') || localStorage.getItem('jaystar_cached_school_id') || (isSchool ? currentUser?.uid : '') || '';
 
@@ -68,7 +71,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                   fullName: s.fullName || s.studentName || s.name || 'Student',
                   studentName: s.fullName || s.studentName || s.name || 'Student',
                   username: s.username || s.id,
-                  class: (s.class || s.classLevel || s.grade || '').trim() || 'Year 1',
+                  class: formatNormalizedClassDisplay(s.class || s.classLevel || s.grade, 'Grade 1'),
                   schoolName: s.schoolName || '',
                   schoolId: s.schoolId || targetSchoolId,
                   track: s.track || s.programName || s.plan || 'Digital Literacy Junior',
@@ -141,7 +144,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                   fullName: data.fullName || data.studentName || data.name || 'Student',
                   studentName: data.fullName || data.studentName || data.name || 'Student',
                   username: data.username || key,
-                  class: (data.class || data.classLevel || data.grade || '').trim() || 'Year 1',
+                  class: formatNormalizedClassDisplay(data.class || data.classLevel || data.grade, 'Grade 1'),
                   schoolName: data.schoolName || '',
                   schoolId: targetSchoolId,
                   track: data.track || data.programName || data.plan || 'Digital Literacy Junior',
@@ -171,16 +174,10 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
   const classGroups = useMemo(() => {
     const map = new Map<string, number>();
     students.forEach(student => {
-      const key = (student.class || student.classLevel || student.grade || '').trim() || 'Year 1';
+      const key = formatNormalizedClassDisplay(student.class || student.classLevel || student.grade, 'Grade 1');
       map.set(key, (map.get(key) || 0) + 1);
     });
-    const ordered = [
-      'Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6',
-      'Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Year 6',
-      'JSS 1', 'JSS 2', 'JSS 3',
-      'SS 1', 'SS 2', 'SS 3',
-      'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'
-    ];
+    const ordered: readonly string[] = CANONICAL_CLASSES;
     return Array.from(map.entries()).sort((a, b) => {
       const ia = ordered.indexOf(a[0]), ib = ordered.indexOf(b[0]);
       if (ia >= 0 && ib >= 0) return ia - ib;
@@ -203,7 +200,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
 
   const visibleStudents = useMemo(() => {
     return students.filter(student => {
-      const studentClass = (student.class || student.classLevel || student.grade || '').trim() || 'Year 1';
+      const studentClass = formatNormalizedClassDisplay(student.class || student.classLevel || student.grade, 'Grade 1');
       const studentTrack = (student.track || student.programName || 'Digital Literacy Junior').trim();
 
       if (filterTab === 'classes' && selectedClass !== 'All Classes' && studentClass !== selectedClass) {

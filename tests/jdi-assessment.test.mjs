@@ -1,51 +1,130 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeQuestions, gradeAnswers, schoolSafeQuestion, schoolSafeQuestionResult, attemptBelongsToLinkedChild, isAssessmentStudentRole, answersForFinalization } from "../api/_lib/jdi-assessment.js";
+import {
+  CANONICAL_CLASSES,
+  normalizeClassName,
+  isCanonicalClass,
+  normalizeClassList,
+  classesMatch,
+  canAuthorOrMutateExam,
+  canManageExamRecord,
+  resolveExamDeletionMode,
+  resolvePartnerSchoolName,
+  resolveAttemptQuestions,
+  computeExamMaxScore,
+  calculateScorePercentage,
+  formatScoreSummary,
+  normalizeQuestions,
+  gradeAnswers,
+  schoolSafeQuestion,
+  schoolSafeQuestionResult,
+  attemptBelongsToLinkedChild,
+  isAssessmentStudentRole,
+  answersForFinalization,
+} from "../api/_lib/jdi-assessment.js";
 
 const objective = (overrides = {}) => ({
-  id: "q1", type: "single_choice", prompt: "Pick one", points: 2,
-  options: [{ id: "a", text: "A" }, { id: "b", text: "B" }],
-  correctOptionIds: ["a"], ...overrides,
+  id: "q1",
+  type: "single_choice",
+  prompt: "Pick one",
+  points: 2,
+  options: [
+    { id: "a", text: "A" },
+    { id: "b", text: "B" },
+  ],
+  correctOptionIds: ["a"],
+  ...overrides,
 });
 
 test("normalizes question IDs and deduplicates answer keys before persistence", () => {
   const result = normalizeQuestions([objective({ correctOptionIds: ["a", "a"] })]);
   assert.equal(result.error, undefined);
   assert.deepEqual(result.questions[0].correctOptionIds, ["a"]);
+  assert.equal(result.maxScore, 2);
 });
 
 test("rejects duplicate question IDs and unknown correct-option IDs", () => {
   assert.match(normalizeQuestions([objective(), objective()]).error, /unique/);
-  assert.match(normalizeQuestions([objective({ correctOptionIds: ["missing"] })]).error, /existing options/);
+  assert.match(
+    normalizeQuestions([objective({ correctOptionIds: ["missing"] })]).error,
+    /existing options/
+  );
 });
 
 test("requires a marking key for automatic objective grading but permits manual marking", () => {
   assert.match(normalizeQuestions([objective({ correctOptionIds: [] })]).error, /correct answer/);
-  assert.equal(normalizeQuestions([objective({ correctOptionIds: [] })], "manual").error, undefined);
+  assert.equal(
+    normalizeQuestions([objective({ correctOptionIds: [] })], "manual").error,
+    undefined
+  );
 });
 
 test("enforces objective option limits, true/false shape, and bounded points", () => {
-  assert.match(normalizeQuestions([objective({ options: [{ id: "a", text: "A" }] })]).error, /options/);
-  assert.match(normalizeQuestions([objective({ type: "true_false", options: [{ id: "a", text: "A" }, { id: "b", text: "B" }, { id: "c", text: "C" }] })]).error, /exactly 2/);
+  assert.match(
+    normalizeQuestions([objective({ options: [{ id: "a", text: "A" }] })]).error,
+    /options/
+  );
+  assert.match(
+    normalizeQuestions([
+      objective({
+        type: "true_false",
+        options: [
+          { id: "a", text: "A" },
+          { id: "b", text: "B" },
+          { id: "c", text: "C" },
+        ],
+      }),
+    ]).error,
+    /exactly 2/
+  );
   assert.match(normalizeQuestions([objective({ points: 1001 })]).error, /marks/);
 });
 
 test("grades exact objective answers and never awards credit for partial multiple choice", () => {
-  const exam = { gradingMode: "automatic", questions: [
-    objective(),
-    objective({ id: "q2", type: "multiple_choice", correctOptionIds: ["a", "b"], points: 3 }),
-  ] };
+  const exam = {
+    gradingMode: "automatic",
+    questions: [
+      objective(),
+      objective({ id: "q2", type: "multiple_choice", correctOptionIds: ["a", "b"], points: 3 }),
+    ],
+  };
   assert.equal(gradeAnswers(exam, { q1: "a", q2: ["a"] }).score, 2);
   assert.equal(gradeAnswers(exam, { q1: "a", q2: ["b", "a"] }).score, 5);
 });
 
+test("computes exact denominator and percentage for 1 out of 3 without defaulting to 100", () => {
+  const exam = {
+    gradingMode: "automatic",
+    questions: [
+      objective({ id: "q1", points: 1, correctOptionIds: ["a"] }),
+      objective({ id: "q2", points: 1, correctOptionIds: ["b"] }),
+      objective({ id: "q3", points: 1, correctOptionIds: ["a"] }),
+    ],
+  };
+  const graded = gradeAnswers(exam, { q1: "a", q2: "a", q3: "b" });
+  assert.equal(graded.score, 1);
+  assert.equal(graded.maxScore, 3);
+  assert.equal(graded.percentage, 33.33);
+  assert.equal(computeExamMaxScore(exam), 3);
+
+  const summary = formatScoreSummary(1, 3);
+  assert.equal(summary.score, 1);
+  assert.equal(summary.maxScore, 3);
+  assert.equal(summary.percentage, 33.33);
+  assert.equal(summary.display, "1 / 3 (33.33%)");
+  assert.equal(calculateScorePercentage(2, 3), 66.67);
+});
+
 test("grades short answers case-insensitively and sends essays to manual review", () => {
-  const exam = { questions: [
-    { id: "short", type: "short_answer", points: 1, acceptedAnswers: ["Ohm"] },
-    { id: "essay", type: "essay", points: 4 },
-  ] };
-  const result = gradeAnswers(exam, { short: "  OHM " , essay: "written response" });
+  const exam = {
+    questions: [
+      { id: "short", type: "short_answer", points: 1, acceptedAnswers: ["Ohm"] },
+      { id: "essay", type: "essay", points: 4 },
+    ],
+  };
+  const result = gradeAnswers(exam, { short: "  OHM ", essay: "written response" });
   assert.equal(result.score, 1);
+  assert.equal(result.maxScore, 5);
   assert.equal(result.autoGraded, false);
   assert.equal(result.questionResults[1].manualReview, true);
 });
@@ -58,23 +137,47 @@ test("manual grading never auto-awards marks", () => {
 });
 
 test("school report projections omit answer keys, explanations, and submitted answer text", () => {
-  const question = schoolSafeQuestion({ id: "q", prompt: "Question", type: "single_choice", points: 2, options: [{ id: "a", text: "A" }], correctOptionIds: ["a"], acceptedAnswers: ["secret"], explanation: "teacher-only" });
+  const question = schoolSafeQuestion({
+    id: "q",
+    prompt: "Question",
+    type: "single_choice",
+    points: 2,
+    options: [{ id: "a", text: "A" }],
+    correctOptionIds: ["a"],
+    acceptedAnswers: ["secret"],
+    explanation: "teacher-only",
+  });
   assert.deepEqual(Object.keys(question).sort(), ["id", "options", "points", "prompt", "type"]);
   assert.equal("correctOptionIds" in question, false);
   assert.equal("acceptedAnswers" in question, false);
-  const result = schoolSafeQuestionResult({ questionId: "q", answer: "private response", correct: true, manualReview: false, pointsAwarded: 2, maxPoints: 2 });
+  const result = schoolSafeQuestionResult({
+    questionId: "q",
+    answer: "private response",
+    correct: true,
+    manualReview: false,
+    pointsAwarded: 2,
+    maxPoints: 2,
+  });
   assert.equal(result.correct, true);
   assert.equal("answer" in result, false);
 });
 
 test("parent result lookup requires both matching learner record ID and learner UID", () => {
   const child = { id: "child-a", studentUid: "student-uid-a" };
-  assert.equal(attemptBelongsToLinkedChild({ studentId: "child-a", studentUid: "student-uid-a" }, child), true);
-  assert.equal(attemptBelongsToLinkedChild({ studentId: "child-a", studentUid: "student-uid-b" }, child), false);
-  assert.equal(attemptBelongsToLinkedChild({ studentId: "child-b", studentUid: "student-uid-a" }, child), false);
+  assert.equal(
+    attemptBelongsToLinkedChild({ studentId: "child-a", studentUid: "student-uid-a" }, child),
+    true
+  );
+  assert.equal(
+    attemptBelongsToLinkedChild({ studentId: "child-a", studentUid: "student-uid-b" }, child),
+    false
+  );
+  assert.equal(
+    attemptBelongsToLinkedChild({ studentId: "child-b", studentUid: "student-uid-a" }, child),
+    false
+  );
   assert.equal(attemptBelongsToLinkedChild({ studentId: "child-a" }, child), false);
 });
-
 
 test("assessment access accepts school and individual learner role aliases", () => {
   assert.equal(isAssessmentStudentRole("STUDENT"), true);
@@ -90,4 +193,108 @@ test("expired attempt finalization uses persisted answers, not late client paylo
   assert.deepEqual(answersForFinalization(saved, { q1: "b" }, true), saved);
   assert.deepEqual(answersForFinalization(saved, { q1: "b" }, false), { q1: "b" });
   assert.deepEqual(answersForFinalization(saved, undefined, false), saved);
+});
+
+test("canonical class standardisation maps legacy Nigerian/British classes to Early Years, Grade 1..12, University (Undergraduate), and Graduate (BSc, HND, ND, etc.)", () => {
+  assert.equal(CANONICAL_CLASSES.length, 15);
+  assert.equal(CANONICAL_CLASSES[0], "Early Years");
+  assert.equal(CANONICAL_CLASSES[12], "Grade 12");
+  assert.equal(CANONICAL_CLASSES[13], "University (Undergraduate)");
+  assert.equal(CANONICAL_CLASSES[14], "Graduate (BSc, HND, ND, etc.)");
+
+  assert.equal(normalizeClassName("Nursery 2"), "Early Years");
+  assert.equal(normalizeClassName("KG 1"), "Early Years");
+  assert.equal(normalizeClassName("Reception"), "Early Years");
+  assert.equal(normalizeClassName("Primary 1"), "Grade 1");
+  assert.equal(normalizeClassName("Basic 5"), "Grade 5");
+  assert.equal(normalizeClassName("Year 6"), "Grade 6");
+  assert.equal(normalizeClassName("JSS 1"), "Grade 7");
+  assert.equal(normalizeClassName("JSS 2"), "Grade 8");
+  assert.equal(normalizeClassName("JSS 3"), "Grade 9");
+  assert.equal(normalizeClassName("SS 1"), "Grade 10");
+  assert.equal(normalizeClassName("SSS 2"), "Grade 11");
+  assert.equal(normalizeClassName("SS 3"), "Grade 12");
+  assert.equal(normalizeClassName("Undergraduate / University Student"), "University (Undergraduate)");
+  assert.equal(normalizeClassName("University(Under graduate)"), "University (Undergraduate)");
+  assert.equal(normalizeClassName("Graduate (Bsc, HND, ND etc)"), "Graduate (BSc, HND, ND, etc.)");
+  assert.equal(normalizeClassName("Adult / Professional Tech Learner"), "Graduate (BSc, HND, ND, etc.)");
+  assert.equal(normalizeClassName("Grade 5, Grade 5"), "Grade 5");
+  assert.equal(isCanonicalClass("Grade 5"), true);
+  assert.equal(isCanonicalClass("University (Undergraduate)"), true);
+  assert.equal(isCanonicalClass("Graduate (BSc, HND, ND, etc.)"), true);
+
+  assert.deepEqual(normalizeClassList(["Primary 4", "JSS 1", "Grade 4", "Year 4"]), ["Grade 4", "Grade 7"]);
+  assert.equal(classesMatch("Primary 5", ["Grade 5"]), true);
+  assert.equal(classesMatch("Grade 8", ["JSS 2"]), true);
+  assert.equal(classesMatch("Grade 4", ["Grade 5"]), false);
+  assert.equal(classesMatch("Grade 4", ["all"]), true);
+});
+
+test("partner school name resolution filters out Jaystarbliss system placeholders", () => {
+  assert.equal(
+    resolvePartnerSchoolName(
+      "Jaystarbliss",
+      "Jaystarbliss Dynamic Institute Partner School",
+      "Greenfield Royal Academy"
+    ),
+    "Greenfield Royal Academy"
+  );
+  assert.equal(
+    resolvePartnerSchoolName("Jaystarbliss Dynamic Institute", "JDI", "Crown Heights School"),
+    "Crown Heights School"
+  );
+});
+
+test("exam lifecycle permissions, tutor ownership, and safe delete vs archive rules", () => {
+  assert.equal(canAuthorOrMutateExam("TUTOR"), true);
+  assert.equal(canAuthorOrMutateExam("STAFF"), true);
+  assert.equal(canAuthorOrMutateExam("ADMIN"), true);
+  assert.equal(canAuthorOrMutateExam("SCHOOL"), false);
+  assert.equal(canAuthorOrMutateExam("SCHOOL_ADMIN"), false);
+  assert.equal(canAuthorOrMutateExam("STUDENT"), false);
+
+  const exam = { id: "exam-1", createdBy: "tutor-1", schoolId: "sch-a" };
+  assert.equal(
+    canManageExamRecord({
+      uid: "tutor-1",
+      role: "TUTOR",
+      exam,
+      assignedSchoolIds: ["sch-a"],
+    }),
+    true
+  );
+  assert.equal(
+    canManageExamRecord({
+      uid: "tutor-2",
+      role: "TUTOR",
+      exam,
+      assignedSchoolIds: ["sch-b"],
+    }),
+    false
+  );
+  assert.equal(
+    canManageExamRecord({
+      uid: "school-admin-1",
+      role: "SCHOOL",
+      exam,
+      assignedSchoolIds: ["sch-a"],
+    }),
+    false
+  );
+
+  assert.equal(resolveExamDeletionMode(0), "delete");
+  assert.equal(resolveExamDeletionMode(3), "archive");
+
+  const snapQuestions = [{ id: "q1", prompt: "Snapshot Q", points: 1 }];
+  const liveQuestions = [
+    { id: "q1", prompt: "Updated Q1", points: 2 },
+    { id: "q2", prompt: "Updated Q2", points: 2 },
+  ];
+  assert.deepEqual(
+    resolveAttemptQuestions(
+      { questions: liveQuestions },
+      { questionsSnapshot: snapQuestions }
+    ),
+    snapQuestions
+  );
 });

@@ -19,6 +19,7 @@ import {
   Calendar, CheckCircle2, History as HistoryIcon
 } from 'lucide-react';
 import { formatNaira, billingPost } from '../../lib/billing';
+import { CANONICAL_CLASSES, formatNormalizedClassDisplay, normalizeClassName } from '../../lib/classes';
 
 export interface AssignedTutorAllocation {
   tutorId: string;
@@ -2630,12 +2631,15 @@ const AdminSchools: React.FC = () => {
                         </div>
                         <div>
                           <label className={labelClass}>Class / Level</label>
-                          <input
-                            value={passcodeForm.classLevel}
+                          <select
+                            value={normalizeClassName(passcodeForm.classLevel, 'Grade 7')}
                             onChange={e => setPasscodeForm(p => ({ ...p, classLevel: e.target.value }))}
-                            placeholder="e.g. JSS 2"
                             className={inputClass}
-                          />
+                          >
+                            {CANONICAL_CLASSES.map(cls => (
+                              <option key={cls} value={cls}>{cls}</option>
+                            ))}
+                          </select>
                         </div>
                       </div>
 
@@ -2970,7 +2974,7 @@ const AdminSchools: React.FC = () => {
                             {c.username || c.email || c.id}
                           </td>
                           <td className="py-3.5 px-3 text-slate-600 dark:text-slate-400">
-                            {c.class || c.grade || 'Primary / Secondary'}
+                            {formatNormalizedClassDisplay(c.class || c.grade, 'Grade 1')}
                           </td>
                           <td className="py-3.5 px-3">
                             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40">

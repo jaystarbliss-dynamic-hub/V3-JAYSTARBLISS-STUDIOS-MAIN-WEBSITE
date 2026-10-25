@@ -4,6 +4,7 @@ import jsPDF from 'jspdf';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { auth, db, getClientDatabases } from '../../lib/firebase';
 import { getEffectiveAuth } from '../../utils/impersonation';
+import { computeExamMaxScore, formatScoreSummary, normalizeClassName, resolvePartnerSchoolName } from '../../lib/classes';
 import SEO from '../../components/ui/SEO';
 
 type Learner = { id: string; fullName: string; username: string; email?: string; className: string; track?: string; accountStatus?: string; studentUid?: string };
@@ -22,7 +23,7 @@ const clientFallbackApi = async (studentId?: string) => {
 
   const dbs = getClientDatabases();
   const validSchoolIds = new Set<string>();
-  let schoolName = sessionStorage.getItem('schoolName') || '';
+  let schoolName = resolvePartnerSchoolName(sessionStorage.getItem('schoolName'));
   let schoolCode = '';
   let primarySchoolId = sessionStorage.getItem('schoolId') || '';
 
@@ -37,7 +38,7 @@ const clientFallbackApi = async (studentId?: string) => {
       if (u.schoolId) { validSchoolIds.add(String(u.schoolId).trim()); if (!primarySchoolId) primarySchoolId = String(u.schoolId).trim(); }
       if (u.school_id) validSchoolIds.add(String(u.school_id).trim());
       if (u.schoolDocId) validSchoolIds.add(String(u.schoolDocId).trim());
-      if (u.schoolName && !schoolName) schoolName = String(u.schoolName);
+      if (u.schoolName && !schoolName) schoolName = resolvePartnerSchoolName(u.schoolName);
       if (u.schoolCode && !schoolCode) schoolCode = String(u.schoolCode);
     }
 
@@ -50,7 +51,7 @@ const clientFallbackApi = async (studentId?: string) => {
         const s = sDoc.data() || {};
         validSchoolIds.add(sDoc.id);
         if (!primarySchoolId || primarySchoolId === uid) primarySchoolId = sDoc.id;
-        if (s.name && !schoolName) schoolName = String(s.name);
+        if ((s.name || s.schoolName) && !schoolName) schoolName = resolvePartnerSchoolName(s.name, s.schoolName);
         if (s.schoolCode) { validSchoolIds.add(String(s.schoolCode).trim()); if (!schoolCode) schoolCode = String(s.schoolCode).trim(); }
         if (s.schoolId) validSchoolIds.add(String(s.schoolId).trim());
       }
@@ -62,7 +63,7 @@ const clientFallbackApi = async (studentId?: string) => {
           const s = d.data() || {};
           validSchoolIds.add(d.id);
           if (!primarySchoolId || primarySchoolId === uid) primarySchoolId = d.id;
-          if (s.name && !schoolName) schoolName = String(s.name);
+          if ((s.name || s.schoolName) && !schoolName) schoolName = resolvePartnerSchoolName(s.name, s.schoolName);
           if (s.schoolCode) { validSchoolIds.add(String(s.schoolCode).trim()); if (!schoolCode) schoolCode = String(s.schoolCode).trim(); }
           if (s.schoolId) validSchoolIds.add(String(s.schoolId).trim());
         });
@@ -75,16 +76,19 @@ const clientFallbackApi = async (studentId?: string) => {
   const resolvedSchoolId = primarySchoolId || schoolAliases[0] || uid;
 
   const rosterMap = new Map<string, Learner>();
-  const serialise = (id: string, d: any): Learner => ({
-    id,
-    fullName: String(d.fullName || d.studentName || d.name || [d.firstName, d.lastName].filter(Boolean).join(' ') || 'Learner').trim(),
-    username: String(d.username || d.admissionNumber || id).trim(),
-    email: d.email ? String(d.email).trim() : undefined,
-    className: String(d.className || d.class || d.grade || d.classLevel || d.classId || 'Unassigned').trim() || 'Unassigned',
-    track: String(d.track || d.programName || d.plan || '').trim(),
-    accountStatus: String(d.accountStatus || d.status || 'ACTIVE').trim(),
-    studentUid: String(d.firebaseUid || d.userId || d.uid || '').trim()
-  });
+  const serialise = (id: string, d: any): Learner => {
+    const rawClass = String(d.className || d.class || d.grade || d.classLevel || d.classId || '').trim();
+    return {
+      id,
+      fullName: String(d.fullName || d.studentName || d.name || [d.firstName, d.lastName].filter(Boolean).join(' ') || 'Learner').trim(),
+      username: String(d.username || d.admissionNumber || id).trim(),
+      email: d.email ? String(d.email).trim() : undefined,
+      className: normalizeClassName(rawClass) || rawClass || 'Unassigned',
+      track: String(d.track || d.programName || d.plan || '').trim(),
+      accountStatus: String(d.accountStatus || d.status || 'ACTIVE').trim(),
+      studentUid: String(d.firebaseUid || d.userId || d.uid || '').trim()
+    };
+  };
 
   for (const clientDb of dbs) {
     for (const sid of schoolAliases) {
@@ -158,9 +162,29 @@ const clientFallbackApi = async (studentId?: string) => {
     return { id: d.id, date: asIso(a.date || a.createdAt), status: String(a.status || 'UNKNOWN'), notes: String(a.notes || ''), className: String(a.className || a.class || learner.className) };
   }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
+  const examDocCache = new Map<string, any>();
+  for (const d of examAttempts?.docs || []) {
+    const eid = String(d.data()?.examId || '').trim();
+    if (eid && !examDocCache.has(eid)) {
+      const eSnap = await getDoc(doc(db, 'jdiExams', eid)).catch(() => null);
+      if (eSnap?.exists()) examDocCache.set(eid, eSnap.data() || {});
+    }
+  }
+
   const examinations: ExamResult[] = (examAttempts?.docs || []).map(d => {
     const a = d.data() || {};
-    return { id: d.id, title: String(a.examTitle || a.title || 'Examination'), subject: String(a.subject || 'General'), status: String(a.status || 'submitted'), score: typeof a.score === 'number' ? a.score : null, maxScore: Number(a.maxScore || 100), submittedAt: asIso(a.submittedAt), releasedAt: asIso(a.releasedAt), feedback: String(a.feedback || '') };
+    const examData = examDocCache.get(String(a.examId || '')) || {};
+    return {
+      id: d.id,
+      title: String(examData.title || a.examTitle || a.title || 'Examination'),
+      subject: String(examData.subject || a.subject || 'General'),
+      status: String(a.status || 'submitted'),
+      score: typeof a.score === 'number' ? a.score : null,
+      maxScore: computeExamMaxScore(examData, a),
+      submittedAt: asIso(a.submittedAt),
+      releasedAt: asIso(a.releasedAt),
+      feedback: String(a.feedback || '')
+    };
   }).sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')));
 
   const activities: ActivityRecord[] = [];
@@ -205,7 +229,12 @@ const dateLabel = (value?: string | null) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
-const scoreLabel = (score: number | null | undefined, max?: number) => typeof score === 'number' ? (typeof max === 'number' && max > 0 ? score + ' / ' + max + ' (' + Math.round(score / max * 100) + '%)' : score + ' / 100') : 'Pending';
+const scoreLabel = (score: number | null | undefined, max?: number) =>
+  typeof score === 'number'
+    ? typeof max === 'number' && max > 0
+      ? formatScoreSummary(score, max).summaryLabel
+      : `${score}`
+    : 'Pending';
 
 const SchoolLearnerInsights: React.FC = () => {
   const [learners, setLearners] = useState<Learner[]>([]);
