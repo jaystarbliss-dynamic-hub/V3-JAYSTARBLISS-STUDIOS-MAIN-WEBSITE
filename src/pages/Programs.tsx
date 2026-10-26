@@ -202,14 +202,14 @@ const Programs: React.FC = () => {
                 if (el) el.scrollIntoView({ behavior: 'smooth' });
               }, 60);
             }}
-            className="bg-[#e11d48] hover:bg-red-700 text-white px-7 py-3.5 rounded-full font-extrabold text-xs uppercase tracking-wider flex items-center justify-center shadow-[0_10px_30px_-6px_rgba(225,29,72,0.55)] transition-all text-center cursor-pointer"
+            className="bg-[#e11d48] hover:bg-red-700 text-white px-7 py-3.5 rounded-xl font-extrabold text-xs uppercase tracking-wider flex items-center justify-center shadow-[0_10px_30px_-6px_rgba(225,29,72,0.55)] transition-all text-center cursor-pointer"
           >
             <span>Build My Child&apos;s Pathway</span>
           </button>
 
           <Link
             to="/tutors"
-            className="bg-white/[0.04] hover:bg-white/[0.1] text-white border border-white/20 px-7 py-3.5 rounded-full font-extrabold text-xs uppercase tracking-wider flex items-center justify-center transition-all text-center"
+            className="bg-white/[0.04] hover:bg-white/[0.1] text-white border border-white/20 px-7 py-3.5 rounded-xl font-extrabold text-xs uppercase tracking-wider flex items-center justify-center transition-all text-center"
           >
             <span>Find a Dedicated Mentor</span>
           </Link>
@@ -358,31 +358,9 @@ const Programs: React.FC = () => {
       <div id="programs-content" className="digital-canvas py-16 lg:py-24 scroll-mt-20 overflow-hidden">
         <div className="container mx-auto px-4 max-w-7xl space-y-14">
           
-          {/* Section: 5-Stage Architecture Standard */}
-          <div className="pro-surface rounded-[2rem] p-2 sm:p-3">
-            <StageArchitectureBanner />
-          </div>
-
-          {/* View 1: 8 Core Programs & Deep Dive */}
+          {/* View 1: 8 Core Programs & Deep Dive (StageArchitectureBanner ONLY appears here) */}
           {activeView === 'ecosystem' && (
-            <div id="ecosystem-section" className="space-y-10 scroll-mt-24">
-              <div className="grid lg:grid-cols-[1fr_auto] gap-5 items-end border-b border-slate-200/80 dark:border-white/10 pb-7">
-                <div className="max-w-3xl">
-                <div className="text-xs font-black uppercase tracking-wider text-brand-red">
-                  Explore by Program
-                </div>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-1">
-                  Our Programs
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-2xl leading-relaxed">
-                  Click on any program below to review its specialized levels, topics, and discipline progression.
-                </p>
-                </div>
-                <div className="hidden lg:flex items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> 8 pathways · 5 stages each
-                </div>
-              </div>
-
+            <div id="ecosystem-section" className="space-y-12 scroll-mt-24">
               <LearningSchoolsGrid 
                 selectedSchoolId={selectedSchoolId}
                 onSchoolChange={(id) => {
@@ -391,6 +369,8 @@ const Programs: React.FC = () => {
                   if (matching) setSelectedSchoolFilter(matching.filterKey);
                 }}
               />
+
+              <StageArchitectureBanner />
             </div>
           )}
 
@@ -404,18 +384,6 @@ const Programs: React.FC = () => {
           {/* View 3: Pathfinder / Custom Program Builder */}
           {activeView === 'pathfinder' && (
             <div id="pathfinder-section" className="space-y-8 scroll-mt-24">
-              <div className="max-w-3xl">
-                <div className="text-xs font-black uppercase tracking-wider text-brand-red">
-                  Interactive Roadmap Generator
-                </div>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-1">
-                  Build a Bespoke Multi-Disciplinary Program
-                </h2>
-                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  Tailor a schedule that blends coding with academics, music with creative design, or exam drills with digital literacy.
-                </p>
-              </div>
-
               <LearningPathBuilder />
             </div>
           )}
@@ -489,12 +457,12 @@ const Programs: React.FC = () => {
                           className="absolute inset-0 w-full h-full object-cover"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                        <span className="absolute bottom-3 left-4 text-[10px] font-black uppercase tracking-wider text-white bg-brand-red/90 px-2 py-0.5 rounded-md">
-                          {program.categoryId ? program.categoryId.replace(/_/g, ' ') : 'Program Course'}
-                        </span>
                       </div>
                       <CardContent className="space-y-3">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-brand-red">
+                            {program.categoryId ? program.categoryId.replace(/_/g, ' ') : 'Program Course'}
+                          </span>
                           <span className="text-[11px] font-bold text-slate-500">
                             {program.deliveryFormat || 'Online / Physical'}
                           </span>

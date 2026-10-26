@@ -412,7 +412,7 @@ service cloud.firestore {
       allow delete: if isAnyAdmin() || (isAuth() && resource.data.tutorId == request.auth.uid && resource.data.status == 'pending');
     }
     match /tutorSubjects/{subjectId} {
-      allow read: if isAuth();
+      allow read: if true;
       allow write: if isAnyAdmin();
     }
     match /tutor_applications/{appId} { allow create: if true; allow read, update, delete: if isAnyAdmin(); }

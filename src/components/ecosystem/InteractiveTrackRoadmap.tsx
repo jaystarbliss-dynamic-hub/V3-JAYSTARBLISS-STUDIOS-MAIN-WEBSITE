@@ -9,9 +9,11 @@ import {
   GraduationCap, 
   CheckCircle2, 
   ArrowRight, 
+  ArrowLeft,
   Award, 
   Layers, 
   Rocket, 
+  ChevronLeft,
   ChevronRight,
   ShieldCheck,
   Compass,
@@ -19,7 +21,7 @@ import {
   Zap,
   Target
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, type PanInfo } from 'motion/react';
 import { Link } from 'react-router-dom';
 import Button from '../ui/Button';
 
@@ -896,367 +898,559 @@ const ROADMAP_TRACKS: LearningTrack[] = [
 ];
 
 const InteractiveTrackRoadmap: React.FC = () => {
-  const [selectedTrackId, setSelectedTrackId] = useState<string>('web-dev');
+  const [sliderIndex, setSliderIndex] = useState<number>(0);
+  const [viewMode, setViewMode] = useState<'carousel' | 'details'>('carousel');
   const [activeStageNumber, setActiveStageNumber] = useState<number>(1);
-  const [filterAgeCategory, setFilterAgeCategory] = useState<string>('ALL');
+  const [activeDetailTab, setActiveDetailTab] = useState<'topics' | 'capstone' | 'skills'>('topics');
 
-  const currentTrack = ROADMAP_TRACKS.find(t => t.id === selectedTrackId) || ROADMAP_TRACKS[0];
-  const currentMilestone = currentTrack.milestones.find(m => m.stage === activeStageNumber) || currentTrack.milestones[0];
+  const currentTrack = ROADMAP_TRACKS[sliderIndex] || ROADMAP_TRACKS[0];
+  const currentMilestone =
+    currentTrack.milestones.find((m) => m.stage === activeStageNumber) ||
+    currentTrack.milestones[0];
 
-  const filteredTracks = ROADMAP_TRACKS.filter(track => {
-    if (filterAgeCategory === 'ALL') return true;
-    if (filterAgeCategory === 'KIDS') return track.ageRange.includes('4–7') || track.ageRange.includes('5–18');
-    if (filterAgeCategory === 'TEENS') return track.ageRange.includes('10–18') || track.ageRange.includes('11–18') || track.ageRange.includes('Primary');
-    return true;
-  });
-
-  const handleSelectTrack = (trackId: string) => {
-    setSelectedTrackId(trackId);
+  const handlePrevTrack = () => {
+    setSliderIndex((prev) => (prev - 1 + ROADMAP_TRACKS.length) % ROADMAP_TRACKS.length);
     setActiveStageNumber(1);
   };
 
+  const handleNextTrack = () => {
+    setSliderIndex((prev) => (prev + 1) % ROADMAP_TRACKS.length);
+    setActiveStageNumber(1);
+  };
+
+  const handleOpenTrack = (index: number) => {
+    setSliderIndex(index);
+    setActiveStageNumber(1);
+    setActiveDetailTab('topics');
+    setViewMode('details');
+  };
+
+  const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    if (info.offset.x < -50) {
+      handleNextTrack();
+    } else if (info.offset.x > 50) {
+      handlePrevTrack();
+    }
+  };
+
+  const getCircularOffset = (index: number) => {
+    const total = ROADMAP_TRACKS.length;
+    let diff = index - sliderIndex;
+    if (diff > total / 2) diff -= total;
+    if (diff < -total / 2) diff += total;
+    return diff;
+  };
+
   return (
-    <div id="visual-roadmap" className="space-y-12 scroll-mt-24">
-      
-      {/* Header & Filter Controls */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-wider text-brand-red bg-brand-red/10 dark:bg-brand-red/20 px-3 py-1 rounded-full mb-3">
-              <Compass size={14} />
-              <span>Interactive Progression Blueprint</span>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Student Milestone Roadmap Across Our Programs
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
-              Every student progresses through a structured 5-stage roadmap. Select a specialized track below to see the exact progression, key milestones, projects, and skills acquired at each level.
-            </p>
-          </div>
-
-          {/* Quick Age Filter */}
-          <div className="shrink-0 flex items-center gap-2 bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700/60 self-start lg:self-center">
-            {[
-              { key: 'ALL', label: 'All 8 Tracks' },
-              { key: 'KIDS', label: 'Ages 4–9' },
-              { key: 'TEENS', label: 'Ages 10–18+' }
-            ].map(pill => (
-              <button
-                key={pill.key}
-                type="button"
-                onClick={() => setFilterAgeCategory(pill.key)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  filterAgeCategory === pill.key
-                    ? 'bg-white dark:bg-slate-900 text-brand-slate dark:text-white shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                {pill.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Track Selection Horizontal Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
-          {filteredTracks.map(track => {
-            const Icon = track.icon;
-            const isSelected = track.id === selectedTrackId;
-            return (
-              <button
-                key={track.id}
-                type="button"
-                onClick={() => handleSelectTrack(track.id)}
-                className={`p-3 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between gap-3 group relative ${
-                  isSelected
-                    ? 'bg-brand-red text-white border-brand-red shadow-lg shadow-brand-red/20 scale-[1.02] ring-2 ring-brand-red/30'
-                    : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800'
-                }`}
-              >
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
-                  isSelected ? 'bg-white/20 text-white' : 'bg-white dark:bg-slate-700 text-brand-red shadow-xs'
-                }`}>
-                  <Icon size={16} />
-                </div>
-                <div>
-                  <div className={`text-[11px] font-black line-clamp-1 leading-tight ${isSelected ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
-                    {track.title.split('&')[0]}
-                  </div>
-                  <div className={`text-[9px] mt-0.5 font-semibold ${isSelected ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'}`}>
-                    {track.ageRange.split('(')[0]}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Main Roadmap Display for Current Track */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
-        
-        {/* Track Hero Banner */}
-        <div className="p-6 sm:p-8 bg-slate-950 text-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-brand-red/15 rounded-full blur-3xl pointer-events-none" />
-          
-          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-            <div className="max-w-3xl space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-brand-red text-white">
-                  {currentTrack.category}
-                </span>
-                <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-white/10 text-slate-200 border border-white/10">
-                  {currentTrack.ageRange}
-                </span>
-              </div>
-
-              <h3 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight">
-                {currentTrack.title}
-              </h3>
-
-              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">
-                {currentTrack.summary}
-              </p>
-
-              <div className="flex flex-wrap items-center gap-y-2 gap-x-6 text-xs text-slate-300 pt-1">
-                <div className="flex items-center gap-1.5">
-                  <Target size={14} className="text-brand-red" />
-                  <span><strong>Target Outcomes:</strong> {currentTrack.careerPath}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck size={14} className="text-emerald-400" />
-                  <span><strong>Prerequisites:</strong> {currentTrack.prerequisites}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* CTA action */}
-            <div className="shrink-0 flex flex-col sm:flex-row lg:flex-col gap-2.5 self-start lg:self-center">
-              <Button
-                to="/register"
-                className="bg-brand-red hover:bg-red-700 text-white font-extrabold uppercase tracking-wider text-xs shadow-lg shadow-brand-red/20"
-                rightIcon={<ArrowRight size={14} />}
-              >
-                Enroll In This Track
-              </Button>
-              <Link
-                to="/tutors"
-                className="text-xs font-bold text-slate-300 hover:text-white text-center py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
-              >
-                Book 1-on-1 Mentor
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        {/* 5-Stage Visual Stepper Timeline (Metro-Style Roadmap) */}
-        <div className="p-6 sm:p-8 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800">
-          <div className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-6 flex items-center justify-between">
-            <span>Select a stage along the progression path:</span>
-            <span className="text-brand-red font-bold">5 Progressive Levels</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 relative">
-            {currentTrack.milestones.map((m) => {
-              const isActive = m.stage === activeStageNumber;
-              const isPast = m.stage < activeStageNumber;
-
-              return (
-                <button
-                  key={m.stage}
-                  type="button"
-                  onClick={() => setActiveStageNumber(m.stage)}
-                  className={`relative p-4 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between min-h-[140px] group ${
-                    isActive
-                      ? 'bg-white dark:bg-slate-900 border-brand-red shadow-lg ring-2 ring-brand-red/20 scale-[1.02]'
-                      : 'bg-white/70 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-900'
-                  }`}
-                >
-                  {/* Top node & status */}
-                  <div className="flex items-center justify-between mb-2">
-                    <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs transition-colors ${
-                      isActive
-                        ? 'bg-brand-red text-white'
-                        : isPast
-                        ? 'bg-emerald-500 text-white'
-                        : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                    }`}>
-                      {isPast ? <CheckCircle2 size={15} /> : `0${m.stage}`}
-                    </div>
-                    <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500">
-                      {m.duration}
-                    </span>
-                  </div>
-
-                  {/* Stage Details */}
-                  <div>
-                    <div className={`text-[10px] font-black uppercase tracking-wider ${isActive ? 'text-brand-red' : 'text-slate-500 dark:text-slate-400'}`}>
-                      {m.stageName.split(':')[1] || m.stageName}
-                    </div>
-                    <h4 className={`text-xs font-black line-clamp-2 mt-0.5 ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
-                      {m.levelTitle}
-                    </h4>
-                  </div>
-
-                  {/* Active Indicator Bar */}
-                  {isActive && (
-                    <div className="absolute -bottom-[1px] left-4 right-4 h-1 bg-brand-red rounded-t-full" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Milestone Deep Dive Detail Panel */}
-        <AnimatePresence mode="wait">
+    <div id="visual-roadmap" className="scroll-mt-24">
+      <AnimatePresence mode="wait">
+        {viewMode === 'carousel' ? (
+          /* =========================================================
+             MODE 1: 3D COSTUME-SELECT TRACK CAROUSEL
+             ========================================================= */
           <motion.div
-            key={`${currentTrack.id}-${currentMilestone.stage}`}
-            initial={{ opacity: 0, y: 10 }}
+            key="roadmap-3d-carousel"
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-            className="p-6 sm:p-8 lg:p-10 space-y-8"
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.35 }}
+            className="bg-slate-950 text-white rounded-3xl p-6 sm:p-10 lg:p-12 border border-slate-800/90 shadow-2xl relative overflow-hidden select-none"
           >
-            {/* Milestone Title Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100 dark:border-slate-800">
+            <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[40rem] h-64 bg-brand-red/10 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Top Header & Navigation Controls */}
+            <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
               <div>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-xs font-black uppercase tracking-wider text-brand-red bg-brand-red/10 px-2.5 py-0.5 rounded-md">
-                    {currentMilestone.stageName}
-                  </span>
-                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Typical Duration: {currentMilestone.duration}
-                  </span>
-                </div>
-                <h4 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                  {currentMilestone.levelTitle}
-                </h4>
-                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 max-w-3xl">
-                  {currentMilestone.description}
+                <p className="text-xs font-extrabold uppercase tracking-[0.22em] text-brand-red mb-2">
+                  Interactive Progression Blueprint · 8 Specialized Tracks
+                </p>
+                <h2 className="text-3xl sm:text-4xl font-extrabold text-white font-display tracking-tight">
+                  Student Milestone Roadmap
+                </h2>
+                <p className="text-slate-400 text-sm sm:text-base mt-2 max-w-xl">
+                  Slide through our specialized learning tracks below, then click any track to inspect its 5-stage milestone roadmap.
                 </p>
               </div>
 
-              {/* Milestone Badge Pill */}
-              <div className="shrink-0 flex items-center gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/70">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-brand-red text-white flex items-center justify-center shadow-sm">
-                  <Award size={20} />
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase font-black tracking-wider text-slate-400">Earned Badge</div>
-                  <div className="text-xs font-black text-slate-900 dark:text-white">{currentMilestone.badge}</div>
+              <div className="flex items-center gap-4 self-start md:self-auto">
+                <span className="text-xs font-extrabold uppercase tracking-[0.2em] text-slate-400">
+                  0{sliderIndex + 1} / 0{ROADMAP_TRACKS.length}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePrevTrack}
+                    aria-label="Previous roadmap track"
+                    className="w-12 h-12 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNextTrack}
+                    aria-label="Next roadmap track"
+                    className="w-12 h-12 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* 3-Column Content Breakdown */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* Column 1: Core Syllabus & Topics */}
-              <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-3">
-                <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                  <Layers size={16} className="text-brand-red" />
-                  <span>Curriculum Topics</span>
-                </div>
-                <ul className="space-y-2.5 pt-1">
-                  {currentMilestone.topics.map((t, i) => (
-                    <li key={i} className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300">
-                      <CheckCircle2 size={14} className="text-emerald-500 shrink-0 mt-0.5" />
-                      <span>{t}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+            {/* 3D Perspective Stage */}
+            <div
+              className="relative h-[430px] sm:h-[400px] w-full flex items-center justify-center overflow-hidden my-2"
+              style={{ perspective: '1400px' }}
+            >
+              <button
+                type="button"
+                onClick={handlePrevTrack}
+                aria-label="Previous Track"
+                className="hidden lg:flex absolute left-4 z-30 w-14 h-14 rounded-2xl bg-slate-900/90 hover:bg-brand-red text-white border border-slate-700/80 items-center justify-center shadow-2xl transition-all cursor-pointer"
+              >
+                <ChevronLeft className="w-7 h-7" />
+              </button>
 
-              {/* Column 2: Capstone Artifact & Tools */}
-              <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-4 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                    <Rocket size={16} className="text-brand-red" />
-                    <span>Real-World Capstone Deliverable</span>
-                  </div>
-                  <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-slate-200 font-medium leading-relaxed">
-                    {currentMilestone.capstoneProject}
-                  </div>
-                </div>
+              <button
+                type="button"
+                onClick={handleNextTrack}
+                aria-label="Next Track"
+                className="hidden lg:flex absolute right-4 z-30 w-14 h-14 rounded-2xl bg-slate-900/90 hover:bg-brand-red text-white border border-slate-700/80 items-center justify-center shadow-2xl transition-all cursor-pointer"
+              >
+                <ChevronRight className="w-7 h-7" />
+              </button>
 
-                <div>
-                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2">Software & Tools Utilized</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {currentMilestone.toolsUsed.map((tool, i) => (
-                      <span key={i} className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                        {tool}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              {ROADMAP_TRACKS.map((track, idx) => {
+                const offset = getCircularOffset(idx);
+                const absOffset = Math.abs(offset);
+                const isCenter = offset === 0;
+                const Icon = track.icon;
 
-              {/* Column 3: Skills Unlocked & Action */}
-              <div className="p-5 rounded-2xl bg-gradient-to-br from-brand-slate to-slate-900 text-white space-y-4 flex flex-col justify-between shadow-md">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-white">
-                    <Zap size={16} className="text-amber-400" />
-                    <span>Competencies Unlocked</span>
-                  </div>
-                  <div className="space-y-2">
-                    {currentMilestone.skillsUnlocked.map((skill, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs text-slate-200 font-medium bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-                        <Star size={12} className="text-amber-400 shrink-0" />
-                        <span>{skill}</span>
+                if (absOffset > 2) return null;
+
+                const translateX = offset * 310;
+                const translateZ = isCenter ? 0 : -170 * absOffset;
+                const rotateY = offset * -28;
+                const scale = isCenter ? 1 : absOffset === 1 ? 0.82 : 0.66;
+                const opacity = isCenter ? 1 : absOffset === 1 ? 0.48 : 0.16;
+                const zIndex = 20 - absOffset * 5;
+
+                return (
+                  <motion.div
+                    key={track.id}
+                    drag={isCenter ? 'x' : false}
+                    dragConstraints={{ left: 0, right: 0 }}
+                    onDragEnd={handleDragEnd}
+                    onClick={() => {
+                      if (isCenter) {
+                        handleOpenTrack(idx);
+                      } else {
+                        setSliderIndex(idx);
+                      }
+                    }}
+                    animate={{
+                      x: translateX,
+                      z: translateZ,
+                      rotateY,
+                      scale,
+                      opacity,
+                    }}
+                    transition={{
+                      type: 'spring',
+                      stiffness: 250,
+                      damping: 26,
+                    }}
+                    style={{
+                      zIndex,
+                      transformStyle: 'preserve-3d',
+                    }}
+                    className={`absolute w-full max-w-2xl rounded-3xl p-7 sm:p-9 bg-slate-900 border transition-colors ${
+                      isCenter
+                        ? 'border-brand-red/60 shadow-2xl cursor-pointer'
+                        : 'border-slate-800/80 cursor-pointer hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4 mb-5">
+                      <div>
+                        {/* Clean unboxed typographic kicker — zero pill badge */}
+                        <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-brand-red mb-2">
+                          {track.category} · {track.ageRange}
+                        </p>
+                        <h3 className="text-2xl sm:text-3xl font-extrabold text-white font-display tracking-tight leading-tight">
+                          {track.title}
+                        </h3>
                       </div>
-                    ))}
-                  </div>
+
+                      <div className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0 text-brand-red">
+                        <Icon size={28} />
+                      </div>
+                    </div>
+
+                    <p className="text-slate-300 text-sm sm:text-base leading-relaxed mb-6 line-clamp-2">
+                      {track.summary}
+                    </p>
+
+                    {/* Mini 5-Stage Spine Preview */}
+                    <div className="grid grid-cols-5 gap-2 mb-6">
+                      {track.milestones.map((m) => (
+                        <div
+                          key={m.stage}
+                          className="bg-slate-950/80 border border-slate-800/90 rounded-xl p-2.5 text-center"
+                        >
+                          <p className="text-[10px] font-extrabold uppercase tracking-wider text-brand-red">
+                            0{m.stage}
+                          </p>
+                          <p className="text-[11px] font-bold text-slate-300 truncate mt-0.5">
+                            {m.stageName.split(':')[1]?.trim() || m.stageName}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="text-xs text-slate-400">
+                        <strong className="text-white">Outcome:</strong> {track.careerPath}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenTrack(idx);
+                        }}
+                        className="inline-flex items-center justify-center gap-2 bg-brand-red hover:bg-rose-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-brand-red/25 transition-all text-sm shrink-0 cursor-pointer"
+                      >
+                        Open Milestone Roadmap
+                        <ArrowRight size={16} />
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            {/* Bottom Quick-Select Track Names */}
+            <div className="relative z-10 mt-6 pt-6 border-t border-slate-800/80 flex items-center justify-start sm:justify-center gap-2 overflow-x-auto no-scrollbar pb-1">
+              {ROADMAP_TRACKS.map((track, idx) => {
+                const active = idx === sliderIndex;
+                return (
+                  <button
+                    key={track.id}
+                    type="button"
+                    onClick={() => setSliderIndex(idx)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer border ${
+                      active
+                        ? 'bg-white text-slate-950 border-white shadow-md'
+                        : 'bg-slate-900/90 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
+                    }`}
+                  >
+                    {track.title.split('&')[0].trim()}
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        ) : (
+          /* =========================================================
+             MODE 2: DEDICATED MILESTONE EXPLORER (Replaces Carousel)
+             ========================================================= */
+          <motion.div
+            key={`track-detail-${currentTrack.id}`}
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -24 }}
+            transition={{ duration: 0.35 }}
+            className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden"
+          >
+            {/* Top Navigation Bar */}
+            <div className="bg-slate-950 text-white px-6 sm:px-10 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
+              <button
+                type="button"
+                onClick={() => setViewMode('carousel')}
+                className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-300 hover:text-white transition-colors cursor-pointer"
+              >
+                <ArrowLeft size={16} className="text-brand-red" />
+                Back to Track Carousel
+              </button>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handlePrevTrack}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  <ChevronLeft size={15} />
+                  Prev Track
+                </button>
+                <span className="text-xs font-extrabold uppercase tracking-widest text-slate-500">
+                  0{sliderIndex + 1} / 0{ROADMAP_TRACKS.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleNextTrack}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  Next Track
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            </div>
+
+            {/* Track Hero Header — Zero Pill Badges */}
+            <div className="p-6 sm:p-10 bg-slate-900 text-white border-b border-slate-800">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                <div className="max-w-3xl">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.22em] text-brand-red mb-2">
+                    {currentTrack.category} · {currentTrack.ageRange}
+                  </p>
+                  <h3 className="text-2xl sm:text-4xl font-extrabold text-white font-display tracking-tight">
+                    {currentTrack.title}
+                  </h3>
+                  <p className="text-sm sm:text-base text-slate-300 mt-2 leading-relaxed">
+                    {currentTrack.summary}
+                  </p>
                 </div>
 
-                <div className="pt-3 border-t border-white/10 space-y-2">
+                <div className="shrink-0 flex flex-wrap items-center gap-3">
                   <Button
                     to="/register"
-                    className="w-full bg-brand-red hover:bg-red-700 text-white font-extrabold uppercase text-xs tracking-wider justify-center shadow-md shadow-brand-red/20 py-2.5"
+                    className="bg-brand-red hover:bg-red-700 text-white font-extrabold uppercase tracking-wider text-xs shadow-lg shadow-brand-red/20"
+                    rightIcon={<ArrowRight size={14} />}
                   >
-                    Start At This Level
+                    Enroll In This Track
                   </Button>
-                  <div className="text-[10px] text-center text-slate-400">
-                    Free diagnostic assessment included
-                  </div>
+                  <Link
+                    to="/tutors"
+                    className="text-xs font-bold text-slate-300 hover:text-white py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                  >
+                    Book 1-on-1 Mentor
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive 5-Stage Selector Bar */}
+            <div className="p-6 sm:p-10 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-slate-500">
+                  Step Through the 5 Progressive Milestones
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={activeStageNumber === 1}
+                    onClick={() => setActiveStageNumber((prev) => Math.max(1, prev - 1))}
+                    className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 disabled:opacity-40 cursor-pointer"
+                  >
+                    ← Prev Stage
+                  </button>
+                  <span className="text-xs font-extrabold text-brand-red px-2">
+                    Stage 0{activeStageNumber} / 05
+                  </span>
+                  <button
+                    type="button"
+                    disabled={activeStageNumber === 5}
+                    onClick={() => setActiveStageNumber((prev) => Math.min(5, prev + 1))}
+                    className="px-3 py-1.5 rounded-lg bg-brand-red text-white text-xs font-bold disabled:opacity-40 cursor-pointer"
+                  >
+                    Next Stage →
+                  </button>
                 </div>
               </div>
 
-            </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {currentTrack.milestones.map((m) => {
+                  const isActive = m.stage === activeStageNumber;
+                  const isPast = m.stage < activeStageNumber;
 
-            {/* Stepper Navigation Buttons */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                disabled={activeStageNumber === 1}
-                onClick={() => setActiveStageNumber(prev => Math.max(1, prev - 1))}
-                className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                &larr; Previous Stage
-              </button>
-
-              <div className="text-xs font-black text-slate-400">
-                Stage {activeStageNumber} of 5
+                  return (
+                    <button
+                      key={m.stage}
+                      type="button"
+                      onClick={() => setActiveStageNumber(m.stage)}
+                      className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-slate-900 text-white border-slate-900 shadow-lg'
+                          : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span
+                          className={`text-xs font-extrabold uppercase tracking-wider ${
+                            isActive ? 'text-brand-red' : isPast ? 'text-emerald-600' : 'text-slate-400'
+                          }`}
+                        >
+                          Stage 0{m.stage}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400">
+                          {m.duration}
+                        </span>
+                      </div>
+                      <p className="text-sm font-extrabold font-display truncate">
+                        {m.stageName.split(':')[1]?.trim() || m.stageName}
+                      </p>
+                      <p
+                        className={`text-xs mt-0.5 line-clamp-1 ${
+                          isActive ? 'text-slate-300' : 'text-slate-500'
+                        }`}
+                      >
+                        {m.levelTitle}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
-
-              <button
-                type="button"
-                disabled={activeStageNumber === 5}
-                onClick={() => setActiveStageNumber(prev => Math.min(5, prev + 1))}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-brand-red text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
-              >
-                <span>Next Stage</span>
-                <ChevronRight size={14} />
-              </button>
             </div>
 
+            {/* Focused Single-Milestone Interactive Card */}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`${currentTrack.id}-${currentMilestone.stage}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.22 }}
+                className="p-6 sm:p-10"
+              >
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 mb-6 border-b border-slate-100 dark:border-slate-800">
+                  <div>
+                    <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-brand-red mb-1">
+                      {currentMilestone.stageName} · {currentMilestone.duration}
+                    </p>
+                    <h4 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-display">
+                      {currentMilestone.levelTitle}
+                    </h4>
+                    <p className="text-sm text-slate-600 dark:text-slate-300 mt-1.5 max-w-3xl">
+                      {currentMilestone.description}
+                    </p>
+                  </div>
+
+                  {/* Interactive Sub-Tab Switcher to Prevent Wall-of-Text */}
+                  <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-xl self-start lg:self-center shrink-0">
+                    {[
+                      { id: 'topics' as const, label: 'Core Syllabus' },
+                      { id: 'capstone' as const, label: 'Capstone Project' },
+                      { id: 'skills' as const, label: 'Skills & Certificate' },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setActiveDetailTab(tab.id)}
+                        className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          activeDetailTab === tab.id
+                            ? 'bg-slate-900 text-white shadow-sm'
+                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Focused Tab View */}
+                {activeDetailTab === 'topics' && (
+                  <div className="bg-slate-50 dark:bg-slate-800/40 rounded-2xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800">
+                    <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
+                      <Layers size={16} className="text-brand-red" /> Key Concepts Covered in Stage 0{currentMilestone.stage}
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      {currentMilestone.topics.map((topic, i) => (
+                        <div
+                          key={i}
+                          className="flex items-start gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200/80 dark:border-slate-800"
+                        >
+                          <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+                          <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
+                            {topic}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {activeDetailTab === 'capstone' && (
+                  <div className="bg-slate-950 text-white rounded-2xl p-6 sm:p-8 border border-slate-800 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                    <div className="lg:col-span-7">
+                      <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-brand-red mb-2 flex items-center gap-2">
+                        <Rocket size={16} /> Stage 0{currentMilestone.stage} Real-World Deliverable
+                      </p>
+                      <h5 className="text-xl sm:text-2xl font-extrabold font-display text-white">
+                        {currentMilestone.capstoneProject}
+                      </h5>
+                    </div>
+                    <div className="lg:col-span-5 bg-slate-900 rounded-xl p-5 border border-slate-800">
+                      <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400 mb-3">
+                        Tools & Stack Utilized
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {currentMilestone.toolsUsed.map((tool, i) => (
+                          <span
+                            key={i}
+                            className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs font-bold text-slate-200"
+                          >
+                            {tool}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeDetailTab === 'skills' && (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <div className="lg:col-span-7 bg-slate-50 dark:bg-slate-800/40 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
+                      <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
+                        <Zap size={16} className="text-amber-500" /> Competencies Unlocked
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {currentMilestone.skillsUnlocked.map((skill, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2.5 bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200"
+                          >
+                            <Star size={14} className="text-amber-500 shrink-0" />
+                            <span>{skill}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="lg:col-span-5 bg-slate-900 text-white rounded-2xl p-6 flex flex-col justify-between">
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-12 h-12 rounded-xl bg-brand-red/20 border border-brand-red/40 text-brand-red flex items-center justify-center shrink-0">
+                          <Award size={24} />
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-extrabold uppercase tracking-widest text-slate-400">
+                            Verified Milestone Credential
+                          </p>
+                          <h5 className="text-lg font-extrabold text-white mt-0.5">
+                            {currentMilestone.badge}
+                          </h5>
+                        </div>
+                      </div>
+
+                      <div className="pt-6 mt-6 border-t border-slate-800">
+                        <Button
+                          to="/register"
+                          className="w-full bg-brand-red hover:bg-red-700 text-white font-extrabold uppercase text-xs tracking-wider justify-center py-3"
+                        >
+                          Start At Stage 0{currentMilestone.stage}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
           </motion.div>
-        </AnimatePresence>
-
-      </div>
-
+        )}
+      </AnimatePresence>
     </div>
   );
 };
 
 export default InteractiveTrackRoadmap;
+
