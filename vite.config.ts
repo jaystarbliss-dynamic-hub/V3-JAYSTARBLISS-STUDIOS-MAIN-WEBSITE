@@ -7,22 +7,42 @@ function netlifyDevFunctionsPlugin() {
     name: 'netlify-dev-functions-fallback',
     configureServer(server: any) {
       server.middlewares.use((req: any, res: any, next: any) => {
-        if (req.url && req.url.startsWith('/.netlify/functions/')) {
+        if (req.url && (req.url.startsWith('/.netlify/functions/') || req.url.startsWith('/api/'))) {
           const url = req.url.split('?')[0];
           res.setHeader('Content-Type', 'application/json');
           if (url.includes('class-schedules')) {
             res.statusCode = 200;
-            res.end(JSON.stringify({ schedules: [] }));
+            res.end(JSON.stringify({ schedules: [], fallback: true }));
             return;
           }
           if (url.includes('student-examinations')) {
             res.statusCode = 200;
-            res.end(JSON.stringify({ exams: [] }));
+            res.end(JSON.stringify({ exams: [], fallback: true }));
             return;
           }
           if (url.includes('academic-assignments')) {
             res.statusCode = 200;
-            res.end(JSON.stringify({ assignments: [] }));
+            res.end(JSON.stringify({ assignments: [], fallback: true }));
+            return;
+          }
+          if (url.includes('academic-students')) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ students: [], fallback: true }));
+            return;
+          }
+          if (url.includes('academic-schools')) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ schools: [], fallback: true }));
+            return;
+          }
+          if (url.includes('academic-milestones')) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ milestones: [], fallback: true }));
+            return;
+          }
+          if (url.includes('academic-assessments') || url.includes('academic-attendance')) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ records: [], fallback: true }));
             return;
           }
           if (url.includes('portal-access-login')) {

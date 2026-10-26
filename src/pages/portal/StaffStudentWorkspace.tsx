@@ -1,26 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, BookOpen, CalendarCheck, CheckCircle2, ClipboardList, Flag, Loader2, Save, UserRound } from 'lucide-react';
-import { auth } from '../../lib/firebase';
+import { academicApiWithFallback as api } from '../../lib/academicFallback';
 import SEO from '../../components/ui/SEO';
 import { DashboardGreeting } from '../../components/portal/DashboardGreeting';
 import TutorLearningTracksManager from '../../components/portal/TutorLearningTracksManager';
 
 type Student = { id: string; fullName: string; plan?: string; email?: string; username?: string };
 type Attendance = { id: string; date?: string; status: string; notes?: string };
-
-const api = async (path: string, options: RequestInit = {}) => {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Please sign in again.');
-  const token = await user.getIdToken();
-  const response = await fetch(path, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(options.headers || {}) }
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'The request could not be completed.');
-  return data;
-};
 
 const StaffStudentWorkspace: React.FC = () => {
   const { studentId = '' } = useParams();

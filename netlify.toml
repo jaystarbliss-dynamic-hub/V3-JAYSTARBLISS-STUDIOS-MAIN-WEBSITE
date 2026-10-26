@@ -14,8 +14,8 @@
   directory = "netlify/functions"
 
 [[redirects]]
-  from = "/api/parent-enrollment-request"
-  to = "/.netlify/functions/parent-enrollment-request"
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
   status = 200
   force = true
 

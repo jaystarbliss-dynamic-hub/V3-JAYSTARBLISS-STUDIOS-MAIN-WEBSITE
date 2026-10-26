@@ -8,7 +8,7 @@ import {
   ShieldCheck, AlertCircle, HelpCircle
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
-import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { collection, addDoc, doc, setDoc, serverTimestamp, getDoc, deleteDoc } from 'firebase/firestore';
 import { useTheme } from '../hooks/useTheme';
 import SEO from '../components/ui/SEO';
@@ -397,10 +397,59 @@ const Register: React.FC = () => {
       }
     } else if (mode === 'tutor') {
       try {
+        const cleanEmail = email.trim().toLowerCase();
+        const cleanName = fullName.trim();
+        let tutorUid = '';
+
+        if (cleanEmail && password && password.length >= 6) {
+          try {
+            const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+            tutorUid = cred.user.uid;
+            await updateProfile(cred.user, { displayName: cleanName }).catch(() => null);
+            await setDoc(doc(db, 'users', tutorUid), {
+              uid: tutorUid,
+              name: cleanName,
+              fullName: cleanName,
+              email: cleanEmail,
+              phone: phone.trim(),
+              role: 'STAFF',
+              accountStatus: 'ACTIVE',
+              status: 'ACTIVE',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            }, { merge: true }).catch(() => null);
+            await setDoc(doc(db, 'tutors', tutorUid), {
+              uid: tutorUid,
+              name: cleanName,
+              fullName: cleanName,
+              email: cleanEmail,
+              phone: phone.trim(),
+              location: location.trim(),
+              qualification: qualification.trim(),
+              cvUrl: cvUrl.trim(),
+              subjects: selectedSubjects,
+              experienceYears,
+              daysPerWeek,
+              timeSlot,
+              expectedSalary: expectedSalary.trim(),
+              bio: tutorBio.trim(),
+              role: 'staff',
+              status: 'ACTIVE',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            }, { merge: true }).catch(() => null);
+          } catch (authErr: any) {
+            if (authErr?.code !== 'auth/email-already-in-use') {
+              console.warn('Tutor auth account creation notice:', authErr);
+            }
+          }
+        }
+
         // Submit tutor application for admin review
         await addDoc(collection(db, 'tutor_applications'), {
-          name: fullName.trim(),
-          email: email.trim().toLowerCase(),
+          ...(tutorUid ? { uid: tutorUid, userId: tutorUid } : {}),
+          name: cleanName,
+          email: cleanEmail,
           phone: phone.trim(),
           location: location.trim(),
           qualification: qualification.trim(),

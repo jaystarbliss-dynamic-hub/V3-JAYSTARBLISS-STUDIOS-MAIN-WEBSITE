@@ -641,25 +641,39 @@ const Portal: React.FC = () => {
       let detectedRole = '';
       let detectedName = user.displayName || email.split('@')[0];
 
-      // Check if user has an approved tutor profile in tutors or tutor_applications
+      // Check if user has an approved tutor/staff profile in tutors, staff, or tutor_applications
       let isVerifiedTutor = false;
       let verifiedTutorName = '';
       try {
-        const tDoc = await getDoc(doc(db, 'tutors', user.uid));
-        if (tDoc.exists() && tDoc.data()?.status !== 'BANNED' && tDoc.data()?.status !== 'SUSPENDED') {
+        const tDoc = await getDoc(doc(db, 'tutors', user.uid)).catch(() => null);
+        if (tDoc?.exists() && tDoc.data()?.status !== 'BANNED' && tDoc.data()?.status !== 'SUSPENDED') {
           isVerifiedTutor = true;
           verifiedTutorName = tDoc.data()?.name || tDoc.data()?.fullName || '';
         }
+        if (!isVerifiedTutor) {
+          const sDoc = await getDoc(doc(db, 'staff', user.uid)).catch(() => null);
+          if (sDoc?.exists() && sDoc.data()?.status !== 'BANNED' && sDoc.data()?.status !== 'SUSPENDED') {
+            isVerifiedTutor = true;
+            verifiedTutorName = sDoc.data()?.name || sDoc.data()?.fullName || '';
+          }
+        }
         if (!isVerifiedTutor && user.email) {
-          const tSnap = await getDocs(query(collection(db, 'tutors'), where('email', '==', user.email.toLowerCase()), limit(1)));
-          if (!tSnap.empty && tSnap.docs[0].data()?.status !== 'BANNED' && tSnap.docs[0].data()?.status !== 'SUSPENDED') {
+          const tSnap = await getDocs(query(collection(db, 'tutors'), where('email', '==', user.email.toLowerCase()), limit(1))).catch(() => null);
+          if (tSnap && !tSnap.empty && tSnap.docs[0].data()?.status !== 'BANNED' && tSnap.docs[0].data()?.status !== 'SUSPENDED') {
             isVerifiedTutor = true;
             verifiedTutorName = tSnap.docs[0].data()?.name || tSnap.docs[0].data()?.fullName || '';
           }
         }
         if (!isVerifiedTutor && user.email) {
-          const aSnap = await getDocs(query(collection(db, 'tutor_applications'), where('email', '==', user.email.toLowerCase()), where('status', '==', 'approved'), limit(1)));
-          if (!aSnap.empty) {
+          const sSnap = await getDocs(query(collection(db, 'staff'), where('email', '==', user.email.toLowerCase()), limit(1))).catch(() => null);
+          if (sSnap && !sSnap.empty && sSnap.docs[0].data()?.status !== 'BANNED' && sSnap.docs[0].data()?.status !== 'SUSPENDED') {
+            isVerifiedTutor = true;
+            verifiedTutorName = sSnap.docs[0].data()?.name || sSnap.docs[0].data()?.fullName || '';
+          }
+        }
+        if (!isVerifiedTutor && user.email) {
+          const aSnap = await getDocs(query(collection(db, 'tutor_applications'), where('email', '==', user.email.toLowerCase()), where('status', '==', 'approved'), limit(1))).catch(() => null);
+          if (aSnap && !aSnap.empty) {
             isVerifiedTutor = true;
             verifiedTutorName = aSnap.docs[0].data()?.name || '';
           }
@@ -673,36 +687,47 @@ const Portal: React.FC = () => {
         if (userData.name) detectedName = userData.name;
       }
 
-      // If user has an approved tutor profile and is not an admin, prioritize STAFF over parent
-      if (isVerifiedTutor && !detectedRole.includes('ADMIN')) {
+      // If user has an approved tutor profile or is logging in on the staff tab, prioritize STAFF over parent
+      if ((isVerifiedTutor || activeTab === 'staff') && !detectedRole.includes('ADMIN')) {
         detectedRole = 'STAFF';
         if (verifiedTutorName) detectedName = verifiedTutorName;
         await setDoc(doc(db, 'users', user.uid), {
-          role: 'staff',
+          role: 'STAFF',
           name: detectedName,
+          fullName: detectedName,
           email: user.email?.toLowerCase(),
+          accountStatus: 'ACTIVE',
+          status: 'ACTIVE',
           updatedAt: serverTimestamp()
-        }, { merge: true });
+        }, { merge: true }).catch(err => console.warn('Portal staff user sync warning:', err));
         await setDoc(doc(db, 'tutors', user.uid), {
           role: 'staff',
           status: 'ACTIVE',
           name: detectedName,
           email: user.email?.toLowerCase(),
           updatedAt: serverTimestamp()
-        }, { merge: true });
+        }, { merge: true }).catch(err => console.warn('Portal staff tutor sync warning:', err));
         await deleteDoc(doc(db, 'parents', user.uid)).catch(() => null);
       } else if (!userData) {
-        const tutorDoc = await getDoc(doc(db, 'tutors', user.uid));
-        if (tutorDoc.exists()) {
+        const tutorDoc = await getDoc(doc(db, 'tutors', user.uid)).catch(() => null);
+        if (tutorDoc?.exists()) {
           detectedRole = 'STAFF';
-          if (tutorDoc.data().name) detectedName = tutorDoc.data().name;
+          if (tutorDoc.data()?.name) detectedName = tutorDoc.data().name;
         }
 
         if (!detectedRole) {
-          const parentDoc = await getDoc(doc(db, 'parents', user.uid));
-          if (parentDoc.exists()) {
+          const staffDoc = await getDoc(doc(db, 'staff', user.uid)).catch(() => null);
+          if (staffDoc?.exists()) {
+            detectedRole = 'STAFF';
+            if (staffDoc.data()?.name) detectedName = staffDoc.data().name;
+          }
+        }
+
+        if (!detectedRole) {
+          const parentDoc = await getDoc(doc(db, 'parents', user.uid)).catch(() => null);
+          if (parentDoc?.exists()) {
             detectedRole = 'PARENT';
-            if (parentDoc.data().name) detectedName = parentDoc.data().name;
+            if (parentDoc.data()?.name) detectedName = parentDoc.data().name;
           }
         }
 
@@ -714,9 +739,11 @@ const Portal: React.FC = () => {
         await setDoc(doc(db, 'users', user.uid), {
           email: user.email?.toLowerCase(),
           name: detectedName,
-          role: detectedRole.toLowerCase(),
+          role: detectedRole.toUpperCase(),
+          accountStatus: 'ACTIVE',
+          status: 'ACTIVE',
           createdAt: serverTimestamp()
-        }, { merge: true });
+        }, { merge: true }).catch(err => console.warn('Portal user profile create warning:', err));
       }
 
       if (detectedRole.includes('ADMIN')) {

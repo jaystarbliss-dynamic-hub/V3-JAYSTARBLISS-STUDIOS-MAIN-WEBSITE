@@ -126,31 +126,50 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
           String(userSnap.data()?.role || '').toUpperCase() === 'STAFF' ||
           String(userSnap.data()?.role || '').toUpperCase() === 'TUTOR';
 
+        let fallbackProfileData: Record<string, any> | null = null;
+
         if (isStaffContext || (!adminRoles.includes(String(userSnap.data()?.role || '').toUpperCase()) && String(userSnap.data()?.role || '').toUpperCase() !== 'STAFF')) {
           const userEmail = (currentUser.email || '').toLowerCase().trim();
           let isApprovedTutor = false;
           let tutorName = '';
 
           try {
-            const tutorDocSnap = await getDoc(doc(db, 'tutors', currentUser.uid));
-            if (tutorDocSnap.exists() && tutorDocSnap.data()?.status !== 'BANNED' && tutorDocSnap.data()?.status !== 'SUSPENDED') {
+            const tutorDocSnap = await getDoc(doc(db, 'tutors', currentUser.uid)).catch(() => null);
+            if (tutorDocSnap?.exists() && tutorDocSnap.data()?.status !== 'BANNED' && tutorDocSnap.data()?.status !== 'SUSPENDED') {
               isApprovedTutor = true;
               tutorName = tutorDocSnap.data()?.name || tutorDocSnap.data()?.fullName || '';
             }
 
+            if (!isApprovedTutor) {
+              const staffDocSnap = await getDoc(doc(db, 'staff', currentUser.uid)).catch(() => null);
+              if (staffDocSnap?.exists() && staffDocSnap.data()?.status !== 'BANNED' && staffDocSnap.data()?.status !== 'SUSPENDED') {
+                isApprovedTutor = true;
+                tutorName = staffDocSnap.data()?.name || staffDocSnap.data()?.fullName || '';
+              }
+            }
+
             if (!isApprovedTutor && userEmail) {
               const tQuery = query(collection(db, 'tutors'), where('email', '==', userEmail), limit(1));
-              const tSnap = await getDocs(tQuery);
-              if (!tSnap.empty && tSnap.docs[0].data()?.status !== 'BANNED' && tSnap.docs[0].data()?.status !== 'SUSPENDED') {
+              const tSnap = await getDocs(tQuery).catch(() => null);
+              if (tSnap && !tSnap.empty && tSnap.docs[0].data()?.status !== 'BANNED' && tSnap.docs[0].data()?.status !== 'SUSPENDED') {
                 isApprovedTutor = true;
                 tutorName = tSnap.docs[0].data()?.name || tSnap.docs[0].data()?.fullName || '';
               }
             }
 
             if (!isApprovedTutor && userEmail) {
+              const sQuery = query(collection(db, 'staff'), where('email', '==', userEmail), limit(1));
+              const sSnap = await getDocs(sQuery).catch(() => null);
+              if (sSnap && !sSnap.empty && sSnap.docs[0].data()?.status !== 'BANNED' && sSnap.docs[0].data()?.status !== 'SUSPENDED') {
+                isApprovedTutor = true;
+                tutorName = sSnap.docs[0].data()?.name || sSnap.docs[0].data()?.fullName || '';
+              }
+            }
+
+            if (!isApprovedTutor && userEmail) {
               const appQuery = query(collection(db, 'tutor_applications'), where('email', '==', userEmail), where('status', '==', 'approved'), limit(1));
-              const appSnap = await getDocs(appQuery);
-              if (!appSnap.empty) {
+              const appSnap = await getDocs(appQuery).catch(() => null);
+              if (appSnap && !appSnap.empty) {
                 isApprovedTutor = true;
                 tutorName = appSnap.docs[0].data()?.name || '';
               }
@@ -159,17 +178,20 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
             console.warn('Tutor self-heal verification notice:', tErr);
           }
 
-          if (isApprovedTutor) {
+          if (isApprovedTutor || isStaffContext) {
+            const resolvedName = tutorName || userSnap.data()?.name || currentUser.displayName || 'Tutor';
+            fallbackProfileData = {
+              uid: currentUser.uid,
+              name: resolvedName,
+              fullName: resolvedName,
+              email: userEmail,
+              role: 'STAFF',
+              accountStatus: 'ACTIVE',
+              status: 'ACTIVE',
+            };
             try {
-              const resolvedName = tutorName || userSnap.data()?.name || currentUser.displayName || 'Tutor';
               await setDoc(doc(db, 'users', currentUser.uid), {
-                uid: currentUser.uid,
-                name: resolvedName,
-                fullName: resolvedName,
-                email: userEmail,
-                role: 'STAFF',
-                accountStatus: 'ACTIVE',
-                status: 'ACTIVE',
+                ...fallbackProfileData,
                 updatedAt: serverTimestamp()
               }, { merge: true });
               await setDoc(doc(db, 'tutors', currentUser.uid), {
@@ -179,7 +201,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
                 name: resolvedName,
                 updatedAt: serverTimestamp()
               }, { merge: true });
-              userSnap = await getDoc(doc(db, 'users', currentUser.uid));
+              userSnap = await getDoc(doc(db, 'users', currentUser.uid)).catch(() => userSnap);
             } catch (healErr) {
               console.warn('Staff tutor self-heal write notice:', healErr);
             }
@@ -193,8 +215,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
           (currentUser.email || '').toLowerCase().startsWith('student_') ||
           String(userSnap.data()?.role || '').toUpperCase() === 'STUDENT' ||
           String(userSnap.data()?.role || '').toUpperCase() === 'INDIVIDUAL_STUDENT';
-
-        let fallbackProfileData: Record<string, any> | null = null;
 
         if (!userSnap.exists() || !userSnap.data()?.role || (isStudentContext && !userSnap.data()?.studentDocId)) {
           try {

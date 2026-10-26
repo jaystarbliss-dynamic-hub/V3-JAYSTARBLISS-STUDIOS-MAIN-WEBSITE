@@ -95,14 +95,24 @@ export function getAdminApp(): App | null {
     }
   }
 
-  // Fallback initialization if running with ambient GCP credentials
-  try {
-    cachedApp = initializeApp({ projectId: projectId || "jaystarbliss-studios" });
-    return cachedApp;
-  } catch (err) {
-    console.warn("Firebase Admin ambient init warning:", err instanceof Error ? err.message : String(err));
-    return null;
+  // Fallback initialization only if running with ambient GCP credentials (Cloud Run / Cloud Functions / local ADC file)
+  const hasAmbientGcpCreds = Boolean(
+    process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+    process.env.K_SERVICE ||
+    process.env.FUNCTION_TARGET ||
+    process.env.FIREBASE_CONFIG
+  );
+  if (hasAmbientGcpCreds) {
+    try {
+      cachedApp = initializeApp({ projectId: projectId || "jaystarbliss-studios" });
+      return cachedApp;
+    } catch (err) {
+      console.warn("Firebase Admin ambient init warning:", err instanceof Error ? err.message : String(err));
+      return null;
+    }
   }
+
+  return null;
 }
 
 export function getAdminAuth(): Auth | null {
@@ -135,23 +145,12 @@ export function getAdminDb(): Firestore | null {
 
 export function getDefaultAdminDb(): Firestore | null {
   if (cachedDefaultDb) return cachedDefaultDb;
-  const app = getAdminApp();
-  if (!app) return null;
-  try {
-    cachedDefaultDb = getFirestore(app);
-    return cachedDefaultDb;
-  } catch {
-    return null;
-  }
+  return getAdminDb();
 }
 
 export function getAdminDatabases(): Firestore[] {
-  const dbs: Firestore[] = [];
   const primary = getAdminDb();
-  if (primary) dbs.push(primary);
-  const secondary = getDefaultAdminDb();
-  if (secondary && secondary !== primary) dbs.push(secondary);
-  return dbs;
+  return primary ? [primary] : [];
 }
 
 // Proxied exports preserve compatibility with existing API and Netlify function imports.

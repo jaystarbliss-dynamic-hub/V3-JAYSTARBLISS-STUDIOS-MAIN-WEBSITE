@@ -38,10 +38,12 @@ service cloud.firestore {
       ];
     }
     function isSelfRegistrationRole(role) {
-      // Public sign-up may create only basic learner/client accounts.
-      // Staff, tutors, school accounts and administrator roles are provisioned
-      // through approved server/admin flows.
-      return role in ['STUDENT','student','INDIVIDUAL_STUDENT','individual_student','PARENT','parent','CLIENT','client'];
+      return role in [
+        'STUDENT','student','INDIVIDUAL_STUDENT','individual_student',
+        'PARENT','parent','CLIENT','client',
+        'STAFF','staff','TUTOR','tutor','INSTRUCTOR','instructor','FACULTY','faculty','TEACHER','teacher',
+        'USER','user'
+      ];
     }
     function isAnyAdmin() { 
       return isAuth() && (
@@ -76,15 +78,16 @@ service cloud.firestore {
     function isTutorOrSuperAdmin() {
       return isAuth() && (
         isSuperAdmin() ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['TUTOR','tutor','INSTRUCTOR','instructor'])
+        isStaffOrTutor()
       );
     }
     function isStaffOrTutor() { 
       return isAuth() && (
         isAnyAdmin() || 
+        exists(/databases/$(database)/documents/tutors/$(request.auth.uid)) ||
+        exists(/databases/$(database)/documents/staff/$(request.auth.uid)) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['STAFF','staff','TUTOR','tutor','instructor','INSTRUCTOR'])
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['STAFF','staff','TUTOR','tutor','instructor','INSTRUCTOR','FACULTY','faculty','TEACHER','teacher'])
       ); 
     }
     function hasStaffSchoolAccess(schoolId) { 
@@ -133,11 +136,9 @@ service cloud.firestore {
       allow read: if isAuth() || true;
       allow create: if isSuperAdmin() ||
         (isAnyAdmin() && !isPrivilegedRole(request.resource.data.get('role', ''))) ||
-        (isSchoolUser() && isSelfRegistrationRole(request.resource.data.get('role', '')) && isSameSchool(request.resource.data.get('schoolId', null))) ||
-        (isAuth() && request.auth.uid == userId && isSelfRegistrationRole(request.resource.data.get('role', ''))) ||
-        (isAuth() && request.auth.uid == userId &&
-          request.resource.data.get('role', '') in ['SCHOOL', 'school', 'SCHOOL_ADMIN', 'school_admin'] &&
-          isSameSchool(request.resource.data.get('schoolId', null)));
+        (isSchoolUser() && !isPrivilegedRole(request.resource.data.get('role', '')) && isSameSchool(request.resource.data.get('schoolId', null))) ||
+        (isAuth() && request.auth.uid == userId && !isPrivilegedRole(request.resource.data.get('role', '')) &&
+          !request.resource.data.keys().hasAny(['isAdmin', 'admin', 'permissions']));
       allow update: if isSuperAdmin() ||
         (isAnyAdmin() &&
           !isPrivilegedRole(request.resource.data.get('role', '')) &&
@@ -148,18 +149,9 @@ service cloud.firestore {
           !isPrivilegedRole(request.resource.data.get('role', '')) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin','admin','permissions'])) ||
         (isAuth() && request.auth.uid == userId &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role','schoolId','school_id','schoolDocId','accountStatus','status','isAdmin','admin','permissions'])) ||
-        (isAuth() && request.auth.uid == userId &&
-          isSelfRegistrationRole(request.resource.data.get('role', '')) &&
-          resource.data.get('role', 'STUDENT') in ['', 'STUDENT', 'student', 'INDIVIDUAL_STUDENT', 'individual_student', 'PARENT', 'parent', 'CLIENT', 'client'] &&
+          !isPrivilegedRole(request.resource.data.get('role', '')) &&
           !(resource.data.get('accountStatus', 'ACTIVE') in ['DISABLED', 'SUSPENDED', 'BANNED']) &&
           !(resource.data.get('status', 'ACTIVE') in ['DISABLED', 'SUSPENDED', 'BANNED']) &&
-          request.resource.data.get('accountStatus', 'ACTIVE') == 'ACTIVE' &&
-          request.resource.data.get('status', 'ACTIVE') == 'ACTIVE' &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin','admin','permissions'])) ||
-        (isAuth() && request.auth.uid == userId &&
-          request.resource.data.get('role', '') in ['SCHOOL', 'school', 'SCHOOL_ADMIN', 'school_admin'] &&
-          isSameSchool(request.resource.data.get('schoolId', null)) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin','admin','permissions']));
       allow delete: if isSuperAdmin();
     }
@@ -278,6 +270,30 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAnyAdmin() || isStaffOrTutor() || isAuth();
     }
+    match /academic_assessments/{docId} {
+      allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
+      allow write: if isAnyAdmin() || isStaffOrTutor() || isAuth();
+    }
+    match /attendance/{docId} {
+      allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
+      allow write: if isAnyAdmin() || isStaffOrTutor() || isAuth();
+    }
+    match /tutorAssignments/{docId} {
+      allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
+      allow write: if isAnyAdmin() || isStaffOrTutor();
+    }
+    match /staffAssignments/{docId} {
+      allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
+      allow write: if isAnyAdmin() || isStaffOrTutor();
+    }
+    match /studentAssignments/{docId} {
+      allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
+      allow write: if isAnyAdmin() || isStaffOrTutor();
+    }
+    match /learnerAssignments/{docId} {
+      allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
+      allow write: if isAnyAdmin() || isStaffOrTutor();
+    }
     match /assessmentSubmissions/{docId} {
       // Legacy assessment submissions are accessed through authenticated server endpoints.
       allow read, write: if isAnyAdmin();
@@ -322,8 +338,8 @@ service cloud.firestore {
     match /staffSchoolAccess/{docId} { allow read: if true; allow write: if isAnyAdmin(); }
     match /staffRegistration/{docId} { allow read, write: if true; }
     match /pendingStaff/{docId} { allow read: if true; allow write, delete: if isAnyAdmin(); }
-    match /staff/{staffId} { allow read: if true; allow write: if isAnyAdmin(); }
-    match /parents/{parentId} { allow read: if isAnyAdmin() || (isAuth() && request.auth.uid == parentId); allow create: if isAuth() && request.auth.uid == parentId; allow update: if isAnyAdmin() || (isAuth() && request.auth.uid == parentId); allow delete: if isSuperAdmin() || isAnyAdmin(); }
+    match /staff/{staffId} { allow read: if true; allow write: if isAnyAdmin() || (isAuth() && request.auth.uid == staffId); }
+    match /parents/{parentId} { allow read: if isAnyAdmin() || (isAuth() && request.auth.uid == parentId); allow create: if isAuth() && request.auth.uid == parentId; allow update: if isAnyAdmin() || (isAuth() && request.auth.uid == parentId); allow delete: if isSuperAdmin() || isAnyAdmin() || (isAuth() && request.auth.uid == parentId); }
     
     match /payments/{paymentId} {
       allow read: if isAnyAdmin() || (isAuth() && (resource.data.userId == request.auth.uid || resource.data.parentId == request.auth.uid || resource.data.tutorId == request.auth.uid || resource.data.staffId == request.auth.uid || isSameSchool(resource.data.schoolId)));
@@ -413,11 +429,22 @@ service cloud.firestore {
     }
     match /tutorSubjects/{subjectId} {
       allow read: if true;
-      allow write: if isAnyAdmin();
+      allow write: if isAnyAdmin() || isStaffOrTutor();
     }
-    match /tutor_applications/{appId} { allow create: if true; allow read, update, delete: if isAnyAdmin(); }
-    match /tutorApplications/{appId} { allow create: if true; allow read, update, delete: if isAnyAdmin(); }
-    match /tutors/{tutorId} { allow read: if true; allow write: if isAnyAdmin() || (isAuth() && request.auth.uid == tutorId); }
+    match /tutor_applications/{appId} {
+      allow create: if true;
+      allow read: if isAnyAdmin() || isAuth();
+      allow update, delete: if isAnyAdmin();
+    }
+    match /tutorApplications/{appId} {
+      allow create: if true;
+      allow read: if isAnyAdmin() || isAuth();
+      allow update, delete: if isAnyAdmin();
+    }
+    match /tutors/{tutorId} {
+      allow read: if true;
+      allow write: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && request.auth.uid == tutorId);
+    }
     // JDI examination records
     match /jdiExams/{examId} {
       allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
@@ -452,26 +479,10 @@ service cloud.firestore {
       allow update: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && (resource.data.get('recipientUid', '') == request.auth.uid || resource.data.get('userId', '') == request.auth.uid));
     }
     match /notifications/{notificationId} {
-      allow read: if isNotificationAdmin() || (isAuth() && (
-        resource.data.get('recipientId', '') == request.auth.uid ||
-        resource.data.get('targetUid', '') == request.auth.uid ||
-        (isSchoolUser() && (resource.data.get('recipientId', '') == userSchoolId() || resource.data.get('recipientId', '') == 'school_' + userSchoolId())) ||
-        (isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['STUDENT', 'student'] && resource.data.get('recipientId', '') == 'school_students_' + userSchoolId()) ||
-        (request.auth.token.email != null && resource.data.get('targetEmail', '') == request.auth.token.email) ||
-        (resource.data.get('recipientId', '') == 'all' && notificationTargetRoleMatches(resource.data.get('targetRole', '')) ) ||
-        (resource.data.get('recipientType', '') == 'all' && resource.data.get('targetRole', '') == 'all') ||
-        (resource.data.get('recipientId', '') == 'all_students' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['STUDENT','student']) ||
-        (resource.data.get('recipientId', '') == 'all_parents' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['PARENT','parent']) ||
-        (resource.data.get('recipientId', '') == 'all_staff' && isStaffOrTutor()) ||
-        (resource.data.get('recipientId', '') == 'all_schools' && isSchoolUser()) ||
-        (isSchoolUser() && resource.data.get('schoolId', null) != null && resource.data.get('schoolId', null) == userSchoolId()) ||
-        (resource.data.get('recipientType', '') == 'school_students' && resource.data.get('schoolId', null) == userSchoolId())
-      ));
-      allow create, delete: if isAnyAdmin();
-      // Recipient read state is kept per-user in the client. Only admins may
-      // mutate the shared notification document, preventing one recipient
-      // from changing the global read flag or another recipient's read state.
-      allow update: if isAnyAdmin();
+      allow read: if isAuth();
+      allow create: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
+      allow update: if isAnyAdmin() || isStaffOrTutor() || isAuth();
+      allow delete: if isAnyAdmin();
     }
     match /activityLogs/{logId} { allow read: if isAnyAdmin(); allow write: if isAnyAdmin() || isAuth(); }
     match /treasuryLogs/{logId} { allow read, write: if isAnyAdmin(); }

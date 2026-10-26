@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { auth } from '../../lib/firebase';
+import { academicApiWithFallback as api } from '../../lib/academicFallback';
 import { AlertCircle, ArrowDown, CheckCircle2, Flag, Loader2, Plus, School, Trash2, UserRound, X } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
 import { DashboardGreeting } from '../../components/portal/DashboardGreeting';
 export type MilestoneCenterRole = 'student' | 'staff' | 'parent' | 'school';
 type Target = { id: string; name: string; plan?: string };
 type Milestone = { id: string; title: string; description?: string; targetType: 'STUDENT' | 'SCHOOL'; targetId: string; status: 'NOT_STARTED' | 'IN_PROGRESS' | 'BLOCKED' | 'COMPLETED'; position: number; dueDate?: string | null; completedAt?: string | null; ownerName?: string };
-const api = async (path: string, options: RequestInit = {}) => { const user = auth.currentUser; if (!user) throw new Error('Please sign in again.'); const token = await user.getIdToken(); const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(options.headers || {}) } }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || 'The request could not be completed.'); return data; };
 const date = (value?: string | null) => value ? new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium' }).format(new Date(value)) : 'No date set';
 const statusText = (s: string) => s.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 const MilestoneCenter: React.FC<{ role: MilestoneCenterRole }> = ({ role }) => {

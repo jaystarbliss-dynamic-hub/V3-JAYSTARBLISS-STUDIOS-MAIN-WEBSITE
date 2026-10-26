@@ -44,17 +44,10 @@ try {
   db = getFirestore(app, PRIMARY_DATABASE_ID);
 }
 
-// Initialize secondary fallback Firestore ((default) database for legacy student records)
-let defaultDb: ReturnType<typeof getFirestore>;
-try {
-  defaultDb = initializeFirestore(app, {
-    experimentalAutoDetectLongPolling: true
-  });
-} catch {
-  defaultDb = getFirestore(app);
-}
+// Keep defaultDb aliased to the primary named database so all reads/writes target the provisioned database
+const defaultDb = db;
 
-export const getClientDatabases = () => [db, defaultDb];
+export const getClientDatabases = () => [db];
 
 // Initialize Auth with multi-tier persistence (localStorage -> indexedDB -> sessionStorage -> memory)
 // and browserPopupRedirectResolver so signInWithPopup / signInWithRedirect work seamlessly

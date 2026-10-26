@@ -29,5 +29,5 @@ export const handler: Handler = async (event) => {
     }
     const result = Array.from(schools.values()).map(s => ({ id: s.id, name: s.name || s.schoolName || s.institutionName || 'School', code: s.code || s.schoolCode || '' })).sort((a, b) => a.name.localeCompare(b.name));
     return json(200, { schools: result });
-  } catch (error) { console.error('Academic schools error:', error); return json(500, { error: 'Unable to load school targets.' }); }
+  } catch (error) { console.warn('Academic schools fallback notice:', error); return json(200, { schools: [], fallback: true }); }
 };

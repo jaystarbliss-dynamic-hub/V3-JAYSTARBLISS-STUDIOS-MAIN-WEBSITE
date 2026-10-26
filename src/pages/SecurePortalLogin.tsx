@@ -481,25 +481,39 @@ const SecurePortalLogin: React.FC = () => {
         data = snap.data() || {};
       }
     }
-    // Check if account has approved tutor / staff profile in tutors or tutor_applications
+    // Check if account has approved tutor / staff profile in tutors, staff, or tutor_applications
     let isApprovedTutor = false;
     let tutorName = '';
     try {
-      const tutorDoc = await getDoc(doc(db, 'tutors', user.uid));
-      if (tutorDoc.exists() && tutorDoc.data()?.status !== 'BANNED' && tutorDoc.data()?.status !== 'SUSPENDED') {
+      const tutorDoc = await getDoc(doc(db, 'tutors', user.uid)).catch(() => null);
+      if (tutorDoc?.exists() && tutorDoc.data()?.status !== 'BANNED' && tutorDoc.data()?.status !== 'SUSPENDED') {
         isApprovedTutor = true;
         tutorName = tutorDoc.data()?.name || tutorDoc.data()?.fullName || '';
       }
+      if (!isApprovedTutor) {
+        const staffDoc = await getDoc(doc(db, 'staff', user.uid)).catch(() => null);
+        if (staffDoc?.exists() && staffDoc.data()?.status !== 'BANNED' && staffDoc.data()?.status !== 'SUSPENDED') {
+          isApprovedTutor = true;
+          tutorName = staffDoc.data()?.name || staffDoc.data()?.fullName || '';
+        }
+      }
       if (!isApprovedTutor && email) {
-        const tSnap = await getDocs(query(collection(db, 'tutors'), where('email', '==', email), limit(1)));
-        if (!tSnap.empty && tSnap.docs[0].data()?.status !== 'BANNED' && tSnap.docs[0].data()?.status !== 'SUSPENDED') {
+        const tSnap = await getDocs(query(collection(db, 'tutors'), where('email', '==', email), limit(1))).catch(() => null);
+        if (tSnap && !tSnap.empty && tSnap.docs[0].data()?.status !== 'BANNED' && tSnap.docs[0].data()?.status !== 'SUSPENDED') {
           isApprovedTutor = true;
           tutorName = tSnap.docs[0].data()?.name || tSnap.docs[0].data()?.fullName || '';
         }
       }
       if (!isApprovedTutor && email) {
-        const appSnap = await getDocs(query(collection(db, 'tutor_applications'), where('email', '==', email), where('status', '==', 'approved'), limit(1)));
-        if (!appSnap.empty) {
+        const sSnap = await getDocs(query(collection(db, 'staff'), where('email', '==', email), limit(1))).catch(() => null);
+        if (sSnap && !sSnap.empty && sSnap.docs[0].data()?.status !== 'BANNED' && sSnap.docs[0].data()?.status !== 'SUSPENDED') {
+          isApprovedTutor = true;
+          tutorName = sSnap.docs[0].data()?.name || sSnap.docs[0].data()?.fullName || '';
+        }
+      }
+      if (!isApprovedTutor && email) {
+        const appSnap = await getDocs(query(collection(db, 'tutor_applications'), where('email', '==', email), where('status', '==', 'approved'), limit(1))).catch(() => null);
+        if (appSnap && !appSnap.empty) {
           isApprovedTutor = true;
           tutorName = appSnap.docs[0].data()?.name || '';
         }
@@ -510,30 +524,42 @@ const SecurePortalLogin: React.FC = () => {
 
     if ((target === 'staff' || isApprovedTutor) && !String(data.role || '').toUpperCase().includes('ADMIN')) {
       const resolvedName = tutorName || data.name || user.displayName || email.split('@')[0];
-      await setDoc(doc(db, 'users', user.uid), { 
-        uid: user.uid, 
-        name: resolvedName, 
-        fullName: resolvedName, 
-        email, 
-        role: 'STAFF', 
-        accountStatus: 'ACTIVE', 
-        status: 'ACTIVE', 
-        updatedAt: serverTimestamp() 
-      }, { merge: true });
-      await setDoc(doc(db, 'tutors', user.uid), {
-        role: 'staff',
-        status: 'ACTIVE',
-        email,
+      const staffProfile = {
+        ...data,
+        uid: user.uid,
         name: resolvedName,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+        fullName: resolvedName,
+        email,
+        role: 'STAFF',
+        accountStatus: data.accountStatus || 'ACTIVE',
+        status: data.status || 'ACTIVE',
+      };
+      try {
+        await setDoc(doc(db, 'users', user.uid), {
+          ...staffProfile,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Staff users sync warning:', err);
+      }
+      try {
+        await setDoc(doc(db, 'tutors', user.uid), {
+          role: 'staff',
+          status: 'ACTIVE',
+          email,
+          name: resolvedName,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Staff tutors sync warning:', err);
+      }
       await deleteDoc(doc(db, 'parents', user.uid)).catch(() => null);
 
-      snap = await getDoc(doc(db, 'users', user.uid)); 
-      data = snap.data() || { role: 'STAFF' };
+      snap = await getDoc(doc(db, 'users', user.uid)).catch(() => snap);
+      data = snap?.exists() ? { ...staffProfile, ...(snap.data() || {}), role: 'STAFF' } : staffProfile;
     }
 
-    if (!snap.exists()) { 
+    if (!snap.exists() && !data.role) { 
       await signOut(auth).catch(() => undefined); 
       throw new Error('No active portal profile was found for this account.'); 
     }
@@ -675,25 +701,39 @@ const SecurePortalLogin: React.FC = () => {
           data = snap.data() || {};
         }
       }
-      // Check if this Google account is an approved tutor in tutors or tutor_applications
+      // Check if this Google account is an approved tutor in tutors, staff, or tutor_applications
       let googleIsApprovedTutor = false;
       let googleTutorName = '';
       try {
-        const tDoc = await getDoc(doc(db, 'tutors', user.uid));
-        if (tDoc.exists() && tDoc.data()?.status !== 'BANNED' && tDoc.data()?.status !== 'SUSPENDED') {
+        const tDoc = await getDoc(doc(db, 'tutors', user.uid)).catch(() => null);
+        if (tDoc?.exists() && tDoc.data()?.status !== 'BANNED' && tDoc.data()?.status !== 'SUSPENDED') {
           googleIsApprovedTutor = true;
           googleTutorName = tDoc.data()?.name || tDoc.data()?.fullName || '';
         }
+        if (!googleIsApprovedTutor) {
+          const sDoc = await getDoc(doc(db, 'staff', user.uid)).catch(() => null);
+          if (sDoc?.exists() && sDoc.data()?.status !== 'BANNED' && sDoc.data()?.status !== 'SUSPENDED') {
+            googleIsApprovedTutor = true;
+            googleTutorName = sDoc.data()?.name || sDoc.data()?.fullName || '';
+          }
+        }
         if (!googleIsApprovedTutor && email) {
-          const tSnap = await getDocs(query(collection(db, 'tutors'), where('email', '==', email), limit(1)));
-          if (!tSnap.empty && tSnap.docs[0].data()?.status !== 'BANNED' && tSnap.docs[0].data()?.status !== 'SUSPENDED') {
+          const tSnap = await getDocs(query(collection(db, 'tutors'), where('email', '==', email), limit(1))).catch(() => null);
+          if (tSnap && !tSnap.empty && tSnap.docs[0].data()?.status !== 'BANNED' && tSnap.docs[0].data()?.status !== 'SUSPENDED') {
             googleIsApprovedTutor = true;
             googleTutorName = tSnap.docs[0].data()?.name || tSnap.docs[0].data()?.fullName || '';
           }
         }
         if (!googleIsApprovedTutor && email) {
-          const appSnap = await getDocs(query(collection(db, 'tutor_applications'), where('email', '==', email), where('status', '==', 'approved'), limit(1)));
-          if (!appSnap.empty) {
+          const sSnap = await getDocs(query(collection(db, 'staff'), where('email', '==', email), limit(1))).catch(() => null);
+          if (sSnap && !sSnap.empty && sSnap.docs[0].data()?.status !== 'BANNED' && sSnap.docs[0].data()?.status !== 'SUSPENDED') {
+            googleIsApprovedTutor = true;
+            googleTutorName = sSnap.docs[0].data()?.name || sSnap.docs[0].data()?.fullName || '';
+          }
+        }
+        if (!googleIsApprovedTutor && email) {
+          const appSnap = await getDocs(query(collection(db, 'tutor_applications'), where('email', '==', email), where('status', '==', 'approved'), limit(1))).catch(() => null);
+          if (appSnap && !appSnap.empty) {
             googleIsApprovedTutor = true;
             googleTutorName = appSnap.docs[0].data()?.name || '';
           }
@@ -704,29 +744,41 @@ const SecurePortalLogin: React.FC = () => {
 
       if (((portalMode === 'institute' && instituteTab === 'staff') || googleIsApprovedTutor) && !String(data.role || '').toUpperCase().includes('ADMIN')) {
         const resolvedName = googleTutorName || data.name || user.displayName || email.split('@')[0];
-        await setDoc(doc(db, 'users', user.uid), { 
-          uid: user.uid, 
-          name: resolvedName, 
-          fullName: resolvedName, 
-          email: user.email || email, 
-          role: 'STAFF', 
-          accountStatus: 'ACTIVE', 
-          status: 'ACTIVE', 
-          updatedAt: serverTimestamp() 
-        }, { merge: true });
-        await setDoc(doc(db, 'tutors', user.uid), {
-          role: 'staff',
-          status: 'ACTIVE',
-          email: user.email || email,
+        const staffProfile = {
+          ...data,
+          uid: user.uid,
           name: resolvedName,
-          updatedAt: serverTimestamp()
-        }, { merge: true });
+          fullName: resolvedName,
+          email: user.email || email,
+          role: 'STAFF',
+          accountStatus: data.accountStatus || 'ACTIVE',
+          status: data.status || 'ACTIVE',
+        };
+        try {
+          await setDoc(doc(db, 'users', user.uid), {
+            ...staffProfile,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (err) {
+          console.warn('Google staff users sync warning:', err);
+        }
+        try {
+          await setDoc(doc(db, 'tutors', user.uid), {
+            role: 'staff',
+            status: 'ACTIVE',
+            email: user.email || email,
+            name: resolvedName,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (err) {
+          console.warn('Google staff tutors sync warning:', err);
+        }
         await deleteDoc(doc(db, 'parents', user.uid)).catch(() => null);
 
-        snap = await getDoc(doc(db, 'users', user.uid)); 
-        data = snap.data() || { role: 'STAFF' };
+        snap = await getDoc(doc(db, 'users', user.uid)).catch(() => snap);
+        data = snap?.exists() ? { ...staffProfile, ...(snap.data() || {}), role: 'STAFF' } : staffProfile;
       }
-      if (!snap.exists()) { 
+      if (!snap.exists() && !data.role) { 
         await signOut(auth).catch(() => undefined); 
         throw new Error('No active portal profile was found for this Google account.'); 
       }
