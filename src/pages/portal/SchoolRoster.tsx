@@ -796,13 +796,13 @@ Important Security Notice:
               type="button" 
               onClick={() => void load(true)} 
               disabled={loading || refreshing} 
-              className="min-h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 text-xs font-bold text-slate-700 dark:text-slate-300 inline-flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors cursor-pointer"
+              className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
             >
-              {refreshing ? <Loader2 size={15} className="animate-spin"/> : <RefreshCw size={15}/>} Refresh
+              {refreshing ? <Loader2 size={15} className="animate-spin"/> : <RefreshCw size={15}/>} Refresh Records
             </button>
             <Link 
               to="/portal/school/onboard-student" 
-              className="min-h-11 rounded-xl bg-brand-red hover:bg-red-700 text-white px-5 text-xs font-bold inline-flex items-center gap-2 shadow-xs transition-colors"
+              className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 inline-flex items-center gap-2 shadow-xs transition-colors"
             >
               <Plus size={16}/> Onboard Student
             </Link>
@@ -972,7 +972,7 @@ Important Security Notice:
           </p>
           <Link 
             to="/portal/school/onboard-student" 
-            className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand-red px-5 text-xs font-bold text-white shadow-xs hover:bg-red-700 transition-colors"
+            className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white shadow-xs hover:bg-blue-700 transition-colors"
           >
             <Plus size={15}/> Onboard First Student
           </Link>
@@ -1071,7 +1071,7 @@ Important Security Notice:
                     type="button" 
                     onClick={() => void handleIssueCredentials(student)} 
                     disabled={isIssuing && issuingStudent?.id === student.id}
-                    className="min-h-8 rounded-lg bg-brand-red text-white px-3 text-xs font-bold inline-flex items-center gap-1 hover:bg-red-700 disabled:opacity-50 transition-colors cursor-pointer"
+                    className="min-h-8 rounded-xl bg-blue-600 text-white px-3 text-xs font-semibold inline-flex items-center gap-1 hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer shadow-xs"
                     title="Generate and issue new login access code"
                   >
                     {isIssuing && issuingStudent?.id === student.id ? (
@@ -1295,7 +1295,7 @@ Important Security Notice:
               <button
                 type="submit"
                 disabled={savingStudent}
-                className="px-5 py-2 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-black inline-flex items-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 shadow-xs active:scale-95 disabled:opacity-50 transition-colors"
               >
                 {savingStudent ? <Loader2 size={13} className="animate-spin"/> : <Check size={13}/>}
                 <span>Save Changes &amp; Assign</span>
@@ -1408,7 +1408,7 @@ Important Security Notice:
               <button
                 type="button"
                 onClick={() => setRevealedCredential(null)}
-                className="min-h-10 px-6 rounded-xl bg-brand-red text-white text-xs font-black hover:bg-brand-red/90 cursor-pointer shadow-sm active:scale-95"
+                className="min-h-10 px-6 rounded-xl bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 cursor-pointer shadow-xs active:scale-95 transition-colors"
               >
                 Done
               </button>

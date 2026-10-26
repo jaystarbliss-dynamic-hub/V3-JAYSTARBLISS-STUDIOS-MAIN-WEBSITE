@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
@@ -14,21 +15,35 @@ function readServiceAccount(): Record<string, any> {
     process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
     process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
 
-  if (!raw) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, any>;
-  } catch {
-    // Some deployment dashboards store JSON secrets as base64.
+  if (raw) {
     try {
-      const parsed: unknown = JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
+      const parsed: unknown = JSON.parse(raw);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, any>;
     } catch {
-      console.error("Firebase Admin service-account secret is invalid JSON/base64.");
-      return {};
+      // Some deployment dashboards store JSON secrets as base64.
+      try {
+        const parsed: unknown = JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, any>;
+      } catch {
+        console.error("Firebase Admin service-account secret is invalid JSON/base64.");
+      }
     }
   }
-  console.error("Firebase Admin service-account secret must contain a JSON object.");
+
+  // Check if GOOGLE_APPLICATION_CREDENTIALS is a file path
+  const gacPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (gacPath && typeof gacPath === "string") {
+    try {
+      if (existsSync(gacPath)) {
+        const fileContent = readFileSync(gacPath, "utf8");
+        const parsed = JSON.parse(fileContent);
+        if (parsed && typeof parsed === "object") return parsed;
+      }
+    } catch (err) {
+      console.warn("Could not read GOOGLE_APPLICATION_CREDENTIALS file path:", err);
+    }
+  }
+
   return {};
 }
 
@@ -41,9 +56,6 @@ export function getAdminApp(): App | null {
   }
 
   const serviceAccount = readServiceAccount();
-  // Match the public browser Firebase config in src/lib/firebase.ts.
-  // A conflicting deployment variable can silently send Admin SDK reads to a
-  // different project, making every real student look like a missing record.
   const projectId = "jaystarbliss-studios";
   const configuredProjectId =
     process.env.FIREBASE_PROJECT_ID ||
@@ -66,20 +78,29 @@ export function getAdminApp(): App | null {
     process.env.GOOGLE_PRIVATE_KEY ||
     serviceAccount.private_key ||
     serviceAccount.privateKey;
-  const privateKey = typeof rawPrivateKey === "string" ? rawPrivateKey.replace(/\\n/g, "\n") : "";
-
-  if (!projectId || !clientEmail || !privateKey) {
-    console.error(
-      "Firebase Admin configuration is incomplete. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY, or provide a complete FIREBASE_SERVICE_ACCOUNT_JSON secret."
-    );
-    return null;
+  let privateKey = typeof rawPrivateKey === "string" ? rawPrivateKey.replace(/\\n/g, "\n").trim() : "";
+  if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+    privateKey = privateKey.slice(1, -1).replace(/\\n/g, "\n").trim();
+  }
+  if (privateKey.startsWith("'") && privateKey.endsWith("'")) {
+    privateKey = privateKey.slice(1, -1).replace(/\\n/g, "\n").trim();
   }
 
+  if (projectId && clientEmail && privateKey) {
+    try {
+      cachedApp = initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+      return cachedApp;
+    } catch (err) {
+      console.error("Could not initialize Firebase Admin SDK with cert:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // Fallback initialization if running with ambient GCP credentials
   try {
-    cachedApp = initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+    cachedApp = initializeApp({ projectId: projectId || "jaystarbliss-studios" });
     return cachedApp;
   } catch (err) {
-    console.error("Could not initialize Firebase Admin SDK:", err instanceof Error ? err.message : String(err));
+    console.warn("Firebase Admin ambient init warning:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -155,3 +176,8 @@ export const adminDb = new Proxy({} as Firestore, {
     return typeof val === "function" ? val.bind(db) : val;
   }
 });
+
+export const hasAdminAuth = (): boolean => getAdminAuth() !== null;
+export const hasAdminDb = (): boolean => getAdminDb() !== null;
+
+

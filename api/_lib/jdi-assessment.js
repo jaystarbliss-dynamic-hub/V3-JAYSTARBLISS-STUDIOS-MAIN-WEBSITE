@@ -3,7 +3,7 @@
  * helpers shared by request handlers, frontend utilities, and automated tests.
  * Keeping one implementation prevents score, denominator, or class-matching drift.
  */
-const OBJECTIVE = new Set(["single_choice", "multiple_choice", "true_false"]);
+const OBJECTIVE = new Set(["single_choice", "multiple_choice", "true_false", "dropdown"]);
 const TYPES = new Set([...OBJECTIVE, "short_answer", "essay"]);
 
 export const CANONICAL_CLASSES = [
@@ -480,7 +480,7 @@ export function normalizeQuestions(input, gradingMode = "automatic") {
         return { error: "Automatically graded objective questions need at least one correct answer." };
       if (correctOptionIds.some(optionId => !optionIds.has(optionId)))
         return { error: "Correct answers must refer to existing options." };
-      if ((type === "single_choice" || type === "true_false") && correctOptionIds.length > 1)
+      if ((type === "single_choice" || type === "true_false" || type === "dropdown") && correctOptionIds.length > 1)
         return { error: "Single-choice questions must have exactly one correct answer." };
     }
     const acceptedAnswers = Array.isArray(raw.acceptedAnswers)
@@ -502,10 +502,173 @@ export function normalizeQuestions(input, gradingMode = "automatic") {
       acceptedAnswers: type === "short_answer" ? acceptedAnswers : [],
       points: Number(points.toFixed(2)),
       required: raw.required !== false,
+      ...(raw.explanation ? { explanation: String(raw.explanation).trim().slice(0, 2000) } : {}),
     });
   }
   const maxScore = Number(questions.reduce((sum, q) => sum + Number(q.points || 0), 0).toFixed(2));
   return { questions, maxScore };
+}
+
+/**
+ * Resolves the canonical examination delivery mode ("NATIVE" | "EXTERNAL_LINK").
+ * Preserves existing external-link examinations even when they have 0 native questions.
+ */
+export function normalizeDeliveryMode(input, fallbackExam = null) {
+  const examObj =
+    input && typeof input === "object" && !Array.isArray(input) ? input : fallbackExam;
+  const raw =
+    typeof input === "string"
+      ? input.trim().toUpperCase()
+      : String(examObj?.deliveryMode ?? "").trim().toUpperCase();
+
+  if (raw === "EXTERNAL_LINK" || raw === "EXTERNAL" || raw === "GOOGLE_FORMS" || raw === "GOOGLE_FORM") {
+    return "EXTERNAL_LINK";
+  }
+  if (raw === "NATIVE" || raw === "INTERNAL" || raw === "JDI") {
+    return "NATIVE";
+  }
+  if (examObj && typeof examObj === "object") {
+    const fbMode = String(examObj.deliveryMode ?? "").trim().toUpperCase();
+    if (fbMode === "EXTERNAL_LINK" || fbMode === "EXTERNAL") return "EXTERNAL_LINK";
+    if (fbMode === "NATIVE") return "NATIVE";
+    const hasQuestions = Array.isArray(examObj.questions) && examObj.questions.length > 0;
+    const hasExternalUrl = Boolean(
+      String(examObj.externalUrl || examObj.url || examObj.link || "").trim()
+    );
+    if (!hasQuestions && hasExternalUrl) return "EXTERNAL_LINK";
+  }
+  return "NATIVE";
+}
+
+/**
+ * Validates an external examination / Google Forms URL.
+ */
+export function validateExternalExamUrl(input) {
+  const raw = String(input ?? "").trim();
+  if (!raw) {
+    return { valid: false, error: "Provide a valid external URL (e.g., Google Forms link)." };
+  }
+  if (raw.length > 2000) {
+    return { valid: false, error: "External examination URL must be at most 2000 characters." };
+  }
+  try {
+    const parsed = new URL(raw);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return { valid: false, error: "External examination URL must be a valid http:// or https:// URL." };
+    }
+    return { valid: true, url: parsed.toString() };
+  } catch {
+    return { valid: false, error: "Provide a valid external URL starting with http:// or https://." };
+  }
+}
+
+/**
+ * Validates examination creation/update payload for both EXTERNAL_LINK and NATIVE modes.
+ * External-link examinations do not require duration, native questions, answer keys, or grading settings.
+ */
+export function validateExamCreationPayload(body = {}, existingDoc = null) {
+  const deliveryMode = normalizeDeliveryMode(body.deliveryMode, body.deliveryMode ? existingDoc : body || existingDoc);
+  const title = String(body.title ?? existingDoc?.title ?? "").trim();
+  const subject = String(body.subject ?? existingDoc?.subject ?? "").trim();
+  const description = String(body.description ?? body.instructions ?? existingDoc?.description ?? existingDoc?.instructions ?? "")
+    .trim()
+    .slice(0, 5000);
+  const rawStatus = String(body.status || "").trim().toLowerCase();
+  const status =
+    rawStatus === "published"
+      ? "active"
+      : ["active", "scheduled", "completed", "archived", "draft"].includes(rawStatus)
+      ? rawStatus
+      : "draft";
+
+  if (!title || title.length > 200) {
+    return { error: "Provide an examination title (1–200 characters)." };
+  }
+  if (!subject || subject.length > 120) {
+    return { error: "Provide an examination subject (1–120 characters)." };
+  }
+
+  const classIds = normalizeClassList(
+    body.classIds || body.targetClass || body.className || existingDoc?.classIds || existingDoc?.targetClass || []
+  );
+
+  if (deliveryMode === "EXTERNAL_LINK") {
+    const urlCandidate = body.externalUrl ?? body.url ?? existingDoc?.externalUrl ?? existingDoc?.url ?? "";
+    const urlCheck = validateExternalExamUrl(urlCandidate);
+    if (urlCheck.error) return { error: urlCheck.error };
+
+    const rawDuration = body.durationMinutes !== undefined && body.durationMinutes !== null && body.durationMinutes !== ""
+      ? Number(body.durationMinutes)
+      : 0;
+    const durationMinutes =
+      rawDuration !== null && Number.isFinite(rawDuration) && rawDuration >= 1 && rawDuration <= 300
+        ? Math.round(rawDuration)
+        : 0;
+
+    return {
+      deliveryMode: "EXTERNAL_LINK",
+      title,
+      subject,
+      description,
+      externalUrl: urlCheck.url,
+      classIds,
+      questions: [],
+      questionCount: 0,
+      maxScore: 0,
+      durationMinutes,
+      gradingMode: "automatic",
+      status,
+    };
+  }
+
+  // NATIVE examination validation
+  const durationMinutes = Number(body.durationMinutes ?? existingDoc?.durationMinutes ?? 30);
+  if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 300) {
+    return { error: "Provide a whole-number duration from 1 to 300 minutes." };
+  }
+
+  const rawQuestions = Array.isArray(body.questions) ? body.questions : [];
+  const gradingMode = body.gradingMode === "manual" ? "manual" : "automatic";
+
+  // Allow empty questions list only when saving as draft
+  if (rawQuestions.length === 0 && status === "draft") {
+    return {
+      deliveryMode: "NATIVE",
+      title,
+      subject,
+      description,
+      externalUrl: String(body.externalUrl ?? existingDoc?.externalUrl ?? "").trim(),
+      classIds,
+      questions: [],
+      questionCount: 0,
+      maxScore: 0,
+      durationMinutes,
+      gradingMode,
+      status,
+    };
+  }
+
+  if (rawQuestions.length === 0) {
+    return { error: "At least 1 valid question is required before publishing a native examination." };
+  }
+
+  const normalized = normalizeQuestions(rawQuestions, gradingMode);
+  if (normalized.error) return { error: normalized.error };
+
+  return {
+    deliveryMode: "NATIVE",
+    title,
+    subject,
+    description,
+    externalUrl: String(body.externalUrl ?? existingDoc?.externalUrl ?? "").trim(),
+    classIds,
+    questions: normalized.questions,
+    questionCount: normalized.questions.length,
+    maxScore: normalized.maxScore,
+    durationMinutes,
+    gradingMode,
+    status,
+  };
 }
 
 export function gradeAnswers(exam, answers = {}) {
@@ -599,3 +762,4 @@ export function attemptBelongsToLinkedChild(attempt, child) {
 export function answersForFinalization(currentAnswers = {}, requestedAnswers, deadlinePassed = false) {
   return deadlinePassed ? currentAnswers || {} : requestedAnswers || currentAnswers || {};
 }
+

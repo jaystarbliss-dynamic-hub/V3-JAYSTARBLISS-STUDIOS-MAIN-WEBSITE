@@ -21,6 +21,9 @@ import {
   attemptBelongsToLinkedChild,
   isAssessmentStudentRole,
   answersForFinalization,
+  normalizeDeliveryMode,
+  validateExternalExamUrl,
+  validateExamCreationPayload,
 } from "../api/_lib/jdi-assessment.js";
 
 const objective = (overrides = {}) => ({
@@ -298,3 +301,119 @@ test("exam lifecycle permissions, tutor ownership, and safe delete vs archive ru
     snapQuestions
   );
 });
+
+test("resolves examination delivery mode and preserves existing external-link exams with zero native questions", () => {
+  assert.equal(normalizeDeliveryMode("EXTERNAL_LINK"), "EXTERNAL_LINK");
+  assert.equal(normalizeDeliveryMode("external"), "EXTERNAL_LINK");
+  assert.equal(normalizeDeliveryMode("google_forms"), "EXTERNAL_LINK");
+  assert.equal(normalizeDeliveryMode("NATIVE"), "NATIVE");
+  assert.equal(
+    normalizeDeliveryMode({
+      externalUrl: "https://docs.google.com/forms/d/e/1FAIpQLSc/viewform",
+      questions: [],
+    }),
+    "EXTERNAL_LINK"
+  );
+  assert.equal(
+    normalizeDeliveryMode({
+      deliveryMode: "NATIVE",
+      questions: [objective()],
+    }),
+    "NATIVE"
+  );
+});
+
+test("validates external examination URLs and allows External Link exam creation without duration or native questions", () => {
+  assert.equal(
+    validateExternalExamUrl("https://docs.google.com/forms/d/e/1FAIpQLSe/viewform").valid,
+    true
+  );
+  assert.equal(validateExternalExamUrl("ftp://invalid.example.com").valid, false);
+  assert.equal(validateExternalExamUrl("").valid, false);
+
+  const validExternal = validateExamCreationPayload({
+    deliveryMode: "EXTERNAL_LINK",
+    title: "Mid-Term Robotics Assessment",
+    description: "Complete the external Google Form carefully.",
+    subject: "Robotics & Coding",
+    externalUrl: "https://docs.google.com/forms/d/e/1FAIpQLSe/viewform",
+    passcode: "JDI-2026",
+    schoolId: "sch-1",
+    classIds: ["Grade 8"],
+    status: "published",
+  });
+  assert.equal(validExternal.error, undefined);
+  assert.equal(validExternal.deliveryMode, "EXTERNAL_LINK");
+  assert.equal(validExternal.durationMinutes, 0);
+  assert.equal(validExternal.maxScore, 0);
+  assert.deepEqual(validExternal.questions, []);
+  assert.deepEqual(validExternal.classIds, ["Grade 8"]);
+
+  const missingUrlExternal = validateExamCreationPayload({
+    deliveryMode: "EXTERNAL_LINK",
+    title: "Mid-Term Robotics Assessment",
+    subject: "Robotics & Coding",
+    externalUrl: "",
+    passcode: "JDI-2026",
+    schoolId: "sch-1",
+    classIds: ["Grade 8"],
+    status: "published",
+  });
+  assert.match(missingUrlExternal.error, /valid external URL/i);
+});
+
+test("validates Native examination creation: allows empty drafts, requires questions when publishing, and supports dropdown questions", () => {
+  const emptyNativeDraft = validateExamCreationPayload({
+    deliveryMode: "NATIVE",
+    title: "Draft Python Assessment",
+    subject: "Python Programming",
+    passcode: "JDI-PY01",
+    schoolId: "sch-1",
+    classIds: ["Grade 10"],
+    durationMinutes: 45,
+    questions: [],
+    status: "draft",
+  });
+  assert.equal(emptyNativeDraft.error, undefined);
+  assert.equal(emptyNativeDraft.deliveryMode, "NATIVE");
+  assert.deepEqual(emptyNativeDraft.questions, []);
+
+  const emptyNativePublished = validateExamCreationPayload({
+    deliveryMode: "NATIVE",
+    title: "Published Python Assessment",
+    subject: "Python Programming",
+    passcode: "JDI-PY01",
+    schoolId: "sch-1",
+    classIds: ["Grade 10"],
+    durationMinutes: 45,
+    questions: [],
+    status: "published",
+  });
+  assert.match(emptyNativePublished.error, /At least 1 valid question/i);
+
+  const dropdownNativePublished = validateExamCreationPayload({
+    deliveryMode: "NATIVE",
+    title: "Published Dropdown Assessment",
+    subject: "Web Development",
+    passcode: "JDI-WEB1",
+    schoolId: "sch-1",
+    classIds: ["Grade 9"],
+    durationMinutes: 30,
+    questions: [
+      objective({
+        id: "q_drop",
+        type: "dropdown",
+        options: [
+          { id: "A", text: "HTML" },
+          { id: "B", text: "CSS" },
+        ],
+        correctOptionIds: ["A"],
+      }),
+    ],
+    status: "published",
+  });
+  assert.equal(dropdownNativePublished.error, undefined);
+  assert.equal(dropdownNativePublished.questions.length, 1);
+  assert.equal(dropdownNativePublished.maxScore, 2);
+});
+

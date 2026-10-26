@@ -15,6 +15,9 @@ import {
   resolvePartnerSchoolName as sharedResolvePartnerSchoolName,
   resolveAttemptQuestions as sharedResolveAttemptQuestions,
   gradeAnswers as sharedGradeAnswers,
+  normalizeDeliveryMode as sharedNormalizeDeliveryMode,
+  validateExternalExamUrl as sharedValidateExternalExamUrl,
+  validateExamCreationPayload as sharedValidateExamCreationPayload,
 } from '../../api/_lib/jdi-assessment.js';
 
 export type CanonicalClassName =
@@ -118,3 +121,22 @@ export function gradeAnswers(
 ) {
   return sharedGradeAnswers(exam, answers);
 }
+
+export function normalizeDeliveryMode(
+  input: unknown,
+  fallbackExam?: Record<string, any> | null
+): 'NATIVE' | 'EXTERNAL_LINK' {
+  return sharedNormalizeDeliveryMode(input, fallbackExam);
+}
+
+export function validateExternalExamUrl(input: unknown) {
+  return sharedValidateExternalExamUrl(input);
+}
+
+export function validateExamCreationPayload(
+  body?: Record<string, any>,
+  existingDoc?: Record<string, any> | null
+) {
+  return sharedValidateExamCreationPayload(body, existingDoc);
+}
+

@@ -195,7 +195,7 @@ export const PortalSettings: React.FC = () => {
 
             <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
               <button type="button" onClick={() => setShowPasswordModal(true)} className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl flex items-center gap-2"><KeyRound size={13} className="text-brand-red" /> Change Password</button>
-              <button type="submit" disabled={savingProfile} className="px-5 py-2.5 bg-brand-red hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 disabled:opacity-50">{savingProfile ? <><RefreshCw size={13} className="animate-spin" /> Saving...</> : <><Save size={13} /> Save Changes</>}</button>
+              <button type="submit" disabled={savingProfile} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-xs flex items-center gap-2 disabled:opacity-50 transition-colors cursor-pointer">{savingProfile ? <><RefreshCw size={13} className="animate-spin" /> Saving...</> : <><Save size={13} /> Save Changes</>}</button>
             </div>
           </section>
         </form>

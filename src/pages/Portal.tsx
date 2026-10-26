@@ -641,21 +641,68 @@ const Portal: React.FC = () => {
       let detectedRole = '';
       let detectedName = user.displayName || email.split('@')[0];
 
+      // Check if user has an approved tutor profile in tutors or tutor_applications
+      let isVerifiedTutor = false;
+      let verifiedTutorName = '';
+      try {
+        const tDoc = await getDoc(doc(db, 'tutors', user.uid));
+        if (tDoc.exists() && tDoc.data()?.status !== 'BANNED' && tDoc.data()?.status !== 'SUSPENDED') {
+          isVerifiedTutor = true;
+          verifiedTutorName = tDoc.data()?.name || tDoc.data()?.fullName || '';
+        }
+        if (!isVerifiedTutor && user.email) {
+          const tSnap = await getDocs(query(collection(db, 'tutors'), where('email', '==', user.email.toLowerCase()), limit(1)));
+          if (!tSnap.empty && tSnap.docs[0].data()?.status !== 'BANNED' && tSnap.docs[0].data()?.status !== 'SUSPENDED') {
+            isVerifiedTutor = true;
+            verifiedTutorName = tSnap.docs[0].data()?.name || tSnap.docs[0].data()?.fullName || '';
+          }
+        }
+        if (!isVerifiedTutor && user.email) {
+          const aSnap = await getDocs(query(collection(db, 'tutor_applications'), where('email', '==', user.email.toLowerCase()), where('status', '==', 'approved'), limit(1)));
+          if (!aSnap.empty) {
+            isVerifiedTutor = true;
+            verifiedTutorName = aSnap.docs[0].data()?.name || '';
+          }
+        }
+      } catch (tErr) {
+        console.warn('Tutor verification notice:', tErr);
+      }
+
       if (userData) {
         detectedRole = (userData.role || '').toUpperCase();
         if (userData.name) detectedName = userData.name;
-      } else {
-        const parentDoc = await getDoc(doc(db, 'parents', user.uid));
-        if (parentDoc.exists()) {
-          detectedRole = 'PARENT';
-          if (parentDoc.data().name) detectedName = parentDoc.data().name;
+      }
+
+      // If user has an approved tutor profile and is not an admin, prioritize STAFF over parent
+      if (isVerifiedTutor && !detectedRole.includes('ADMIN')) {
+        detectedRole = 'STAFF';
+        if (verifiedTutorName) detectedName = verifiedTutorName;
+        await setDoc(doc(db, 'users', user.uid), {
+          role: 'staff',
+          name: detectedName,
+          email: user.email?.toLowerCase(),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        await setDoc(doc(db, 'tutors', user.uid), {
+          role: 'staff',
+          status: 'ACTIVE',
+          name: detectedName,
+          email: user.email?.toLowerCase(),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        await deleteDoc(doc(db, 'parents', user.uid)).catch(() => null);
+      } else if (!userData) {
+        const tutorDoc = await getDoc(doc(db, 'tutors', user.uid));
+        if (tutorDoc.exists()) {
+          detectedRole = 'STAFF';
+          if (tutorDoc.data().name) detectedName = tutorDoc.data().name;
         }
 
         if (!detectedRole) {
-          const tutorDoc = await getDoc(doc(db, 'tutors', user.uid));
-          if (tutorDoc.exists()) {
-            detectedRole = 'STAFF';
-            if (tutorDoc.data().name) detectedName = tutorDoc.data().name;
+          const parentDoc = await getDoc(doc(db, 'parents', user.uid));
+          if (parentDoc.exists()) {
+            detectedRole = 'PARENT';
+            if (parentDoc.data().name) detectedName = parentDoc.data().name;
           }
         }
 

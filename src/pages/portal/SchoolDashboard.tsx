@@ -400,7 +400,7 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
         <div className="bg-white dark:bg-[#161B26] rounded-2xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
           <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">Student Roster</h2>
           <p className="text-xs text-slate-500 mt-1">Roster management has moved to the secure student operations page. Student portal credentials are never exposed in this workspace.</p>
-          <button onClick={() => navigate('/portal/school/roster')} className="mt-4 min-h-9 rounded-xl bg-brand-red text-white px-4 text-xs font-bold inline-flex items-center gap-2">
+          <button onClick={() => navigate('/portal/school/roster')} className="mt-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 text-xs font-semibold inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer">
             <Users size={14}/> Open secure roster <ChevronRight size={14}/>
           </button>
         </div>
@@ -590,7 +590,7 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
             ) : (
               <button 
                 onClick={() => navigate('/portal/school/payments')} 
-                className="px-4 py-2 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-xs transition-colors"
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
               >
                 <CreditCard size={14}/> Complete Payment / Invoices
               </button>

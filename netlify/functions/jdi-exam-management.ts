@@ -16,6 +16,8 @@ import {
   resolvePartnerSchoolName,
   resolveAttemptQuestions,
   normalizeQuestions,
+  normalizeDeliveryMode,
+  validateExternalExamUrl,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({

@@ -60,13 +60,14 @@ export function formatScoreSummary(score: unknown, maxScore: unknown): ScoreSumm
 
 export interface NormalizedQuestion {
   id: string;
-  type: "single_choice" | "multiple_choice" | "true_false" | "short_answer" | "essay";
+  type: "single_choice" | "multiple_choice" | "true_false" | "dropdown" | "short_answer" | "essay";
   prompt: string;
   options: Array<{ id: string; text: string }>;
   correctOptionIds: string[];
   acceptedAnswers: string[];
   points: number;
   required: boolean;
+  explanation?: string;
 }
 
 export function normalizeQuestions(
@@ -75,6 +76,36 @@ export function normalizeQuestions(
 ):
   | { questions: NormalizedQuestion[]; maxScore: number; error?: never }
   | { error: string; questions?: never; maxScore?: never };
+
+export function normalizeDeliveryMode(
+  input: unknown,
+  fallbackExam?: Record<string, any> | null
+): "NATIVE" | "EXTERNAL_LINK";
+
+export function validateExternalExamUrl(
+  input: unknown
+): { valid: true; url: string; error?: never } | { valid: false; error: string; url?: never };
+
+export function validateExamCreationPayload(
+  body?: Record<string, any>,
+  existingDoc?: Record<string, any> | null
+):
+  | {
+      deliveryMode: "NATIVE" | "EXTERNAL_LINK";
+      title: string;
+      subject: string;
+      description: string;
+      externalUrl: string;
+      classIds: string[];
+      questions: NormalizedQuestion[];
+      questionCount: number;
+      maxScore: number;
+      durationMinutes: number;
+      gradingMode: "automatic" | "manual";
+      status: string;
+      error?: never;
+    }
+  | { error: string };
 
 export function gradeAnswers(
   exam: { gradingMode?: string; questions?: Array<any> },
@@ -113,3 +144,4 @@ export function answersForFinalization<T extends Record<string, any>>(
   requestedAnswers?: T,
   deadlinePassed?: boolean
 ): T;
+

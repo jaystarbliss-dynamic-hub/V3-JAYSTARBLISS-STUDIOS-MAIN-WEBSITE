@@ -342,7 +342,7 @@ const SchoolLearnerInsights: React.FC = () => {
           <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">Choose a class or learner to review their assessments, examinations, attendance and learning activity. Schools have a reporting view, not a learner account.</p>
           {school && <p className="mt-3 text-xs text-slate-500">School ID: <span className="font-mono font-bold">{school.schoolId}</span>{school.schoolCode && school.schoolCode !== school.schoolId ? ' · School code: ' + school.schoolCode : ''}</p>}
         </div>
-        <button type="button" onClick={() => void loadRoster(true)} disabled={refreshing} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-60"><RefreshCw size={15} className={refreshing ? 'animate-spin' : ''}/> Refresh</button>
+        <button type="button" onClick={() => void loadRoster(true)} disabled={refreshing} className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"><RefreshCw size={15} className={refreshing ? 'animate-spin' : ''}/> Refresh Records</button>
       </div>
     </header>
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, doc, setDoc, addDoc, updateDoc, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, limit, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
 import { 
   CheckCircle2, XCircle, Clock, ExternalLink, Award, 
   Calendar, Phone, Mail, Eye, ChevronDown, Search, Loader2, X,
@@ -188,13 +188,14 @@ const AdminApprovals: React.FC = () => {
     if (!window.confirm(`Approve tutor ${tutorRealName} and grant instructor permissions?`)) return;
     setLoadingId(req.id);
     try {
+      const cleanEmail = (req.email || '').toLowerCase().trim();
       const subjects = Array.isArray(req.subjects) ? req.subjects : (req.subjects || '').split(',').map((s: string) => s.trim()).filter(Boolean);
       
-      await setDoc(doc(db, 'tutors', req.id), {
+      const tutorPayload = {
         name: tutorRealName,
         fullName: tutorRealName,
         displayName: tutorRealName,
-        email: req.email?.toLowerCase(),
+        email: cleanEmail,
         phone: req.phone || '',
         location: req.location || '',
         qualification: req.qualification || '',
@@ -205,14 +206,54 @@ const AdminApprovals: React.FC = () => {
         timeSlot: req.timeSlot || '',
         expectedSalary: req.expectedSalary || '',
         bio: req.bio || '',
-        role: 'tutor',
+        role: 'staff',
         status: 'ACTIVE',
+        accountStatus: 'ACTIVE',
+        updatedAt: serverTimestamp()
+      };
+
+      // 1. Write to tutors/{req.id}
+      await setDoc(doc(db, 'tutors', req.id), {
+        ...tutorPayload,
         createdAt: serverTimestamp()
       }, { merge: true });
+
+      // 2. Look up existing user account by email to update role directly
+      let matchedUserId = '';
+      if (cleanEmail) {
+        try {
+          const userQuery = query(collection(db, 'users'), where('email', '==', cleanEmail), limit(1));
+          const userSnap = await getDocs(userQuery);
+          if (!userSnap.empty) {
+            matchedUserId = userSnap.docs[0].id;
+            await setDoc(doc(db, 'users', matchedUserId), {
+              role: 'staff',
+              name: tutorRealName,
+              fullName: tutorRealName,
+              accountStatus: 'ACTIVE',
+              status: 'ACTIVE',
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+
+            // Also mirror tutor document under the user's primary UID
+            await setDoc(doc(db, 'tutors', matchedUserId), {
+              ...tutorPayload,
+              userId: matchedUserId,
+              firebaseUid: matchedUserId
+            }, { merge: true });
+
+            // Clean up any stale parent record to avoid role conflict
+            await deleteDoc(doc(db, 'parents', matchedUserId)).catch(() => null);
+          }
+        } catch (uErr) {
+          console.warn('User profile sync notice:', uErr);
+        }
+      }
 
       await updateDoc(doc(db, 'tutor_applications', req.id), {
         name: tutorRealName,
         status: 'approved',
+        tutorId: matchedUserId || req.id,
         approvedAt: serverTimestamp()
       });
 

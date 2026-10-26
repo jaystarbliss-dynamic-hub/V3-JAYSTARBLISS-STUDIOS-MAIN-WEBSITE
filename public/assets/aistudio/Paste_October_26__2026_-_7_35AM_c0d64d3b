@@ -1,0 +1,695 @@
+# MASTER IMPLEMENTATION PROMPT — JAYSTARBLISS STUDIOS EXAMINATION BUILDER & GOOGLE FORMS-STYLE WORKFLOW
+
+## YOUR ROLE
+
+Act as a senior full-stack engineer, React/TypeScript architect, Firebase specialist, assessment-platform designer, security engineer and QA engineer.
+
+You are working on the existing Jaystarbliss Studios / Jaystarbliss Dynamic Institute (JDI) learning platform.
+
+Your assignment is to redesign and improve the tutor examination experience so that creating, importing, publishing, managing, grading and reporting examinations feels familiar to users migrating from Google Forms, while preserving the existing platform's architecture, data, authentication, school permissions and academic workflows.
+
+Use Claude Opus 5.5 or the strongest suitable model available if the environment actually provides it. Do not stop to wait for an unavailable model.
+
+**This is an implementation task. Inspect the repository, implement the changes, test them, fix regressions and report what actually works. Do not merely generate a plan, mockup or recommendation document.**
+
+## 1. INSPECT THE EXISTING PROJECT BEFORE CHANGING IT
+
+Start by examining the current workspace and repository status. Preserve existing local changes.
+
+Main repository:
+
+https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE
+
+The application already includes a React/TypeScript/Vite frontend, Firebase Authentication, Firestore, server-side Firebase Admin operations, Netlify Functions, student/tutor/school/parent/platform-admin portals, an examination system, question banks, timed attempts, automatic and manual grading, result release and report generation.
+
+Study the actual current code, previous examination implementation, existing schemas, endpoints, tests and security rules. Relevant historical changes include the examination integration, school reporting, parent examination results, grading validation, result privacy, deadline finalisation and mobile assessment UX.
+
+Use these official Google Forms references to understand the intended behaviours:
+- https://support.google.com/docs/answer/7032287
+- https://support.google.com/docs/answer/2839588
+- https://support.google.com/docs/answer/139706
+
+The reference is for interaction patterns and functional behaviour. Build a native Jaystarbliss interface consistent with our existing design system rather than copying Google's branding or assets.
+
+Do not create a new examination application, a separate user database or an unnecessary second grading system.
+
+## 2. REDESIGN THE TUTOR EXAMINATION WORKSPACE
+
+The existing tutor exam section should become a complete examination-management and authoring workspace.
+
+The central experience should resemble the familiar workflow of a Google Forms quiz.
+
+### Main workspace
+
+Create a clear examination home with:
+
+- A prominent **Create Examination** action.
+- A searchable list of existing examinations.
+- Draft, Scheduled, Published/Active, Closed and Completed filters that match the existing lifecycle.
+- Examination title, school, class, delivery mode, date, status, question count and total marks where applicable.
+- Clear actions to edit, preview, publish, republish, view responses, manage access codes, view reports and delete or archive where permitted.
+- A way to reopen existing examinations without accidentally creating duplicates.
+- A convenient way to start from a previous examination or question-bank content.
+
+Tutors must be able to find examinations they have already created, not merely create new ones.
+
+The list must retrieve actual persisted records. Empty states should explain that no examinations match the current filter rather than displaying fabricated examples.
+
+### Examination editor navigation
+
+For an examination opened in the editor, provide a consistent top-level layout inspired by Google Forms:
+
+**Questions | Responses | Settings**
+
+Include a clear examination title and description, delivery-mode information, save state, Preview and Publish/Update controls.
+
+The Questions tab is the main authoring canvas. Responses is the attempt/response and result-management workspace. Settings contains the exam configuration.
+
+Use a clean, restrained layout with good spacing, readable cards, clear active states, accessible controls and responsive behaviour. On mobile, the editor must remain usable rather than forcing the entire desktop layout into a narrow screen.
+
+Avoid overcrowded dashboards, excessive decorative icons, repeated cards, oversized headings and unnecessary explanatory text.
+
+## 3. TWO DISTINCT EXAMINATION DELIVERY MODES
+
+This distinction is essential. The system must support both externally hosted examinations and examinations built directly on Jaystarbliss.
+
+At the beginning of examination creation, allow the tutor to choose a clear delivery mode.
+
+### Mode A — External Link Examination
+
+Label this mode something such as **External Form / Link-Based Examination**.
+
+This is intended for Google Forms and other supported third-party quiz or examination providers.
+
+The tutor should configure only the fields that are relevant to this mode:
+
+- Examination title.
+- Description or student instructions.
+- External examination URL.
+- Assigned school.
+- Assigned class or authorised individual students, where applicable.
+- Start/end dates and availability.
+- Portal access passcode.
+- Other necessary access/assignment fields supported by the current architecture.
+
+Do not show native question-building controls, internal answer keys, native point allocation or native automatic-grading settings for an external-link examination, because the questions and grading belong to the third-party service.
+
+After the tutor saves and publishes the examination, eligible students should see its details and an **Open Examination** button.
+
+The student should authenticate through the existing Jaystarbliss portal, pass the appropriate access-code/eligibility checks and then be given the authorised external link.
+
+Track appropriate portal-level events, such as who was permitted to open the link and when, where the existing architecture allows it. Do not falsely represent clicking the link as proof that the third-party examination was submitted.
+
+#### External results must be released manually
+
+Since the examination takes place outside Jaystarbliss and the platform may not have access to the third party's responses, the tutor must be able to manage the outcome manually.
+
+Provide an external-results workflow in which the tutor can:
+
+- Find eligible students.
+- Record the marks earned and the actual total possible marks.
+- Record an appropriate percentage or grade using the existing grading model.
+- Add authorised feedback or notes.
+- Save an unpublished result.
+- Release the result separately for each student.
+- Correct an entered result through a controlled, audited process.
+
+External-link examination results must not be fabricated from internal question grading. Do not show a student an automatic score merely because they opened a link.
+
+If bulk entry is practical, allow tutors to enter multiple students' external results efficiently, but preserve individual result-release control and ensure that one student's result cannot be published to another.
+
+The result sheet should still use the existing Jaystarbliss report template and display the actual partner school's name, student identity, marks, percentage and grade as applicable.
+
+**External access-code security:** the Jaystarbliss passcode controls access through our portal. It cannot automatically restrict somebody who obtains a public third-party URL and opens it outside the portal. Where the provider offers its own restrictions, explain and respect them; do not claim that the portal passcode protects the external provider independently.
+
+### Mode B — Native Jaystarbliss Examination
+
+Label this mode **Build Examination on Jaystarbliss**.
+
+This mode provides the full examination authoring, question, grading, response analytics, timing and release controls.
+
+Only show the relevant Google Forms-style question editor and native examination settings for this mode.
+
+The tutor should be able to build questions from scratch, import questions and configure scoring, response settings, publication and grading.
+
+The native examination mode must use the existing secure examination backend and data model wherever suitable. Do not build a separate submission system alongside the current one.
+
+## 4. PRESERVE EXISTING EXTERNAL EXAMINATIONS AND LEGACY DATA
+
+The current platform contains examinations that have zero native questions but have an external Google Forms URL or another third-party link.
+
+Those records are not necessarily broken. Some were intentionally published as link-based examinations.
+
+Inspect existing records and the current schema before modifying them.
+
+Implement an explicit delivery-mode field for new examinations, such as `EXTERNAL_LINK` and `NATIVE`, or equivalent names consistent with existing conventions.
+
+For legacy records, determine their intended mode from the actual stored data. A record with zero native questions and a valid external URL is a candidate for legacy external mode; do not automatically classify every empty examination as external if its purpose cannot be established.
+
+Preserve the original URL, access code, assigned school, class, title, schedule, status and relevant historical metadata.
+
+Do not delete and recreate these examination records to add the new mode field. Avoid losing their IDs or breaking their existing assignments.
+
+Where compatibility must be inferred at read time, centralise that logic and test it. If a migration is required, implement it safely and make it repeatable. Do not claim production migration has run unless you have actually performed it with authorised access.
+
+Existing external-link examinations must display the appropriate **Open Examination** action rather than a broken native question editor. Tutors must still be able to edit the external URL and eligible assignment/configuration fields without converting the record to a native examination.
+
+## 5. BUILD A GOOGLE FORMS-STYLE NATIVE QUESTION EDITOR
+
+The question editor should feel familiar to teachers who already know Google Forms.
+
+### Question cards
+
+Each question should be displayed as a self-contained editable card.
+
+Support the question types already compatible with the existing data model, and add the missing types where they can be integrated safely:
+
+- Short answer.
+- Paragraph/long answer.
+- Multiple choice.
+- Checkboxes with multiple correct answers.
+- Dropdown.
+- True/False, implemented consistently with the existing question types.
+- Linear scale or rating where appropriate.
+- Multiple-choice grid and checkbox grid if the current grading architecture can represent them correctly.
+- Image or other supported media attached to a question or option.
+- Existing additional types already supported by the examination system.
+
+Do not expose a question type unless its storage, student rendering, answer validation, grading and result-reporting behaviour are implemented.
+
+For applicable types, provide controls for:
+
+- Question text.
+- Answer choices.
+- Correct answer or answers.
+- Point value.
+- Required/not-required.
+- Optional answer feedback.
+- Question duplication.
+- Deletion.
+- Reordering through drag-and-drop or accessible move controls.
+- Adding an image or supported media.
+- Optional description or supporting instructions.
+
+Each card should make the point value visible without dominating the layout.
+
+Question-specific controls should appear only when relevant to the selected question type.
+
+### Questions toolbar
+
+Provide familiar quick actions for:
+
+- Add question.
+- Import questions.
+- Add title and description.
+- Add image.
+- Add video or supported media, where practical.
+- Add a section/page break, if supported by the existing attempt flow.
+- Duplicate a question.
+- Move a question.
+- Delete a question.
+
+Use clear actions and keyboard-accessible controls. Confirm destructive actions when appropriate.
+
+### Question editor behaviour
+
+Changes must update the editor's working state immediately and be persisted through the existing backend workflow.
+
+Show an honest save indicator such as Saving, Saved or Save failed. A local state change must not be labelled Saved until the persistence operation succeeds.
+
+Guard against simultaneous writes, stale responses and repeated button clicks that could overwrite newer data.
+
+Allow the tutor to save a draft before all questions are complete. Prevent publishing when essential validation fails, and identify the exact invalid question or field.
+
+A valid published examination must have a coherent total-mark calculation, valid questions and supported settings.
+
+## 6. ADD AN IMPORT QUESTIONS WORKFLOW
+
+Add a prominent **Import Questions** button to the main Questions editor toolbar.
+
+Clicking it should open a focused modal, drawer or step-based import interface. The tutor should not be forced to leave the examination they are currently editing.
+
+The importer must support three sources:
+
+### A. Paste questions as formatted text
+
+Provide a text area with an example format, concise formatting instructions and a sample the tutor can copy.
+
+Support a clear, documented format such as:
+
+```text
+1. What is the primary purpose of a keyboard?
+A. To print documents
+B. To type text and commands
+C. To display pictures
+D. To connect to the internet
+Answer: B
+Marks: 2
+Required: Yes
+Explanation: A keyboard is used to enter text and commands.
+
+2. Which of these is an input device?
+Type: Multiple Choice
+A. Monitor
+B. Speaker
+C. Mouse
+D. Projector
+Answer: C
+Marks: 3
+```
+
+Support additional question types where practical, including multiple-answer checkbox questions and descriptive/manual-marking questions. Document the required format for each type instead of guessing silently.
+
+The parser must recognise question numbers, question text, options, answer keys, point values and optional explanations. It should handle reasonable spacing, punctuation and line breaks.
+
+If the content is incomplete or ambiguous, flag the question for review. Never silently invent correct answers, options or marks.
+
+### B. Import from Excel/CSV
+
+Allow tutors to upload a supported `.xlsx`, `.xls` or `.csv` file, depending on the libraries and security controls already present in the project.
+
+Provide a downloadable import template with clearly defined columns, such as:
+
+- Question number.
+- Question type.
+- Question text.
+- Option A.
+- Option B.
+- Option C.
+- Option D.
+- Correct answer.
+- Marks.
+- Required.
+- Feedback/explanation.
+
+Add additional columns only where the relevant question types require them.
+
+Validate file format, size, rows, required fields, option counts, answer references and point values. Do not evaluate uploaded spreadsheets as executable scripts or formulas.
+
+### C. Import from an existing Jaystarbliss examination or question bank
+
+Let tutors choose eligible questions from previous examinations and the existing question bank.
+
+Provide search and filtering by question text, source examination, subject/programme and other metadata already available.
+
+Only allow a tutor to import questions from records they are authorised to access. Apply ownership, school-assignment and platform-admin permission checks.
+
+If questions are copied from an existing examination, copy the necessary question definition into the destination examination without altering the source.
+
+### Import preview and confirmation
+
+The workflow must be:
+
+1. Select source.
+2. Paste, upload or select questions.
+3. Parse/validate the source.
+4. Preview the resulting questions.
+5. Highlight errors and warnings.
+6. Let the tutor fix or exclude invalid questions.
+7. Confirm import.
+8. Append the accepted questions to the examination currently being edited.
+9. Recalculate total marks.
+10. Save the changes to the existing examination.
+
+Importing questions must not create a new examination or accidentally replace the entire examination.
+
+The tutor must be able to cancel the import without affecting the current draft.
+
+Ensure question IDs are unique within the destination examination.
+
+## 7. SETTINGS TAB — MODEL THE FUNCTIONAL CATEGORIES OF GOOGLE FORMS
+
+Implement a clear Settings tab with grouped, collapsible or otherwise well-organised sections.
+
+The settings UI must adapt to the selected delivery mode. Native-only options must not appear in external-link mode.
+
+### A. Quiz and grading settings
+
+For native examinations, provide settings equivalent to the relevant Google Forms quiz controls.
+
+**Make this a quiz / Enable grading**
+
+Enable or disable native grading where the current architecture supports non-graded assessments. If the system's existing examination module is always graded, integrate the relevant options without introducing a conflicting survey mode.
+
+**Release grades**
+
+Provide:
+
+- Immediately after each submission.
+- Later, after manual review.
+
+When immediate release is selected, eligible objective questions may be automatically graded, and the result may be released according to the configured policy. Questions requiring manual review must not be marked as fully graded until that review is complete.
+
+When manual review is selected, store grades securely but do not expose the final score, feedback or answer key until an authorised release occurs.
+
+**Respondent result settings**
+
+Provide independent options for:
+
+- Show missed questions.
+- Show correct answers after release.
+- Show total point value and points earned per question after release.
+
+Ensure these settings are actually enforced by the backend response projection and student UI. They must not merely change a frontend checkbox.
+
+### B. Point-value defaults
+
+Provide:
+
+- Default point value for newly added questions.
+- Automatic recalculation of examination total marks.
+- Per-question overrides.
+- A clear display of total possible marks.
+
+Changing the default should affect newly created questions, not unexpectedly overwrite previously configured point values.
+
+Never assume the total possible mark is 100.
+
+### C. Responses settings
+
+Provide the response-collection and access controls relevant to this portal, including:
+
+- Record the authenticated student identity automatically.
+- Limit attempts where the existing assessment model supports it.
+- Set opening and closing dates/times.
+- Control whether the examination is accepting new attempts.
+- Handle eligibility for assigned schools, classes and individuals.
+- Preserve passcode validation and any existing rate-limiting rules.
+- Show useful submission/confirmation information.
+
+Google Forms has options for collecting responder email addresses and restricting responses. In Jaystarbliss, use the authenticated student account as the authoritative identity for native examinations. Do not require students to enter an arbitrary email address as a substitute for portal authentication.
+
+If an optional respondent email setting is appropriate for a supported workflow, make its purpose and privacy implications clear.
+
+Do not add a second response store or bypass the current authentication model.
+
+### D. Presentation settings
+
+Provide relevant presentation options, such as:
+
+- Progress indicator.
+- Clear success/confirmation message after submission.
+- Appropriate introduction or instructions.
+- Question and answer-option shuffling, where supported by the current attempt model.
+- Navigation and submission behaviour consistent with the existing timer and examination lifecycle.
+
+Do not add options that the student interface cannot enforce.
+
+If questions or choices are shuffled, ensure answer IDs and grading remain correct. The correct option must not become incorrect because the displayed choices were reordered.
+
+### E. Form defaults and question defaults
+
+Allow the tutor to use current form settings as sensible defaults for new examinations and configure default values for newly added questions.
+
+Clearly distinguish:
+
+- Settings applied only to the current examination.
+- Defaults applied to future examinations or new questions.
+
+Changing global defaults must not silently rewrite previously published examinations or affect historical attempts.
+
+### F. Scheduling and availability
+
+Include the relevant existing scheduling controls:
+
+- Start date/time.
+- End date/time.
+- Publication status.
+- Availability and closed/expired states.
+- School, class and individual assignments.
+- Existing attempt limits.
+- Passcode configuration.
+
+Use the platform's authoritative time handling and existing lifecycle logic.
+
+Prevent publishing an examination that has invalid scheduling or contradictory availability settings.
+
+## 8. RESPONSES TAB — A PROPER TUTOR RESULTS WORKSPACE
+
+For native examinations, the Responses tab should provide a clear, useful response-management experience inspired by Google Forms.
+
+Where suitable, provide three views:
+
+**Summary | Question | Individual**
+
+### Summary
+
+Show real response data, including:
+
+- Number of student attempts/responses.
+- Completed, in-progress, expired and pending-manual-review counts where applicable.
+- Average score and median score.
+- Score range.
+- Score distribution.
+- Questions students found difficult.
+- Frequently missed questions where the data supports that calculation.
+
+Use actual persisted results only. Do not fabricate charts, response counts or average scores.
+
+Be explicit about whether statistics include submitted attempts, released results or all eligible records.
+
+### Question view
+
+Allow tutors to review a question across the relevant student attempts.
+
+Show answer distribution, correct/incorrect outcomes where permitted, marks awarded and questions requiring manual marking.
+
+Provide a clear marking interface for supported manual-grade question types.
+
+Where partial marks are supported, allow the tutor to award them within the question's configured maximum.
+
+Changes to marks must update the authoritative attempt/result record through a secured backend operation and preserve appropriate audit history.
+
+### Individual view
+
+Allow tutors to select a student and inspect the authorised attempt details:
+
+- Student identity.
+- School and class.
+- Answers submitted.
+- Marks earned and possible marks.
+- Question-level marks.
+- Feedback.
+- Submission and grading state.
+- Whether the result has been released.
+
+Add a clear **Release Result** action and, where suitable, a controlled correction/re-release process.
+
+The tutor must be able to release results individually. Do not release every student's result merely because the tutor opens the Results page.
+
+### Live updates
+
+For native examinations, implement sensible live or near-real-time response updates through the application's existing Firestore listener or refresh mechanism.
+
+Show updated attempt counts and response data when new attempts are submitted or existing attempts are finalised.
+
+Avoid redundant listeners, duplicate data and uncontrolled database reads.
+
+**Do not claim that external Google Forms responses are synchronised live** unless a real, authorised integration with the external provider has been implemented and tested. The external-link mode should report portal activity accurately and keep third-party response management separate.
+
+## 9. FIX EDITING, PUBLISHING AND DUPLICATION
+
+Tutors must be able to return to an existing examination, make edits, save it and republish it where allowed.
+
+Saving an existing examination must update the same record rather than create a duplicate.
+
+Preserve the examination ID and assignment relationships through editing.
+
+Published examinations with existing attempts must be versioned or snapshotted appropriately. Editing future exam settings must not silently change the meaning or grading of historical attempts.
+
+Respect completed/closed states and existing lifecycle safeguards.
+
+If a tutor wants to reuse an examination as the foundation for another examination, provide an explicit **Duplicate Examination** action with a clear new ID and deliberate treatment of settings. Do not interpret an ordinary Save or Publish action as duplication.
+
+Tutor ownership and school-assignment permissions must be checked server-side for read, create, update, publish, republish, delete and import operations.
+
+## 10. KEEP SCHOOL AND TUTOR PERMISSIONS STRICT
+
+Tutors must see only the schools and examinations they are authorised to manage. Their school selectors, question-bank importers, reports and access-code views must all respect the same permissions.
+
+School administrators must be able to view their own school's assigned upcoming examinations, history and permitted access codes, but must not be able to create examinations, edit questions, publish exams or alter grading configurations.
+
+School administrators must not see other schools in school lists or obtain other schools' records by manipulating a URL, query parameter or request body.
+
+Enforce these boundaries in server-side functions and Firestore rules, not only by hiding UI controls.
+
+Platform administrators must retain legitimate cross-school capabilities.
+
+Do not expose answer keys, protected question-bank details, unreleased marks or private tutor feedback through school access-code or reporting endpoints.
+
+## 11. STUDENT EXAMINATION EXPERIENCE
+
+Students must be able to distinguish examinations built on Jaystarbliss from external-link examinations.
+
+For a native examination, display the appropriate title, schedule, instructions and available start action. Enforce passcodes, eligibility, opening/closing times and attempt limits. After submission, show the result only according to the examination's release settings.
+
+For an external-link examination, display the exam information and a clear **Open Examination** action. Validate the student's portal access and assignment before granting access to the external URL.
+
+When an examination is assigned to a student's class, ensure it appears in the student's appropriate upcoming-exams view and relevant dashboard notification. Notifications must not duplicate each time the student refreshes the page.
+
+Preserve the current result and examination-history experience.
+
+## 12. RESULT INTEGRITY AND REPORT CONSISTENCY
+
+Use a consistent authoritative scoring model.
+
+For example:
+
+- One mark out of three must display as 1/3 and approximately 33.33%.
+- Four marks out of ten must display as 4/10 and 40%.
+- An examination explicitly worth 100 marks may display out of 100.
+
+Never default an unknown denominator to 100 without evidence.
+
+For legacy attempts with missing total marks, derive the denominator from the applicable persisted question definition or attempt snapshot where possible. If it cannot be reconstructed safely, handle it explicitly.
+
+Ensure that the same marks, percentage and grade are displayed in student, tutor, parent and school views where each role is authorised to see the result.
+
+Use the same released-result report renderer for student-facing results and individual staff PDF downloads. Keep the correct partner school's name in reports; do not use Jaystarbliss as a generic substitute for the actual assigned partner school.
+
+Preserve historical attempt snapshots when examination questions or marks are edited.
+
+If the current system supports bulk PDF exports, ensure they reuse the same template and authorised result data. If the school administrator has a bulk-report workflow that needs completion, add or repair a dedicated action to download individual reports as PDFs in a ZIP while preserving existing Excel exports.
+
+## 13. STANDARDISE THE CLASS SYSTEM
+
+Standardise relevant class selectors and stored values across portals to:
+
+- Early Years.
+- Grade 1 through Grade 12.
+
+Use one shared class-definition source. Replace duplicated selector lists, inconsistent Year/Primary/Basic/JSS/SS options and divergent labels throughout onboarding, scheduling, examination assignment, student management, attendance, learning tracks and reports.
+
+Create an explicit compatibility mapping for legacy names only when their meaning is unambiguous. Ensure old student and exam records remain compatible with eligibility checks.
+
+Do not merge students or class rosters across different schools merely because they share the same grade name.
+
+Make migrations safe, repeatable and recoverable. Do not claim production records have been migrated unless the migration actually ran with authorised access.
+
+## 14. USER INTERFACE AND DESIGN QUALITY
+
+The tutor examination builder should look and behave like a coherent, modern quiz-creation product.
+
+Priorities:
+
+- Familiar Questions, Responses and Settings navigation.
+- A clear, spacious question editor.
+- Minimal, consistent toolbars.
+- Easy question duplication and reordering.
+- Inline editing where practical.
+- A focused import modal.
+- Useful empty, loading, saving, error and success states.
+- Clear publish/update confirmation.
+- No accidental data loss when navigating between tabs.
+- Responsive desktop and mobile layouts.
+- Accessible keyboard controls, labels, focus handling and modal behaviour.
+- Avoid excessive icons, unnecessarily large cards and overly dense controls.
+
+Keep the established Jaystarbliss brand identity and visual conventions. Do not rebrand the entire portal as Google Forms.
+
+## 15. DATA, SECURITY AND BACKWARD COMPATIBILITY
+
+Preserve the current Firebase project and named Firestore database.
+
+Keep authentication, credential verification, protected data operations and grading authority on the trusted server. Do not solve UI problems by opening unrestricted Firestore reads or loosening security rules.
+
+Do not delete valid examination records, student accounts, historical attempts, released results, access-code relationships or the external URLs already in use.
+
+Preserve the existing assessment workflow, parent results, school reporting, grading audit records, timed-attempt rules, result-release controls and notifications.
+
+Avoid new collections or schema migrations when the existing model can reasonably support the feature. If schema changes are necessary, document them and implement compatibility for existing records.
+
+Keep secrets and private credentials out of the client bundle, Git history and logs.
+
+## 16. TESTS AND ACCEPTANCE CRITERIA
+
+Add or extend regression tests for the following.
+
+### External-link mode
+
+- Create and publish an external-link exam.
+- Verify native question-editor controls are not required.
+- Verify a student must pass portal authentication and assignment/access-code checks.
+- Verify the correct external URL opens.
+- Verify external results are not automatically fabricated.
+- Verify a tutor can record and release a result for one student at a time.
+- Verify legacy zero-question examinations with valid external links continue working.
+- Verify existing external URLs and assignments are preserved.
+
+### Native mode
+
+- Create, edit, preview, save, publish and republish an examination.
+- Confirm repeated saves and publishes do not create duplicate exams.
+- Import questions from formatted text, a supported spreadsheet and the authorised question bank.
+- Confirm invalid imports are previewed and rejected safely without losing the existing draft.
+- Verify question IDs, options, answer keys, points and totals.
+- Verify timed attempts, answer saving, submission and timeout handling.
+- Verify immediate and manual result-release policies.
+- Verify answer-key privacy before release.
+- Verify live response updates without duplicate records.
+
+### Roles and school boundaries
+
+- Verify tutor school scope.
+- Verify school administrators are read-only for examination creation and authoring.
+- Verify school administrators cannot access another school's records or codes.
+- Verify platform-administrator permissions remain intact.
+- Verify backend endpoints reject unauthorised updates even if called directly.
+
+### Scores and reports
+
+- Verify denominators for examinations with totals such as 3, 10, 20 and 100.
+- Verify percentage calculations and question-level marks.
+- Verify manual grading and historical attempt snapshots.
+- Verify the correct partner school is displayed.
+- Verify the individual PDF and released student report agree.
+- Verify bulk PDF ZIP exports contain valid PDFs and authorised results.
+
+### Regression checks
+
+Run the repository's existing examination and assessment tests, Firestore Rules Tests, lint, TypeScript checks, Netlify function typechecking and production build where available.
+
+Fix failures caused by your changes. Do not disable existing tests to make the build green.
+
+Do not stop after local compilation. Inspect the implementation for incomplete routes, missing permissions, stale fields and inconsistent data flows.
+
+## 17. IMPLEMENTATION ORDER
+
+Work through these phases in one continuous implementation effort:
+
+1. Inspect current repository, schemas and examination lifecycle.
+2. Map legacy external-link exams and preserve existing records.
+3. Implement the Google Forms-style editor structure and delivery-mode selection.
+4. Implement safe create/edit/publish/update behaviour.
+5. Add the question editor and question-import workflow.
+6. Implement Settings and Responses tabs for native examinations.
+7. Add external-result entry and individual release.
+8. Enforce tutor/school permissions and authorised access-code visibility.
+9. Standardise grading, school identity and reports.
+10. Complete any missing bulk PDF ZIP workflow.
+11. Standardise classes and preserve legacy compatibility.
+12. Connect upcoming student examinations and notifications.
+13. Run tests, fix regressions and verify build results.
+
+If the project contains existing work in progress, preserve it and build upon it rather than overwriting it.
+
+Do not deploy to production, execute destructive migrations or force-push without the appropriate authorisation. If the workspace is an exported project rather than a Git-connected repository, state that honestly and do not pretend changes have been pushed.
+
+## 18. FINAL REPORT
+
+At the end, provide a factual implementation report listing:
+
+- Root causes identified.
+- Files and functions changed.
+- Native/external mode behaviour.
+- Question editor and import features implemented.
+- Settings and response-management features implemented.
+- Grading and report changes.
+- Permission and class-standardisation changes.
+- Tests actually executed and their results.
+- Build status.
+- Any features requiring external API access, production migration or real-account verification.
+
+Clearly distinguish implementation from automated verification and production end-to-end verification.
+
+**Do the work, check the result and fix the regressions you find. Do not claim that every feature is complete unless the code and test evidence support that claim. Begin with the repository inspection and proceed to implementation.**

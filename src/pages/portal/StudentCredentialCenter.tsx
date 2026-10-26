@@ -428,10 +428,10 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
           <button 
             type="button" 
             onClick={() => void load()} 
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 px-4 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+            className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            Refresh
+            Refresh Records
           </button>
         </div>
       </div>
@@ -588,9 +588,9 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
             <button 
               type="button" 
               onClick={() => void load()} 
-              className="min-h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold inline-flex items-center gap-2"
+              className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
             >
-              <RefreshCw size={14} /> Refresh Roster
+              <RefreshCw size={14} /> Refresh Records
             </button>
           </div>
         </div>
@@ -679,7 +679,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                     type="button" 
                     disabled={busyId === student.id} 
                     onClick={() => void issue(student)} 
-                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand-red hover:bg-red-700 px-4 text-xs font-black text-white transition disabled:opacity-50"
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white transition shadow-xs disabled:opacity-50 cursor-pointer"
                   >
                     {busyId === student.id ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
                     {credential ? 'Rotate Code' : 'Issue Credentials'}

@@ -13,6 +13,8 @@ import {
   computeExamMaxScore,
   calculateScorePercentage,
   resolvePartnerSchoolName,
+  normalizeDeliveryMode,
+  validateExamCreationPayload,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -562,6 +564,18 @@ export const handler: Handler = async event => {
         return json(403, { error: "The passcode could not be validated for this examination." });
       }
 
+      const resolvedDeliveryMode = normalizeDeliveryMode(exam.deliveryMode, exam);
+      const externalUrl = String(exam.externalUrl || exam.url || exam.link || "").trim();
+
+      // For external link examinations, verify passcode and return the external URL directly without creating native attempt locks
+      if (resolvedDeliveryMode === "EXTERNAL_LINK" && externalUrl) {
+        return json(200, {
+          unlocked: true,
+          deliveryMode: "EXTERNAL_LINK",
+          externalUrl,
+        });
+      }
+
       const legacyAttemptId = createHash("sha256")
         .update(examId + ":" + student.id)
         .digest("hex");
@@ -573,7 +587,7 @@ export const handler: Handler = async event => {
           legacy.studentUid === c.uid &&
           new Date(legacy.deadlineAt).getTime() > now
         ) {
-          return json(200, { attemptId: legacyAttemptId, resumed: true });
+          return json(200, { attemptId: legacyAttemptId, resumed: true, deliveryMode: "NATIVE" });
         }
       }
       const legacyAttemptsUsed = legacyAttempt.exists ? 1 : 0;
@@ -692,7 +706,7 @@ export const handler: Handler = async event => {
           { merge: true }
         );
       });
-      return json(200, { attemptId: finalAttemptId, resumed });
+      return json(200, { attemptId: finalAttemptId, resumed, deliveryMode: "NATIVE" });
     }
 
     if (method === "GET" && path.endsWith("/tutor-examinations")) {
@@ -861,8 +875,6 @@ export const handler: Handler = async event => {
         schoolId = "";
       }
 
-      const title = String(body.title || "").trim();
-      const subject = String(body.subject || "").trim();
       const seriesName = String(body.seriesName || "").trim().slice(0, 160);
       const courseName = String(body.courseName || "").trim().slice(0, 160);
       const learningVideoUrl = String(body.learningVideoUrl || "").trim().slice(0, 2000);
@@ -875,24 +887,23 @@ export const handler: Handler = async event => {
         }
       }
 
-      const questions = Array.isArray(body.questions) ? body.questions : [];
-      const durationMinutes = Number(body.durationMinutes || 30);
-      if (
-        !title ||
-        !subject ||
-        !questions.length ||
-        questions.length > 200 ||
-        !Number.isInteger(durationMinutes) ||
-        durationMinutes < 1 ||
-        durationMinutes > 300
-      ) {
-        return json(400, {
-          error: "Provide a title, subject, 1–200 questions and a whole-number duration from 1 to 300 minutes.",
-        });
+      const validatedExam = validateExamCreationPayload(body, existingDoc);
+      if ("error" in validatedExam && validatedExam.error) {
+        return json(400, { error: validatedExam.error });
       }
 
-      const normalized = normalizeQuestions(questions, body.gradingMode === "manual" ? "manual" : "automatic");
-      if (normalized.error) return json(400, { error: normalized.error });
+      const {
+        deliveryMode,
+        title,
+        subject,
+        description,
+        externalUrl,
+        questions: normalizedQuestions,
+        questionCount,
+        maxScore: computedMaxScore,
+        durationMinutes,
+        gradingMode,
+      } = validatedExam as Exclude<typeof validatedExam, { error: string }>;
 
       const requestedMaxAttempts = Number(body.maxAttempts ?? existingDoc?.maxAttempts ?? 1);
       if (!Number.isInteger(requestedMaxAttempts) || requestedMaxAttempts < 1 || requestedMaxAttempts > 10) {
@@ -945,7 +956,7 @@ export const handler: Handler = async event => {
           ? await resolveSchoolNameById(schoolId, body.schoolName || existingDoc?.schoolName || "")
           : "Individual Learners";
 
-      const maxScore = normalized.maxScore ?? computeExamMaxScore({ questions: normalized.questions });
+      const maxScore = deliveryMode === "EXTERNAL_LINK" ? 0 : computedMaxScore;
       const targetDocId =
         requestedExamId && /^[a-zA-Z0-9_-]{4,120}$/.test(requestedExamId)
           ? requestedExamId
@@ -988,18 +999,22 @@ export const handler: Handler = async event => {
         targetClass: normalizedClassIds[0] || (audienceType === "school" ? "All Classes" : "Individual"),
         title,
         subject,
+        description,
+        instructions: description,
+        deliveryMode,
+        externalUrl: deliveryMode === "EXTERNAL_LINK" ? externalUrl : "",
+        url: deliveryMode === "EXTERNAL_LINK" ? externalUrl : "",
         seriesName,
         courseName,
         learningVideoUrl: learningVideoUrl || null,
-        instructions: String(body.instructions || "").slice(0, 5000),
-        questions: normalized.questions,
-        questionCount: normalized.questions.length,
+        questions: deliveryMode === "EXTERNAL_LINK" ? [] : normalizedQuestions,
+        questionCount: deliveryMode === "EXTERNAL_LINK" ? 0 : questionCount,
         maxScore,
         durationMinutes,
         maxAttempts: requestedMaxAttempts,
         shuffleQuestions: body.shuffleQuestions === true,
         shuffleOptions: body.shuffleOptions === true,
-        gradingMode: body.gradingMode === "manual" ? "manual" : "automatic",
+        gradingMode,
         availableFrom: body.availableFrom ? String(body.availableFrom) : null,
         availableUntil: body.availableUntil ? String(body.availableUntil) : null,
         status,
@@ -1040,16 +1055,19 @@ export const handler: Handler = async event => {
           title,
           subject,
           status,
+          deliveryMode,
+          externalUrl: deliveryMode === "EXTERNAL_LINK" ? externalUrl : "",
           schoolId,
           schoolName: resolvedSchoolName,
           classIds: normalizedClassIds,
           durationMinutes,
-          questionCount: normalized.questions.length,
+          questionCount: deliveryMode === "EXTERNAL_LINK" ? 0 : questionCount,
           maxScore,
         },
         passcode,
       });
     }
+
 
     return json(404, { error: "Examination endpoint not found." });
   } catch (error) {

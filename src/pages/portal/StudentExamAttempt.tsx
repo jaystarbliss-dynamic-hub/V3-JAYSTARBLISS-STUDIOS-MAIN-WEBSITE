@@ -9,12 +9,22 @@ import {
   calculateScorePercentage,
   normalizeClassName,
   resolvePartnerSchoolName,
+  normalizeDeliveryMode,
 } from "../../lib/classes";
 import {
   buildExamReportViewModel,
   generateExamReportPdf,
 } from "../../lib/examReportPdfGenerator";
-import { Clock, CheckCircle2, ArrowLeft, Download, Award, School, User } from "lucide-react";
+import {
+  Clock,
+  CheckCircle2,
+  ArrowLeft,
+  Download,
+  Award,
+  School,
+  User,
+  ExternalLink,
+} from "lucide-react";
 
 type Q = {
   id: string;
@@ -65,6 +75,8 @@ type D = {
     id?: string;
     title: string;
     subject: string;
+    deliveryMode?: "EXTERNAL_LINK" | "NATIVE";
+    externalUrl?: string;
     schoolId?: string;
     schoolName?: string;
     maxScore?: number;
@@ -85,6 +97,7 @@ export default function StudentExamAttempt() {
   const [notice, setNotice] = useState("");
   const [seconds, setSeconds] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [confirmingSubmit, setConfirmingSubmit] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "pending" | "saving" | "error">("saved");
   const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -184,10 +197,12 @@ export default function StudentExamAttempt() {
             id: attemptData.examId,
             title: examData.title || "Examination",
             subject: examData.subject || "General",
+            deliveryMode: normalizeDeliveryMode(examData),
+            externalUrl: String(examData.externalUrl || "").trim(),
             schoolId: effectiveSchoolId,
             schoolName: resolvedSchoolName,
             maxScore,
-            instructions: examData.instructions || "",
+            instructions: examData.instructions || examData.description || "",
             durationMinutes: examData.durationMinutes || 30,
             gradingMode: examData.gradingMode || "automatic",
             questions: isReleased ? rawQuestions : safeQuestions,
@@ -212,6 +227,7 @@ export default function StudentExamAttempt() {
         }
         loadedData.attempt.schoolName = resolvedSchoolName;
         loadedData.exam.schoolName = resolvedSchoolName;
+        loadedData.exam.deliveryMode = normalizeDeliveryMode(loadedData.exam);
       }
 
       setData(loadedData);
@@ -275,6 +291,8 @@ export default function StudentExamAttempt() {
             await updateDoc(attemptRef, {
               answers: answersToSave,
               updatedAt: serverTimestamp(),
+              lastHeartbeat: serverTimestamp(),
+              isOnline: true,
             });
           }
         });
@@ -298,10 +316,43 @@ export default function StudentExamAttempt() {
     };
   }, [answers, data?.attempt.status, busy]);
 
+  // Live Proctor Heartbeat: writes isOnline: true and lastHeartbeat every 20 seconds while taking exam
+  useEffect(() => {
+    if (!data || data.attempt.status !== "in_progress" || busy || !attemptId) return;
+
+    const ping = () => {
+      const attemptRef = doc(db, "jdiExamAttempts", attemptId);
+      updateDoc(attemptRef, {
+        isOnline: true,
+        lastHeartbeat: serverTimestamp(),
+      }).catch(() => undefined);
+    };
+
+    ping();
+    const interval = window.setInterval(ping, 20000);
+
+    const handleBeforeUnload = () => {
+      const attemptRef = doc(db, "jdiExamAttempts", attemptId);
+      updateDoc(attemptRef, {
+        isOnline: false,
+        lastHeartbeat: serverTimestamp(),
+      }).catch(() => undefined);
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      handleBeforeUnload();
+    };
+  }, [attemptId, data?.attempt.status, busy]);
+
   // Submit / Expire Examination
   const send = async (action: "save" | "submit" | "expire") => {
     if (busy || !data) return;
     setBusy(true);
+    setConfirmingSubmit(false);
     setError("");
     try {
       let serverOk = false;
@@ -345,6 +396,7 @@ export default function StudentExamAttempt() {
             percentage: grading.percentage,
             autoGraded: grading.autoGraded,
             questionResults: grading.questionResults,
+            isOnline: false,
             submittedAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -445,8 +497,45 @@ export default function StudentExamAttempt() {
 
   if (!data) {
     return (
-      <main className="mx-auto max-w-4xl p-8 text-center">
+      <main className="mx-auto max-w-4xl p-6 sm:p-8 text-center">
         <p className="text-slate-600 font-semibold">{error || "Loading examination session…"}</p>
+      </main>
+    );
+  }
+
+  // Handle External Link Exam if opened via attempt route
+  if (data.exam.deliveryMode === "EXTERNAL_LINK" && data.exam.externalUrl) {
+    return (
+      <main className="mx-auto max-w-3xl space-y-6 p-4 sm:p-8">
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm text-center space-y-4">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <ExternalLink size={28} />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">{data.exam.title}</h1>
+          <p className="text-sm text-slate-600 max-w-lg mx-auto">
+            {data.exam.instructions ||
+              "This examination is hosted externally. Click the button below to launch your examination."}
+          </p>
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <a
+              href={data.exam.externalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 shadow-sm"
+            >
+              Open Examination
+              <ExternalLink size={16} />
+            </a>
+            <button
+              type="button"
+              onClick={() => nav("/portal/student/exams")}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <ArrowLeft size={16} />
+              Return to Tests
+            </button>
+          </div>
+        </section>
       </main>
     );
   }
@@ -473,26 +562,26 @@ export default function StudentExamAttempt() {
     : null;
 
   return (
-    <main className="mx-auto max-w-4xl space-y-6 p-4 md:p-8">
+    <main className="mx-auto max-w-4xl space-y-5 p-3 sm:p-5 md:p-8 overflow-x-hidden">
       {/* HEADER */}
-      <header className="rounded-2xl bg-slate-900 p-6 text-white shadow-sm md:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold tracking-wide text-blue-200">
+      <header className="rounded-2xl bg-slate-900 p-4 sm:p-6 md:p-8 text-white shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs sm:text-sm font-semibold tracking-wide text-blue-200">
               JAYSTARBLISS DYNAMIC INSTITUTE · JDI
             </p>
-            <h1 className="mt-2 text-2xl font-bold">{data.exam.title}</h1>
-            <p className="text-sm text-slate-300">{data.exam.subject}</p>
+            <h1 className="mt-1.5 text-xl sm:text-2xl font-bold break-words">{data.exam.title}</h1>
+            <p className="text-xs sm:text-sm text-slate-300">{data.exam.subject}</p>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-center">
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 sm:px-5 sm:py-3 text-center self-start sm:self-auto shrink-0">
             {closed ? (
-              <span className="font-bold text-emerald-400 uppercase tracking-wider">
+              <span className="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider">
                 {isReleased ? "Released" : data.attempt.status}
               </span>
             ) : (
               <div className="flex items-center gap-2">
-                <Clock className="text-amber-400" size={18} />
-                <span className="font-mono text-2xl font-black text-amber-300">
+                <Clock className="text-amber-400 shrink-0" size={18} />
+                <span className="font-mono text-xl sm:text-2xl font-black text-amber-300">
                   {Math.floor(seconds / 60).toString().padStart(2, "0")}:
                   {String(seconds % 60).padStart(2, "0")}
                 </span>
@@ -505,7 +594,7 @@ export default function StudentExamAttempt() {
       {error && (
         <p
           role="alert"
-          className="rounded-xl bg-red-50 p-4 text-sm font-semibold text-red-800 border border-red-200"
+          className="rounded-xl bg-red-50 p-4 text-xs sm:text-sm font-semibold text-red-800 border border-red-200"
         >
           {error}
         </p>
@@ -513,7 +602,7 @@ export default function StudentExamAttempt() {
       {notice && (
         <p
           role="status"
-          className="rounded-xl bg-blue-50 p-4 text-sm font-semibold text-blue-900 border border-blue-200"
+          className="rounded-xl bg-blue-50 p-4 text-xs sm:text-sm font-semibold text-blue-900 border border-blue-200"
         >
           {notice}
         </p>
@@ -521,32 +610,34 @@ export default function StudentExamAttempt() {
 
       {/* CLOSED / SUBMITTED RESULT VIEW */}
       {closed ? (
-        <section className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+        <section className="space-y-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 md:p-8 shadow-sm">
           {reportVm ? (
             <>
               {/* UNIFIED OFFICIAL REPORT HEADER */}
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
-                <div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-5">
+                <div className="min-w-0">
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
                     <CheckCircle2 size={14} /> Official Released Performance Report
                   </span>
-                  <h2 className="mt-2 text-2xl font-bold text-slate-900">{reportVm.examTitle}</h2>
-                  <p className="text-sm text-slate-600">
+                  <h2 className="mt-2 text-xl sm:text-2xl font-bold text-slate-900 break-words">
+                    {reportVm.examTitle}
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-600">
                     {reportVm.examSubject} · Released {reportVm.releasedAtText}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col sm:flex-row flex-wrap gap-2">
                   <button
                     onClick={handleDownloadReport}
                     disabled={downloadingPdf}
-                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50"
                   >
                     <Download size={16} />
                     {downloadingPdf ? "Generating PDF…" : "Download Official Result PDF"}
                   </button>
                   <button
                     onClick={() => nav("/portal/student/exams")}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50"
                   >
                     <ArrowLeft size={16} />
                     Return to Tests
@@ -558,27 +649,31 @@ export default function StudentExamAttempt() {
               <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-3">
                 <div className="flex items-start gap-3">
                   <User className="mt-0.5 text-blue-600 shrink-0" size={18} />
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                       Candidate
                     </p>
-                    <p className="text-sm font-bold text-slate-900">{reportVm.studentName}</p>
+                    <p className="text-sm font-bold text-slate-900 break-words">
+                      {reportVm.studentName}
+                    </p>
                     <p className="text-xs text-slate-600">Class: {reportVm.studentClass}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <School className="mt-0.5 text-blue-600 shrink-0" size={18} />
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                       Partner School
                     </p>
-                    <p className="text-sm font-bold text-slate-900">{reportVm.schoolName}</p>
+                    <p className="text-sm font-bold text-slate-900 break-words">
+                      {reportVm.schoolName}
+                    </p>
                     <p className="text-xs text-slate-600">Submitted: {reportVm.submittedAtText}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <Award className="mt-0.5 text-blue-600 shrink-0" size={18} />
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                       Evaluation Mode
                     </p>
@@ -589,28 +684,28 @@ export default function StudentExamAttempt() {
               </div>
 
               {/* SCORE & GRADE SUMMARY CARDS */}
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 text-center">
-                  <span className="block text-xs font-bold uppercase tracking-wider text-blue-800">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
+                <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-3.5 sm:p-4 text-center">
+                  <span className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-blue-800">
                     Score Obtained
                   </span>
-                  <span className="mt-1 block text-2xl font-black text-slate-900">
+                  <span className="mt-1 block text-xl sm:text-2xl font-black text-slate-900">
                     {reportVm.rawScore} / {reportVm.maxScore}
                   </span>
                 </div>
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 text-center">
-                  <span className="block text-xs font-bold uppercase tracking-wider text-emerald-800">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5 sm:p-4 text-center">
+                  <span className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-emerald-800">
                     Percentage
                   </span>
-                  <span className="mt-1 block text-2xl font-black text-emerald-950">
+                  <span className="mt-1 block text-xl sm:text-2xl font-black text-emerald-950">
                     {reportVm.percentage}%
                   </span>
                 </div>
-                <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 text-center col-span-2">
-                  <span className="block text-xs font-bold uppercase tracking-wider text-indigo-800">
+                <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3.5 sm:p-4 text-center col-span-2">
+                  <span className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-indigo-800">
                     Assessment Grade & Standing
                   </span>
-                  <span className="mt-1 block text-xl font-black text-indigo-950">
+                  <span className="mt-1 block text-lg sm:text-xl font-black text-indigo-950">
                     {reportVm.grade}
                   </span>
                 </div>
@@ -621,21 +716,68 @@ export default function StudentExamAttempt() {
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-700">
                   Examiner Remarks & Academic Feedback
                 </p>
-                <p className="mt-1.5 text-sm text-slate-800">{reportVm.feedbackText}</p>
+                <p className="mt-1.5 text-sm text-slate-800 break-words">{reportVm.feedbackText}</p>
               </div>
 
               {/* QUESTION-BY-QUESTION BREAKDOWN */}
               {reportVm.questionRows.length > 0 && (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-bold text-slate-900">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm sm:text-base font-bold text-slate-900">
                       Question-by-Question Review ({reportVm.questionRows.length})
                     </h3>
                     <span className="text-xs font-semibold text-slate-500">
                       Total Marks: {reportVm.maxScore}
                     </span>
                   </div>
-                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+
+                  {/* MOBILE CARDS FOR QUESTION REVIEW */}
+                  <div className="space-y-3 md:hidden">
+                    {reportVm.questionRows.map((row) => (
+                      <div
+                        key={row.questionId}
+                        className="rounded-xl border border-slate-200 bg-slate-50/50 p-3.5 space-y-2 text-xs"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-bold text-slate-900">
+                            Q{row.index}. {row.prompt}
+                          </span>
+                          <span
+                            className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                              row.status === "PASS"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : row.status === "PART"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-red-100 text-red-800"
+                            }`}
+                          >
+                            {row.pointsAwarded}/{row.maxPoints} ({row.status})
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-1 pt-1 border-t border-slate-200/70">
+                          <p>
+                            <span className="font-semibold text-slate-500">Your Answer: </span>
+                            <span
+                              className={`font-semibold ${
+                                row.isCorrect ? "text-emerald-700" : "text-red-700"
+                              }`}
+                            >
+                              {row.studentAnswerText}
+                            </span>
+                          </p>
+                          <p>
+                            <span className="font-semibold text-slate-500">Official Key: </span>
+                            <span className="font-medium text-slate-800">
+                              {row.officialAnswerText}
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* DESKTOP TABLE FOR QUESTION REVIEW */}
+                  <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200">
                     <table className="w-full text-left text-xs sm:text-sm">
                       <thead className="bg-slate-900 text-white text-xs uppercase">
                         <tr>
@@ -690,10 +832,10 @@ export default function StudentExamAttempt() {
             <div className="text-center py-6 space-y-4">
               <CheckCircle2 size={48} className="mx-auto text-emerald-600" />
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
                   Examination Submitted Successfully
                 </h2>
-                <p className="mt-1 text-sm text-slate-600">
+                <p className="mt-1 text-xs sm:text-sm text-slate-600">
                   Your examination answers have been securely recorded in the central academic
                   ledger.
                 </p>
@@ -705,7 +847,7 @@ export default function StudentExamAttempt() {
               <div className="pt-2">
                 <button
                   onClick={() => nav("/portal/student/exams")}
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   <ArrowLeft size={16} />
                   Return to Tests
@@ -717,17 +859,24 @@ export default function StudentExamAttempt() {
       ) : (
         /* ACTIVE TEST QUESTIONS */
         <>
-          <section className="space-y-5">
+          {data.exam.instructions && (
+            <section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 text-xs sm:text-sm text-slate-800">
+              <p className="font-bold text-blue-950 mb-1">Examination Instructions</p>
+              <p className="leading-relaxed break-words">{data.exam.instructions}</p>
+            </section>
+          )}
+
+          <section className="space-y-4 sm:space-y-5">
             {data.questions.map((q, i) => (
               <article
                 key={q.id}
-                className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+                className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm"
               >
-                <div className="flex justify-between items-start gap-4">
-                  <h2 className="font-bold text-slate-900 text-base">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 sm:gap-4">
+                  <h2 className="font-bold text-slate-900 text-sm sm:text-base break-words">
                     {i + 1}. {q.prompt}
                   </h2>
-                  <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 shrink-0">
+                  <span className="self-start rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 shrink-0">
                     {q.points} mark(s)
                   </span>
                 </div>
@@ -738,7 +887,7 @@ export default function StudentExamAttempt() {
                     {(q.options || []).map((o) => (
                       <label
                         key={o.id}
-                        className={`flex items-center gap-3 rounded-xl border p-3.5 cursor-pointer text-sm font-medium transition-all ${
+                        className={`flex items-start sm:items-center gap-3 rounded-xl border p-3.5 cursor-pointer text-xs sm:text-sm font-medium transition-all ${
                           answers[q.id] === o.id
                             ? "border-blue-600 bg-blue-50/60 text-blue-900 font-semibold"
                             : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -747,16 +896,29 @@ export default function StudentExamAttempt() {
                         <input
                           type="radio"
                           name={q.id}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                          className="mt-0.5 sm:mt-0 h-4 w-4 shrink-0 text-blue-600 focus:ring-blue-500"
                           checked={answers[q.id] === o.id}
                           onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: o.id }))}
                         />
-                        <span>
+                        <span className="break-words min-w-0">
                           <strong className="mr-1">{o.id}.</strong> {o.text}
                         </span>
                       </label>
                     ))}
                   </div>
+                ) : q.type === "dropdown" ? (
+                  <select
+                    value={String(answers[q.id] || "")}
+                    onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-300 bg-white p-3.5 text-sm font-medium text-slate-900 outline-none focus:border-blue-500"
+                  >
+                    <option value="">Select an option…</option>
+                    {(q.options || []).map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.id}. {o.text}
+                      </option>
+                    ))}
+                  </select>
                 ) : q.type === "multiple_choice" ? (
                   <div className="space-y-2">
                     {(q.options || []).map((o) => {
@@ -765,7 +927,7 @@ export default function StudentExamAttempt() {
                       return (
                         <label
                           key={o.id}
-                          className={`flex items-center gap-3 rounded-xl border p-3.5 cursor-pointer text-sm font-medium transition-all ${
+                          className={`flex items-start sm:items-center gap-3 rounded-xl border p-3.5 cursor-pointer text-xs sm:text-sm font-medium transition-all ${
                             isChecked
                               ? "border-blue-600 bg-blue-50/60 text-blue-900 font-semibold"
                               : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -773,7 +935,7 @@ export default function StudentExamAttempt() {
                         >
                           <input
                             type="checkbox"
-                            className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                            className="mt-0.5 sm:mt-0 h-4 w-4 shrink-0 rounded text-blue-600 focus:ring-blue-500"
                             checked={isChecked}
                             onChange={(e) =>
                               setAnswers((prev) => {
@@ -785,7 +947,7 @@ export default function StudentExamAttempt() {
                               })
                             }
                           />
-                          <span>
+                          <span className="break-words min-w-0">
                             <strong className="mr-1">{o.id}.</strong> {o.text}
                           </span>
                         </label>
@@ -806,45 +968,69 @@ export default function StudentExamAttempt() {
             ))}
           </section>
 
-          {/* STICKY AUTOSAVE FOOTER */}
-          <footer className="sticky bottom-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur-md p-4 shadow-lg">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-600">
-                {saveStatus === "pending"
-                  ? "Pending autosave…"
-                  : saveStatus === "saving"
-                  ? "Saving answers…"
-                  : saveStatus === "error"
-                  ? "Autosave failed"
-                  : "✓ All answers saved"}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void send("save")}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                {busy ? "Saving…" : "Save Answers"}
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Submit your examination now? Answers cannot be changed once submitted."
-                    )
-                  ) {
-                    void send("submit");
-                  }
-                }}
-                className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-blue-700 shadow-sm disabled:opacity-50"
-              >
-                Submit Examination
-              </button>
-            </div>
+          {/* STICKY AUTOSAVE & SUBMIT FOOTER */}
+          <footer className="sticky bottom-3 z-20 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur-md p-3.5 sm:p-4 shadow-lg space-y-3">
+            {confirmingSubmit ? (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl bg-amber-50 border border-amber-200 p-3">
+                <p className="text-xs sm:text-sm font-semibold text-amber-950">
+                  Submit your examination now? Answers cannot be changed once submitted.
+                </p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setConfirmingSubmit(false)}
+                    className="flex-1 sm:flex-initial rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void send("submit")}
+                    className="flex-1 sm:flex-initial rounded-xl bg-blue-600 px-5 py-2 text-xs sm:text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {busy ? "Submitting…" : "Confirm Submit"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center justify-between sm:justify-start gap-2">
+                  <span className="text-xs font-semibold text-slate-600">
+                    {saveStatus === "pending"
+                      ? "Pending autosave…"
+                      : saveStatus === "saving"
+                      ? "Saving answers…"
+                      : saveStatus === "error"
+                      ? "Autosave delayed"
+                      : "✓ All answers saved"}
+                  </span>
+                  <span className="sm:hidden font-mono text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                    {Math.floor(seconds / 60).toString().padStart(2, "0")}:
+                    {String(seconds % 60).padStart(2, "0")}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void send("save")}
+                    className="flex-1 sm:flex-initial rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {busy ? "Saving…" : "Save Answers"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setConfirmingSubmit(true)}
+                    className="flex-1 sm:flex-initial rounded-xl bg-blue-600 px-5 sm:px-6 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-blue-700 shadow-sm disabled:opacity-50"
+                  >
+                    Submit Examination
+                  </button>
+                </div>
+              </div>
+            )}
           </footer>
         </>
       )}

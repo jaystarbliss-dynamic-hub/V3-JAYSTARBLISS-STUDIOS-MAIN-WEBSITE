@@ -314,10 +314,10 @@ export default function ParentExaminationResults() {
           type="button"
           onClick={() => void refresh()}
           disabled={loading || refreshing}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
         >
           {refreshing || loading ? (
-            <Loader2 className="animate-spin text-blue-600" size={16} />
+            <Loader2 className="animate-spin text-white" size={16} />
           ) : (
             <RefreshCw size={16} />
           )}

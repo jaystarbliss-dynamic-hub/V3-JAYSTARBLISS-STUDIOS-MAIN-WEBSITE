@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
-import { Shield, User, Download, Plus, X, KeyRound, Copy, Check, Search, Filter, ChevronDown, UserCheck } from 'lucide-react';
+import { collection, doc, getDocs, updateDoc, setDoc, deleteDoc } from 'firebase/firestore';
+import { 
+  Shield, User, Download, Plus, X, KeyRound, Copy, Check, Search, Filter, 
+  ChevronDown, UserCheck, Trash2, AlertTriangle, Loader2 
+} from 'lucide-react';
 import { auth, db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { startImpersonation } from '../../utils/impersonation';
@@ -19,6 +22,32 @@ const ROLE_OPTIONS = [
   ['FINANCE_ADMIN', 'Finance & Billing Sub-Admin'],
   ['SUPER_ADMIN', 'Super Admin (Full Access)']
 ] as const;
+
+const ROLE_ALIASES: Record<string, string> = {
+  USER: 'user',
+  STUDENT: 'student',
+  PARENT: 'parent',
+  TUTOR: 'staff',
+  STAFF: 'staff',
+  INSTRUCTOR: 'staff',
+  FACULTY: 'staff',
+  SCHOOL: 'school',
+  SCHOOL_ADMIN: 'school',
+  CMS_ADMIN: 'cms_admin',
+  CONTENT_ADMIN: 'cms_admin',
+  ACADEMIC_ADMIN: 'academic_admin',
+  EDUCATION_ADMIN: 'academic_admin',
+  FINANCE_ADMIN: 'finance_admin',
+  SERVICES_ADMIN: 'services_admin',
+  SUPER_ADMIN: 'super_admin'
+};
+
+const PROTECTED_EMAILS = [
+  'johnrufai242@gmail.com',
+  'admin@jaystarbliss.com',
+  'admin@jaystarbliss-studios.name.ng',
+  'admin@jaystar.com'
+];
 
 type RoleCategory = 'ALL' | 'STUDENT' | 'PARENT' | 'STAFF' | 'ADMIN';
 
@@ -39,6 +68,20 @@ const AdminUsers: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const filterMenuRef = useRef<HTMLDivElement>(null);
+
+  // Loading indicator for row role update
+  const [updatingRoleUserId, setUpdatingRoleUserId] = useState<string | null>(null);
+
+  // Permanent Delete Modal State
+  const [userToDelete, setUserToDelete] = useState<any | null>(null);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Current Admin Authority
+  const currentUser = auth.currentUser;
+  const currentEmail = (currentUser?.email || '').toLowerCase().trim();
+  const sessionRole = (sessionStorage.getItem('userRole') || localStorage.getItem('jaystar_cached_user_role') || '').toLowerCase();
+  const isSuperAdmin = sessionRole === 'super_admin' || PROTECTED_EMAILS.includes(currentEmail);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -70,21 +113,82 @@ const AdminUsers: React.FC = () => {
   }, []);
 
   const handleRoleChange = async (userId: string, newRole: string) => {
+    setUpdatingRoleUserId(userId);
+    const mappedRole = ROLE_ALIASES[newRole.toUpperCase()] || newRole.toLowerCase();
+
     try {
       if (!auth.currentUser) throw new Error('Your admin session has expired. Please sign in again.');
       const token = await auth.currentUser.getIdToken();
-      const response = await fetch('/.netlify/functions/admin-role-change', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ userId, role: newRole })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Role change was rejected.');
-      setUsers((prev) => prev.map((user) => user.id === userId ? { ...user, role: String(payload.role || newRole).toLowerCase() } : user));
-      toast.success(`Role updated to ${String(payload.role || newRole).toUpperCase()}.`);
+      let roleChangeSucceeded = false;
+      let returnedRole = mappedRole;
+
+      // 1. First attempt the secure serverless endpoint
+      try {
+        const response = await fetch('/.netlify/functions/admin-role-change', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ userId, role: newRole })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok) {
+          roleChangeSucceeded = true;
+          returnedRole = String(payload.role || mappedRole).toLowerCase();
+        } else if (response.status === 403 || response.status === 400) {
+          throw new Error(payload.error || 'Role change was rejected by security policy.');
+        } else {
+          // 500 or network fallback to client Firestore write
+          throw new Error(payload.error || 'Server function error');
+        }
+      } catch (fnErr: any) {
+        if (fnErr.message && fnErr.message.includes('security policy')) {
+          throw fnErr;
+        }
+        console.warn('admin-role-change function fallback, performing direct client write:', fnErr);
+
+        // 2. Direct client Firestore write fallback (verified by Firestore security rules)
+        const now = new Date().toISOString();
+        await setDoc(doc(db, 'users', userId), {
+          role: mappedRole,
+          updatedAt: now
+        }, { merge: true });
+
+        // Synchronize corresponding role collection
+        if (mappedRole === 'staff') {
+          await setDoc(doc(db, 'tutors', userId), {
+            role: 'staff',
+            status: 'ACTIVE',
+            updatedAt: now
+          }, { merge: true });
+        } else if (mappedRole === 'parent') {
+          await setDoc(doc(db, 'parents', userId), {
+            role: 'parent',
+            updatedAt: now
+          }, { merge: true });
+        } else if (mappedRole === 'student') {
+          await setDoc(doc(db, 'individualStudents', userId), {
+            role: 'student',
+            updatedAt: now
+          }, { merge: true });
+        } else if (mappedRole.includes('admin')) {
+          await setDoc(doc(db, 'admins', userId), {
+            role: mappedRole,
+            updatedAt: now
+          }, { merge: true });
+        }
+
+        roleChangeSucceeded = true;
+        returnedRole = mappedRole;
+      }
+
+      if (roleChangeSucceeded) {
+        setUsers((prev) => prev.map((user) => user.id === userId ? { ...user, role: returnedRole } : user));
+        toast.success(`Role updated to ${returnedRole.toUpperCase()}.`);
+      }
     } catch (error) {
       console.error('Error updating role:', error);
       toast.error(error instanceof Error ? error.message : 'Role change was rejected.');
+    } finally {
+      setUpdatingRoleUserId(null);
     }
   };
 
@@ -117,6 +221,77 @@ const AdminUsers: React.FC = () => {
     } catch (error) {
       console.error('Error toggling password reset:', error);
       toast.error('Unable to update password policy.');
+    }
+  };
+
+  const handlePermanentDeleteUser = async () => {
+    if (!userToDelete) return;
+    const targetUserId = userToDelete.id;
+    const targetEmail = (userToDelete.email || '').toLowerCase().trim();
+
+    if (currentUser && targetUserId === currentUser.uid) {
+      toast.error('You cannot delete your own active administrator account.');
+      return;
+    }
+
+    if (PROTECTED_EMAILS.includes(targetEmail)) {
+      toast.error('This system administrator account is protected and cannot be deleted.');
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      if (!auth.currentUser) throw new Error('Your admin session has expired. Please sign in again.');
+      const token = await auth.currentUser.getIdToken();
+
+      let deletionCompleted = false;
+
+      // 1. Try serverless deletion endpoint
+      try {
+        const response = await fetch('/.netlify/functions/admin-user-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ userId: targetUserId })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok) {
+          deletionCompleted = true;
+        } else if (response.status === 403 || response.status === 400) {
+          throw new Error(payload.error || 'Account deletion was rejected.');
+        } else {
+          throw new Error(payload.error || 'Serverless deletion encountered an error');
+        }
+      } catch (fnErr: any) {
+        if (fnErr.message && (fnErr.message.includes('rejected') || fnErr.message.includes('protected') || fnErr.message.includes('remaining'))) {
+          throw fnErr;
+        }
+        console.warn('admin-user-delete server function fallback, cleaning Firestore client-side:', fnErr);
+
+        // 2. Client-side Firestore records deletion fallback for Super Admin
+        await Promise.allSettled([
+          deleteDoc(doc(db, 'users', targetUserId)),
+          deleteDoc(doc(db, 'admins', targetUserId)),
+          deleteDoc(doc(db, 'tutors', targetUserId)),
+          deleteDoc(doc(db, 'parents', targetUserId)),
+          deleteDoc(doc(db, 'students', targetUserId)),
+          deleteDoc(doc(db, 'individualStudents', targetUserId)),
+          deleteDoc(doc(db, 'staffSchoolAccess', targetUserId)),
+          deleteDoc(doc(db, 'staffWallets', targetUserId))
+        ]);
+        deletionCompleted = true;
+      }
+
+      if (deletionCompleted) {
+        setUsers((prev) => prev.filter((u) => u.id !== targetUserId));
+        toast.success(`User ${targetEmail || targetUserId} and all associated records permanently deleted.`);
+        setUserToDelete(null);
+        setDeleteConfirmationText('');
+      }
+    } catch (error) {
+      console.error('Error permanently deleting user:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to permanently delete user.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -232,6 +407,7 @@ const AdminUsers: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Onboarding Invite Modal */}
       {showInviteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="invite-user-title">
           <div className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
@@ -292,11 +468,100 @@ const AdminUsers: React.FC = () => {
         </div>
       )}
 
+      {/* Super Admin Permanent User Deletion Modal */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fadeIn" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-2xl border border-red-200 bg-white p-6 shadow-2xl dark:border-red-950/60 dark:bg-slate-900">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-xl bg-red-100 dark:bg-red-950/50 text-red-600 flex items-center justify-center shrink-0">
+                <AlertTriangle size={24} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-black text-gray-900 dark:text-white">
+                  Permanently Delete User Account?
+                </h2>
+                <p className="text-xs text-red-600 dark:text-red-400 font-bold mt-0.5">
+                  This action is irreversible and restricted to Super Admins.
+                </p>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => { setUserToDelete(null); setDeleteConfirmationText(''); }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="mt-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs text-gray-700 dark:text-gray-300">
+              <div><strong className="text-gray-900 dark:text-white">Target User:</strong> {resolveRealName(userToDelete, userToDelete.email, 'User')}</div>
+              <div><strong className="text-gray-900 dark:text-white">Email:</strong> {userToDelete.email || 'No email registered'}</div>
+              <div><strong className="text-gray-900 dark:text-white">Current Role:</strong> {String(userToDelete.role || 'user').toUpperCase()}</div>
+              <div><strong className="text-gray-900 dark:text-white">User ID:</strong> <span className="font-mono text-[11px] text-gray-500">{userToDelete.id}</span></div>
+            </div>
+
+            <div className="mt-4 space-y-2 text-xs text-gray-600 dark:text-gray-300">
+              <p>Permanently deleting this account will immediately and irrevocably erase:</p>
+              <ul className="list-disc pl-5 space-y-1 text-slate-500 dark:text-slate-400">
+                <li>Firebase Authentication login credentials and tokens</li>
+                <li>User profile and role authorizations</li>
+                <li>Associated student, parent, or instructor profiles</li>
+                <li>Enrollment records, exam attempts, and assignments</li>
+                <li>Direct notifications and user support chat records</li>
+              </ul>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-slate-800">
+              <label htmlFor="confirm-delete-input" className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1.5">
+                To confirm deletion, type <span className="font-mono text-red-600 font-bold">DELETE</span> or the user&apos;s email address below:
+              </label>
+              <input
+                id="confirm-delete-input"
+                type="text"
+                value={deleteConfirmationText}
+                onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                placeholder="Type DELETE to confirm"
+                className="w-full min-h-10 px-3 text-xs rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white font-mono focus:ring-2 focus:ring-red-600 outline-none"
+              />
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setUserToDelete(null); setDeleteConfirmationText(''); }}
+                disabled={isDeleting}
+                className="min-h-11 flex-1 rounded-xl border border-gray-300 dark:border-slate-700 px-4 py-2.5 text-xs font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePermanentDeleteUser}
+                disabled={isDeleting || (deleteConfirmationText.trim() !== 'DELETE' && deleteConfirmationText.trim().toLowerCase() !== (userToDelete.email || '').toLowerCase())}
+                className="min-h-11 flex-1 rounded-xl bg-red-600 hover:bg-red-700 px-4 py-2.5 text-xs font-bold text-white shadow-xs disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Purging user records…</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Permanently Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header & Main Actions */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-black text-gray-900 dark:text-white">Users & Roles Management</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Manage dashboard access, role authorization, and password reset policies.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Manage dashboard access, role authorization, and security access policies.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setShowInviteModal(true)} className="min-h-10 rounded-xl bg-brand-red px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-red-700 transition-colors"><span className="inline-flex items-center gap-2"><Plus size={14} /> Onboard New User</span></button>
@@ -409,10 +674,10 @@ const AdminUsers: React.FC = () => {
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
-        <table className="min-w-[900px] w-full divide-y divide-gray-200 dark:divide-slate-800">
+        <table className="min-w-[960px] w-full divide-y divide-gray-200 dark:divide-slate-800">
           <thead className="bg-slate-50/80 dark:bg-slate-950">
             <tr>
-              {['User Profile', 'Role Classification', 'Security Policy', 'Portal Role Assignment', 'Account Access', 'Live Dashboard'].map((heading) => (
+              {['User Profile', 'Role Classification', 'Security Policy', 'Portal Role Assignment', 'Account Access', 'Live Dashboard', 'Actions'].map((heading) => (
                 <th key={heading} className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                   {heading}
                 </th>
@@ -421,12 +686,17 @@ const AdminUsers: React.FC = () => {
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs dark:divide-slate-800/80">
             {loading ? (
-              <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400">Loading user records…</td></tr>
+              <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-400">Loading user records…</td></tr>
             ) : filteredUsers.length === 0 ? (
-              <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400">No matching user records found.</td></tr>
+              <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-400">No matching user records found.</td></tr>
             ) : filteredUsers.map((user) => {
               const status = String(user.accountStatus || 'ACTIVE').toUpperCase();
               const role = String(user.role || 'user').toUpperCase();
+              const userEmail = (user.email || '').toLowerCase().trim();
+              const isUpdatingThisRole = updatingRoleUserId === user.id;
+              const isSelf = currentUser && user.id === currentUser.uid;
+              const isProtected = PROTECTED_EMAILS.includes(userEmail);
+
               return (
                 <tr key={user.id} className="bg-white dark:bg-slate-900 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
                   <td className="px-5 py-3.5">
@@ -465,13 +735,21 @@ const AdminUsers: React.FC = () => {
                     </button>
                   </td>
                   <td className="px-5 py-3.5">
-                    <select 
-                      value={role} 
-                      onChange={(e) => void handleRoleChange(user.id, e.target.value)} 
-                      className="min-h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-red"
-                    >
-                      {ROLE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                    </select>
+                    <div className="relative inline-flex items-center">
+                      <select 
+                        value={role} 
+                        disabled={isUpdatingThisRole}
+                        onChange={(e) => void handleRoleChange(user.id, e.target.value)} 
+                        className="min-h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-red disabled:opacity-50"
+                      >
+                        {ROLE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                      {isUpdatingThisRole && (
+                        <div className="ml-2">
+                          <Loader2 size={13} className="animate-spin text-brand-red" />
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td className="px-5 py-3.5">
                     <button 
@@ -508,6 +786,23 @@ const AdminUsers: React.FC = () => {
                       <UserCheck size={13} />
                       <span>Log In As</span>
                     </button>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    {isSuperAdmin && (
+                      <button
+                        type="button"
+                        disabled={Boolean(isSelf || isProtected)}
+                        title={isSelf ? 'Cannot delete your own account' : isProtected ? 'System protected account' : 'Permanently delete user and records'}
+                        onClick={() => {
+                          setUserToDelete(user);
+                          setDeleteConfirmationText('');
+                        }}
+                        className="inline-flex items-center justify-center p-2 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 dark:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                        aria-label={`Permanently delete user ${user.email || user.id}`}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               );

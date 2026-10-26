@@ -11,7 +11,7 @@ import {
   signOut, 
   sendPasswordResetEmail 
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { useTheme } from '../hooks/useTheme';
 import SEO from '../components/ui/SEO';
@@ -481,20 +481,58 @@ const SecurePortalLogin: React.FC = () => {
         data = snap.data() || {};
       }
     }
-    if (target === 'staff' && !snap.exists()) {
+    // Check if account has approved tutor / staff profile in tutors or tutor_applications
+    let isApprovedTutor = false;
+    let tutorName = '';
+    try {
+      const tutorDoc = await getDoc(doc(db, 'tutors', user.uid));
+      if (tutorDoc.exists() && tutorDoc.data()?.status !== 'BANNED' && tutorDoc.data()?.status !== 'SUSPENDED') {
+        isApprovedTutor = true;
+        tutorName = tutorDoc.data()?.name || tutorDoc.data()?.fullName || '';
+      }
+      if (!isApprovedTutor && email) {
+        const tSnap = await getDocs(query(collection(db, 'tutors'), where('email', '==', email), limit(1)));
+        if (!tSnap.empty && tSnap.docs[0].data()?.status !== 'BANNED' && tSnap.docs[0].data()?.status !== 'SUSPENDED') {
+          isApprovedTutor = true;
+          tutorName = tSnap.docs[0].data()?.name || tSnap.docs[0].data()?.fullName || '';
+        }
+      }
+      if (!isApprovedTutor && email) {
+        const appSnap = await getDocs(query(collection(db, 'tutor_applications'), where('email', '==', email), where('status', '==', 'approved'), limit(1)));
+        if (!appSnap.empty) {
+          isApprovedTutor = true;
+          tutorName = appSnap.docs[0].data()?.name || '';
+        }
+      }
+    } catch (checkErr) {
+      console.warn('Tutor verification warning:', checkErr);
+    }
+
+    if ((target === 'staff' || isApprovedTutor) && !String(data.role || '').toUpperCase().includes('ADMIN')) {
+      const resolvedName = tutorName || data.name || user.displayName || email.split('@')[0];
       await setDoc(doc(db, 'users', user.uid), { 
         uid: user.uid, 
-        name: user.displayName || email.split('@')[0], 
-        fullName: user.displayName || email.split('@')[0], 
+        name: resolvedName, 
+        fullName: resolvedName, 
         email, 
         role: 'STAFF', 
         accountStatus: 'ACTIVE', 
         status: 'ACTIVE', 
         updatedAt: serverTimestamp() 
       }, { merge: true });
+      await setDoc(doc(db, 'tutors', user.uid), {
+        role: 'staff',
+        status: 'ACTIVE',
+        email,
+        name: resolvedName,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      await deleteDoc(doc(db, 'parents', user.uid)).catch(() => null);
+
       snap = await getDoc(doc(db, 'users', user.uid)); 
-      data = snap.data() || {};
+      data = snap.data() || { role: 'STAFF' };
     }
+
     if (!snap.exists()) { 
       await signOut(auth).catch(() => undefined); 
       throw new Error('No active portal profile was found for this account.'); 
@@ -637,19 +675,56 @@ const SecurePortalLogin: React.FC = () => {
           data = snap.data() || {};
         }
       }
-      if (portalMode === 'institute' && instituteTab === 'staff' && !snap.exists()) {
+      // Check if this Google account is an approved tutor in tutors or tutor_applications
+      let googleIsApprovedTutor = false;
+      let googleTutorName = '';
+      try {
+        const tDoc = await getDoc(doc(db, 'tutors', user.uid));
+        if (tDoc.exists() && tDoc.data()?.status !== 'BANNED' && tDoc.data()?.status !== 'SUSPENDED') {
+          googleIsApprovedTutor = true;
+          googleTutorName = tDoc.data()?.name || tDoc.data()?.fullName || '';
+        }
+        if (!googleIsApprovedTutor && email) {
+          const tSnap = await getDocs(query(collection(db, 'tutors'), where('email', '==', email), limit(1)));
+          if (!tSnap.empty && tSnap.docs[0].data()?.status !== 'BANNED' && tSnap.docs[0].data()?.status !== 'SUSPENDED') {
+            googleIsApprovedTutor = true;
+            googleTutorName = tSnap.docs[0].data()?.name || tSnap.docs[0].data()?.fullName || '';
+          }
+        }
+        if (!googleIsApprovedTutor && email) {
+          const appSnap = await getDocs(query(collection(db, 'tutor_applications'), where('email', '==', email), where('status', '==', 'approved'), limit(1)));
+          if (!appSnap.empty) {
+            googleIsApprovedTutor = true;
+            googleTutorName = appSnap.docs[0].data()?.name || '';
+          }
+        }
+      } catch (checkErr) {
+        console.warn('Google tutor check notice:', checkErr);
+      }
+
+      if (((portalMode === 'institute' && instituteTab === 'staff') || googleIsApprovedTutor) && !String(data.role || '').toUpperCase().includes('ADMIN')) {
+        const resolvedName = googleTutorName || data.name || user.displayName || email.split('@')[0];
         await setDoc(doc(db, 'users', user.uid), { 
           uid: user.uid, 
-          name: user.displayName || email.split('@')[0], 
-          fullName: user.displayName || email.split('@')[0], 
+          name: resolvedName, 
+          fullName: resolvedName, 
           email: user.email || email, 
           role: 'STAFF', 
           accountStatus: 'ACTIVE', 
           status: 'ACTIVE', 
           updatedAt: serverTimestamp() 
         }, { merge: true });
+        await setDoc(doc(db, 'tutors', user.uid), {
+          role: 'staff',
+          status: 'ACTIVE',
+          email: user.email || email,
+          name: resolvedName,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        await deleteDoc(doc(db, 'parents', user.uid)).catch(() => null);
+
         snap = await getDoc(doc(db, 'users', user.uid)); 
-        data = snap.data() || {};
+        data = snap.data() || { role: 'STAFF' };
       }
       if (!snap.exists()) { 
         await signOut(auth).catch(() => undefined); 
