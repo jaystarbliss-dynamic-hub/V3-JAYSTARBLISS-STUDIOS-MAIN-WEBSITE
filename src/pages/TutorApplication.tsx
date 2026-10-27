@@ -6,7 +6,9 @@ import SEO from '../components/ui/SEO';
 import { CheckCircle2, ArrowRight, ArrowLeft, Send, User, Briefcase, FileText } from 'lucide-react';
 import Button from '../components/ui/Button';
 import ProgressStepper from '../components/ui/ProgressStepper';
+import { WizardActionFooter } from '../components/ui/WizardActionFooter';
 import { useToast } from '../contexts/ToastContext';
+import { getFriendlyErrorMessage, logInternalDiagnostic } from '../utils/friendlyErrors';
 
 const steps = [
   { id: 'personal', title: 'Personal Info', subtitle: 'Contact details', icon: User },
@@ -111,9 +113,10 @@ const TutorApplication: React.FC = () => {
       setSuccess(true);
       toast.success('Your instructor application has been submitted successfully! We look forward to reviewing your profile.');
     } catch (err) {
-      console.error('Error submitting form:', err);
-      setError('There was an error sending your application. Please try again.');
-      toast.error('There was an error submitting your application. Please try again.');
+      logInternalDiagnostic('TutorApplication::Submit', err);
+      const friendly = getFriendlyErrorMessage(err);
+      setError(friendly);
+      toast.error(friendly);
     } finally {
       setLoading(false);
     }
@@ -385,43 +388,19 @@ const TutorApplication: React.FC = () => {
                   )}
 
                   {/* Nav Controls */}
-                  <div className="flex items-center gap-4 pt-6 border-t border-slate-100 dark:border-slate-800">
-                    {currentStep > 0 && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={handleBack}
-                        disabled={loading}
-                        leftIcon={<ArrowLeft size={16} />}
-                      >
-                        Back
-                      </Button>
-                    )}
-
-                    {currentStep < steps.length - 1 ? (
-                      <Button
-                        type="button"
-                        variant="primary"
-                        onClick={handleNext}
-                        fullWidth
-                        rightIcon={<ArrowRight size={16} />}
-                        className="shadow-lg shadow-brand-red/20 uppercase tracking-widest font-extrabold"
-                      >
-                        Continue to Step {currentStep + 2}
-                      </Button>
-                    ) : (
-                      <Button
-                        type="submit"
-                        isLoading={loading}
-                        fullWidth
-                        size="lg"
-                        rightIcon={<Send size={18} />}
-                        className="uppercase tracking-widest shadow-xl shadow-brand-red/20 font-extrabold"
-                      >
-                        SUBMIT APPLICATION
-                      </Button>
-                    )}
-                  </div>
+                  <WizardActionFooter
+                    currentStep={currentStep + 1}
+                    totalSteps={steps.length}
+                    stepLabel={steps[currentStep].title}
+                    isFirstStep={currentStep === 0}
+                    isLastStep={currentStep === steps.length - 1}
+                    canProceed={!loading}
+                    isSubmitting={loading}
+                    primaryLabel={currentStep === steps.length - 1 ? 'Submit Application' : `Continue to Step ${currentStep + 2}`}
+                    onNext={currentStep < steps.length - 1 ? handleNext : undefined}
+                    onBack={currentStep > 0 ? handleBack : undefined}
+                    stickyMobile={true}
+                  />
                 </form>
               </div>
             )}

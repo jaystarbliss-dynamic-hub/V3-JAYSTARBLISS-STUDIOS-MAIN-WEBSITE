@@ -321,20 +321,6 @@ const AdminApprovals: React.FC = () => {
     <div className="space-y-4 max-w-7xl mx-auto pb-12">
       <SEO title="Approvals & Onboarding | Admin" description="Review and approve incoming tutor applications, student enrollment requests, and program leads." noindex={true} />
 
-      {/* Header */}
-      <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 md:p-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h1 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white mt-1">
-              Approvals & Onboarding
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Review and approve incoming instructor credentials, student requests, and enrollments.
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Responsive Filter / Dropdown Bar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 shadow-sm">
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">

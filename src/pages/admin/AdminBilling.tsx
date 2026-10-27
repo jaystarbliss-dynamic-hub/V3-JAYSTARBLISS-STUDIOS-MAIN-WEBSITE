@@ -2661,19 +2661,15 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
     <div className="space-y-6">
       <SEO title="Billing, Invoicing & Treasury | Admin" description="Manage platform treasury, tuition billing and staff allocations." noindex={true} />
 
-      <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#0F172A] via-[#0B1528] to-[#1E293B] border border-slate-700/60 text-white p-5 sm:p-7">
+      <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#0F172A] via-[#0B1528] to-[#1E293B] border border-slate-700/60 text-white p-5 sm:p-6">
         <div className="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-brand-red/10 blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-brand-red">Financial Control Center</p>
-            <h1 className="mt-2 text-2xl sm:text-3xl font-black">Billing &amp; Treasury</h1>
-            <p className="mt-2 text-xs sm:text-sm text-slate-300 max-w-2xl">Live figures come from the financial records. No demo balances or invented transaction history are displayed.</p>
-          </div>
-          <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 border border-white/15 text-xs font-black hover:bg-white/15">
+        <div className="relative z-10 flex items-center justify-between gap-4">
+          <p className="text-xs text-slate-300">Live figures from financial records</p>
+          <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-white/10 border border-white/15 text-xs font-black hover:bg-white/15">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh ledger
           </button>
         </div>
-        <div className="relative z-10 mt-6 grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="relative z-10 mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="rounded-2xl bg-white/5 border border-white/10 p-4"><p className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Available balance</p><p className="mt-1 text-xl font-black font-mono">{showBalance ? formatCurrency(calculatedAvailableBalance) : '₦••••••'}</p></div>
           <div className="rounded-2xl bg-white/5 border border-white/10 p-4"><p className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Verified invoices</p><p className="mt-1 text-xl font-black">{paid.length}</p></div>
           <div className="rounded-2xl bg-white/5 border border-white/10 p-4"><p className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Tutor allocations</p><p className="mt-1 text-xl font-black font-mono">{showBalance ? money(tutorAllocated) : '₦••••'}</p></div>

@@ -151,17 +151,8 @@ const AdminKidsProjects: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 dark:text-white">
-            Kids Corner Projects
-          </h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Showcase games, Scratch embeds, interactive math tools, and coding creations created by academy students.
-          </p>
-        </div>
-
+      {/* Action Bar */}
+      <div className="flex items-center justify-end">
         <div className="flex items-center gap-3">
           <Link
             to="/portfolio"

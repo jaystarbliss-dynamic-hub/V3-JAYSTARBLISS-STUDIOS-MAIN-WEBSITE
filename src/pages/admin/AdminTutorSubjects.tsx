@@ -107,9 +107,9 @@ const AdminTutorSubjects: React.FC = () => {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <SEO title="Tutor Subject Approvals | Jaystarbliss Studios" description="Review tutor subject applications and view approved tutors by subject." noindex />
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-        <div><p className="text-[10px] uppercase tracking-[0.2em] font-black text-brand-red">Faculty Management</p><h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white">Tutor Subjects</h1><p className="text-sm text-slate-500 mt-1">Review subject requests by tutor, approve them together, or reject them with clear feedback.</p></div>
-        <div className="flex gap-2"><button type="button" onClick={() => setTab('pending')} className={`px-4 py-2.5 rounded-xl text-xs font-black ${tab === 'pending' ? 'bg-brand-red text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>Pending ({applications.length})</button><button type="button" onClick={() => setTab('approved')} className={`px-4 py-2.5 rounded-xl text-xs font-black ${tab === 'approved' ? 'bg-brand-red text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>Approved Tutors</button></div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <p className="text-xs sm:text-sm text-slate-500">Review subject requests by tutor, approve them together, or reject them with clear feedback.</p>
+        <div className="flex gap-2 shrink-0"><button type="button" onClick={() => setTab('pending')} className={`px-4 py-2 rounded-xl text-xs font-black ${tab === 'pending' ? 'bg-brand-red text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>Pending ({applications.length})</button><button type="button" onClick={() => setTab('approved')} className={`px-4 py-2 rounded-xl text-xs font-black ${tab === 'approved' ? 'bg-brand-red text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>Approved Tutors</button></div>
       </div>
 
       {loading ? <div className="py-12 text-center text-xs text-slate-500">Loading tutor subject records...</div> : tab === 'pending' ? (

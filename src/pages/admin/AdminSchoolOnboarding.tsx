@@ -238,17 +238,6 @@ const AdminSchoolOnboarding: React.FC = () => {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <div className="flex items-center gap-3">
-          <Building2 className="h-8 w-8 text-brand-red" />
-          <div>
-            <h1 className="text-3xl font-black text-brand-slate dark:text-white">Onboard a School</h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Create the school record and its dedicated School Admin portal account in one controlled workflow.
-            </p>
-          </div>
-        </div>
-      </div>
 
       <div className="flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-xs leading-6 text-blue-900 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200">
         <ShieldCheck size={18} className="mt-0.5 shrink-0" />

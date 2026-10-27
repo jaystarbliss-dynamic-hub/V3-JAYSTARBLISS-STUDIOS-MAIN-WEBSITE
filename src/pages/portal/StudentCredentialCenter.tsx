@@ -411,37 +411,22 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
         noindex={true}
       />
 
-      {/* Header Banner */}
-      <div className="pro-surface rounded-3xl p-6 md:p-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-red">
-              <KeyRound size={14} /> Student Access Packs & Credentials
-            </div>
-            <h1 className="mt-2 text-2xl md:text-3xl font-black text-slate-900 dark:text-white">
-              Issue & Manage Student Credentials
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-              Generate write-once secure passcodes and access packs for your enrolled students. Credentials can be rotated anytime access needs to be refreshed.
-            </p>
-          </div>
-          <button 
-            type="button" 
-            onClick={() => void load()} 
-            className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            Refresh Records
-          </button>
+      {/* Policy & Action bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-xs text-emerald-800 dark:text-emerald-300">
+        <div className="flex items-start gap-3">
+          <ShieldCheck size={18} className="mt-0.5 shrink-0 text-emerald-600" />
+          <span>
+            <strong>Zero-Knowledge Security:</strong> {isSchool ? 'School' : 'Staff'} student passcodes are securely hashed. When you click <em>Issue / Rotate Code</em>, the new access code is displayed for this session so you can print or export the access pack immediately.
+          </span>
         </div>
-      </div>
-
-      {/* Policy banner */}
-      <div className="flex items-start gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-xs text-emerald-800 dark:text-emerald-300">
-        <ShieldCheck size={18} className="mt-0.5 shrink-0 text-emerald-600" />
-        <span>
-          <strong>Zero-Knowledge Security:</strong> {isSchool ? 'School' : 'Staff'} student passcodes are securely hashed. When you click <em>Issue / Rotate Code</em>, the new access code is displayed for this session so you can print or export the access pack immediately.
-        </span>
+        <button 
+          type="button" 
+          onClick={() => void load()} 
+          className="shrink-0 rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+        >
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          Refresh Records
+        </button>
       </div>
 
       {/* Controls & Filter bar */}

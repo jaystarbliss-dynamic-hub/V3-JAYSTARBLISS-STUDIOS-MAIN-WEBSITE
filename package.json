@@ -11,7 +11,8 @@
     "typecheck:functions": "tsc -p tsconfig.functions.json",
     "test:assessment": "node --test tests/jdi-assessment.test.mjs",
     "test:portal-login": "node --test tests/student-login-compat.test.mjs",
-    "test:admin": "node --test tests/admin-roles-and-deletion.test.mjs"
+    "test:admin": "node --test tests/admin-roles-and-deletion.test.mjs",
+    "test:friendly-errors": "node --experimental-strip-types --test tests/friendly-errors.test.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

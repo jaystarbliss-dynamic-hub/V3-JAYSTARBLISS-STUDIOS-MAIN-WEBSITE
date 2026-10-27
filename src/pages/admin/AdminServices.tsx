@@ -26,11 +26,7 @@ const AdminServices: React.FC = () => {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Services</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Manage your digital services and offerings.</p>
-        </div>
+      <div className="flex items-center justify-end mb-6">
         <div className="flex items-center gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />

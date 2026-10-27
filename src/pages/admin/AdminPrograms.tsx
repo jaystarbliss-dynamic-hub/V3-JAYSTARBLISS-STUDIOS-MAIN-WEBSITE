@@ -290,25 +290,9 @@ const AdminPrograms: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header Bar */}
-      <div className="bg-white dark:bg-[#0c1220] rounded-3xl p-6 md:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-brand-red text-white">
-              Curriculum Architecture
-            </span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
-              Multi-Stage Series Builder
-            </span>
-          </div>
-          <h1 className="text-2xl md:text-3xl font-black text-gray-900 dark:text-white mt-1.5">
-            Curriculum Programs &amp; Stages
-          </h1>
-          <p className="mt-1 text-xs md:text-sm text-gray-500 dark:text-gray-400 max-w-2xl">
-            Design learning tracks, reorder stages sequentially (Stage 1, Stage 2, Stage 3), and combine individual programs into multi-stage series for students.
-          </p>
-        </div>
-
+      {/* Action Bar */}
+      <div className="bg-white dark:bg-[#0c1220] rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <span className="text-xs text-slate-500">Design learning tracks, reorder stages sequentially, and combine programs into series.</span>
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
             type="button"

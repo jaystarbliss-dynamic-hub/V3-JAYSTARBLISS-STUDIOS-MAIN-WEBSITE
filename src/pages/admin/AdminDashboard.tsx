@@ -326,37 +326,26 @@ const AdminDashboard: React.FC = () => {
 
   return (
     <div className="dashboard-interface space-y-6">
-      {/* Top Banner & Control Actions */}
-      <div className="pro-surface rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            Administrative Matrix
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 max-w-2xl">
-            Realtime telemetry across student growth cohorts, school operations, portal activity, and automated assessments.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button 
-            type="button"
-            onClick={() => exportToCSV(studentsData.length > 0 ? studentsData : usersData, 'students_cadets_registry')}
-            className="flex items-center gap-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-slate-200 dark:border-white/10 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-xs cursor-pointer"
-          >
-            <Download size={14} className="text-sky-600 dark:text-sky-400" />
-            <span>Export CSV</span>
-          </button>
-          
-          <button 
-            type="button"
-            onClick={() => fetchDashboardData(true)}
-            disabled={refreshing}
-            className="flex items-center gap-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer"
-          >
-            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-            <span>{refreshing ? 'Syncing...' : 'Sync Firestore'}</span>
-          </button>
-        </div>
+      {/* Compact Control Actions */}
+      <div className="flex items-center justify-end gap-2.5 flex-wrap">
+        <button 
+          type="button"
+          onClick={() => exportToCSV(studentsData.length > 0 ? studentsData : usersData, 'students_cadets_registry')}
+          className="flex items-center gap-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-slate-200 dark:border-white/10 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-xs cursor-pointer"
+        >
+          <Download size={14} className="text-sky-600 dark:text-sky-400" />
+          <span>Export CSV</span>
+        </button>
+        
+        <button 
+          type="button"
+          onClick={() => fetchDashboardData(true)}
+          disabled={refreshing}
+          className="flex items-center gap-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+        >
+          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+          <span>{refreshing ? 'Syncing...' : 'Sync Firestore'}</span>
+        </button>
       </div>
       
       {/* Key Metric Overview Cards */}

@@ -222,10 +222,6 @@ const AdminSettings: React.FC = () => {
 
   return (
     <div className="max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Global Settings</h1>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">Configure portal themes, notification channels, cloud storage, and announcements.</p>
-      </div>
       
       {message.text && (
         <div className={`p-4 rounded-xl flex items-center gap-3 ${

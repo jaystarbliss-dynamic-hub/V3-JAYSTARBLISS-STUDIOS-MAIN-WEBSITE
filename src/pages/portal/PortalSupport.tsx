@@ -190,36 +190,29 @@ const PortalSupport: React.FC = () => {
     <div className="space-y-8 max-w-6xl mx-auto pb-16">
       <SEO title="Help & Support Center | Jaystarbliss Studios" description="Get instant support, contact advisors, and chat with the customer care desk." noindex={true} />
 
-      {/* Hero Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-[#182335] to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-brand-red text-white">
-              <Headphones size={13} /> Jaystarbliss Customer Support Center
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">How can we help you today?</h1>
-            <p className="text-xs sm:text-sm text-slate-300 max-w-xl">
-              Get direct assistance with student enrollment, live classes, school lab access, CBT examinations, tuition, and technical queries.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
-            <a
-              href="https://wa.me/2348123456789?text=Hello%20Jaystarbliss%20Support,%20I%20need%20assistance"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md"
-            >
-              <MessageCircle size={16} />
-              <span>WhatsApp Live Help</span>
-            </a>
-            <a
-              href="tel:+2348123456789"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all border border-white/10"
-            >
-              <Phone size={15} />
-              <span>Call Helpline</span>
-            </a>
-          </div>
+      {/* Compact Support Action Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161B26] p-4 shadow-xs">
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+          <Headphones size={16} className="text-brand-red shrink-0" />
+          <span>Direct assistance for enrollment, live classes, school lab access, CBT examinations, and tuition.</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <a
+            href="https://wa.me/2348123456789?text=Hello%20Jaystarbliss%20Support,%20I%20need%20assistance"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs"
+          >
+            <MessageCircle size={15} />
+            <span>WhatsApp Live Help</span>
+          </a>
+          <a
+            href="tel:+2348123456789"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold transition-all"
+          >
+            <Phone size={14} />
+            <span>Call Helpline</span>
+          </a>
         </div>
       </div>
 

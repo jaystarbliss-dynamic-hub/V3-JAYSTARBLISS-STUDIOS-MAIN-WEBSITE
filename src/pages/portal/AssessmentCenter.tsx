@@ -8,14 +8,7 @@ const learner=useMemo(()=>students.find(s=>s.id===selected),[students,selected])
 const save=async(e:React.FormEvent)=>{e.preventDefault();setSaving(true);setError('');setSuccess('');try{await api('/api/academic-assessments',{method:'POST',body:JSON.stringify({studentId:selected,...form,score:form.score})});setForm({title:'',subject:'',assessmentType:'QUIZ',score:'',feedback:''});const d=await api(`/api/academic-assessments?studentId=${encodeURIComponent(selected)}`);setRecords(d.records||[]);setSuccess('Assessment saved.');}catch(e){setError(e instanceof Error?e.message:'Unable to save assessment.')}finally{setSaving(false)}};
 if(loading)return <div className="py-12 flex justify-center text-sm text-slate-500"><Loader2 className="animate-spin mr-2" size={18}/>Loading assessments…</div>;
 const bannerTitle = role==='staff'?'Assessment Workspace':role==='student'?'My Assessments':role==='parent'?'Child Assessments':'School Assessments';
-return <div className="space-y-6"><SEO title="Assessments | Jaystarbliss Studios" description="Academic assessment records." noindex/>
-<div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
-  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-red">
-    <ClipboardCheck size={15} /> {role==='staff'?'Teaching Staff':role==='student'?'Student':role==='parent'?'Parent':'School'}
-  </div>
-  <h1 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{bannerTitle}</h1>
-  <p className="text-xs text-slate-500 mt-1">Keep assessment results, scores and feedback in one place.</p>
-</div>
+return <div className="space-y-6"><SEO title={`${bannerTitle} | Jaystarbliss Studios`} description="Academic assessment records." noindex/>
 {error&&<div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 flex gap-2"><AlertCircle size={18}/>{error}</div>}{success&&<div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 flex gap-2"><CheckCircle2 size={18}/>{success}</div>}
 <div className="pro-surface rounded-2xl p-4"><label className="text-xs font-bold block mb-2">{role==='student'?'Learner':'Learner record'}</label><select className="input" value={selected} onChange={e=>setSelected(e.target.value)}>{students.map(s=><option key={s.id} value={s.id}>{s.fullName}</option>)}</select></div>
 {learner&&<div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div className="pro-surface rounded-2xl p-5"><UserRound size={18}/><p className="text-xs text-slate-500 mt-2">Learner</p><p className="font-black mt-1">{learner.fullName}</p></div><div className="pro-surface rounded-2xl p-5"><ClipboardCheck size={18}/><p className="text-xs text-slate-500 mt-2">Recorded assessments</p><p className="text-2xl font-black mt-1">{records.length}</p></div><div className="pro-surface rounded-2xl p-5"><CheckCircle2 size={18}/><p className="text-xs text-slate-500 mt-2">Average score</p><p className="text-2xl font-black mt-1">{average===null?'—':`${average}/100`}</p></div></div>}

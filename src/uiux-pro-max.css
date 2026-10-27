@@ -1,4 +1,5 @@
 :root {
+  /* Core Brand & Neutral Tokens */
   --jb-brand-slate: #1e293b;
   --jb-brand-red: #b91c1c;
   --jb-brand-neutral: #f8fafc;
@@ -8,29 +9,63 @@
   --jb-text-muted: #64748b;
   --jb-border: #e2e8f0;
   --jb-focus: #0284c7;
+
+  /* Semantic Status Tokens */
+  --jb-status-success: #16a34a;
+  --jb-status-success-bg: #dcfce7;
+  --jb-status-warning: #d97706;
+  --jb-status-warning-bg: #fef3c7;
+  --jb-status-danger: #dc2626;
+  --jb-status-danger-bg: #fee2e2;
+  --jb-status-info: #2563eb;
+  --jb-status-info-bg: #dbeafe;
+
+  /* Elevation & Shadows */
   --jb-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --jb-shadow-md: 0 10px 30px rgba(15, 23, 42, 0.06);
-  --jb-shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.10);
+  --jb-shadow-md: 0 4px 12px rgba(15, 23, 42, 0.05);
+  --jb-shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.08);
+
+  /* Spacing Scale & Control Heights */
   --jb-space-1: 0.5rem;
   --jb-space-2: 0.75rem;
   --jb-space-3: 1rem;
   --jb-space-4: 1.5rem;
   --jb-space-5: 2rem;
   --jb-space-6: 3rem;
+  --jb-header-height: 3.5rem;
+  --jb-touch-target: 2.75rem;
+
+  /* Radii & Z-Index Layers */
   --jb-radius-sm: 0.75rem;
   --jb-radius-md: 1rem;
   --jb-radius-lg: 1.25rem;
+  --jb-z-sticky: 20;
+  --jb-z-sidebar: 30;
+  --jb-z-drawer: 50;
+  --jb-z-modal: 60;
 }
 
 html.dark {
-  --jb-surface: #121621;
-  --jb-surface-muted: #1a2130;
+  --jb-surface: #111827;
+  --jb-surface-muted: #1e293b;
   --jb-text: #f8fafc;
   --jb-text-muted: #94a3b8;
   --jb-border: rgba(255, 255, 255, 0.08);
   --jb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
-  --jb-shadow-md: 0 12px 32px rgba(0, 0, 0, 0.28);
-  --jb-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.38);
+  --jb-shadow-md: 0 6px 16px rgba(0, 0, 0, 0.35);
+  --jb-shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.45);
+}
+
+/* Enforce tabular numerals on dashboard metrics, tables, and counters */
+.dashboard-interface td,
+.portal-interface td,
+.dashboard-interface .font-mono,
+.portal-interface .font-mono,
+.dashboard-interface [class*="text-2xl"],
+.dashboard-interface [class*="text-3xl"],
+.portal-interface [class*="text-2xl"],
+.portal-interface [class*="text-3xl"] {
+  font-variant-numeric: tabular-nums;
 }
 
 :where(a, button, input, select, textarea, [role='button'], [tabindex]):focus-visible {

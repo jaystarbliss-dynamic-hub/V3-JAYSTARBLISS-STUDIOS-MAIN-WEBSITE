@@ -94,15 +94,14 @@ const AdminServiceForm: React.FC = () => {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link to="/admin/services" className="text-gray-400 hover:text-gray-900 dark:text-white transition-colors">
-            <ArrowLeft size={24} />
-          </Link>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {isEditing ? 'Edit Service' : 'Create Service'}
-          </h1>
-        </div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Link to="/admin/services" className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors">
+          <ArrowLeft size={16} />
+          <span>Back to Services Catalog</span>
+        </Link>
+        <span className="text-xs text-slate-500">
+          {isEditing ? `Service ID: ${id}` : 'Configure custom software & institutional service offering'}
+        </span>
       </div>
 
       {error && (

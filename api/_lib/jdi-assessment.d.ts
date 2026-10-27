@@ -145,3 +145,127 @@ export function answersForFinalization<T extends Record<string, any>>(
   deadlinePassed?: boolean
 ): T;
 
+export type AcademicWorkType = "ASSIGNMENT" | "ACTIVITY" | "TEST" | "EXAMINATION";
+export const WORK_TYPES: AcademicWorkType[];
+
+export function normalizeWorkType(
+  input: unknown,
+  fallbackObj?: Record<string, any> | null
+): AcademicWorkType;
+
+export function validateWorkTypeTransition(
+  existingRecordOrOpts: Record<string, any> | null | undefined,
+  nextWorkType?: unknown,
+  attemptCount?: number
+): {
+  allowed: boolean;
+  workType?: AcademicWorkType;
+  requiresConfirmation?: boolean;
+  previousWorkType?: AcademicWorkType;
+  requestedWorkType?: AcademicWorkType;
+  reason?: string;
+  error?: string;
+};
+
+export function normalizeRecipientTargets(
+  body?: Record<string, any>,
+  existingDoc?: Record<string, any> | null
+): {
+  recipientMode: "SCHOOL_CLASS" | "PRIVATE_LEARNERS" | "MULTI_TARGET";
+  schoolId: string;
+  targetSchoolIds: string[];
+  schoolIds: string[];
+  classIds: string[];
+  targetClass: string;
+  targetStudentIds: string[];
+};
+
+export function isStudentEligibleForWork(
+  studentOrOpts?: Record<string, any>,
+  workItem?: Record<string, any>
+): boolean;
+
+export interface BulkStudentParsedRow {
+  rowNumber: number;
+  fullName: string;
+  rawClass: string;
+  canonicalClass: string;
+  className: string;
+  isValidClass: boolean;
+  programme: string;
+  programName: string;
+  email: string;
+  username: string;
+  status?: "READY" | "DUPLICATE_EXISTING" | "DUPLICATE_IN_BATCH" | "INVALID";
+  errors?: string[];
+  isValid?: boolean;
+  valid?: boolean;
+}
+
+export function parseBulkStudentText(
+  rawText: string,
+  defaultProgramme?: string
+): BulkStudentParsedRow[];
+
+export function validateBulkStudentRows(
+  rows: Array<Partial<BulkStudentParsedRow>>,
+  existingStudentsOrOpts?: Array<Record<string, any>> | {
+    existingStudents?: Array<Record<string, any>>;
+    existingUsernames?: Iterable<string>;
+    existingEmails?: Iterable<string>;
+  }
+): BulkStudentParsedRow[] & {
+  rows: BulkStudentParsedRow[];
+  validCount: number;
+  invalidCount: number;
+};
+
+export function buildAttendanceRecordKey(params?: {
+  studentId?: string;
+  dateKey?: string;
+  date?: string;
+  scheduleId?: string;
+}): string;
+
+export type AgreementCategory = "PROPOSAL" | "COMMUNICATION" | "CONTRACT";
+export type AgreementStatus =
+  | "DRAFT"
+  | "SHARED"
+  | "UNDER_DISCUSSION"
+  | "REVISION_REQUESTED"
+  | "AGREED"
+  | "SIGNED"
+  | "ACTIVE"
+  | "EXPIRED"
+  | "SUPERSEDED"
+  | "ARCHIVED";
+
+export const AGREEMENT_CATEGORIES: AgreementCategory[];
+export const AGREEMENT_STATUSES: AgreementStatus[];
+
+export function createAgreementVersionSnapshot(
+  agreement: Record<string, any>,
+  actor?: { uid?: string; name?: string }
+): {
+  versionNumber: number;
+  immutable: boolean;
+  title: string;
+  category: AgreementCategory;
+  status: AgreementStatus;
+  contentHtml: string;
+  content: string;
+  effectiveDate: string;
+  expiryDate: string;
+  attachmentUrl: string;
+  summary: string;
+  createdAt: string;
+  createdBy: string;
+  createdByName: string;
+};
+
+export function canAccessAgreement(
+  agreementOrOpts: Record<string, any>,
+  actor?: { uid?: string; role?: string; schoolId?: string }
+): boolean;
+
+

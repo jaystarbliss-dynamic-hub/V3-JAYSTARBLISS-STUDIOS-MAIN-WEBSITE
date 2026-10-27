@@ -6,13 +6,12 @@ import {
   GraduationCap, ClipboardCheck, CalendarDays, KeyRound, Users, FileCheck2,
   Library, SlidersHorizontal, WalletCards, ExternalLink, Award, Headphones,
   HelpCircle, Keyboard, ChevronDown, PanelLeftClose, FileText, History,
-  ChartNoAxesColumn, UserRoundCog, Wallet, Headset, Settings
+  ChartNoAxesColumn, UserRoundCog, Wallet, Headset, Settings, Menu
 } from 'lucide-react';
-import { signOut, sendEmailVerification } from 'firebase/auth';
+import { signOut } from 'firebase/auth';
 import { auth, db } from '../../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useToast } from '../../contexts/ToastContext';
 import { Tooltip } from '../ui/Tooltip';
 import { JaystarblissIcon } from '../common/JaystarblissLogo';
 import ChangePasswordModal from './ChangePasswordModal';
@@ -20,6 +19,8 @@ import NotificationBell from '../common/NotificationBell';
 import SEO from '../ui/SEO';
 import { getActiveImpersonation } from '../../utils/impersonation';
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
+import { resolvePartnerSchoolName } from '../../lib/classes';
+import { useEdgeSwipeDrawer } from '../../hooks/useEdgeSwipeDrawer';
 import './portal-polish.css';
 
 type NavItem = {
@@ -43,18 +44,73 @@ type StudentPortalFeatures = {
 
 const normalizeMode = (value: unknown) => String(value || '').trim().toLowerCase();
 
+function resolveRoleSubtitle(role: string): string {
+  if (role === 'staff') return 'Tutor';
+  if (role === 'school') return 'School Administrator';
+  if (role === 'parent') return 'Parent';
+  if (role === 'student') return 'Student';
+  return 'Member';
+}
+
+function resolvePortalPageTitle(pathname: string, role: string, navGroups: NavGroup[]): string {
+  const clean = pathname.replace(/\/+$/, '') || `/portal/${role}`;
+  if (clean === `/portal/${role}`) return 'Dashboard';
+  if (clean.startsWith('/portal/student/exams/')) return 'Examination Attempt';
+  if (clean.startsWith('/portal/staff/students/')) return 'Student Details';
+  if (clean.endsWith('/onboard-student')) return 'Onboard Student';
+  if (clean.endsWith('/agreements')) return 'Agreements';
+  if (clean.endsWith('/exam-history')) return role === 'staff' ? 'Assessment History' : 'Examination History';
+  if (clean.endsWith('/exam-authoring') || clean.endsWith('/exams')) {
+    if (role === 'school') return 'Examination Overview';
+    if (role === 'staff') return 'Assessments';
+    return 'Examinations';
+  }
+  if (clean.endsWith('/examinations')) return 'Examination Results';
+  if (clean.endsWith('/credentials')) return 'Student Access';
+  if (clean.endsWith('/payments')) return 'Billing';
+  if (clean.endsWith('/settings')) return 'Settings';
+  if (clean.endsWith('/support')) return 'Support';
+  if (clean.endsWith('/milestones')) return 'Milestones';
+  if (clean.endsWith('/assignments')) return 'Assignments';
+  if (clean.endsWith('/assessments')) return 'Assessments';
+  if (clean.endsWith('/resources')) return 'Resources';
+  if (clean.endsWith('/schedules') || clean.endsWith('/calendar')) return 'Class Schedules';
+  if (clean.endsWith('/live-classrooms') || clean.endsWith('/live-classes')) return 'Live Classrooms';
+  if (clean.endsWith('/classes')) return 'Live Classes';
+  if (clean.endsWith('/subjects')) return 'Subjects I Teach';
+  if (clean.endsWith('/courses')) return 'Learning & Tracks';
+  if (clean.endsWith('/achievements')) return 'Achievements';
+  if (clean.endsWith('/edge-club')) return 'Ed Club';
+  if (clean.endsWith('/roster')) return 'Learners Roster';
+  if (clean.endsWith('/learner-progress')) return 'Learner Progress';
+  if (clean.endsWith('/links')) return 'Class Links';
+  if (clean.endsWith('/partnership')) return 'Programme & Billing';
+
+  for (const group of navGroups) {
+    for (const item of group.items) {
+      if (item.path === clean) return item.name;
+    }
+  }
+  for (const group of navGroups) {
+    for (const item of group.items) {
+      if (item.path !== `/portal/${role}` && clean.startsWith(`${item.path}/`)) {
+        return item.name;
+      }
+    }
+  }
+  return 'Dashboard';
+}
+
 const PortalLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
-  const { toast } = useToast();
   const role = location.pathname.split('/')[2] || 'student';
 
   const [displayName, setDisplayName] = useState('Portal User');
+  const [roleSubtitle, setRoleSubtitle] = useState(() => resolveRoleSubtitle(role));
   const [userEmail, setUserEmail] = useState('');
   const [photoURL, setPhotoURL] = useState<string | null>(null);
-  const [isEmailVerified, setIsEmailVerified] = useState(true);
-  const [resendingVerification, setResendingVerification] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -64,10 +120,12 @@ const PortalLayout: React.FC = () => {
     }
     return true;
   });
-  const [collapsedNavGroups, setCollapsedNavGroups] = useState<Record<string, boolean>>({});
+  const [collapsedNavGroups] = useState<Record<string, boolean>>({});
   const [impersonation, setImpersonation] = useState<any>(() => getActiveImpersonation());
   const [studentFeatures, setStudentFeatures] = useState<StudentPortalFeatures>({});
   const profileRef = useRef<HTMLDivElement>(null);
+
+  useEdgeSwipeDrawer(mobileMenuOpen, setMobileMenuOpen, 768);
 
   useEffect(() => {
     void migrateAllFirestoreClasses().catch(() => null);
@@ -75,12 +133,97 @@ const PortalLayout: React.FC = () => {
 
   useEffect(() => {
     const user = auth.currentUser;
-    setUserEmail(user?.email || '');
-    setIsEmailVerified(user?.emailVerified ?? true);
+    const activeImp = getActiveImpersonation();
+    setImpersonation(activeImp);
+    setUserEmail(activeImp?.email || user?.email || '');
     setPhotoURL(user?.photoURL || null);
-    setDisplayName(sessionStorage.getItem('userName') || user?.displayName || user?.email?.split('@')[0] || 'Portal User');
-    setImpersonation(getActiveImpersonation());
-  }, [location.pathname]);
+    setRoleSubtitle(resolveRoleSubtitle(role));
+
+    const cachedSchoolName = resolvePartnerSchoolName(
+      sessionStorage.getItem('schoolName'),
+      sessionStorage.getItem('institutionName')
+    );
+    const cachedUserName =
+      activeImp?.name ||
+      sessionStorage.getItem('userName') ||
+      sessionStorage.getItem('studentName') ||
+      user?.displayName ||
+      '';
+
+    if (role === 'school' && cachedSchoolName) {
+      setDisplayName(cachedSchoolName);
+    } else if (cachedUserName) {
+      setDisplayName(cachedUserName);
+    } else {
+      setDisplayName(
+        role === 'school'
+          ? 'Partner School'
+          : role === 'staff'
+          ? 'Tutor'
+          : role === 'parent'
+          ? 'Parent'
+          : 'Student'
+      );
+    }
+
+    // Resolve authoritative name from Firestore profile or school document
+    const targetUid = activeImp?.uid || sessionStorage.getItem('userId') || user?.uid || '';
+    const schoolId = sessionStorage.getItem('schoolId') || '';
+
+    if (role === 'school') {
+      const lookupSchoolId = schoolId || targetUid;
+      if (lookupSchoolId) {
+        void getDoc(doc(db, 'schools', lookupSchoolId))
+          .then(snap => {
+            if (snap.exists()) {
+              const sData = snap.data() as any;
+              const resolvedSchool = resolvePartnerSchoolName(
+                sData.schoolName,
+                sData.name,
+                sData.institutionName,
+                cachedSchoolName
+              );
+              if (resolvedSchool) {
+                setDisplayName(resolvedSchool);
+                sessionStorage.setItem('schoolName', resolvedSchool);
+              }
+            } else if (targetUid) {
+              return getDoc(doc(db, 'users', targetUid)).then(uSnap => {
+                if (!uSnap.exists()) return;
+                const uData = uSnap.data() as any;
+                const resolvedSchool = resolvePartnerSchoolName(
+                  uData.schoolName,
+                  uData.institutionName,
+                  uData.organizationName,
+                  uData.fullName,
+                  uData.name
+                );
+                if (resolvedSchool) {
+                  setDisplayName(resolvedSchool);
+                  sessionStorage.setItem('schoolName', resolvedSchool);
+                }
+              });
+            }
+          })
+          .catch(() => undefined);
+      }
+    } else if (targetUid) {
+      void getDoc(doc(db, 'users', targetUid))
+        .then(snap => {
+          if (!snap.exists()) return;
+          const data = snap.data() as any;
+          const realName = String(data.fullName || data.name || data.displayName || '').trim();
+          if (realName) {
+            setDisplayName(realName);
+            sessionStorage.setItem('userName', realName);
+          }
+          if (data.photoURL || data.avatarUrl) {
+            setPhotoURL(data.photoURL || data.avatarUrl);
+          }
+        })
+        .catch(() => undefined);
+    }
+  }, [location.pathname, role]);
 
   useEffect(() => {
     const close = (event: MouseEvent) => {
@@ -102,20 +245,6 @@ const PortalLayout: React.FC = () => {
     navigate('/portal');
   };
 
-  const resendVerification = async () => {
-    const user = auth.currentUser;
-    if (!user) return;
-    setResendingVerification(true);
-    try {
-      await sendEmailVerification(user);
-      toast.success(`Verification link sent to ${user.email}.`);
-    } catch (error: any) {
-      toast.error(error?.code === 'auth/too-many-requests' ? 'Please wait before requesting another link.' : 'Unable to send verification email.');
-    } finally {
-      setResendingVerification(false);
-    }
-  };
-
   useEffect(() => {
     if (role !== 'student') return;
     const studentDocId = sessionStorage.getItem('studentDocId') || '';
@@ -123,6 +252,11 @@ const PortalLayout: React.FC = () => {
     void getDoc(doc(db, 'students', studentDocId)).then(snap => {
       if (!snap.exists()) return;
       const data = snap.data() as any;
+      const realStudentName = String(data.fullName || data.name || '').trim();
+      if (realStudentName) {
+        setDisplayName(realStudentName);
+        sessionStorage.setItem('userName', realStudentName);
+      }
       const featureAccess = data.featureAccess || {};
       const deliveryMode = normalizeMode(data.deliveryMode || data.classScheduleDetails?.deliveryMode);
       const registrationSource = normalizeMode(data.registrationSource);
@@ -154,7 +288,7 @@ const PortalLayout: React.FC = () => {
         {
           label: 'Overview',
           items: [
-            { name: 'Dashboard', path: '/portal/school', icon: <LayoutDashboard size={19} />, desc: 'School administration workspace overview' },
+            { name: 'Dashboard', path: '/portal/school', icon: <LayoutDashboard size={19} />, desc: 'School administration overview' },
             { name: 'Class Schedules', path: '/portal/school/schedules', icon: <CalendarDays size={19} />, desc: 'Programme timetables & sessions' }
           ]
         },
@@ -163,7 +297,7 @@ const PortalLayout: React.FC = () => {
           items: [
             { name: 'Examination Overview', path: '/portal/school/exams', icon: <FileText size={19} />, desc: 'School examination management' },
             { name: 'Examination History', path: '/portal/school/exam-history', icon: <History size={19} />, desc: 'Submissions & past examination records' },
-            { name: 'Learner Progress', path: '/portal/school/learner-progress', icon: <ChartNoAxesColumn size={19} />, desc: 'Assessment reports & progress tracking' }
+            { name: 'Learner Progress', path: '/portal/school/learner-progress', icon: <ChartNoAxesColumn size={19} />, desc: 'Assignments, activities, tests, exams & attendance' }
           ]
         },
         {
@@ -174,9 +308,10 @@ const PortalLayout: React.FC = () => {
           ]
         },
         {
-          label: 'Finance',
+          label: 'Finance & Agreements',
           items: [
-            { name: 'Fees & Payments', path: '/portal/school/payments', icon: <Wallet size={19} />, desc: 'Institutional fees & payments' }
+            { name: 'Fees & Payments', path: '/portal/school/payments', icon: <Wallet size={19} />, desc: 'Institutional fees & payments' },
+            { name: 'Agreements', path: '/portal/school/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communications & school contracts' }
           ]
         },
         {
@@ -197,15 +332,9 @@ const PortalLayout: React.FC = () => {
 
     if (role === 'student') {
       const academicItems: NavItem[] = [
-        { name: 'Learning & Tracks', path: '/portal/student/courses', icon: <GraduationCap size={19} />, desc: 'Curriculum & Series' }
+        { name: 'Learning & Tracks', path: '/portal/student/courses', icon: <GraduationCap size={19} />, desc: 'Curriculum & Series' },
+        { name: 'Assessments & Work', path: '/portal/student/assessments', icon: <ClipboardCheck size={19} />, desc: 'Assignments, activities, tests & exams' }
       ];
-      if (studentFeatures.assessments) {
-        academicItems.push({ name: 'Assessments & Quizzes', path: '/portal/student/assessments', icon: <ClipboardCheck size={19} />, desc: 'Assessments, quizzes and coursework' });
-      }
-      academicItems.push(
-        { name: 'Assignments', path: '/portal/student/assignments', icon: <ClipboardCheck size={19} />, desc: 'View and submit assigned work' },
-        { name: 'Examinations', path: '/portal/student/exams', icon: <FileCheck2 size={19} />, desc: 'Scheduled tests, attempts and results' }
-      );
       if (studentFeatures.edClub) {
         academicItems.push({ name: 'Ed Club', path: '/portal/student/edge-club', icon: <Keyboard size={19} />, desc: 'Keyboarding & speed typing portal' });
       }
@@ -263,12 +392,12 @@ const PortalLayout: React.FC = () => {
       return [
         {
           label: 'Overview',
-          items: [{ name: 'Dashboard', path: '/portal/staff', icon: <LayoutDashboard size={19} />, desc: 'Tutor workspace overview' }]
+          items: [{ name: 'Dashboard', path: '/portal/staff', icon: <LayoutDashboard size={19} />, desc: 'Assigned schools, schedules & reminders' }]
         },
         {
           label: 'Teaching & Schedule',
           items: [
-            { name: 'Live Classes', path: '/portal/staff/classes', icon: <Radio size={19} />, desc: 'Teaching roster & sessions' },
+            { name: 'Live Classes', path: '/portal/staff/classes', icon: <Radio size={19} />, desc: 'Teaching roster, schedules & attendance' },
             { name: 'Calendar', path: '/portal/staff/calendar', icon: <CalendarDays size={19} />, desc: 'Teaching timetable' },
             { name: 'Subjects I Teach', path: '/portal/staff/subjects', icon: <Award size={19} />, desc: 'Teaching subjects & approvals' }
           ]
@@ -276,22 +405,23 @@ const PortalLayout: React.FC = () => {
         {
           label: 'Academics & Tests',
           items: [
-            { name: 'Assignments', path: '/portal/staff/assignments', icon: <ClipboardCheck size={19} />, desc: 'Create and review assigned work' },
-            { name: 'Assessments & Quizzes', path: '/portal/staff/assessments', icon: <ClipboardCheck size={19} />, desc: 'Manage learning assessments and quizzes' },
-            { name: 'Examinations', path: '/portal/staff/exams', icon: <FileCheck2 size={19} />, desc: 'Create and manage student tests' },
-            { name: 'Examination History', path: '/portal/staff/exam-history', icon: <History size={19} />, desc: 'Review submissions and results' }
+            { name: 'Assessments', path: '/portal/staff/assessments', icon: <ClipboardCheck size={19} />, desc: 'Create & manage assignments, activities, tests & examinations' },
+            { name: 'Assessment History', path: '/portal/staff/exam-history', icon: <History size={19} />, desc: 'Review history across assignments, activities, tests & exams' }
           ]
         },
         {
           label: 'People & Resources',
           items: [
             { name: 'Student Access', path: '/portal/staff/credentials', icon: <KeyRound size={19} />, desc: 'Access credentials' },
-            { name: 'Lesson Resources', path: '/portal/staff/resources', icon: <BookOpen size={19} />, desc: 'Lesson materials' }
+            { name: 'Lesson Resources', path: '/portal/staff/resources', icon: <BookOpen size={19} />, desc: 'Distribute documents, images, videos & links' }
           ]
         },
         {
-          label: 'Finance',
-          items: [{ name: 'Billing / Fees', path: '/portal/staff/payments', icon: <WalletCards size={19} />, desc: 'Tutor ledger & payouts' }]
+          label: 'Finance & Agreements',
+          items: [
+            { name: 'Billing / Fees', path: '/portal/staff/payments', icon: <WalletCards size={19} />, desc: 'Tutor ledger & payouts' },
+            { name: 'Agreements', path: '/portal/staff/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communications & tutor contracts' }
+          ]
         },
         {
           label: 'Administration',
@@ -325,8 +455,11 @@ const PortalLayout: React.FC = () => {
           ]
         },
         {
-          label: 'Finance',
-          items: [{ name: 'Payments & Fees', path: '/portal/parent/payments', icon: <CreditCard size={19} />, desc: 'Invoices & statements' }]
+          label: 'Finance & Agreements',
+          items: [
+            { name: 'Payments & Fees', path: '/portal/parent/payments', icon: <CreditCard size={19} />, desc: 'Invoices & statements' },
+            { name: 'Agreements', path: '/portal/parent/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communications & family agreements' }
+          ]
         },
         {
           label: 'Administration',
@@ -341,11 +474,19 @@ const PortalLayout: React.FC = () => {
     return [];
   })();
 
-  const roleTitle = role === 'school' ? 'School Administration' : role.charAt(0).toUpperCase() + role.slice(1);
-  const accessCodeOnly = !userEmail && Boolean(sessionStorage.getItem('studentDocId'));
+  const roleTitle = roleSubtitle;
+  const currentPageTitle = resolvePortalPageTitle(location.pathname, role, navGroups);
 
   const isItemActive = (path: string) => {
     if (location.pathname === path) return true;
+    // Highlight Assessments in tutor sidebar when on /portal/staff/exams, /portal/staff/assignments, or /portal/staff/exam-authoring
+    if (
+      role === 'staff' &&
+      path === '/portal/staff/assessments' &&
+      (['/portal/staff/exams', '/portal/staff/assignments', '/portal/staff/exam-authoring'].includes(location.pathname))
+    ) {
+      return true;
+    }
     if (path !== `/portal/${role}` && location.pathname.startsWith(path + '/')) return true;
     return false;
   };
@@ -403,9 +544,6 @@ const PortalLayout: React.FC = () => {
 
   const renderNavGroups = (mobile = false) => {
     return navGroups.map(group => {
-      const hasActive = group.items.some(item => isItemActive(item.path));
-      const isOpen = collapsedNavGroups[group.label] !== undefined ? collapsedNavGroups[group.label] : true;
-
       return (
         <div key={group.label} className="mt-4 first:mt-1 space-y-1">
           {(mobile || sidebarExpanded) && (
@@ -425,41 +563,7 @@ const PortalLayout: React.FC = () => {
 
   return (
     <div className="portal-shell h-screen w-full bg-[#F7F9FC] dark:bg-[#1A2436] text-[#14284B] dark:text-slate-100 flex flex-col md:flex-row overflow-hidden font-sans">
-      <SEO title={`${roleTitle} | Jaystarbliss Studios`} description={`Jaystarbliss Studios ${roleTitle} portal.`} noindex />
-
-      {/* Mobile Top Navigation */}
-      <div className="md:hidden bg-white dark:bg-[#14284B] text-[#14284B] dark:text-white px-4 py-3 flex items-center justify-between sticky top-0 z-30 border-b border-slate-200 dark:border-slate-800 shrink-0">
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen(prev => !prev)}
-          className="flex items-center gap-2.5 min-w-0 text-left cursor-pointer"
-          aria-label="Toggle navigation sidebar"
-        >
-          <JaystarblissIcon className="w-7 h-7 shrink-0 text-[#2563EB]" />
-          <span className="font-bold text-xs uppercase tracking-tight text-[#14284B] dark:text-white whitespace-nowrap">JDI</span>
-          <span className="text-[10px] uppercase font-bold bg-[#E8F0FF] text-[#2563EB] px-2 py-0.5 rounded-md">
-            {role}
-          </span>
-        </button>
-        <div className="flex items-center gap-2 shrink-0">
-          <Link
-            to={`/portal/${role}/support`}
-            className="p-2 rounded-xl bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:text-[#2563EB]"
-            aria-label="Support & Help"
-          >
-            <HelpCircle size={16} />
-          </Link>
-          <NotificationBell role={role} />
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="p-2 rounded-xl bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:text-[#2563EB]"
-            aria-label="Toggle theme"
-          >
-            {theme === 'dark' ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} />}
-          </button>
-        </div>
-      </div>
+      <SEO title={`${currentPageTitle} | ${roleTitle} | Jaystarbliss Studios`} description={`Jaystarbliss Studios ${roleTitle} portal.`} noindex />
 
       {/* Mobile Drawer */}
       <AnimatePresence>
@@ -480,42 +584,40 @@ const PortalLayout: React.FC = () => {
               transition={{ type: 'spring', damping: 28, stiffness: 280 }}
               className="absolute inset-y-0 left-0 w-[80vw] max-w-[280px] bg-white dark:bg-[#14284B] text-[#14284B] dark:text-white border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col p-4 overflow-y-auto"
             >
-              <div className="flex items-center justify-between h-12 pb-2 border-b border-slate-200 dark:border-slate-800 shrink-0">
+              <div className="flex items-center justify-between min-h-14 pb-2.5 border-b border-slate-200 dark:border-slate-800 shrink-0 gap-2">
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-2.5 text-left cursor-pointer"
+                  className="flex items-center gap-2.5 min-w-0 text-left cursor-pointer"
                 >
-                  <JaystarblissIcon className="w-6 h-6 text-[#2563EB]" />
-                  <span className="text-xs font-bold tracking-tight text-[#14284B] dark:text-white">JDI</span>
+                  {photoURL ? (
+                    <img src={photoURL} alt="" className="w-8 h-8 rounded-full object-cover border border-[#2563EB]/40 shrink-0" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-bold shrink-0">
+                      {displayName.charAt(0)}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <span className="block text-xs font-bold tracking-tight text-[#14284B] dark:text-white leading-snug line-clamp-2">
+                      {displayName}
+                    </span>
+                    <span className="block text-[11px] text-[#64748B] dark:text-slate-400 font-medium truncate">
+                      {impersonation ? `Viewing as ${roleSubtitle}` : roleSubtitle}
+                    </span>
+                  </div>
                 </button>
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="p-1.5 rounded-lg text-[#64748B] hover:text-[#14284B] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-[#64748B] hover:text-[#14284B] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors cursor-pointer shrink-0"
                   aria-label="Close sidebar"
                 >
                   <PanelLeftClose size={18} />
                 </button>
               </div>
 
-              {/* User badge */}
-              <div className="px-3 py-2.5 my-3 bg-[#F7F9FC] dark:bg-white/5 rounded-2xl flex items-center gap-3 shrink-0 border border-slate-200/60 dark:border-white/5">
-                {photoURL ? (
-                  <img src={photoURL} alt="" className="w-8 h-8 rounded-full object-cover border border-[#2563EB]/40" referrerPolicy="no-referrer" />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-bold">
-                    {displayName.charAt(0)}
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-[#14284B] dark:text-white truncate">{displayName}</p>
-                  <p className="text-[10px] text-[#64748B] dark:text-slate-400 truncate">{userEmail || `${role} workspace`}</p>
-                </div>
-              </div>
-
               {/* Navigation links */}
-              <nav className="flex-1 space-y-2">{renderNavGroups(true)}</nav>
+              <nav className="flex-1 space-y-2 pt-2">{renderNavGroups(true)}</nav>
 
               {/* Drawer footer utilities */}
               <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-1">
@@ -545,9 +647,12 @@ const PortalLayout: React.FC = () => {
         transition={{ type: 'spring', stiffness: 360, damping: 32, mass: 0.8 }}
         className="hidden md:flex bg-white dark:bg-[#14284B] text-[#14284B] dark:text-white flex-col h-full border-r border-[#E2E8F0] dark:border-slate-800 shrink-0 select-none overflow-hidden shadow-xs"
       >
-        {/* Top Header: Logo + Toggle */}
-        <div className="h-16 px-4 border-b border-[#E2E8F0] dark:border-slate-800 flex items-center justify-between gap-2 shrink-0 overflow-hidden">
-          <Tooltip content={sidebarExpanded ? 'Click logo to collapse sidebar' : 'Click logo to expand sidebar'} placement="right">
+        {/* Top Header: Profile Identity + Collapse Toggle */}
+        <div className="min-h-16 px-4 py-2.5 border-b border-[#E2E8F0] dark:border-slate-800 flex items-center justify-between gap-2 shrink-0 overflow-hidden">
+          <Tooltip
+            content={`${displayName} • ${roleSubtitle}${sidebarExpanded ? ' (Click to collapse)' : ' (Click to expand)'}`}
+            placement="right"
+          >
             <button
               type="button"
               onClick={() => setSidebarExpanded(prev => !prev)}
@@ -555,20 +660,31 @@ const PortalLayout: React.FC = () => {
               aria-label={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
             >
               <span className="w-10 h-10 flex items-center justify-center shrink-0">
-                <JaystarblissIcon className="w-8 h-8 text-[#2563EB] group-hover:scale-105 transition-transform" />
+                {photoURL ? (
+                  <img
+                    src={photoURL}
+                    alt={displayName}
+                    className="w-9 h-9 rounded-full object-cover border border-[#2563EB]/40"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="w-9 h-9 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-bold shadow-xs group-hover:scale-105 transition-transform">
+                    {displayName.charAt(0).toUpperCase()}
+                  </span>
+                )}
               </span>
               {sidebarExpanded && (
                 <motion.span
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.15 }}
-                  className="min-w-0 pl-2.5 whitespace-nowrap overflow-hidden"
+                  className="min-w-0 pl-2.5 overflow-hidden"
                 >
-                  <span className="block text-xs font-bold tracking-tight text-[#14284B] dark:text-white truncate">
-                    JDI
+                  <span className="block text-xs font-bold tracking-tight text-[#14284B] dark:text-white leading-snug line-clamp-2">
+                    {displayName}
                   </span>
-                  <span className="block text-[10px] text-[#2563EB] dark:text-blue-400 font-semibold uppercase tracking-wider truncate">
-                    {role === 'school' ? 'School Workspace' : `${role} Workspace`}
+                  <span className="block text-[11px] text-[#64748B] dark:text-slate-400 font-medium truncate">
+                    {impersonation ? `Viewing as ${roleSubtitle}` : roleSubtitle}
                   </span>
                 </motion.span>
               )}
@@ -644,59 +760,64 @@ const PortalLayout: React.FC = () => {
 
       {/* Main Content Workspace */}
       <main className="portal-main-content flex-1 h-full min-w-0 flex flex-col overflow-y-auto custom-scrollbar bg-[#F7F9FC] dark:bg-[#1A2436]">
-        {!isEmailVerified && !accessCodeOnly && (
-          <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-semibold flex items-center justify-between gap-2 shrink-0">
-            <span className="truncate">Your email address ({userEmail}) is unverified.</span>
+        {/* Standardised Compact Route-Aware Dashboard Header (48-56px height, only current page title visible as text) */}
+        <header className="flex items-center justify-between h-13 sm:h-14 px-4 sm:px-6 bg-white/90 dark:bg-[#14284B]/90 backdrop-blur-md border-b border-[#E2E8F0] dark:border-slate-800 sticky top-0 z-20 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
-              onClick={resendVerification}
-              disabled={resendingVerification}
-              className="underline font-bold shrink-0 cursor-pointer"
+              onClick={() => setMobileMenuOpen(prev => !prev)}
+              className="md:hidden p-2 -ml-1.5 rounded-xl text-[#14284B] dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors shrink-0 cursor-pointer"
+              aria-label="Toggle navigation menu"
             >
-              {resendingVerification ? 'Sending…' : 'Resend Link'}
+              <Menu size={19} />
             </button>
-          </div>
-        )}
-
-        {/* Topbar Header */}
-        <header className="hidden md:flex items-center justify-between px-6 py-3.5 bg-white/90 dark:bg-[#14284B]/90 backdrop-blur-md border-b border-[#E2E8F0] dark:border-slate-800 sticky top-0 z-20 shrink-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-bold text-[#14284B] dark:text-white uppercase tracking-wider">
-              {roleTitle} Workspace
-            </h2>
+            <h1 className="text-sm sm:text-base font-bold text-[#14284B] dark:text-white tracking-tight truncate">
+              {currentPageTitle}
+            </h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Tooltip content="Customer Support & Help Desk" placement="bottom">
               <Link
                 to={`/portal/${role}/support`}
-                className="p-2 rounded-xl text-[#64748B] hover:text-[#2563EB] dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
+                className="p-2 rounded-xl text-[#64748B] hover:text-[#2563EB] dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center"
                 aria-label="Customer Support"
               >
                 <HelpCircle size={18} />
-                <span className="hidden lg:inline text-xs font-bold text-[#14284B] dark:text-slate-300">Support</span>
               </Link>
+            </Tooltip>
+
+            <Tooltip content={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} placement="bottom">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="p-2 rounded-xl text-[#64748B] hover:text-[#2563EB] dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                aria-label="Toggle theme"
+              >
+                {theme === 'dark' ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
+              </button>
             </Tooltip>
 
             <NotificationBell role={role} />
 
-            {/* Profile Dropdown */}
+            {/* Profile Dropdown (Avatar icon button only in header; full text inside menu) */}
             <div className="relative" ref={profileRef}>
-              <button
-                type="button"
-                onClick={() => setShowProfileMenu(v => !v)}
-                className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                aria-label="User profile menu"
-              >
-                {photoURL ? (
-                  <img src={photoURL} alt={displayName} className="w-8 h-8 rounded-full object-cover border border-[#2563EB]/40" referrerPolicy="no-referrer" />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white flex items-center justify-center font-bold text-xs">
-                    {displayName.charAt(0)}
-                  </div>
-                )}
-                <span className="text-xs font-bold text-[#14284B] dark:text-slate-200">{displayName}</span>
-              </button>
+              <Tooltip content={displayName} placement="bottom">
+                <button
+                  type="button"
+                  onClick={() => setShowProfileMenu(v => !v)}
+                  className="flex items-center justify-center p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  aria-label="User profile menu"
+                >
+                  {photoURL ? (
+                    <img src={photoURL} alt={displayName} className="w-8 h-8 rounded-full object-cover border border-[#2563EB]/40" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white flex items-center justify-center font-bold text-xs">
+                      {displayName.charAt(0)}
+                    </div>
+                  )}
+                </button>
+              </Tooltip>
 
               <AnimatePresence>
                 {showProfileMenu && (

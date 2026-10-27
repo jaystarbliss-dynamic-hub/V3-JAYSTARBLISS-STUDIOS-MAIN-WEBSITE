@@ -23,7 +23,7 @@ import { JaystarblissIcon } from '../common/JaystarblissLogo';
 import NotificationBell from '../common/NotificationBell';
 import SEO from '../ui/SEO';
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
-import adminBgWallpaper from '../../assets/landscape hex design.png';
+import { useEdgeSwipeDrawer } from '../../hooks/useEdgeSwipeDrawer';
 
 interface NavItem {
   name: string;
@@ -38,11 +38,48 @@ interface NavGroup {
   items: NavItem[];
 }
 
+function resolveAdminPageTitle(pathname: string, flatNavList: NavItem[]): string {
+  const clean = pathname.replace(/\/+$/, '') || '/admin';
+  if (clean === '/admin') return 'Dashboard';
+  if (clean === '/admin/programs/new') return 'Create Program';
+  if (clean.startsWith('/admin/programs/')) return 'Edit Program';
+  if (clean === '/admin/services/new') return 'Create Service';
+  if (clean.startsWith('/admin/services/')) return 'Edit Service';
+  if (clean === '/admin/blog/new') return 'Create Blog Post';
+  if (clean.startsWith('/admin/blog/')) return 'Edit Blog Post';
+  if (clean === '/admin/portfolio/new') return 'Create Case Study';
+  if (clean.startsWith('/admin/portfolio/')) return 'Edit Case Study';
+  if (clean === '/admin/pages/new') return 'Create Page';
+  if (clean.startsWith('/admin/pages/')) return 'Edit Page';
+  if (clean === '/admin/schools/onboard') return 'Onboard School';
+  if (clean === '/admin/parents') return 'Parents';
+  if (clean === '/admin/reports') return 'Reports';
+  if (clean === '/admin/tutor-subjects') return 'Tutor Subjects';
+  if (clean === '/admin/agreements') return 'Agreements Centre';
+  if (clean === '/admin/examinations') return 'Examinations';
+  if (clean === '/admin/examination-history') return 'Examination History';
+  if (clean === '/admin/billing') return 'Billing';
+  if (clean === '/admin/settings') return 'Settings';
+  if (clean === '/admin/support') return 'Support';
+
+  const exact = flatNavList.find(item => item.href === clean);
+  if (exact) return exact.name;
+
+  const prefix = flatNavList.find(
+    item => item.href !== '/admin' && clean.startsWith(`${item.href}/`)
+  );
+  if (prefix) return prefix.name;
+
+  return 'Dashboard';
+}
+
 const AdminLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [impersonateModalOpen, setImpersonateModalOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+
+  useEdgeSwipeDrawer(sidebarOpen, setSidebarOpen, 1024);
 
   useEffect(() => {
     void migrateAllFirestoreClasses().catch(() => null);
@@ -111,6 +148,7 @@ const AdminLayout: React.FC = () => {
         { name: "Approvals & Requests", href: "/admin/approvals", icon: UserCheck, desc: "Student, tutor & enrollment approvals" },
         { name: "Scholars & Students", href: "/admin/students", icon: GraduationCap, desc: "Student credentials & individual dispatches" },
         { name: "Billings / Fees", href: "/admin/billing", icon: CreditCard, desc: "Tuition transactions, treasury & ledger" },
+        { name: "Agreements Centre", href: "/admin/agreements", icon: FileText, desc: "Proposals, communications & institutional contracts" },
         { name: "Faculty & Staff", href: "/admin/staff", icon: Users, desc: "Staff invitations & faculty curriculum" },
         { name: "Tutor Subjects", href: "/admin/tutor-subjects", icon: Award, desc: "Approve subjects & find matching tutors" },
         { name: "Affiliated Schools", href: "/admin/schools", icon: School, desc: "Partner school portals & exams" },
@@ -199,14 +237,12 @@ const AdminLayout: React.FC = () => {
     localStorage.setItem('admin_expanded_nav_sections', JSON.stringify(updated));
   };
 
-  const currentNav = flatNavList.find(item => 
-    location.pathname === item.href || (location.pathname.startsWith(item.href) && item.href !== '/admin')
-  );
+  const currentPageTitle = resolveAdminPageTitle(location.pathname, flatNavList);
 
   return (
     <div className="admin-shell h-screen w-full bg-[#f8fafc] dark:bg-[#070b14] text-slate-900 dark:text-slate-100 flex overflow-hidden font-sans select-none">
       <SEO 
-        title="Admin Console | Jaystarbliss Studios" 
+        title={`${currentPageTitle} | Admin Console | Jaystarbliss Studios`} 
         description="Command center for Jaystarbliss Studios administrative operations, portals, billing and educational ecosystem." 
         noindex={true} 
       />
@@ -492,52 +528,45 @@ const AdminLayout: React.FC = () => {
         </div>
       </motion.aside>
 
-      {/* Main content Area with Ambient Background */}
-      <div className="flex-1 h-full max-h-screen flex flex-col min-w-0 overflow-hidden relative">
-        <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden select-none" aria-hidden="true">
-          <img 
-            src={adminBgWallpaper} 
-            alt="" 
-            className="w-full h-full object-cover filter blur-[28px] scale-110 opacity-20 dark:opacity-40 transition-opacity" 
-          />
-          <div className="absolute inset-0 bg-slate-100/80 dark:bg-[#070b14]/85 backdrop-blur-xs" />
-        </div>
-
-        {/* Topbar */}
-        <div className="relative z-20 flex-shrink-0 flex items-center justify-between h-14 sm:h-16 bg-white/80 dark:bg-[#0c1220]/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 px-3 sm:px-6 lg:px-8 transition-colors shadow-xs">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Tooltip content="Click logo to open sidebar" placement="right">
+      {/* Main content Area on Neutral SaaS Canvas */}
+      <div className="flex-1 h-full max-h-screen flex flex-col min-w-0 overflow-hidden relative bg-[#F8FAFC] dark:bg-[#0B1120]">
+        {/* Standardised Compact Route-Aware Topbar (48-56px height, only current page title visible as text) */}
+        <header className="relative z-20 flex-shrink-0 flex items-center justify-between h-13 sm:h-14 bg-white dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 lg:px-8 transition-colors shadow-2xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Tooltip content="Toggle navigation menu" placement="right">
               <button 
                 type="button"
-                className="lg:hidden flex items-center gap-2 p-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer" 
+                className="lg:hidden flex items-center justify-center p-2 -ml-1.5 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer" 
                 onClick={() => setSidebarOpen(prev => !prev)}
                 aria-label="Toggle navigation sidebar"
               >
-                <JaystarblissIcon className="w-7 h-7 shrink-0" />
+                <Menu size={19} />
               </button>
             </Tooltip>
 
-            <span className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white truncate max-w-[130px] sm:max-w-none">
-              {currentNav?.name || 'Admin Overview'}
-            </span>
+            <h1 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white tracking-tight truncate">
+              {currentPageTitle}
+            </h1>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Log in as / Impersonate Button with Rich Contrast */}
-            <button
-              type="button"
-              onClick={() => setImpersonateModalOpen(true)}
-              className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-xs transition-transform active:scale-95 flex items-center gap-1.5 shrink-0"
-              title="Log in directly as student, school admin or tutor"
-            >
-              <UserCheck size={14} />
-              <span className="hidden sm:inline">Log in as</span>
-            </button>
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Impersonate Icon Button */}
+            <Tooltip content="Log in directly as student, school admin or tutor" placement="bottom">
+              <button
+                type="button"
+                onClick={() => setImpersonateModalOpen(true)}
+                className="p-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 transition-colors cursor-pointer shrink-0"
+                aria-label="Log in as user"
+              >
+                <UserCheck size={17} />
+              </button>
+            </Tooltip>
 
             {/* Global Search Button */}
             <Tooltip content="Global search" placement="bottom">
               <button 
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                type="button"
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
                 onClick={() => setSearchOpen(true)}
                 aria-label="Search"
               >
@@ -549,7 +578,7 @@ const AdminLayout: React.FC = () => {
             <Tooltip content="Help & Support Desk" placement="bottom">
               <Link
                 to="/admin/support"
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-1"
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center justify-center"
                 aria-label="Support Desk"
               >
                 <HelpCircle size={17} />
@@ -561,7 +590,7 @@ const AdminLayout: React.FC = () => {
               <button 
                 type="button"
                 onClick={toggleTheme}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
                 aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               >
                 {theme === 'dark' ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} />}
@@ -571,18 +600,20 @@ const AdminLayout: React.FC = () => {
             {/* Notification Bell */}
             <NotificationBell role="admin" />
 
-            <div className="h-5 w-px bg-slate-200 dark:bg-slate-800" />
-            
-            <div className="flex items-center gap-2 py-1 px-2.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10">
-              <div className="text-right hidden sm:block">
-                <div className="text-xs font-bold text-gray-900 dark:text-gray-100 leading-tight">Admin Officer</div>
-              </div>
-              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-sky-600 to-blue-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
-                JD
-              </div>
-            </div>
+            {/* Profile Settings Avatar Link (Icon/Avatar only — no extra visible text in header) */}
+            <Tooltip content="Global Settings" placement="bottom">
+              <Link
+                to="/admin/settings"
+                aria-label="Global Settings"
+                className="p-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center justify-center"
+              >
+                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-sky-600 to-blue-600 text-white flex items-center justify-center shadow-xs">
+                  <ShieldCheck size={15} />
+                </div>
+              </Link>
+            </Tooltip>
           </div>
-        </div>
+        </header>
 
         {/* Main Content Area */}
         <main className="admin-main-content flex-1 relative z-10 overflow-y-auto overscroll-contain focus:outline-none custom-scrollbar">

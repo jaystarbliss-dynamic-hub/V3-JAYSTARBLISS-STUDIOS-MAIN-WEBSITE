@@ -18,6 +18,7 @@ import SEO from '../components/ui/SEO';
 import { useToast } from '../contexts/ToastContext';
 import { JaystarblissIcon } from '../components/common/JaystarblissLogo';
 import portalWallpaper from '../assets/jdi login bg.png';
+import { getFriendlyErrorMessage, logInternalDiagnostic } from '../utils/friendlyErrors';
 import './Portal.css';
 import './SecurePortalTheme.css';
 
@@ -607,8 +608,8 @@ const SecurePortalLogin: React.FC = () => {
         toast.success('Faculty workspace signed in successfully.'); 
       }
     } catch (err: any) { 
-      const code = String(err?.code || ''); 
-      setError(code === 'auth/invalid-credential' ? 'The email or password is incorrect.' : err?.message || 'Login failed. Please check your credentials and try again.'); 
+      logInternalDiagnostic('SecurePortalLogin::submit', err, { instituteTab, portalMode });
+      setError(getFriendlyErrorMessage(err, 'Sign in was unsuccessful. Please check your credentials and try again.')); 
     }
     finally { 
       setLoading(false); 
@@ -647,7 +648,8 @@ const SecurePortalLogin: React.FC = () => {
         toast.success('If an account exists for that email, a password reset link has been sent.');
         setError('Check your email inbox (and spam folder) for the password reset link.');
       } catch (e: any) {
-        setError(e?.message || 'Unable to start password recovery.');
+        logInternalDiagnostic('SecurePortalLogin::passwordReset', e, { email });
+        setError(getFriendlyErrorMessage(e, 'Unable to send password recovery email right now. Please try again shortly.'));
       } finally {
         setLoading(false);
       }

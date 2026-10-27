@@ -337,28 +337,15 @@ const AdminInquiries: React.FC = () => {
     <div className="space-y-4 max-w-7xl mx-auto pb-12">
       <SEO title="Inquiries & Lead Pipeline | Admin" description="Manage captured leads, school proposals, and admissions." noindex={true} />
 
-      {/* Header */}
-      <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 md:p-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h1 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white mt-1">
-              Inquiries & Leads
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              All incoming admissions, school partnership proposals, and requests in a responsive workspace.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button 
-              type="button" 
-              onClick={exportCsv} 
-              className="min-h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition-all"
-            >
-              <Download size={14} /> Export CSV
-            </button>
-          </div>
-        </div>
+      {/* Action Bar */}
+      <div className="flex items-center justify-end">
+        <button 
+          type="button" 
+          onClick={exportCsv} 
+          className="min-h-9 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition-all"
+        >
+          <Download size={14} /> Export CSV
+        </button>
       </div>
 
       {/* Control Bar with Dropdown Selectors & Search */}

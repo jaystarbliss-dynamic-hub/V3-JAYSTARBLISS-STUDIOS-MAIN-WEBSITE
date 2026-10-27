@@ -135,22 +135,10 @@ const AdminReports: React.FC = () => {
     <div className="space-y-4 max-w-7xl mx-auto pb-12">
       <SEO title="Reports & Analytics | Admin" description="Executive intelligence, financial statistics, institutional figures, and CRM performance." noindex={true} />
 
-      {/* Header */}
-      <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 md:p-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <div className="text-brand-red font-black text-[11px] uppercase tracking-widest flex items-center gap-1.5">
-              <BarChart3 size={13} /> Management Intelligence
-            </div>
-            <h1 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white mt-1">
-              Reports & Analytics
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Real-time Firestore aggregated figures for institutional, academic, financial, and operational KPIs.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
+      {/* Controls Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-xs">
+        <span className="text-xs text-slate-500">Real-time aggregated figures for institutional, academic, and financial KPIs</span>
+        <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
               <select 
                 value={range} 
@@ -173,7 +161,6 @@ const AdminReports: React.FC = () => {
               <Download size={13} /> Export Summary
             </button>
           </div>
-        </div>
       </div>
 
       {/* Top 4 KPI Metrics (Scaled down) */}

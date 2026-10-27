@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { auth, db, getClientDatabases } from "../../lib/firebase";
 import {
   collection,
@@ -26,6 +26,11 @@ import {
   computeExamMaxScore,
   normalizeDeliveryMode,
   validateExternalExamUrl,
+  type AcademicWorkType,
+  WORK_TYPES,
+  normalizeWorkType,
+  validateWorkTypeTransition,
+  normalizeRecipientTargets,
 } from "../../lib/classes";
 import {
   KeyRound,
@@ -58,11 +63,19 @@ import {
   Link2,
   Layers,
 } from "lucide-react";
+import { ExamListSkeleton } from "../../components/ui/Skeleton";
 
 type ExistingExamItem = {
   id: string;
   title: string;
   subject: string;
+  workType?: AcademicWorkType;
+  isUngradedActivity?: boolean;
+  submissionFormat?: "QUESTIONS" | "DELIVERABLE";
+  dueDate?: string | null;
+  recipientMode?: "SCHOOL_CLASS" | "PRIVATE_LEARNERS" | "MULTI_TARGET";
+  targetSchoolIds?: string[];
+  targetStudentIds?: string[];
   status: string;
   deliveryMode: "NATIVE" | "EXTERNAL_LINK";
   externalUrl?: string;
@@ -126,6 +139,7 @@ type EnrolledStudent = {
   class?: string;
   className?: string;
   schoolId?: string;
+  isPrivate?: boolean;
 };
 
 type EditorTab = "questions" | "responses" | "settings";
@@ -154,6 +168,20 @@ export default function TutorExaminations() {
   const [showCreateTypeModal, setShowCreateTypeModal] = useState<boolean>(false);
   const [showScheduleSection, setShowScheduleSection] = useState<boolean>(false);
   const creatorTopRef = useRef<HTMLElement | null>(null);
+
+  // Unified Academic Work Type & Recipient State
+  const [workType, setWorkType] = useState<AcademicWorkType>(() => {
+    const params = new URLSearchParams(location.search);
+    const t = params.get("type");
+    return t ? normalizeWorkType(t) : "EXAMINATION";
+  });
+  const [isUngradedActivity, setIsUngradedActivity] = useState<boolean>(false);
+  const [submissionFormat, setSubmissionFormat] = useState<"QUESTIONS" | "DELIVERABLE">("QUESTIONS");
+  const [dueDate, setDueDate] = useState<string>("");
+  const [recipientMode, setRecipientMode] = useState<"SCHOOL_CLASS" | "PRIVATE_LEARNERS" | "MULTI_TARGET">("SCHOOL_CLASS");
+  const [privateLearners, setPrivateLearners] = useState<EnrolledStudent[]>([]);
+  const [targetStudentIds, setTargetStudentIds] = useState<string[]>([]);
+  const [workTypeFilter, setWorkTypeFilter] = useState<"ALL" | AcademicWorkType>("ALL");
 
   // Core Metadata & Header Settings (Starts empty — no demo questions or fabricated titles)
   const [title, setTitle] = useState("");
@@ -227,12 +255,12 @@ export default function TutorExaminations() {
 
   // Computed total marks dynamically from native questions
   const totalExamMarks = useMemo(() => {
-    if (deliveryMode === "EXTERNAL_LINK") return 0;
+    if (deliveryMode === "EXTERNAL_LINK" || (workType === "ACTIVITY" && isUngradedActivity)) return 0;
     return questions.reduce((sum, q) => {
       const pts = Number(q.points ?? defaultPointValue);
       return sum + (Number.isFinite(pts) && pts > 0 ? pts : 1);
     }, 0);
-  }, [questions, defaultPointValue, deliveryMode]);
+  }, [questions, defaultPointValue, deliveryMode, workType, isUngradedActivity]);
 
   // Smooth scroll to top of creator
   const scrollToCreatorTop = () => {
@@ -267,16 +295,48 @@ export default function TutorExaminations() {
     }
   };
 
-  // Start a brand-new examination of the chosen type
-  const handleStartNewExamination = (mode: "NATIVE" | "EXTERNAL_LINK") => {
+  // Safely switch workType (Assignment, Activity, Test, Examination)
+  const handleSelectWorkType = (nextType: AcademicWorkType) => {
+    if (editingExamId) {
+      const currentRecord = existingExams.find((e) => e.id === editingExamId);
+      const check = validateWorkTypeTransition(currentRecord || { workType, status }, nextType, examAttempts.length);
+      if (!check.allowed) {
+        setErrorMessage(check.error || "Cannot convert an item with live student submissions.");
+        return;
+      }
+    }
+    setWorkType(nextType);
+    setErrorMessage("");
+    if (nextType === "ACTIVITY") {
+      setDuration(15);
+    } else if (nextType === "TEST") {
+      setDuration(20);
+      setIsUngradedActivity(false);
+    } else if (nextType === "ASSIGNMENT") {
+      setIsUngradedActivity(false);
+    } else {
+      setDuration(30);
+      setIsUngradedActivity(false);
+    }
+  };
+
+  // Start a brand-new assessment of the chosen type and delivery mode
+  const handleStartNewExamination = (
+    mode: "NATIVE" | "EXTERNAL_LINK",
+    chosenWorkType: AcademicWorkType = workType
+  ) => {
     const freshCode = generateAccessCode();
     setEditingExamId("");
+    setWorkType(chosenWorkType);
+    setIsUngradedActivity(chosenWorkType === "ACTIVITY");
+    setSubmissionFormat("QUESTIONS");
+    setDueDate("");
     setDeliveryMode(mode);
     setTitle("");
     setDescription("");
     setSubject("");
     setExternalUrl("");
-    setDuration(30);
+    setDuration(chosenWorkType === "TEST" ? 20 : chosenWorkType === "ACTIVITY" ? 15 : 30);
     setQuestions([]);
     setCustomPasscode(freshCode);
     setGeneratedPasscode(freshCode);
@@ -289,9 +349,9 @@ export default function TutorExaminations() {
     setShowCreateTypeModal(false);
     setErrorMessage("");
     setMessage(
-      mode === "EXTERNAL_LINK"
-        ? "New External Link / Google Forms examination ready. Enter the details and URL below."
-        : "New Native Jaystarbliss examination ready. Add or import your questions below."
+      `New ${chosenWorkType.charAt(0) + chosenWorkType.slice(1).toLowerCase()} (${
+        mode === "EXTERNAL_LINK" ? "External Link" : "Native Editor"
+      }) ready.`
     );
     scrollToCreatorTop();
   };
@@ -392,7 +452,33 @@ export default function TutorExaminations() {
           }
         });
 
+        // Load assigned private learners for Private Learner / Multi-target recipient modes
+        const [indStudentsSnap, stdStudentsSnap] = await Promise.all([
+          getDocs(collection(db, "individualStudents")).catch(() => ({ docs: [] } as any)),
+          getDocs(collection(db, "students")).catch(() => ({ docs: [] } as any)),
+        ]);
+        const privateMap = new Map<string, EnrolledStudent>();
+        [...(indStudentsSnap.docs || []), ...(stdStudentsSnap.docs || [])].forEach((d: any) => {
+          const st = d.data();
+          const tutorMatch =
+            isAdmin ||
+            [st.tutorId, st.staffId, st.assignedTutorId, st.assignedStaffId, st.instructorId]
+              .map((v) => String(v || "").trim())
+              .includes(currentUser.uid);
+          if (!tutorMatch) return;
+          const stClass = normalizeClassName(st.className || st.grade || st.class || "Grade 1");
+          privateMap.set(d.id, {
+            id: d.id,
+            fullName: String(st.fullName || st.name || st.studentName || "Private Learner").trim(),
+            class: stClass,
+            className: stClass,
+            schoolId: String(st.schoolId || "").trim(),
+            isPrivate: !st.schoolId || d.ref?.parent?.id === "individualStudents",
+          });
+        });
+
         if (isMounted) {
+          setPrivateLearners(Array.from(privateMap.values()));
           setAssignedSchools(schoolsList);
           if (schoolsList.length > 0 && !schoolId) {
             setSchoolId(schoolsList[0].id);
@@ -419,7 +505,7 @@ export default function TutorExaminations() {
     }
   }, [schoolId]);
 
-  // 3. Load Existing Examinations List
+  // 3. Load Existing Assessments & Examinations List
   const loadExistingExams = async () => {
     setExistingBusy(true);
     try {
@@ -446,19 +532,32 @@ export default function TutorExaminations() {
         if (!canManage) return;
 
         const sId = String(data.schoolId || "");
-        const resolvedSchoolName = resolvePartnerSchoolName(
-          schoolNameById.get(sId),
-          data.schoolName,
-          "Assigned Partner School"
-        );
+        const resolvedSchoolName =
+          sId === "private"
+            ? "Private Learner(s)"
+            : resolvePartnerSchoolName(
+                schoolNameById.get(sId),
+                data.schoolName,
+                "Assigned Partner School"
+              );
         const qList = Array.isArray(data.questions) ? data.questions : [];
         const resolvedMode = normalizeDeliveryMode(data.deliveryMode, data);
-        const maxScore = resolvedMode === "EXTERNAL_LINK" ? 0 : computeExamMaxScore(data);
+        const resolvedWorkType = normalizeWorkType(data.workType, data);
+        const isUngraded = resolvedWorkType === "ACTIVITY" && data.isUngradedActivity === true;
+        const maxScore =
+          resolvedMode === "EXTERNAL_LINK" || isUngraded ? 0 : computeExamMaxScore(data);
 
         map.set(d.id, {
           id: d.id,
-          title: data.title || "Untitled Examination",
+          title: data.title || "Untitled Assessment",
           subject: data.subject || "General",
+          workType: resolvedWorkType,
+          isUngradedActivity: isUngraded,
+          submissionFormat: data.submissionFormat === "DELIVERABLE" ? "DELIVERABLE" : "QUESTIONS",
+          dueDate: data.dueDate || null,
+          recipientMode: data.recipientMode || "SCHOOL_CLASS",
+          targetSchoolIds: Array.isArray(data.targetSchoolIds) ? data.targetSchoolIds : sId ? [sId] : [],
+          targetStudentIds: Array.isArray(data.targetStudentIds) ? data.targetStudentIds : [],
           status: data.status || "draft",
           deliveryMode: resolvedMode,
           externalUrl: String(data.externalUrl || data.url || data.link || "").trim(),
@@ -898,8 +997,16 @@ ANSWER KEY
     targetStatus: "draft" | "scheduled" | "active"
   ) => {
     if (rawList.length === 0) {
-      if (targetStatus === "draft") return [];
-      throw new Error("Please add or import at least one question before publishing a native examination.");
+      if (
+        targetStatus === "draft" ||
+        (workType === "ASSIGNMENT" && submissionFormat === "DELIVERABLE") ||
+        workType === "ACTIVITY"
+      ) {
+        return [];
+      }
+      throw new Error(
+        `Please add or import at least one question before publishing a native ${workType.toLowerCase()}.`
+      );
     }
 
     return rawList.map((q, idx) => {
@@ -930,12 +1037,15 @@ ANSWER KEY
         id: q.id || makeId(),
         prompt: promptText || `Untitled Question ${idx + 1}`,
         options: isChoice ? cleanOpts : [],
-        points: Math.max(0.5, Number(q.points ?? defaultPointValue) || 1),
+        points:
+          workType === "ACTIVITY" && isUngradedActivity
+            ? 0
+            : Math.max(0.5, Number(q.points ?? defaultPointValue) || 1),
       };
     });
   };
 
-  // Save / Publish / Update Examination (Idempotent — never duplicates on type switch or re-save)
+  // Save / Publish / Update Assessment (Idempotent — never duplicates on type switch or re-save)
   const handleSaveOrPublish = async (overrideStatus?: "draft" | "scheduled" | "active") => {
     setBusy(true);
     setMessage("");
@@ -944,12 +1054,18 @@ ANSWER KEY
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error("Please sign in to your tutor account.");
       if (userRole && !canAuthorOrMutateExam(userRole)) {
-        throw new Error("School administrators cannot create or modify examinations.");
+        throw new Error("School administrators cannot create or modify assessments.");
       }
-      if (!title.trim()) throw new Error("Please enter an examination title.");
-      if (!subject.trim()) throw new Error("Please enter an examination subject.");
-      if (!schoolId) throw new Error("Please select an authorised school.");
-      if (!selectedClass) throw new Error("Please select a target class/grade.");
+      if (!title.trim()) throw new Error(`Please enter a ${workType.toLowerCase()} title.`);
+      if (!subject.trim()) throw new Error(`Please enter a ${workType.toLowerCase()} subject.`);
+
+      if (recipientMode === "PRIVATE_LEARNERS" && targetStudentIds.length === 0) {
+        throw new Error("Please select at least one private learner for this assignment/assessment.");
+      }
+      if (recipientMode !== "PRIVATE_LEARNERS") {
+        if (!schoolId) throw new Error("Please select an authorised school.");
+        if (!selectedClass) throw new Error("Please select a target class/grade.");
+      }
 
       const targetStatus = overrideStatus || status;
 
@@ -966,28 +1082,38 @@ ANSWER KEY
         preparedQuestions = prepareNativeQuestionsForSave(questions, targetStatus);
       }
 
-      const selectedSchoolObj = assignedSchools.find((s) => s.id === schoolId);
-      const schoolName = resolvePartnerSchoolName(
-        selectedSchoolObj?.name,
-        "Assigned Partner School"
-      );
+      const normalizedTargets = normalizeRecipientTargets({
+        recipientMode,
+        schoolId: recipientMode === "PRIVATE_LEARNERS" ? "private" : schoolId,
+        targetSchoolIds: recipientMode === "PRIVATE_LEARNERS" ? [] : [schoolId],
+        classIds: [selectedClass],
+        targetStudentIds: recipientMode === "SCHOOL_CLASS" ? [] : targetStudentIds,
+      });
 
+      const selectedSchoolObj = assignedSchools.find((s) => s.id === schoolId);
+      const schoolName =
+        recipientMode === "PRIVATE_LEARNERS"
+          ? "Private Learner(s)"
+          : resolvePartnerSchoolName(selectedSchoolObj?.name, "Assigned Partner School");
+
+      const requiresPasscode = workType === "EXAMINATION" || workType === "TEST";
       const finalPasscode = (
         customPasscode.trim() ||
         generatedPasscode.trim() ||
         generateAccessCode()
       ).toUpperCase();
 
-      if (finalPasscode.length < 6) {
+      if (requiresPasscode && finalPasscode.length < 6) {
         throw new Error("Access code must be at least 6 characters.");
       }
 
       const targetExamId =
         editingExamId ||
-        `exam-${selectedClass.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${Date.now().toString(36)}`;
+        `${workType.toLowerCase()}-${selectedClass.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${Date.now().toString(36)}`;
 
+      const isUngraded = workType === "ACTIVITY" && isUngradedActivity;
       const computedMaxScore =
-        deliveryMode === "NATIVE"
+        deliveryMode === "NATIVE" && !isUngraded
           ? preparedQuestions.reduce((sum, q) => sum + (Number(q.points) || 1), 0)
           : 0;
 
@@ -997,15 +1123,25 @@ ANSWER KEY
         description: description.trim(),
         instructions: description.trim(),
         subject: subject.trim(),
+        workType,
+        isUngradedActivity: isUngraded,
+        submissionFormat: workType === "ASSIGNMENT" ? submissionFormat : "QUESTIONS",
+        dueDate: dueDate || null,
+        recipientMode: normalizedTargets.recipientMode,
+        targetSchoolIds: normalizedTargets.targetSchoolIds,
+        targetStudentIds: normalizedTargets.targetStudentIds,
         deliveryMode,
         externalUrl: deliveryMode === "EXTERNAL_LINK" ? validatedExternalUrl : "",
         url: deliveryMode === "EXTERNAL_LINK" ? validatedExternalUrl : "",
-        schoolId,
+        schoolId: normalizedTargets.schoolId || schoolId,
         schoolName,
         targetClass: selectedClass,
         className: selectedClass,
         classIds: [selectedClass],
-        durationMinutes: deliveryMode === "NATIVE" ? Math.max(5, Number(duration) || 30) : null,
+        durationMinutes:
+          deliveryMode === "NATIVE" && (workType === "EXAMINATION" || workType === "TEST")
+            ? Math.max(5, Number(duration) || 30)
+            : null,
         gradingMode: deliveryMode === "NATIVE" ? gradingMode : "automatic",
         status: targetStatus,
         passcode: finalPasscode,
@@ -1014,7 +1150,7 @@ ANSWER KEY
         questions: deliveryMode === "NATIVE" ? preparedQuestions : [],
         questionCount: deliveryMode === "NATIVE" ? preparedQuestions.length : 0,
         maxScore: computedMaxScore,
-        makeQuiz: deliveryMode === "NATIVE" ? makeQuiz : false,
+        makeQuiz: deliveryMode === "NATIVE" && !isUngraded ? makeQuiz : false,
         releaseGradesPolicy,
         showMissedQuestions,
         showCorrectAnswers,
@@ -1060,29 +1196,37 @@ ANSWER KEY
         setQuestions(preparedQuestions);
       }
 
+      const workLabel = workType.charAt(0) + workType.slice(1).toLowerCase();
       setMessage(
         targetStatus === "draft"
-          ? `Examination "${title.trim()}" saved as draft.`
-          : `Examination "${title.trim()}" published (${
-              deliveryMode === "EXTERNAL_LINK" ? "External Link" : "Native Examination"
-            })! Access Code: ${finalPasscode}`
+          ? `${workLabel} "${title.trim()}" saved as draft.`
+          : `${workLabel} "${title.trim()}" published (${
+              deliveryMode === "EXTERNAL_LINK" ? "External Link" : "Native Editor"
+            })${requiresPasscode ? ` • Access Code: ${finalPasscode}` : ""}`
       );
       void loadExistingExams();
     } catch (e) {
-      setErrorMessage(e instanceof Error ? e.message : "Failed to save examination.");
+      setErrorMessage(e instanceof Error ? e.message : "Failed to save assessment.");
     } finally {
       setBusy(false);
     }
   };
 
-  // Edit / Republish Examination — populates exact saved fields without injecting demo questions
+  // Edit / Republish Assessment — populates exact saved fields without injecting demo questions
   const handleEditExam = (exam: ExistingExamItem) => {
     const resolvedMode = normalizeDeliveryMode(exam.deliveryMode, exam);
+    const resolvedWorkType = normalizeWorkType(exam.workType, exam);
     setEditingExamId(exam.id);
+    setWorkType(resolvedWorkType);
+    setIsUngradedActivity(Boolean(exam.isUngradedActivity));
+    setSubmissionFormat(exam.submissionFormat === "DELIVERABLE" ? "DELIVERABLE" : "QUESTIONS");
+    setDueDate(exam.dueDate || "");
+    setRecipientMode(exam.recipientMode || "SCHOOL_CLASS");
+    setTargetStudentIds(Array.isArray(exam.targetStudentIds) ? exam.targetStudentIds : []);
     setTitle(exam.title || "");
     setDescription(exam.description || "");
     setSubject(exam.subject || "");
-    if (exam.schoolId) setSchoolId(exam.schoolId);
+    if (exam.schoolId && exam.schoolId !== "private") setSchoolId(exam.schoolId);
     setSelectedClass(
       normalizeClassName(exam.targetClass || exam.className || "") || CANONICAL_CLASSES[1]
     );
@@ -1112,19 +1256,26 @@ ANSWER KEY
 
     setEditorTab("questions");
     setErrorMessage("");
-    setMessage(`Editing "${exam.title}". Changes will update this examination directly.`);
+    setMessage(`Editing "${exam.title}". Changes will update this ${resolvedWorkType.toLowerCase()} directly.`);
     scrollToCreatorTop();
   };
 
-  // Duplicate an existing examination into a new draft
+  // Duplicate an existing assessment into a new draft
   const handleDuplicateExam = (exam: ExistingExamItem) => {
     const resolvedMode = normalizeDeliveryMode(exam.deliveryMode, exam);
+    const resolvedWorkType = normalizeWorkType(exam.workType, exam);
     const freshCode = generateAccessCode();
     setEditingExamId("");
-    setTitle(`${exam.title || "Untitled Examination"} (Copy)`);
+    setWorkType(resolvedWorkType);
+    setIsUngradedActivity(Boolean(exam.isUngradedActivity));
+    setSubmissionFormat(exam.submissionFormat === "DELIVERABLE" ? "DELIVERABLE" : "QUESTIONS");
+    setDueDate(exam.dueDate || "");
+    setRecipientMode(exam.recipientMode || "SCHOOL_CLASS");
+    setTargetStudentIds(Array.isArray(exam.targetStudentIds) ? exam.targetStudentIds : []);
+    setTitle(`${exam.title || "Untitled Assessment"} (Copy)`);
     setDescription(exam.description || "");
     setSubject(exam.subject || "");
-    if (exam.schoolId) setSchoolId(exam.schoolId);
+    if (exam.schoolId && exam.schoolId !== "private") setSchoolId(exam.schoolId);
     setSelectedClass(
       normalizeClassName(exam.targetClass || exam.className || "") || CANONICAL_CLASSES[1]
     );
@@ -1143,7 +1294,7 @@ ANSWER KEY
     );
     setEditorTab("questions");
     setErrorMessage("");
-    setMessage(`Duplicated "${exam.title}" into a new draft with access code ${freshCode}.`);
+    setMessage(`Duplicated "${exam.title}" into a new draft.`);
     scrollToCreatorTop();
   };
 
@@ -1276,6 +1427,9 @@ ANSWER KEY
   // Filtered examinations list
   const filteredExistingExams = useMemo(() => {
     return existingExams.filter((ex) => {
+      if (workTypeFilter !== "ALL" && normalizeWorkType(ex.workType, ex) !== workTypeFilter) {
+        return false;
+      }
       if (lifecycleTab !== "all" && ex.status !== lifecycleTab) return false;
       if (managedSchoolFilter !== "all" && ex.schoolId !== managedSchoolFilter) return false;
       if (examSearchQuery.trim()) {
@@ -1287,7 +1441,7 @@ ANSWER KEY
       }
       return true;
     });
-  }, [existingExams, lifecycleTab, managedSchoolFilter, examSearchQuery]);
+  }, [existingExams, workTypeFilter, lifecycleTab, managedSchoolFilter, examSearchQuery]);
 
   const activePasscode = customPasscode || generatedPasscode;
 
@@ -1338,7 +1492,7 @@ ANSWER KEY
       )}
 
       {/* ============================================================== */}
-      {/* TOP WORKSPACE BAR & CREATE EXAMINATION BUTTON                   */}
+      {/* TOP WORKSPACE BAR & CREATE NEW ASSESSMENT BUTTON               */}
       {/* ============================================================== */}
       <header className="rounded-2xl border border-slate-200/80 bg-white dark:bg-[#161B26] dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -1349,11 +1503,14 @@ ANSWER KEY
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="font-black text-base sm:text-lg text-slate-900 dark:text-white truncate">
+                <h2 className="font-black text-base sm:text-lg text-slate-900 dark:text-white truncate">
                   {editingExamId
-                    ? `Editing: ${title || "Untitled Examination"}`
-                    : title || "Create Examination"}
-                </h1>
+                    ? `Editing ${workType.toLowerCase()}: ${title || "Untitled"}`
+                    : title || `Create New ${workType.charAt(0) + workType.slice(1).toLowerCase()}`}
+                </h2>
+                <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-md bg-red-50 text-[#B91C1C] dark:bg-red-950/60 dark:text-red-300 shrink-0">
+                  {workType}
+                </span>
                 <span
                   className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-md shrink-0 ${
                     deliveryMode === "EXTERNAL_LINK"
@@ -1363,14 +1520,17 @@ ANSWER KEY
                 >
                   {deliveryMode === "EXTERNAL_LINK"
                     ? "External Link / Google Forms"
-                    : "Native Jaystarbliss Exam"}
+                    : "Native Jaystarbliss Editor"}
                 </span>
               </div>
               <p className="text-xs text-slate-500 truncate mt-0.5">
-                {assignedSchools.find((s) => s.id === schoolId)?.name || "Select School"} ·{" "}
-                {selectedClass}
+                {recipientMode === "PRIVATE_LEARNERS"
+                  ? `Private Learners (${targetStudentIds.length} selected)`
+                  : `${assignedSchools.find((s) => s.id === schoolId)?.name || "Select School"} · ${selectedClass}`}
                 {deliveryMode === "NATIVE"
-                  ? ` · ${questions.length} Question(s) · ${totalExamMarks} Marks`
+                  ? isUngradedActivity && workType === "ACTIVITY"
+                    ? ` · ${questions.length} Item(s) · Ungraded Activity`
+                    : ` · ${questions.length} Question(s) · ${totalExamMarks} Marks`
                   : " · Hosted Externally"}
               </p>
             </div>
@@ -1383,15 +1543,23 @@ ANSWER KEY
               onClick={() => setShowCreateTypeModal(true)}
               className="min-h-[42px] rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 px-4 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-100 transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer flex-1 sm:flex-initial"
             >
-              <PlusCircle size={15} /> Create Examination
+              <PlusCircle size={15} /> Create New Assessment
             </button>
+
+            <Link
+              to={isAdminWorkspace ? "/admin/examination-history" : "/portal/staff/exam-history"}
+              className="min-h-[42px] px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition-colors inline-flex items-center justify-center gap-1.5"
+            >
+              <Clock size={15} />
+              <span>History</span>
+            </Link>
 
             {deliveryMode === "NATIVE" && (
               <button
                 type="button"
                 onClick={() => setShowPreview((prev) => !prev)}
                 className="min-h-[42px] px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
-                title="Preview Examination"
+                title="Preview Assessment"
               >
                 <Eye size={15} />
                 <span className="hidden sm:inline">{showPreview ? "Hide Preview" : "Preview"}</span>
@@ -1414,9 +1582,180 @@ ANSWER KEY
               className="min-h-[42px] rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer text-xs w-full sm:w-auto"
             >
               {busy ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-              {editingExamId ? "Update & Republish" : "Publish Examination"}
+              {editingExamId
+                ? "Update & Republish"
+                : `Publish ${workType.charAt(0) + workType.slice(1).toLowerCase()}`}
             </button>
           </div>
+        </div>
+
+        {/* Clean Work Type Selector (Assignment, Activity, Test, Examination) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-5 overflow-x-auto no-scrollbar touch-pan-x">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
+              Work Type:
+            </span>
+            {(
+              [
+                { id: "ASSIGNMENT", label: "Assignment" },
+                { id: "ACTIVITY", label: "Activity" },
+                { id: "TEST", label: "Test" },
+                { id: "EXAMINATION", label: "Examination" },
+              ] as const
+            ).map((wt) => {
+              const active = workType === wt.id;
+              return (
+                <button
+                  key={wt.id}
+                  type="button"
+                  onClick={() => handleSelectWorkType(wt.id)}
+                  className={`relative pb-1.5 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                    active
+                      ? "text-[#14284B] dark:text-white"
+                      : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                >
+                  {wt.label}
+                  {active && (
+                    <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Work-type specific quick toggles */}
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            {workType === "ACTIVITY" && (
+              <label className="inline-flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isUngradedActivity}
+                  onChange={(e) => setIsUngradedActivity(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>Ungraded formative activity (no formal score)</span>
+              </label>
+            )}
+            {workType === "ASSIGNMENT" && deliveryMode === "NATIVE" && (
+              <div className="inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setSubmissionFormat("QUESTIONS")}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer ${
+                    submissionFormat === "QUESTIONS"
+                      ? "bg-white dark:bg-slate-900 text-blue-600 shadow-2xs"
+                      : "text-slate-600 dark:text-slate-400"
+                  }`}
+                >
+                  Question-Based
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubmissionFormat("DELIVERABLE")}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer ${
+                    submissionFormat === "DELIVERABLE"
+                      ? "bg-white dark:bg-slate-900 text-blue-600 shadow-2xs"
+                      : "text-slate-600 dark:text-slate-400"
+                  }`}
+                >
+                  Deliverable / Submission
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Authorised Recipient Audience Mode Selector */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Authorised Audience / Recipient Selection:
+            </span>
+            <div className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs">
+              {(
+                [
+                  { id: "SCHOOL_CLASS", label: "School & Class/Grade" },
+                  { id: "PRIVATE_LEARNERS", label: "Private Learner(s)" },
+                  { id: "MULTI_TARGET", label: "School Class + Private Learners" },
+                ] as const
+              ).map((rm) => (
+                <button
+                  key={rm.id}
+                  type="button"
+                  onClick={() => setRecipientMode(rm.id)}
+                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                    recipientMode === rm.id
+                      ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  }`}
+                >
+                  {rm.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {(recipientMode === "PRIVATE_LEARNERS" || recipientMode === "MULTI_TARGET") && (
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                  Select Authorised Private Learners ({targetStudentIds.length} selected)
+                </span>
+                {privateLearners.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setTargetStudentIds(
+                        targetStudentIds.length === privateLearners.length
+                          ? []
+                          : privateLearners.map((p) => p.id)
+                      )
+                    }
+                    className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
+                  >
+                    {targetStudentIds.length === privateLearners.length ? "Clear all" : "Select all"}
+                  </button>
+                )}
+              </div>
+              {privateLearners.length === 0 ? (
+                <p className="text-xs text-slate-500">
+                  No individually assigned learners found for your tutor account.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                  {privateLearners.map((pl) => {
+                    const checked = targetStudentIds.includes(pl.id);
+                    return (
+                      <label
+                        key={pl.id}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs cursor-pointer transition-colors ${
+                          checked
+                            ? "border-blue-600 bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-200 font-semibold"
+                            : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setTargetStudentIds((prev) =>
+                              prev.includes(pl.id)
+                                ? prev.filter((id) => id !== pl.id)
+                                : [...prev, pl.id]
+                            )
+                          }
+                          className="rounded border-slate-300 text-blue-600"
+                        />
+                        <span>{pl.fullName}</span>
+                        <span className="text-[10px] text-slate-400">({pl.class})</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Examination Type Switcher (Preserves work & editingExamId when switching) */}
@@ -1608,40 +1947,44 @@ ANSWER KEY
             </div>
 
             {/* Authorised School, Target Class/Grade, Subject */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
-              <label className="block">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  Authorised School *
-                </span>
-                <select
-                  value={schoolId}
-                  onChange={(e) => setSchoolId(e.target.value)}
-                  className="w-full mt-1 h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
-                >
-                  {assignedSchools.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className={`grid grid-cols-1 ${recipientMode === "PRIVATE_LEARNERS" ? "sm:grid-cols-1 font-semibold" : "sm:grid-cols-3"} gap-4 pt-1`}>
+              {recipientMode !== "PRIVATE_LEARNERS" && (
+                <>
+                  <label className="block">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Authorised School *
+                    </span>
+                    <select
+                      value={schoolId}
+                      onChange={(e) => setSchoolId(e.target.value)}
+                      className="w-full mt-1 h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
+                    >
+                      {assignedSchools.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-              <label className="block">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  Target Class / Grade *
-                </span>
-                <select
-                  value={selectedClass}
-                  onChange={(e) => setSelectedClass(e.target.value)}
-                  className="w-full mt-1 h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
-                >
-                  {availableClasses.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <label className="block">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Target Class / Grade *
+                    </span>
+                    <select
+                      value={selectedClass}
+                      onChange={(e) => setSelectedClass(e.target.value)}
+                      className="w-full mt-1 h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
+                    >
+                      {availableClasses.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              )}
 
               <label className="block">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -1843,40 +2186,44 @@ ANSWER KEY
                 </div>
 
                 {/* Core assignment controls */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-1">
-                  <label className="block">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                      Authorised School *
-                    </span>
-                    <select
-                      value={schoolId}
-                      onChange={(e) => setSchoolId(e.target.value)}
-                      className="w-full mt-1 h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
-                    >
-                      {assignedSchools.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                <div className={`grid grid-cols-1 ${recipientMode === "PRIVATE_LEARNERS" ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-5"} gap-3 pt-1`}>
+                  {recipientMode !== "PRIVATE_LEARNERS" && (
+                    <>
+                      <label className="block">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                          Authorised School *
+                        </span>
+                        <select
+                          value={schoolId}
+                          onChange={(e) => setSchoolId(e.target.value)}
+                          className="w-full mt-1 h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
+                        >
+                          {assignedSchools.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                  <label className="block">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                      Target Class / Grade *
-                    </span>
-                    <select
-                      value={selectedClass}
-                      onChange={(e) => setSelectedClass(e.target.value)}
-                      className="w-full mt-1 h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
-                    >
-                      {availableClasses.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      <label className="block">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                          Target Class / Grade *
+                        </span>
+                        <select
+                          value={selectedClass}
+                          onChange={(e) => setSelectedClass(e.target.value)}
+                          className="w-full mt-1 h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
+                        >
+                          {availableClasses.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
+                  )}
 
                   <label className="block">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -3159,20 +3506,26 @@ ANSWER KEY
           <div>
             <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
               <Calendar size={18} className="text-blue-600 shrink-0" />
-              Examination Roster &amp; Published Records
+              Assessments Overview &amp; Active Schedule
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Manage published examinations, switch or duplicate assessments, and review candidate attempts.
+              Monitor current and upcoming assignments, activities, tests, and examinations across your authorised schools and private learners.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to={isAdminWorkspace ? "/admin/examination-history" : "/portal/staff/exam-history"}
+              className="min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer flex-1 sm:flex-initial"
+            >
+              <Clock size={14} /> Assessment History
+            </Link>
             <button
               type="button"
               onClick={() => setShowCreateTypeModal(true)}
               className="min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 px-4 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-100 transition-colors cursor-pointer flex-1 sm:flex-initial"
             >
-              <PlusCircle size={14} /> Create Examination
+              <PlusCircle size={14} /> Create New Assessment
             </button>
             <button
               type="button"
@@ -3183,6 +3536,81 @@ ANSWER KEY
               <RefreshCw size={14} className={existingBusy ? "animate-spin" : ""} />
               Refresh List
             </button>
+          </div>
+        </div>
+
+        {/* Clean Programs-style Work Type Category Tabs */}
+        <div className="flex items-center gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-slate-800 touch-pan-x">
+          {(
+            [
+              { id: "ALL", label: "All Assessments" },
+              { id: "ASSIGNMENT", label: "Assignments" },
+              { id: "ACTIVITY", label: "Activities" },
+              { id: "TEST", label: "Tests" },
+              { id: "EXAMINATION", label: "Examinations" },
+            ] as const
+          ).map((wtTab) => {
+            const active = workTypeFilter === wtTab.id;
+            const count =
+              wtTab.id === "ALL"
+                ? existingExams.length
+                : existingExams.filter((e) => normalizeWorkType(e.workType, e) === wtTab.id).length;
+            return (
+              <button
+                key={wtTab.id}
+                type="button"
+                onClick={() => setWorkTypeFilter(wtTab.id)}
+                className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  active
+                    ? "text-[#14284B] dark:text-white"
+                    : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                }`}
+              >
+                <span>{wtTab.label}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                  {count}
+                </span>
+                {active && (
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Summary Counters for Assessment Overview */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 p-3">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Active Now
+            </span>
+            <span className="mt-1 block text-xl font-black text-emerald-600 dark:text-emerald-400">
+              {existingExams.filter((e) => e.status === "active").length}
+            </span>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 p-3">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Upcoming / Scheduled
+            </span>
+            <span className="mt-1 block text-xl font-black text-blue-600 dark:text-blue-400">
+              {existingExams.filter((e) => e.status === "scheduled").length}
+            </span>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 p-3">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Drafts
+            </span>
+            <span className="mt-1 block text-xl font-black text-amber-600 dark:text-amber-400">
+              {existingExams.filter((e) => e.status === "draft").length}
+            </span>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 p-3">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Authorised Schools
+            </span>
+            <span className="mt-1 block text-xl font-black text-slate-900 dark:text-white">
+              {assignedSchools.length}
+            </span>
           </div>
         </div>
 
@@ -3234,16 +3662,20 @@ ANSWER KEY
               type="text"
               value={examSearchQuery}
               onChange={(e) => setExamSearchQuery(e.target.value)}
-              placeholder="Search by examination title, subject, or partner school..."
+              placeholder="Search by assessment title, subject, or partner school..."
               className="w-full h-10 rounded-xl border border-slate-200 dark:border-slate-700 pl-9 pr-3 text-xs bg-white dark:bg-slate-900"
             />
           </div>
         </div>
 
-        {/* Existing Examinations Cards List */}
+        {/* Existing Assessments Cards List */}
         <div className="space-y-3">
-          {filteredExistingExams.map((ex) => {
+          {existingBusy ? (
+            <ExamListSkeleton count={4} />
+          ) : (
+            filteredExistingExams.map((ex) => {
             const isExternal = ex.deliveryMode === "EXTERNAL_LINK";
+            const itemWorkType = normalizeWorkType(ex.workType, ex);
             return (
               <article
                 key={ex.id}
@@ -3256,6 +3688,9 @@ ANSWER KEY
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div className="space-y-1.5 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-red-50 text-[#B91C1C] dark:bg-red-950/60 dark:text-red-300">
+                        {itemWorkType}
+                      </span>
                       <h4 className="font-bold text-sm text-slate-900 dark:text-white break-words">
                         {ex.title}
                       </h4>
@@ -3277,23 +3712,33 @@ ANSWER KEY
                             : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
                         }`}
                       >
-                        {isExternal ? "External Link / Google Forms" : "Native JDI Exam"}
+                        {isExternal ? "External Link / Google Forms" : "Native JDI"}
                       </span>
                     </div>
 
                     <p className="text-xs text-slate-500 break-words">
-                      {ex.subject} · <strong>{ex.schoolName}</strong> · Class:{" "}
-                      <strong>{ex.targetClass}</strong>
+                      {ex.subject} ·{" "}
+                      {ex.recipientMode === "PRIVATE_LEARNERS" ? (
+                        <strong>Private Learners ({(ex.targetStudentIds || []).length})</strong>
+                      ) : (
+                        <>
+                          <strong>{ex.schoolName}</strong> · Class: <strong>{ex.targetClass}</strong>
+                        </>
+                      )}
                       {!isExternal && (
                         <>
                           {" "}
                           · {ex.questionCount || 0} Question(s) ·{" "}
-                          <strong>{ex.maxScore || 0} Marks</strong>
+                          <strong>
+                            {ex.isUngradedActivity && itemWorkType === "ACTIVITY"
+                              ? "Ungraded"
+                              : `${ex.maxScore || 0} Marks`}
+                          </strong>
                         </>
                       )}
                     </p>
 
-                    {ex.passcode && (
+                    {ex.passcode && itemWorkType !== "ACTIVITY" && (
                       <div className="flex flex-wrap items-center gap-2 pt-0.5 text-xs">
                         <span className="text-slate-500">Access Code:</span>
                         <code className="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-mono font-bold text-slate-900 dark:text-white">
@@ -3341,7 +3786,7 @@ ANSWER KEY
                       type="button"
                       onClick={() => handleDuplicateExam(ex)}
                       className="min-h-[38px] inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300 px-3 py-2 text-xs font-bold hover:bg-slate-100 transition-colors cursor-pointer"
-                      title="Duplicate Examination"
+                      title="Duplicate Assessment"
                     >
                       <Copy size={14} /> Duplicate
                     </button>
@@ -3379,30 +3824,31 @@ ANSWER KEY
                 </div>
               </article>
             );
-          })}
+          })
+        )}
 
-          {filteredExistingExams.length === 0 && (
-            <div className="p-8 text-center text-xs text-slate-500 border border-dashed rounded-2xl">
-              No examinations found matching the selected filter.
-            </div>
-          )}
+        {!existingBusy && filteredExistingExams.length === 0 && (
+          <div className="p-8 text-center text-xs text-slate-500 border border-dashed rounded-2xl">
+            No assessments found matching the selected filter.
+          </div>
+        )}
         </div>
       </section>
 
       {/* ============================================================== */}
-      {/* MODAL 1: CREATE EXAMINATION TYPE CHOOSER                       */}
+      {/* MODAL 1: CREATE NEW ASSESSMENT TYPE & WORKFLOW CHOOSER         */}
       {/* ============================================================== */}
       {showCreateTypeModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]">
             <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-black text-base text-slate-900 dark:text-white flex items-center gap-2">
                   <PlusCircle size={18} className="text-blue-600 shrink-0" />
-                  Create Examination
+                  Create New Assessment
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Select the type of examination you would like to create for your students.
+                  Choose whether you are creating an Assignment, Activity, Test, or Examination, and select the delivery mode.
                 </p>
               </div>
               <button
@@ -3415,45 +3861,107 @@ ANSWER KEY
               </button>
             </div>
 
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-3">
-              {/* Option A: External Link / Google Forms */}
-              <button
-                type="button"
-                onClick={() => handleStartNewExamination("EXTERNAL_LINK")}
-                className="w-full p-4 sm:p-5 rounded-2xl border-2 border-slate-200 dark:border-slate-800 hover:border-blue-600 dark:hover:border-blue-500 bg-white dark:bg-slate-900/60 text-left transition-all cursor-pointer flex items-start gap-3.5 group"
-              >
-                <div className="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                  <ExternalLink size={20} />
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-4">
+              {/* Step 1: Choose Work Type */}
+              <div>
+                <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  1. Select Academic Work Type
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {(
+                    [
+                      {
+                        id: "ASSIGNMENT",
+                        title: "Assignment",
+                        desc: "Submission-based or question-based work with due dates, resources, and tutor review.",
+                      },
+                      {
+                        id: "ACTIVITY",
+                        title: "Activity",
+                        desc: "Practice, guided learning, class exercise, or reflection (graded or ungraded).",
+                      },
+                      {
+                        id: "TEST",
+                        title: "Test",
+                        desc: "Focused question-based quiz with point allocation and automatic/manual grading.",
+                      },
+                      {
+                        id: "EXAMINATION",
+                        title: "Examination",
+                        desc: "Full scheduled examination with access codes, timing, proctoring, and official reports.",
+                      },
+                    ] as const
+                  ).map((wtOption) => {
+                    const selected = workType === wtOption.id;
+                    return (
+                      <button
+                        key={wtOption.id}
+                        type="button"
+                        onClick={() => setWorkType(wtOption.id)}
+                        className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          selected
+                            ? "border-[#B91C1C] bg-red-50/40 dark:bg-red-950/20"
+                            : "border-slate-200 dark:border-slate-800 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                            {wtOption.title}
+                          </span>
+                          {selected && <Check size={14} className="text-[#B91C1C]" />}
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                          {wtOption.desc}
+                        </p>
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="space-y-1 min-w-0">
-                  <p className="font-black text-sm text-slate-900 dark:text-white">
-                    A. External Link / Google Forms
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Enter the title, description, external URL, access code, school, class/grade and subject. No native questions or internal grading required. Eligible students see an{" "}
-                    <strong>Open Examination</strong> button after access checks.
-                  </p>
-                </div>
-              </button>
+              </div>
 
-              {/* Option B: Native Jaystarbliss Examination */}
-              <button
-                type="button"
-                onClick={() => handleStartNewExamination("NATIVE")}
-                className="w-full p-4 sm:p-5 rounded-2xl border-2 border-slate-200 dark:border-slate-800 hover:border-blue-600 dark:hover:border-blue-500 bg-white dark:bg-slate-900/60 text-left transition-all cursor-pointer flex items-start gap-3.5 group"
-              >
-                <div className="w-11 h-11 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                  <Layers size={20} />
+              {/* Step 2: Choose Delivery Mode */}
+              <div>
+                <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  2. Select Delivery Mode &amp; Start Editor
+                </span>
+                <div className="space-y-2.5">
+                  <button
+                    type="button"
+                    onClick={() => handleStartNewExamination("NATIVE", workType)}
+                    className="w-full p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 hover:border-blue-600 dark:hover:border-blue-500 bg-white dark:bg-slate-900/60 text-left transition-all cursor-pointer flex items-start gap-3.5 group"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                      <Layers size={18} />
+                    </div>
+                    <div className="space-y-1 min-w-0">
+                      <p className="font-black text-xs sm:text-sm text-slate-900 dark:text-white">
+                        Native Jaystarbliss {workType.charAt(0) + workType.slice(1).toLowerCase()} Editor
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Question authoring, formatted text/CSV import, point allocation, recipient targeting (school class or private learners), and automatic/manual grading.
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleStartNewExamination("EXTERNAL_LINK", workType)}
+                    className="w-full p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 hover:border-blue-600 dark:hover:border-blue-500 bg-white dark:bg-slate-900/60 text-left transition-all cursor-pointer flex items-start gap-3.5 group"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                      <ExternalLink size={18} />
+                    </div>
+                    <div className="space-y-1 min-w-0">
+                      <p className="font-black text-xs sm:text-sm text-slate-900 dark:text-white">
+                        External Link / Google Forms {workType.charAt(0) + workType.slice(1).toLowerCase()}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Configure an external assessment URL, recipient target, and portal access verification. Manual score entry and release remain supported.
+                      </p>
+                    </div>
+                  </button>
                 </div>
-                <div className="space-y-1 min-w-0">
-                  <p className="font-black text-sm text-slate-900 dark:text-white">
-                    B. Native Jaystarbliss Examination
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Full examination builder with question-by-question authoring, formatted text/CSV import, point allocation, answer keys, duration timer, automatic/manual grading and live proctoring.
-                  </p>
-                </div>
-              </button>
+              </div>
             </div>
 
             <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end bg-slate-50 dark:bg-slate-900/40">

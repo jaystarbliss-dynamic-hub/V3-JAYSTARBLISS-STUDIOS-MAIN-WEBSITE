@@ -13,6 +13,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import { buildAttendanceRecordKey } from './classes';
 
 const assignmentFields = [
   'tutorId',
@@ -421,10 +422,15 @@ export async function handleAttendanceFallback(url: string, options: RequestInit
 
   if (method === 'GET') {
     const studentId = parsedUrl.searchParams.get('studentId') || '';
-    if (!studentId) return { records: [] };
-    const snap = await getDocs(
-      query(collection(db, 'attendance'), where('studentId', '==', studentId), limit(200))
-    ).catch(() => null);
+    const scheduleId = parsedUrl.searchParams.get('scheduleId') || '';
+    if (!studentId && !scheduleId) return { records: [] };
+    const snap = scheduleId && !studentId
+      ? await getDocs(
+          query(collection(db, 'attendance'), where('scheduleId', '==', scheduleId), limit(250))
+        ).catch(() => null)
+      : await getDocs(
+          query(collection(db, 'attendance'), where('studentId', '==', studentId), limit(200))
+        ).catch(() => null);
     const records = (snap?.docs || [])
       .map((d) => {
         const data = d.data() || {};
@@ -439,12 +445,50 @@ export async function handleAttendanceFallback(url: string, options: RequestInit
   }
 
   const body = JSON.parse(String(options.body || '{}'));
+
+  if (body.action === 'batch' && Array.isArray(body.entries)) {
+    const scheduleId = String(body.scheduleId || '').trim();
+    const dateKey = String(body.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const sessionTitle = String(body.sessionTitle || '').trim();
+    const schoolId = String(body.schoolId || '').trim() || null;
+    const savedRecords: Record<string, any>[] = [];
+
+    for (const entry of body.entries) {
+      const studentId = String(entry?.studentId || '').trim();
+      if (!studentId) continue;
+      const docId = buildAttendanceRecordKey({ studentId, dateKey, scheduleId });
+      const payload = {
+        studentId,
+        studentName: String(entry?.studentName || 'Student').trim(),
+        tutorId: user.uid,
+        schoolId,
+        scheduleId: scheduleId || null,
+        sessionTitle: sessionTitle || null,
+        date: dateKey,
+        dateKey,
+        status: String(entry?.status || 'PRESENT').toUpperCase(),
+        notes: String(entry?.notes || '').trim(),
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(
+        doc(db, 'attendance', docId),
+        { ...payload, createdAt: serverTimestamp() },
+        { merge: true }
+      );
+      savedRecords.push({ id: docId, ...payload });
+    }
+    return { records: savedRecords, count: savedRecords.length };
+  }
+
   const studentId = String(body.studentId || '').trim();
+  const scheduleId = String(body.scheduleId || '').trim();
   const dateKey = String(body.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
-  const docId = `${studentId}_${dateKey}`;
+  const docId = buildAttendanceRecordKey({ studentId, dateKey, scheduleId });
   const payload = {
     studentId,
     tutorId: user.uid,
+    scheduleId: scheduleId || null,
+    sessionTitle: String(body.sessionTitle || '').trim() || null,
     date: dateKey,
     dateKey,
     status: String(body.status || 'PRESENT').toUpperCase(),

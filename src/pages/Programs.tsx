@@ -355,12 +355,12 @@ const Programs: React.FC = () => {
       </PageHeader>
 
       {/* Main Section Content based on active view */}
-      <div id="programs-content" className="digital-canvas py-16 lg:py-24 scroll-mt-20 overflow-hidden">
-        <div className="container mx-auto px-4 max-w-7xl space-y-14">
+      <div id="programs-content" className="digital-canvas py-14 sm:py-20 lg:py-24 scroll-mt-20 overflow-x-hidden">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl space-y-16 lg:space-y-24">
           
           {/* View 1: 8 Core Programs & Deep Dive (StageArchitectureBanner ONLY appears here) */}
           {activeView === 'ecosystem' && (
-            <div id="ecosystem-section" className="space-y-12 scroll-mt-24">
+            <div id="ecosystem-section" className="space-y-12 sm:space-y-16 lg:space-y-20 scroll-mt-24">
               <LearningSchoolsGrid 
                 selectedSchoolId={selectedSchoolId}
                 onSchoolChange={(id) => {
@@ -370,7 +370,13 @@ const Programs: React.FC = () => {
                 }}
               />
 
-              <StageArchitectureBanner />
+              <hr className="border-t border-slate-200/80 dark:border-white/10" aria-hidden="true" />
+
+              <StageArchitectureBanner
+                onSelectSchool={(id) => {
+                  setSelectedSchoolId(id);
+                }}
+              />
             </div>
           )}
 

@@ -367,32 +367,21 @@ export const PortalCourses: React.FC = () => {
         noindex={true}
       />
 
-      {/* Header Banner */}
-      <div className="bg-white dark:bg-[#0c1220] rounded-3xl border border-gray-200/80 dark:border-slate-800 p-6 md:p-8 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-brand-red font-bold text-xs uppercase tracking-wider mb-1">
-            <GraduationCap size={15} /> Assigned Learning Curriculum
-          </div>
-          <h1 className="text-2xl md:text-3xl font-black text-gray-900 dark:text-white">
-            Enrolled Course Tracks &amp; Stages
-          </h1>
-          <p className="text-xs md:text-sm text-gray-500 dark:text-slate-400 mt-1">
-            Structured curriculum stages configured for your learning track: <strong className="text-slate-900 dark:text-white font-bold">{studentTrackTitle}</strong>.
-          </p>
+      {/* Compact Track & Scratch IDE Toolbar */}
+      <div className="bg-white dark:bg-[#0c1220] rounded-2xl border border-gray-200/80 dark:border-slate-800 p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+          <GraduationCap size={16} className="text-brand-red shrink-0" />
+          <span>Active Track: <strong className="text-slate-900 dark:text-white font-bold">{studentTrackTitle}</strong></span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-
-
-          <a 
-            href="https://scratch.mit.edu" 
-            target="_blank" 
-            rel="noreferrer" 
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-slate-800 text-white text-xs font-bold rounded-2xl shrink-0 shadow-xs hover:bg-slate-800 transition-colors"
-          >
-            <Code size={14} className="text-brand-red" /> Launch Scratch IDE <ExternalLink size={12} />
-          </a>
-        </div>
+        <a 
+          href="https://scratch.mit.edu" 
+          target="_blank" 
+          rel="noreferrer" 
+          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 dark:bg-slate-800 text-white text-xs font-bold rounded-xl shrink-0 shadow-xs hover:bg-slate-800 transition-colors"
+        >
+          <Code size={14} className="text-brand-red" /> Launch Scratch IDE <ExternalLink size={12} />
+        </a>
       </div>
 
       {loading ? (

@@ -950,24 +950,8 @@ const AdminStudents: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* Header Banner */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-red/10 text-brand-red dark:bg-brand-red/20">
-              <GraduationCap className="h-6 w-6" aria-hidden="true" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black text-slate-900 dark:text-white md:text-3xl">
-                Scholars &amp; Student Operations
-              </h1>
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                Centralized academic roster for independent learners, parent-registered scholars, and affiliated school students.
-              </p>
-            </div>
-          </div>
-        </div>
-
+      {/* Action Toolbar */}
+      <div className="flex items-center justify-end">
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"

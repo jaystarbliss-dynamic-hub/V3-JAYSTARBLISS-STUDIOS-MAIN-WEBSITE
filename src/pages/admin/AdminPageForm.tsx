@@ -163,36 +163,35 @@ const AdminPageForm: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-16">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-4">
+      {/* Page Context Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-xs">
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
           <Link
             to="/admin/pages"
-            className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-brand-red transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-200 transition-colors"
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={14} />
+            <span>Back to Pages</span>
           </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-brand-slate dark:text-white">
-                Edit {pageConfig.title}
-              </h1>
-              <span className="text-xs font-mono bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded">
-                {pageConfig.path}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              {pageConfig.description}
-            </p>
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <span className="text-sm font-bold text-slate-900 dark:text-white">
+              {pageConfig.title}
+            </span>
+            <span className="text-xs font-mono bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded">
+              {pageConfig.path}
+            </span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              — {pageConfig.description}
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <a
             href={pageConfig.path}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 hover:bg-slate-200 transition-colors"
+            className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 hover:bg-slate-200 transition-colors"
           >
             <ExternalLink size={14} />
             Live Preview

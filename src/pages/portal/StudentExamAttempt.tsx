@@ -563,17 +563,14 @@ export default function StudentExamAttempt() {
 
   return (
     <main className="mx-auto max-w-4xl space-y-5 p-3 sm:p-5 md:p-8 overflow-x-hidden">
-      {/* HEADER */}
-      <header className="rounded-2xl bg-slate-900 p-4 sm:p-6 md:p-8 text-white shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* COMPACT EXAM INFO & TIMER BAR */}
+      <section className="rounded-2xl bg-slate-900 p-4 sm:p-5 text-white shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs sm:text-sm font-semibold tracking-wide text-blue-200">
-              JAYSTARBLISS DYNAMIC INSTITUTE · JDI
-            </p>
-            <h1 className="mt-1.5 text-xl sm:text-2xl font-bold break-words">{data.exam.title}</h1>
-            <p className="text-xs sm:text-sm text-slate-300">{data.exam.subject}</p>
+            <h2 className="text-lg sm:text-xl font-bold break-words">{data.exam.title}</h2>
+            <p className="text-xs sm:text-sm text-slate-300 mt-0.5">{data.exam.subject}</p>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 sm:px-5 sm:py-3 text-center self-start sm:self-auto shrink-0">
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 sm:px-5 sm:py-2.5 text-center self-start sm:self-auto shrink-0">
             {closed ? (
               <span className="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider">
                 {isReleased ? "Released" : data.attempt.status}
@@ -589,7 +586,7 @@ export default function StudentExamAttempt() {
             )}
           </div>
         </div>
-      </header>
+      </section>
 
       {error && (
         <p

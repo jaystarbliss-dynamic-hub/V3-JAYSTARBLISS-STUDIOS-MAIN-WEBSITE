@@ -8,6 +8,7 @@ import {
 import { billingGet, billingPost, dateLabel, feeFromBase, formatNaira } from '../../lib/billing';
 import { useToast } from '../../contexts/ToastContext';
 import SEO from '../../components/ui/SEO';
+import { MetricGridSkeleton, TableSkeleton } from '../../components/ui/Skeleton';
 import { FintechTransactionHistory } from '../../components/portal/FintechTransactionHistory';
 import { FintechWalletCard } from '../../components/portal/FintechWalletCard';
 import { FintechWithdrawalModal } from '../../components/portal/FintechWithdrawalModal';
@@ -492,8 +493,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
 
   if (loading) {
     return (
-      <div className="py-16 flex justify-center items-center text-xs text-slate-500 gap-2">
-        <Loader2 className="animate-spin" size={18} /> Loading billing workspace…
+      <div className="space-y-6 animate-in fade-in duration-150" aria-label="Loading billing workspace">
+        <SEO title="Billing Workspace | Jaystarbliss Studios" description="Loading billing records" noindex={true} />
+        <MetricGridSkeleton count={4} />
+        <TableSkeleton rows={5} columns={5} />
       </div>
     );
   }
@@ -503,18 +506,6 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
     return (
       <section className="space-y-6" aria-label="Billing center">
         <SEO title="Student Billing & Curriculum Status | Jaystarbliss Studios" description="Sponsored student status" noindex={true} />
-        
-        <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
-          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
-            <UserCheck size={16} /> Sponsored Enrollment Status
-          </div>
-          <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mt-2">
-            Institutional & Family Sponsorship
-          </h1>
-          <p className="text-xs md:text-sm text-slate-500 mt-1 max-w-2xl">
-            Your laboratory access, CBT assessments, and technology curriculum are fully covered by your institution or parent.
-          </p>
-        </div>
 
         <div className="bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/50 dark:from-emerald-950/20 dark:via-slate-900 dark:to-teal-950/10 border border-emerald-200/80 dark:border-emerald-800/60 rounded-3xl p-6 md:p-8 shadow-sm">
           <div className="flex items-start gap-4">
@@ -561,27 +552,14 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
       <section className="space-y-6" aria-label="School billing center">
         <SEO title="Institutional Subscription | Jaystarbliss Studios" description="Institutional subscription and billing portal." noindex={true} />
 
-        <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-red">
-                <School size={15} /> Partner School Billing Portal
-              </div>
-              <h1 className="mt-1.5 text-2xl md:text-3xl font-black text-slate-900 dark:text-white">
-                Institutional Subscription
-              </h1>
-              <p className="mt-1 text-xs md:text-sm text-slate-500">
-                Transparent pricing configured directly by Jaystarbliss Studios administration.
-              </p>
-            </div>
-            <button 
-              type="button" 
-              onClick={() => void load()} 
-              className="min-h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-5 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
-            >
-              <RefreshCw size={14} /> Refresh Records
-            </button>
-          </div>
+        <div className="flex items-center justify-end">
+          <button 
+            type="button" 
+            onClick={() => void load()} 
+            className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
+          >
+            <RefreshCw size={14} /> Refresh Records
+          </button>
         </div>
 
         {/* Due date notice if applicable */}
@@ -964,27 +942,14 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
     <section className="space-y-6" aria-label="Billing center">
       <SEO title="Billing Center | Jaystarbliss Studios" description="Payments, plans, receipts and staff wallet." noindex={true} />
 
-      <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-red">
-              <ShieldCheck size={14} /> Billing Center
-            </div>
-            <h1 className="mt-1.5 text-2xl md:text-3xl font-black text-slate-900 dark:text-white">
-              {role === 'staff' ? 'Tutor Wallet & Payout Operations' : role === 'parent' ? 'Parent Tuition & Payment Plans' : 'Plans & Payments'}
-            </h1>
-            <p className="mt-1 text-xs md:text-sm text-slate-500">
-              Transparent pricing, Paystack checkout, and verified receipts.
-            </p>
-          </div>
-          <button 
-            type="button" 
-            onClick={() => void load()} 
-            className="min-h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-5 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
-          >
-            <RefreshCw size={14} /> Refresh Records
-          </button>
-        </div>
+      <div className="flex items-center justify-end">
+        <button 
+          type="button" 
+          onClick={() => void load()} 
+          className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
+        >
+          <RefreshCw size={14} /> Refresh Records
+        </button>
       </div>
 
       {/* Impersonation Notice */}

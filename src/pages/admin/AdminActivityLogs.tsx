@@ -136,18 +136,6 @@ const AdminActivityLogs: React.FC = () => {
     <div className="space-y-5 max-w-7xl mx-auto pb-12">
       <SEO title="System & Activity Audit Logs | Admin" description="Real-time portal audit and telemetry." noindex={true} />
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
-            <Activity className="text-brand-red w-6 h-6" /> System &amp; Activity Audit Logs
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Portal telemetry: sessions, page views, UI interactions, submissions, and transactions.
-          </p>
-        </div>
-      </div>
-
       {/* Search Bar + Filter Icon Dropdown Row */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
         {/* Search Input Box */}

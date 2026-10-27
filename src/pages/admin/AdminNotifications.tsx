@@ -251,16 +251,6 @@ const AdminNotifications: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-black text-brand-slate dark:text-white flex items-center gap-3">
-          <Bell className="text-brand-red w-8 h-8" />
-          Broadcast &amp; Notification Control Center
-        </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Transmit real-time alerts, academic bulletins, fee notices, and direct private messages across all school and student portals.
-        </p>
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Broadcast Form (5 cols) */}

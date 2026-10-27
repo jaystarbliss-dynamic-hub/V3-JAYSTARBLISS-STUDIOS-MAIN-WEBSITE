@@ -1,310 +1,248 @@
 import React, { useState } from 'react';
-import { motion, type PanInfo } from 'motion/react';
-import {
-  Compass,
-  Hammer,
-  Cpu,
-  Rocket,
-  Award,
-  ChevronLeft,
-  ChevronRight,
-  CheckCircle2,
-  Sparkles,
-} from 'lucide-react';
 
-interface StageItem {
-  stage: number;
+interface LearningStageItem {
+  id: string;
   name: string;
-  tagline: string;
-  summary: string;
-  keyAction: string;
-  deliverable: string;
-  icon: React.ElementType;
-  accentColor: string;
-  glowClass: string;
-  borderAccent: string;
+  phrase: string;
 }
 
-const STAGES: StageItem[] = [
+const LEARNING_STAGES: LearningStageItem[] = [
   {
-    stage: 1,
+    id: 'discover',
     name: 'Discover',
-    tagline: 'Curiosity & Core Foundations',
-    summary: 'Explore core concepts through guided interactive sandboxes and build immediate creative confidence.',
-    keyAction: 'Interactive concept labs & guided exploration',
-    deliverable: 'First Working Prototype',
-    icon: Compass,
-    accentColor: 'text-sky-400',
-    glowClass: 'from-sky-500/20 via-sky-500/5 to-transparent',
-    borderAccent: 'border-sky-500/40',
+    phrase: 'Explore core concepts through guided labs.',
   },
   {
-    stage: 2,
+    id: 'learn',
+    name: 'Learn',
+    phrase: 'Master industry tools and structured fundamentals.',
+  },
+  {
+    id: 'build',
     name: 'Build',
-    tagline: 'Structured Skill Acquisition',
-    summary: 'Master professional tools, syntax, and workflows by constructing real components step by step.',
-    keyAction: 'Hands-on component & workflow sprints',
-    deliverable: 'Multi-Part Functional Project',
-    icon: Hammer,
-    accentColor: 'text-indigo-400',
-    glowClass: 'from-indigo-500/20 via-indigo-500/5 to-transparent',
-    borderAccent: 'border-indigo-500/40',
+    phrase: 'Construct real-world projects step by step.',
   },
   {
-    stage: 3,
-    name: 'Apply',
-    tagline: 'Real-World Problem Solving',
-    summary: 'Connect multiple skills to solve realistic briefs, debug complex logic, and iterate with mentor feedback.',
-    keyAction: 'Scenario challenges & peer code/design reviews',
-    deliverable: 'Production-Style Case Study',
-    icon: Cpu,
-    accentColor: 'text-emerald-400',
-    glowClass: 'from-emerald-500/20 via-emerald-500/5 to-transparent',
-    borderAccent: 'border-emerald-500/40',
-  },
-  {
-    stage: 4,
-    name: 'Create',
-    tagline: 'Independent Capstone Execution',
-    summary: 'Design, architect, and ship an original flagship project from blank canvas to live deployment.',
-    keyAction: 'End-to-end architecture & independent build',
-    deliverable: 'Deployed Capstone Portfolio Piece',
-    icon: Rocket,
-    accentColor: 'text-amber-400',
-    glowClass: 'from-amber-500/20 via-amber-500/5 to-transparent',
-    borderAccent: 'border-amber-500/40',
-  },
-  {
-    stage: 5,
-    name: 'Master',
-    tagline: 'Leadership & Industry Readiness',
-    summary: 'Present your work, optimize for scale, and earn verified certification ready for university or career tracks.',
-    keyAction: 'Live defense, optimization & certification',
-    deliverable: 'Verified Jaystarbliss Diploma & Showcase',
-    icon: Award,
-    accentColor: 'text-rose-400',
-    glowClass: 'from-rose-500/20 via-rose-500/5 to-transparent',
-    borderAccent: 'border-rose-500/40',
+    id: 'launch',
+    name: 'Launch',
+    phrase: 'Publish original work and earn verified credentials.',
   },
 ];
 
-export default function StageArchitectureBanner(_props: { compact?: boolean } = {}) {
-  const [activeIndex, setActiveIndex] = useState(0);
+interface SpotlightTrack {
+  id: string;
+  schoolId: string;
+  title: string;
+  summary: string;
+  image: string;
+}
 
-  const handlePrev = () => {
-    setActiveIndex((prev) => (prev - 1 + STAGES.length) % STAGES.length);
-  };
+const SPOTLIGHT_TRACKS: SpotlightTrack[] = [
+  {
+    id: 'ai-robotics',
+    schoolId: 'robotics-future',
+    title: 'AI & Robotics',
+    summary: 'From intelligent systems to real-world robots.',
+    image: 'https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg?auto=compress&cs=tinysrgb&w=1200',
+  },
+  {
+    id: 'creative-media',
+    schoolId: 'creative-design',
+    title: 'Creative Digital Media',
+    summary: 'Design. Create. Tell better stories.',
+    image: 'https://images.pexels.com/photos/7988086/pexels-photo-7988086.jpeg?auto=compress&cs=tinysrgb&w=1200',
+  },
+  {
+    id: 'future-skills',
+    schoolId: 'game-3d',
+    title: 'Future Skills',
+    summary: 'Adapt today. Lead tomorrow.',
+    image: 'https://images.pexels.com/photos/8728380/pexels-photo-8728380.jpeg?auto=compress&cs=tinysrgb&w=1200',
+  },
+];
 
-  const handleNext = () => {
-    setActiveIndex((prev) => (prev + 1) % STAGES.length);
-  };
+export interface StageArchitectureBannerProps {
+  compact?: boolean;
+  onSelectSchool?: (schoolId: string) => void;
+}
 
-  const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (info.offset.x < -45) {
-      handleNext();
-    } else if (info.offset.x > 45) {
-      handlePrev();
+export default function StageArchitectureBanner({
+  compact = false,
+  onSelectSchool,
+}: StageArchitectureBannerProps = {}) {
+  const [activeStageIndex, setActiveStageIndex] = useState<number>(0);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+
+  const handleSpotlightClick = (schoolId: string) => {
+    onSelectSchool?.(schoolId);
+    const el = document.getElementById('learning-schools-section');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
-  // Compute relative circular offset (-2, -1, 0, 1, 2) for 5 items
-  const getRelativeOffset = (index: number) => {
-    let diff = index - activeIndex;
-    if (diff > 2) diff -= STAGES.length;
-    if (diff < -2) diff += STAGES.length;
-    return diff;
-  };
-
   return (
-    <div className="bg-slate-950 text-white rounded-3xl p-6 sm:p-10 shadow-2xl border border-slate-800/90 relative overflow-hidden select-none">
-      {/* Subtle ambient lighting */}
-      <div className="absolute -top-28 left-1/2 -translate-x-1/2 w-[36rem] h-56 bg-brand-red/15 rounded-full blur-3xl pointer-events-none" />
-
-      <div className="relative z-10">
-        {/* Top Header + Controls */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-brand-red mb-2">
-              5-Stage Mastery Architecture · Interactive Pathway
-            </p>
-            <h3 className="text-2xl sm:text-3xl font-extrabold font-display tracking-tight text-white">
-              Every Program Follows One Proven Learning Flow
-            </h3>
-          </div>
-
-          <div className="flex items-center gap-3 self-start md:self-auto">
-            <span className="text-xs text-slate-400 font-medium hidden sm:inline">
-              Drag or use arrows to roll through stages
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handlePrev}
-                aria-label="Previous learning stage"
-                className="w-10 h-10 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 flex items-center justify-center text-white transition-colors cursor-pointer"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <button
-                type="button"
-                onClick={handleNext}
-                aria-label="Next learning stage"
-                className="w-10 h-10 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 flex items-center justify-center text-white transition-colors cursor-pointer"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Interactive Progress Stepper Line */}
-        <div className="relative flex items-center justify-between max-w-2xl mx-auto mb-8 px-2">
-          <div className="absolute left-4 right-4 top-1/2 -translate-y-1/2 h-[2px] bg-slate-800 pointer-events-none" />
-          <div
-            className="absolute left-4 top-1/2 -translate-y-1/2 h-[2px] bg-brand-red transition-all duration-500 pointer-events-none"
-            style={{ width: `calc(${(activeIndex / (STAGES.length - 1)) * 100}% - 1rem)` }}
-          />
-          {STAGES.map((s, idx) => {
-            const isCurrent = idx === activeIndex;
-            const isPassed = idx < activeIndex;
-            return (
-              <button
-                key={s.stage}
-                type="button"
-                onClick={() => setActiveIndex(idx)}
-                className="relative z-10 flex flex-col items-center gap-1.5 group cursor-pointer focus:outline-none"
-              >
-                <div
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-extrabold transition-all duration-300 border ${
-                    isCurrent
-                      ? 'bg-brand-red text-white border-brand-red scale-110 shadow-lg shadow-brand-red/30'
-                      : isPassed
-                      ? 'bg-slate-900 text-white border-brand-red/60'
-                      : 'bg-slate-900 text-slate-500 border-slate-800 group-hover:border-slate-600 group-hover:text-slate-300'
-                  }`}
-                >
-                  0{s.stage}
-                </div>
-                <span
-                  className={`text-[11px] font-bold tracking-wide transition-colors ${
-                    isCurrent ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'
-                  }`}
-                >
-                  {s.name}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* 3D Perspective Carousel Viewport */}
-        <div
-          className="relative h-[320px] sm:h-[290px] w-full flex items-center justify-center overflow-hidden"
-          style={{ perspective: '1200px' }}
-        >
-          {STAGES.map((stage, idx) => {
-            const offset = getRelativeOffset(idx);
-            const isCenter = offset === 0;
-            const absOffset = Math.abs(offset);
-            const Icon = stage.icon;
-
-            // Compute 3D transform states
-            const translateX = offset * 260;
-            const translateZ = isCenter ? 0 : -140 * absOffset;
-            const rotateY = offset * -24;
-            const scale = isCenter ? 1 : absOffset === 1 ? 0.84 : 0.68;
-            const opacity = isCenter ? 1 : absOffset === 1 ? 0.45 : 0.15;
-            const zIndex = 20 - absOffset * 5;
-
-            return (
-              <motion.div
-                key={stage.stage}
-                drag={isCenter ? 'x' : false}
-                dragConstraints={{ left: 0, right: 0 }}
-                onDragEnd={handleDragEnd}
-                onClick={() => {
-                  if (!isCenter) setActiveIndex(idx);
-                }}
-                animate={{
-                  x: translateX,
-                  z: translateZ,
-                  rotateY,
-                  scale,
-                  opacity,
-                }}
-                transition={{
-                  type: 'spring',
-                  stiffness: 260,
-                  damping: 26,
-                }}
-                style={{
-                  zIndex,
-                  transformStyle: 'preserve-3d',
-                }}
-                className={`absolute w-full max-w-xl rounded-2xl p-6 sm:p-8 bg-slate-900/95 border transition-colors ${
-                  isCenter
-                    ? `${stage.borderAccent} shadow-2xl cursor-grab active:cursor-grabbing`
-                    : 'border-slate-800/80 cursor-pointer hover:border-slate-700'
-                }`}
-              >
-                {/* Subtle stage gradient wash */}
-                <div
-                  className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${stage.glowClass} pointer-events-none`}
-                />
-
-                <div className="relative z-10">
-                  <div className="flex items-start justify-between gap-4 mb-4">
-                    <div>
-                      <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.2em] text-slate-400 mb-1">
-                        <span className={stage.accentColor}>Stage 0{stage.stage}</span>
-                        <span>·</span>
-                        <span>{stage.tagline}</span>
-                      </div>
-                      <h4 className="text-2xl sm:text-3xl font-extrabold font-display text-white tracking-tight">
-                        {stage.name}
-                      </h4>
-                    </div>
-
-                    <div className="w-12 h-12 rounded-xl bg-slate-950/90 border border-slate-800 flex items-center justify-center shrink-0">
-                      <Icon className={`w-6 h-6 ${stage.accentColor}`} />
-                    </div>
-                  </div>
-
-                  <p className="text-slate-300 text-sm sm:text-base leading-relaxed mb-6">
-                    {stage.summary}
-                  </p>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-slate-800/90">
-                    <div className="flex items-start gap-2.5">
-                      <Sparkles className={`w-4 h-4 ${stage.accentColor} shrink-0 mt-0.5`} />
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                          How You Learn
-                        </p>
-                        <p className="text-xs font-semibold text-white mt-0.5">
-                          {stage.keyAction}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-2.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                          Stage Outcome
-                        </p>
-                        <p className="text-xs font-semibold text-white mt-0.5">
-                          {stage.deliverable}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
+    <section
+      aria-label="The Learning Flow"
+      className="space-y-8 sm:space-y-10 select-none pt-4"
+    >
+      {/* Editorial Section Heading */}
+      <div className="space-y-2">
+        <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.22em] text-[#E11D48]">
+          THE LEARNING FLOW
+        </p>
+        <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
+          Every Program Follows One Proven Learning Flow
+        </h2>
       </div>
-    </div>
+
+      {/* Desktop & Tablet: Single Horizontal Line with Fine Connecting Rules */}
+      <div className="hidden md:block space-y-4">
+        <div
+          role="tablist"
+          aria-label="Learning flow stages"
+          className="flex items-center justify-between w-full"
+        >
+          {LEARNING_STAGES.map((stage, idx) => {
+            const isActive = idx === activeStageIndex;
+            const isLast = idx === LEARNING_STAGES.length - 1;
+
+            return (
+              <React.Fragment key={stage.id}>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setActiveStageIndex(idx)}
+                  className="group relative text-left py-2 shrink-0 cursor-pointer focus:outline-none"
+                >
+                  <span
+                    className={`block text-sm lg:text-base transition-colors ${
+                      isActive
+                        ? 'font-bold text-slate-900 dark:text-white'
+                        : 'font-medium text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
+                    }`}
+                  >
+                    {stage.name}
+                  </span>
+                  <span
+                    className={`block mt-2 h-[2.5px] rounded-full transition-all duration-300 ${
+                      isActive
+                        ? 'w-full bg-[#E11D48]'
+                        : 'w-0 group-hover:w-1/2 bg-slate-300 dark:bg-white/25'
+                    }`}
+                  />
+                </button>
+
+                {!isLast && (
+                  <div
+                    className="h-px flex-1 mx-6 lg:mx-10 bg-slate-200 dark:bg-white/15"
+                    aria-hidden="true"
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        {/* Short Supporting Phrase for Selected Stage */}
+        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+          <span className="font-bold text-slate-900 dark:text-white">
+            0{activeStageIndex + 1} · {LEARNING_STAGES[activeStageIndex].name}:
+          </span>{' '}
+          {LEARNING_STAGES[activeStageIndex].phrase}
+        </p>
+      </div>
+
+      {/* Mobile: Compact Vertical Sequence with Fine Dividers */}
+      <div className="md:hidden divide-y divide-slate-200 dark:divide-white/10 border-b border-slate-200 dark:border-white/10">
+        {LEARNING_STAGES.map((stage, idx) => {
+          const isActive = idx === activeStageIndex;
+          return (
+            <button
+              key={stage.id}
+              type="button"
+              onClick={() => setActiveStageIndex(idx)}
+              className="w-full text-left py-3.5 transition-colors cursor-pointer focus:outline-none"
+            >
+              <div className="flex items-center justify-between">
+                <span
+                  className={`text-sm ${
+                    isActive
+                      ? 'font-bold text-slate-900 dark:text-white'
+                      : 'font-medium text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {stage.name}
+                </span>
+                <span className="text-[11px] font-mono tabular-nums text-slate-400 dark:text-slate-500">
+                  0{idx + 1}
+                </span>
+              </div>
+
+              {isActive && (
+                <div className="mt-2 space-y-2">
+                  <div className="h-[2px] w-12 bg-[#E11D48] rounded-full" />
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                    {stage.phrase}
+                  </p>
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Secondary Horizontal Spotlight Showcase (Desktop 3-Col / Mobile Horizontal Snap) */}
+      {!compact && (
+        <div className="-mx-4 sm:-mx-6 lg:mx-0">
+          <div className="flex lg:grid lg:grid-cols-3 gap-4 sm:gap-5 overflow-x-auto lg:overflow-visible snap-x snap-mandatory scroll-smooth no-scrollbar touch-pan-x overscroll-x-contain overscroll-y-none [-webkit-overflow-scrolling:touch] px-4 sm:px-6 lg:px-0">
+            {SPOTLIGHT_TRACKS.map((track) => {
+              const imgFailed = failedImages[track.id];
+
+              return (
+                <article
+                  key={track.id}
+                  onClick={() => handleSpotlightClick(track.schoolId)}
+                  className="group relative w-[84vw] sm:w-[64vw] lg:w-auto shrink-0 snap-start overflow-hidden rounded-2xl h-[190px] sm:h-[210px] bg-slate-900 border border-slate-200/80 dark:border-white/10 cursor-pointer"
+                >
+                  {!imgFailed ? (
+                    <img
+                      src={track.image}
+                      alt={track.title}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={() =>
+                        setFailedImages((prev) => ({ ...prev, [track.id]: true }))
+                      }
+                      className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-[1.04]"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950" />
+                  )}
+
+                  <div
+                    className="absolute inset-0 bg-gradient-to-r from-[#050811]/90 via-[#050811]/60 to-transparent"
+                    aria-hidden="true"
+                  />
+
+                  <div className="relative z-10 h-full flex flex-col justify-end p-5 sm:p-6">
+                    <h3 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
+                      {track.title}
+                    </h3>
+                    <p className="text-xs text-slate-300 mt-1 line-clamp-2 max-w-xs">
+                      {track.summary}
+                    </p>
+                    <span className="mt-2.5 inline-block text-xs font-bold text-[#F43F5E] group-hover:text-white transition-colors">
+                      Explore program
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

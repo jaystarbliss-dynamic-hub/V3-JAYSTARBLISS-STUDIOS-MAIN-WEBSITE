@@ -3,6 +3,8 @@ import React, { createContext, useContext, useState, useCallback, useMemo } from
 import type { ReactNode } from 'react';
 import { X, CheckCircle, AlertCircle, Info } from 'lucide-react';
 
+import { getFriendlyErrorMessage, logInternalDiagnostic } from '../utils/friendlyErrors';
+
 export type ToastType = 'success' | 'error' | 'info';
 
 interface Toast {
@@ -14,14 +16,14 @@ interface Toast {
 export interface ToastFn {
   (message: string, type?: ToastType): void;
   success: (message: string) => void;
-  error: (message: string) => void;
+  error: (messageOrError: unknown, fallback?: string) => void;
   info: (message: string) => void;
 }
 
 interface ToastContextType {
   toast: ToastFn;
   success: (message: string) => void;
-  error: (message: string) => void;
+  error: (messageOrError: unknown, fallback?: string) => void;
   info: (message: string) => void;
 }
 
@@ -39,7 +41,16 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, []);
 
   const success = useCallback((message: string) => addToast(message, 'success'), [addToast]);
-  const error = useCallback((message: string) => addToast(message, 'error'), [addToast]);
+  const error = useCallback((messageOrError: unknown, fallback?: string) => {
+    const friendly = typeof messageOrError === 'string' && !messageOrError.includes('FirebaseError') && !messageOrError.includes('HTTP ')
+      ? messageOrError
+      : getFriendlyErrorMessage(messageOrError, fallback);
+    
+    if (messageOrError && (messageOrError instanceof Error || typeof messageOrError === 'object')) {
+      logInternalDiagnostic('Toast::Error', messageOrError);
+    }
+    addToast(friendly, 'error');
+  }, [addToast]);
   const info = useCallback((message: string) => addToast(message, 'info'), [addToast]);
 
   const toastFn = useMemo(() => {

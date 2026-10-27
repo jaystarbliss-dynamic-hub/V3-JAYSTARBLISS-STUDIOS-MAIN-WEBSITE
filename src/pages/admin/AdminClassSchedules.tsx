@@ -1238,35 +1238,24 @@ const AdminClassSchedules: React.FC = () => {
     <div className="space-y-6">
       <SEO title="Class Schedules | Admin" description="Manage recurring class schedules, assigned tutors, and attendance across school and student portals." noindex={true} />
 
-      {/* Header Bar */}
-      <div className="bg-white dark:bg-[#0c1220] rounded-3xl p-6 md:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white">
-            Class Schedules
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
-            Create and manage school, programme, and student schedules. Updates are reflected in the relevant school, tutor, and student portals.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="min-h-11 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c1220] px-4 text-xs font-bold text-slate-700 dark:text-slate-300 inline-flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-xs"
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            <span>Refresh</span>
-          </button>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="min-h-11 rounded-2xl bg-brand-red hover:bg-red-700 text-white px-5 text-xs font-black inline-flex items-center gap-2 shadow-sm transition-all active:scale-95"
-          >
-            <Plus size={15} />
-            <span>Create Timetable</span>
-          </button>
-        </div>
+      {/* Action Bar */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="min-h-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c1220] px-4 text-xs font-bold text-slate-700 dark:text-slate-300 inline-flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-xs"
+        >
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          <span>Refresh</span>
+        </button>
+        <button
+          type="button"
+          onClick={openCreate}
+          className="min-h-10 rounded-xl bg-brand-red hover:bg-red-700 text-white px-4 text-xs font-black inline-flex items-center gap-2 shadow-sm transition-all active:scale-95"
+        >
+          <Plus size={15} />
+          <span>Create Timetable</span>
+        </button>
       </div>
 
       {/* Filter Controls Bar */}

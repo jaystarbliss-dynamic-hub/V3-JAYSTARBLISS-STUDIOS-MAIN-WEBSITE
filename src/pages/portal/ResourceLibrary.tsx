@@ -20,7 +20,17 @@ export interface ResourceDocument {
   category: 'student' | 'school' | 'both' | 'staff' | 'all';
   subject: string;
   classLevel: string;
-  docType: 'PDF' | 'Lesson Note' | 'Syllabus' | 'Practical Worksheet' | 'Cheatsheet' | 'Past Exam';
+  docType:
+    | 'PDF'
+    | 'Document'
+    | 'Image'
+    | 'Video'
+    | 'External Link'
+    | 'Lesson Note'
+    | 'Syllabus'
+    | 'Practical Worksheet'
+    | 'Cheatsheet'
+    | 'Past Exam';
   description: string;
   fileUrl?: string;
   fileSize?: string;
@@ -106,12 +116,16 @@ const SUBJECTS = [
 
 const DOC_TYPES = [
   'All Types',
-  'Syllabus',
   'Lesson Note',
+  'PDF',
+  'Document',
+  'Image',
+  'Video',
+  'External Link',
+  'Syllabus',
   'Practical Worksheet',
   'Cheatsheet',
-  'Past Exam',
-  'PDF'
+  'Past Exam'
 ];
 
 // Helper to check if student class matches assigned classes or classLevel
@@ -230,19 +244,74 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
   const [customClassInput, setCustomClassInput] = useState('');
   const [savingAssignment, setSavingAssignment] = useState(false);
 
-  // New Resource Upload Modal State (for school admins)
+  // New Resource Upload Modal State (for tutors, school admins & super admins)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [authorisedSchools, setAuthorisedSchools] = useState<{ id: string; name: string }[]>([]);
+  const [privateLearners, setPrivateLearners] = useState<{ id: string; name: string; class: string }[]>([]);
   const [uploadForm, setUploadForm] = useState({
     title: '',
     subject: 'Computer Science & ICT',
     docType: 'Lesson Note' as ResourceDocument['docType'],
     classLevel: 'All Classes',
     assignedClasses: ['All Classes'],
+    audienceMode: 'SCHOOL_CLASS' as 'SCHOOL_CLASS' | 'PRIVATE_LEARNERS',
+    targetSchoolId: '',
+    targetStudentIds: [] as string[],
     description: '',
     fileUrl: '',
     classInstructions: ''
   });
   const [uploadSubmitting, setUploadSubmitting] = useState(false);
+
+  // Load authorised schools and private learners for tutors/staff
+  useEffect(() => {
+    if (role !== 'staff' && role !== 'school') return;
+    let mounted = true;
+    const loadTargets = async () => {
+      try {
+        const uid = auth.currentUser?.uid || '';
+        if (!uid) return;
+        const [schoolsSnap, indSnap] = await Promise.all([
+          getDocs(collection(db, 'schools')).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'individualStudents'), where('tutorId', '==', uid))).catch(
+            () => ({ docs: [] } as any)
+          ),
+        ]);
+        const mySchools = schoolsSnap.docs
+          .map((d: any) => ({ id: d.id, ...d.data() }))
+          .filter((s: any) => {
+            if (role === 'school') return s.id === schoolId;
+            return (
+              s.tutorId === uid ||
+              s.assignedTutorId === uid ||
+              (Array.isArray(s.assignedTutors) &&
+                s.assignedTutors.some((t: any) => String(t?.id || t?.tutorId || t || '') === uid)) ||
+              (Array.isArray(s.assignedStaff) &&
+                s.assignedStaff.some((t: any) => String(t?.id || t?.uid || t || '') === uid))
+            );
+          })
+          .map((s: any) => ({ id: s.id, name: s.name || s.schoolName || 'Partner School' }));
+        const learners = indSnap.docs.map((d: any) => {
+          const sd = d.data() || {};
+          return {
+            id: d.id,
+            name: sd.fullName || sd.studentName || sd.name || 'Private Learner',
+            class: sd.class || sd.grade || 'Private',
+          };
+        });
+        if (mounted) {
+          setAuthorisedSchools(mySchools);
+          setPrivateLearners(learners);
+        }
+      } catch {
+        // Ignore target lookup error
+      }
+    };
+    void loadTargets();
+    return () => {
+      mounted = false;
+    };
+  }, [role, schoolId]);
 
   // Fetch Firestore resources dynamically
   const fetchFirestoreResources = useCallback(async () => {
@@ -661,59 +730,93 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
     }
   };
 
-  // Upload New School Resource
+  // Upload New School or Tutor Resource
   const handleCreateSchoolResource = async (e: React.FormEvent) => {
     e.preventDefault();
-    // The school Resource Library is separate from the program-level curriculum
-    // attachment. School administrators retain full control of their own school
-    // resources; tutor/super-admin curriculum permissions remain available.
     if (role !== 'school' && !canManageCurriculum) {
       toast.error('Only school administrators, tutors, and the super admin can upload learning resources.');
       return;
     }
-    if (!uploadForm.title.trim() || !uploadForm.fileUrl.trim()) {
-      toast.error('Please enter a lesson title and document/file URL.');
+    if (!uploadForm.title.trim()) {
+      toast.error('Please enter a resource title.');
+      return;
+    }
+    const requiresUrl = ['External Link', 'PDF', 'Document', 'Image', 'Video'].includes(uploadForm.docType);
+    if (requiresUrl && !uploadForm.fileUrl.trim()) {
+      toast.error(`Please provide a valid URL for this ${uploadForm.docType}.`);
+      return;
+    }
+    if (uploadForm.audienceMode === 'PRIVATE_LEARNERS' && uploadForm.targetStudentIds.length === 0) {
+      toast.error('Please select at least one private learner to receive this resource.');
       return;
     }
 
     setUploadSubmitting(true);
     try {
-      const activeSchoolId = schoolId || studentInfo.schoolId || 'default_school';
-      const activeSchoolName = schoolName || studentInfo.schoolName || 'School Institution';
+      const selectedSch = authorisedSchools.find((s) => s.id === uploadForm.targetSchoolId);
+      const activeSchoolId =
+        uploadForm.audienceMode === 'PRIVATE_LEARNERS'
+          ? ''
+          : uploadForm.targetSchoolId || schoolId || studentInfo.schoolId || 'default_school';
+      const activeSchoolName =
+        uploadForm.audienceMode === 'PRIVATE_LEARNERS'
+          ? 'Private Learners'
+          : selectedSch?.name || schoolName || studentInfo.schoolName || 'School Institution';
 
-      const newDoc = {
-        title: uploadForm.title.trim(),
-        subject: uploadForm.subject,
-        docType: uploadForm.docType,
-        classLevel: uploadForm.classLevel,
-        assignedClasses: uploadForm.assignedClasses,
-        description: uploadForm.description.trim() || 'School curriculum lesson material.',
-        fileUrl: uploadForm.fileUrl.trim(),
-        classInstructions: uploadForm.classInstructions.trim(),
-        category: 'school',
-        schoolId: activeSchoolId,
-        schoolName: activeSchoolName,
-        assignedAt: serverTimestamp(),
-        assignedBy: auth.currentUser?.email || 'School Administrator'
-      };
+      if (uploadForm.audienceMode === 'PRIVATE_LEARNERS') {
+        for (const studentId of uploadForm.targetStudentIds) {
+          await addDoc(collection(db, 'personalResources'), {
+            studentId,
+            title: uploadForm.title.trim(),
+            subject: uploadForm.subject,
+            docType: uploadForm.docType,
+            type: uploadForm.docType,
+            classLevel: 'Private Learner',
+            description: uploadForm.description.trim() || 'Targeted learning material.',
+            fileUrl: uploadForm.fileUrl.trim(),
+            url: uploadForm.fileUrl.trim(),
+            classInstructions: uploadForm.classInstructions.trim(),
+            category: 'student',
+            assignedAt: serverTimestamp(),
+            assignedBy: auth.currentUser?.email || 'Tutor',
+          });
+        }
+      } else {
+        const newDoc = {
+          title: uploadForm.title.trim(),
+          subject: uploadForm.subject,
+          docType: uploadForm.docType,
+          type: uploadForm.docType,
+          classLevel: uploadForm.classLevel,
+          assignedClasses: uploadForm.assignedClasses,
+          description: uploadForm.description.trim() || 'School curriculum lesson material.',
+          fileUrl: uploadForm.fileUrl.trim(),
+          url: uploadForm.fileUrl.trim(),
+          classInstructions: uploadForm.classInstructions.trim(),
+          category: 'school',
+          schoolId: activeSchoolId,
+          schoolName: activeSchoolName,
+          assignedAt: serverTimestamp(),
+          assignedBy: auth.currentUser?.email || 'Educator',
+        };
 
-      await addDoc(collection(db, 'schoolResources'), newDoc);
+        await addDoc(collection(db, 'schoolResources'), newDoc);
 
-      // Automatically dispatch notification to school students
-      void triggerResourceNotification({
-        title: uploadForm.title.trim(),
-        description: uploadForm.description.trim() || uploadForm.classInstructions.trim(),
-        subject: uploadForm.subject,
-        classLevel: uploadForm.classLevel,
-        assignedClasses: uploadForm.assignedClasses,
-        docType: uploadForm.docType,
-        schoolId: activeSchoolId,
-        schoolName: activeSchoolName,
-        uploaderName: auth.currentUser?.email || 'School Administrator',
-        targetRole: 'student'
-      });
+        void triggerResourceNotification({
+          title: uploadForm.title.trim(),
+          description: uploadForm.description.trim() || uploadForm.classInstructions.trim(),
+          subject: uploadForm.subject,
+          classLevel: uploadForm.classLevel,
+          assignedClasses: uploadForm.assignedClasses,
+          docType: uploadForm.docType,
+          schoolId: activeSchoolId,
+          schoolName: activeSchoolName,
+          uploaderName: auth.currentUser?.email || 'Educator',
+          targetRole: 'student',
+        });
+      }
 
-      toast.success(`Lesson "${uploadForm.title}" uploaded & assigned successfully!`);
+      toast.success(`Resource "${uploadForm.title}" published & assigned successfully!`);
       setIsUploadModalOpen(false);
       setUploadForm({
         title: '',
@@ -721,16 +824,18 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
         docType: 'Lesson Note',
         classLevel: 'All Classes',
         assignedClasses: ['All Classes'],
+        audienceMode: 'SCHOOL_CLASS',
+        targetSchoolId: '',
+        targetStudentIds: [],
         description: '',
         fileUrl: '',
-        classInstructions: ''
+        classInstructions: '',
       });
 
-      // Refetch
       fetchFirestoreResources();
     } catch (err: any) {
       console.error(err);
-      toast.error('Failed to upload lesson: ' + (err?.message || 'Error occurred'));
+      toast.error('Failed to publish resource: ' + (err?.message || 'Error occurred'));
     } finally {
       setUploadSubmitting(false);
     }
@@ -744,48 +849,32 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
         noindex={true}
       />
 
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-brand-slate via-slate-900 to-brand-slate text-white p-6 sm:p-8 rounded-3xl border border-white/10 shadow-lg relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-brand-red/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-        
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-red/20 text-brand-red text-xs font-bold uppercase tracking-wider mb-3 border border-brand-red/30">
-              <BookOpen size={13} />
-              <span>Academic Resource Center</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight">
-              Curriculum &amp; Learning Library
-            </h1>
-            <p className="text-xs sm:text-sm text-gray-300 mt-2 leading-relaxed">
-              Official course syllabi, step-by-step lecture notes, coding worksheets, practical guides, and institutional class assignments.
-            </p>
-            {role === 'student' && studentInfo.studentClass && (
-              <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 backdrop-blur-md text-xs font-bold text-emerald-300 border border-emerald-500/30">
-                <GraduationCap size={15} />
-                <span>Class: {studentInfo.studentClass}</span>
-                {studentInfo.schoolName && <span className="text-gray-300">• {studentInfo.schoolName}</span>}
-              </div>
-            )}
+      {/* Compact Action & Status Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 sm:p-4 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200">
+            <BookOpen size={14} className="text-brand-red" />
+            <span>Total Resources:</span>
+            <span className="font-mono font-black text-brand-red">{resources.length}</span>
           </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="bg-white/10 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 text-center">
-              <div className="text-2xl font-black text-brand-red font-mono">{resources.length}</div>
-              <div className="text-[10px] font-bold text-gray-300 uppercase tracking-wider">Total Resources</div>
+          {role === 'student' && studentInfo.studentClass && (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-xs font-bold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+              <GraduationCap size={14} />
+              <span>Class: {studentInfo.studentClass}</span>
+              {studentInfo.schoolName && <span className="opacity-80">• {studentInfo.schoolName}</span>}
             </div>
-
-            {(role === 'school' || canManageCurriculum) && (
-              <button
-                onClick={() => setIsUploadModalOpen(true)}
-                className="px-4 py-3 bg-brand-red hover:bg-red-700 text-white rounded-2xl font-bold text-xs flex items-center gap-2 shadow-lg shadow-brand-red/20 transition-all cursor-pointer"
-              >
-                <Plus size={16} />
-                <span>{role === 'school' ? 'Upload School Resource' : 'New Lesson Plan'}</span>
-              </button>
-            )}
-          </div>
+          )}
         </div>
+
+        {(role === 'school' || canManageCurriculum) && (
+          <button
+            onClick={() => setIsUploadModalOpen(true)}
+            className="px-4 py-2.5 bg-brand-red hover:bg-red-700 text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+          >
+            <Plus size={15} />
+            <span>{role === 'school' ? 'Upload School Resource' : 'New Lesson Plan'}</span>
+          </button>
+        )}
       </div>
 
       {/* Main Results Container (List Format with Filters, Recency & Unread Indicators) */}
@@ -1047,7 +1136,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
 
             <form onSubmit={handleCreateSchoolResource} className="p-6 overflow-y-auto space-y-4 flex-1 custom-scrollbar text-xs">
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Lesson Title *</label>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Resource Title *</label>
                 <input
                   required
                   type="text"
@@ -1071,7 +1160,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Doc Type</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Resource Type</label>
                   <select
                     value={uploadForm.docType}
                     onChange={e => setUploadForm(prev => ({ ...prev, docType: e.target.value as any }))}
@@ -1083,30 +1172,127 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Document / Resource File Link *</label>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  {uploadForm.docType === 'External Link'
+                    ? 'External Resource URL * (No file upload required)'
+                    : uploadForm.docType === 'Image'
+                    ? 'Image URL *'
+                    : uploadForm.docType === 'Video'
+                    ? 'Video / Stream URL *'
+                    : uploadForm.docType === 'Lesson Note'
+                    ? 'Optional Attachment / Reference URL'
+                    : 'Document / PDF URL *'}
+                </label>
                 <input
-                  required
+                  required={uploadForm.docType !== 'Lesson Note'}
                   type="url"
                   value={uploadForm.fileUrl}
                   onChange={e => setUploadForm(prev => ({ ...prev, fileUrl: e.target.value }))}
-                  placeholder="https://drive.google.com/... or https://..."
+                  placeholder="https://..."
                   className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-900 dark:text-white outline-hidden focus:border-brand-red font-mono"
                 />
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Assign to Class</label>
-                <select
-                  value={uploadForm.assignedClasses[0] || 'All Classes'}
-                  onChange={e => setUploadForm(prev => ({ ...prev, assignedClasses: [e.target.value] }))}
-                  className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-900 dark:text-white outline-hidden focus:border-brand-red"
-                >
-                  {STANDARD_SCHOOL_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
+              {/* Audience Targeting: School/Class vs Private Learners */}
+              {role === 'staff' && (
+                <div className="space-y-2 pt-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300">
+                    Authorised Target Audience
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setUploadForm(prev => ({ ...prev, audienceMode: 'SCHOOL_CLASS' }))}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold cursor-pointer ${
+                        uploadForm.audienceMode === 'SCHOOL_CLASS'
+                          ? 'bg-brand-red text-white border-brand-red'
+                          : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-800'
+                      }`}
+                    >
+                      School &amp; Class
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUploadForm(prev => ({ ...prev, audienceMode: 'PRIVATE_LEARNERS' }))}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold cursor-pointer ${
+                        uploadForm.audienceMode === 'PRIVATE_LEARNERS'
+                          ? 'bg-brand-red text-white border-brand-red'
+                          : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-800'
+                      }`}
+                    >
+                      Private Learner(s)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {uploadForm.audienceMode === 'PRIVATE_LEARNERS' ? (
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Select Private Learner(s)
+                  </label>
+                  {privateLearners.length === 0 ? (
+                    <p className="text-[11px] text-slate-500">No private learners assigned to your account.</p>
+                  ) : (
+                    <div className="max-h-32 overflow-y-auto space-y-1.5 p-2 rounded-xl border border-gray-200 dark:border-slate-800">
+                      {privateLearners.map(lr => {
+                        const checked = uploadForm.targetStudentIds.includes(lr.id);
+                        return (
+                          <label key={lr.id} className="flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setUploadForm(prev => ({
+                                  ...prev,
+                                  targetStudentIds: checked
+                                    ? prev.targetStudentIds.filter(id => id !== lr.id)
+                                    : [...prev.targetStudentIds, lr.id],
+                                }))
+                              }
+                            />
+                            <span className="font-semibold">{lr.name}</span>
+                            <span className="text-[10px] text-slate-400">({lr.class})</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {role === 'staff' && authorisedSchools.length > 0 && (
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Authorised School
+                      </label>
+                      <select
+                        value={uploadForm.targetSchoolId}
+                        onChange={e => setUploadForm(prev => ({ ...prev, targetSchoolId: e.target.value }))}
+                        className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-900 dark:text-white outline-hidden focus:border-brand-red"
+                      >
+                        <option value="">All Authorised Schools</option>
+                        {authorisedSchools.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className={role === 'staff' && authorisedSchools.length > 0 ? '' : 'sm:col-span-2'}>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Assign to Class</label>
+                    <select
+                      value={uploadForm.assignedClasses[0] || 'All Classes'}
+                      onChange={e => setUploadForm(prev => ({ ...prev, assignedClasses: [e.target.value] }))}
+                      className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-900 dark:text-white outline-hidden focus:border-brand-red"
+                    >
+                      {STANDARD_SCHOOL_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Description / Summary</label>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Description / Lesson Summary</label>
                 <textarea
                   rows={2}
                   value={uploadForm.description}

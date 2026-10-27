@@ -116,18 +116,14 @@ const AdminPortfolioForm: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
-        <Link to="/admin/portfolio" className="text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
-          <ArrowLeft size={24} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link to="/admin/portfolio" className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors">
+          <ArrowLeft size={16} />
+          <span>Back to Portfolio Showcase</span>
         </Link>
-        <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 dark:text-white">
-            {isEditing ? 'Edit Project / Game' : 'Create New Project / Game'}
-          </h1>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Configure project details for the website showcase.
-          </p>
-        </div>
+        <p className="text-xs text-slate-500">
+          {isEditing ? 'Editing project details for the website showcase.' : 'Configure new project or student game showcase details.'}
+        </p>
       </div>
 
       {error && (

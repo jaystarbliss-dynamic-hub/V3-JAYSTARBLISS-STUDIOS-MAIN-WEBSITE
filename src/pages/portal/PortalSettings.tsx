@@ -154,10 +154,6 @@ export const PortalSettings: React.FC = () => {
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-10">
       <SEO title="Account Preferences & Settings | Jaystarbliss Studios" description="Manage your portal profile, appearance, security and notifications." noindex />
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Account &amp; Preferences</h1>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">Manage your personal details, interface preferences and account security.</p>
-      </div>
 
       <div className="flex items-center gap-1.5 border-b border-slate-200/80 dark:border-slate-800 pb-3 overflow-x-auto scrollbar-none">
         {([

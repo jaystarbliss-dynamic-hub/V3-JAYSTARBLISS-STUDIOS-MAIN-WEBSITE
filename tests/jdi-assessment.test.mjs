@@ -24,6 +24,16 @@ import {
   normalizeDeliveryMode,
   validateExternalExamUrl,
   validateExamCreationPayload,
+  WORK_TYPES,
+  normalizeWorkType,
+  validateWorkTypeTransition,
+  normalizeRecipientTargets,
+  isStudentEligibleForWork,
+  parseBulkStudentText,
+  validateBulkStudentRows,
+  buildAttendanceRecordKey,
+  createAgreementVersionSnapshot,
+  canAccessAgreement,
 } from "../api/_lib/jdi-assessment.js";
 
 const objective = (overrides = {}) => ({
@@ -416,4 +426,178 @@ test("validates Native examination creation: allows empty drafts, requires quest
   assert.equal(dropdownNativePublished.questions.length, 1);
   assert.equal(dropdownNativePublished.maxScore, 2);
 });
+
+test("normalizes unified work types and blocks unsafe workType transitions when attempts exist", () => {
+  assert.deepEqual(WORK_TYPES, ["ASSIGNMENT", "ACTIVITY", "TEST", "EXAMINATION"]);
+  assert.equal(normalizeWorkType("assignment"), "ASSIGNMENT");
+  assert.equal(normalizeWorkType("practice"), "ACTIVITY");
+  assert.equal(normalizeWorkType("quiz"), "TEST");
+  assert.equal(normalizeWorkType("cbt"), "EXAMINATION");
+  assert.equal(normalizeWorkType(undefined), "EXAMINATION");
+
+  assert.equal(
+    validateWorkTypeTransition({ currentType: "EXAMINATION", nextType: "TEST", attemptCount: 0 }).allowed,
+    true
+  );
+  const blockedTransition = validateWorkTypeTransition({
+    currentType: "EXAMINATION",
+    nextType: "ACTIVITY",
+    attemptCount: 2,
+  });
+  assert.equal(blockedTransition.allowed, false);
+  assert.match(blockedTransition.reason, /already has 2 recorded student submission/i);
+});
+
+test("normalizes recipient targeting and enforces school/class vs private learner eligibility", () => {
+  const schoolTarget = normalizeRecipientTargets({
+    recipientMode: "SCHOOL_CLASS",
+    schoolId: "sch-safari",
+    classIds: ["Primary 5", "Grade 6"],
+  });
+  assert.equal(schoolTarget.recipientMode, "SCHOOL_CLASS");
+  assert.deepEqual(schoolTarget.schoolIds, ["sch-safari"]);
+  assert.deepEqual(schoolTarget.classIds, ["Grade 5", "Grade 6"]);
+
+  assert.equal(
+    isStudentEligibleForWork({
+      work: schoolTarget,
+      studentId: "stu-1",
+      studentSchoolId: "sch-safari",
+      studentClass: "Grade 5",
+    }),
+    true
+  );
+  assert.equal(
+    isStudentEligibleForWork({
+      work: schoolTarget,
+      studentId: "stu-2",
+      studentSchoolId: "sch-other",
+      studentClass: "Grade 5",
+    }),
+    false
+  );
+
+  const privateTarget = normalizeRecipientTargets({
+    recipientMode: "PRIVATE_LEARNERS",
+    targetStudentIds: ["priv-1", "priv-2"],
+  });
+  assert.equal(
+    isStudentEligibleForWork({
+      work: privateTarget,
+      studentId: "priv-1",
+      studentSchoolId: "",
+      studentClass: "Grade 8",
+    }),
+    true
+  );
+  assert.equal(
+    isStudentEligibleForWork({
+      work: privateTarget,
+      studentId: "priv-3",
+      studentSchoolId: "",
+      studentClass: "Grade 8",
+    }),
+    false
+  );
+});
+
+test("parses and validates bulk student onboarding records from pipe and CSV text", () => {
+  const rawText = [
+    "Full Name | Class | Programme",
+    "Ada Johnson | Grade 5 | Digital Literacy",
+    "Samuel Bello | JSS 1 | Robotics & Coding",
+    "Ada Johnson | Basic 5 | Digital Literacy",
+    "Invalid Row OnlyName",
+  ].join("\n");
+
+  const parsed = parseBulkStudentText(rawText);
+  assert.equal(parsed.length, 4);
+
+  const validated = validateBulkStudentRows(parsed, [{ fullName: "Existing Learner", className: "Grade 5" }]);
+  assert.equal(validated.validCount, 2);
+  assert.equal(validated.invalidCount, 2);
+  assert.equal(validated.rows[0].className, "Grade 5");
+  assert.equal(validated.rows[1].className, "Grade 7");
+  assert.equal(validated.rows[2].valid, false); // Duplicate of Ada Johnson in Grade 5
+});
+
+test("builds session-aware attendance record keys so multiple classes on the same day do not collide", () => {
+  const morningKey = buildAttendanceRecordKey({
+    studentId: "stu-10",
+    date: "2026-10-27T09:00:00.000Z",
+    scheduleId: "sched-morning",
+  });
+  const afternoonKey = buildAttendanceRecordKey({
+    studentId: "stu-10",
+    date: "2026-10-27T14:00:00.000Z",
+    scheduleId: "sched-afternoon",
+  });
+  const legacyKey = buildAttendanceRecordKey({
+    studentId: "stu-10",
+    date: "2026-10-27",
+  });
+
+  assert.notEqual(morningKey, afternoonKey);
+  assert.equal(morningKey, "sched-morning__stu-10__2026-10-27");
+  assert.equal(legacyKey, "legacy__stu-10__2026-10-27");
+});
+
+test("creates immutable agreement version snapshots and enforces strict recipient access boundaries", () => {
+  const snap1 = createAgreementVersionSnapshot({
+    versionNumber: 1,
+    title: "2026 School Partnership Contract",
+    category: "CONTRACT",
+    status: "SHARED",
+    content: "Terms and conditions v1",
+    effectiveDate: "2026-09-01",
+    expiryDate: "2027-07-31",
+    createdBy: "admin-1",
+    createdAt: "2026-08-15T10:00:00.000Z",
+  });
+
+  assert.equal(snap1.immutable, true);
+  assert.equal(snap1.versionNumber, 1);
+  assert.equal(snap1.category, "CONTRACT");
+
+  const agreement = {
+    id: "agr-1",
+    status: "SHARED",
+    recipientType: "SCHOOL",
+    schoolId: "sch-safari",
+  };
+
+  // Draft agreements are hidden from recipients
+  assert.equal(
+    canAccessAgreement({
+      agreement: { ...agreement, status: "DRAFT" },
+      uid: "school-user-1",
+      role: "SCHOOL",
+      schoolId: "sch-safari",
+    }),
+    false
+  );
+
+  // Authorised school can access shared agreement
+  assert.equal(
+    canAccessAgreement({
+      agreement,
+      uid: "school-user-1",
+      role: "SCHOOL",
+      schoolId: "sch-safari",
+    }),
+    true
+  );
+
+  // Unrelated school cannot access agreement
+  assert.equal(
+    canAccessAgreement({
+      agreement,
+      uid: "other-school-user",
+      role: "SCHOOL",
+      schoolId: "sch-other",
+    }),
+    false
+  );
+});
+
 

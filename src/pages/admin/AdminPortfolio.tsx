@@ -46,16 +46,7 @@ const AdminPortfolio: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 dark:text-white">
-            Portfolio & Kids Corner
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-            Manage organization case studies and interactive student game creations.
-          </p>
-        </div>
-
+      <div className="flex items-center justify-end">
         <div className="flex items-center gap-3">
           <Link
             to="/portfolio"

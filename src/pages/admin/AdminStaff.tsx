@@ -528,30 +528,18 @@ const AdminStaff: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-brand-slate dark:text-white flex items-center gap-3">
-            <Briefcase className="text-brand-red w-8 h-8" />
-            Staff &amp; Faculty Operations
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Manage instructor directory, subjects &amp; teaching specializations, assigned students &amp; schools, and account status.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => { setRefreshing(true); void fetchStaffData(); }}
-            disabled={loading || refreshing}
-            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
-            title="Refresh faculty directory"
-          >
-            <RefreshCw size={14} className={refreshing ? 'animate-spin text-brand-red' : ''} />
-            <span>Refresh</span>
-          </button>
-        </div>
+      {/* Action Toolbar */}
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => { setRefreshing(true); void fetchStaffData(); }}
+          disabled={loading || refreshing}
+          className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+          title="Refresh faculty directory"
+        >
+          <RefreshCw size={14} className={refreshing ? 'animate-spin text-brand-red' : ''} />
+          <span>Refresh</span>
+        </button>
       </div>
 
       {/* Tabs */}

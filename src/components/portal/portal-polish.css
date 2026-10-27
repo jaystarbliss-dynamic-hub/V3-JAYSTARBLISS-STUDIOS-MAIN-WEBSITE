@@ -93,3 +93,49 @@
 .dark .dashboard-interface .text-slate-800 { color: #f1f5f9 !important; }
 .dark .dashboard-interface .text-slate-700 { color: #e2e8f0 !important; }
 
+/* Mobile viewport scaling & squeeze prevention rules (< 640px) */
+@media (max-width: 639px) {
+  /* Scale buttons down to compact, operable sizes on mobile */
+  .btn-portal-primary,
+  .portal-btn-primary,
+  .btn-portal-secondary,
+  .portal-btn-secondary,
+  button:not(.no-mobile-scale),
+  .btn {
+    font-size: 0.75rem !important;
+    line-height: 1rem !important;
+    padding-top: 0.375rem !important;
+    padding-bottom: 0.375rem !important;
+    padding-left: 0.625rem !important;
+    padding-right: 0.625rem !important;
+    min-height: 34px !important;
+    max-width: 100% !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+  }
+
+  /* Scale inputs, selects and textareas for mobile */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 0.75rem !important;
+    padding-top: 0.375rem !important;
+    padding-bottom: 0.375rem !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+    max-width: 100% !important;
+  }
+
+  /* Prevent large text headers from squeezing layout on small screens */
+  h1 { font-size: 1.25rem !important; line-height: 1.5rem !important; }
+  h2 { font-size: 1.1rem !important; line-height: 1.35rem !important; }
+  h3 { font-size: 0.95rem !important; line-height: 1.25rem !important; }
+
+  /* Allow flex/grid wrappers to wrap gracefully on mobile */
+  .portal-main-content,
+  .dashboard-interface,
+  .flex-mobile-wrap {
+    overflow-x: hidden !important;
+  }
+}
+

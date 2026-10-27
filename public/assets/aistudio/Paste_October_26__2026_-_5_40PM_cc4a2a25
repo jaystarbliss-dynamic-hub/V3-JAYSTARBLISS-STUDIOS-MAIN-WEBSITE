@@ -1,0 +1,818 @@
+# JAYSTARBLISS STUDIOS — MASTER PORTAL REDESIGN, UX ARCHITECTURE, RESPONSIVENESS AND FEATURE-PARITY IMPLEMENTATION
+
+## 1. MISSION
+
+You are the principal product designer, senior frontend architect, full-stack engineer, accessibility specialist, responsive-design engineer and QA lead responsible for redesigning the **entire existing Jaystarbliss Studios / Jaystarbliss Dynamic Institute authenticated platform**.
+
+The objective is to transform the current dashboards into a coherent, professional, modern, easy-to-use education SaaS experience across desktop, tablet and mobile.
+
+This is not a superficial restyling exercise. The current system contains unnecessary text, repetitive cards, inconsistent headers, dense interfaces, oversized content sections, inconsistent component styling and layouts that do not always use available screen space effectively. Some features also appear differently across roles or are repeated unnecessarily.
+
+We need a better architecture for the user experience while preserving the underlying application.
+
+**NON-NEGOTIABLE RULE: REDESIGN THE EXPERIENCE, NOT THE BUSINESS LOGIC. Preserve every existing capability, route, data relationship, permission boundary, integration, and working workflow unless an explicitly authorised defect correction requires a change. Nothing may disappear merely because it is difficult to fit into the new design.**
+
+Do not create a new application. Do not replace the existing authentication system. Do not delete features to make the interface appear simpler. Do not rebuild the whole platform from memory or rely solely on screenshots.
+
+Inspect the real code, establish a feature inventory, redesign systematically, implement the changes, test them, correct regressions and document the actual result.
+
+Use Claude Opus 5.5 if that model is genuinely available in the active environment. Otherwise, use the strongest suitable available model and proceed.
+
+## 2. PROJECT CONTEXT AND TECHNICAL CONSTRAINTS
+
+The repository being redesigned is:
+
+https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE
+
+The inspected `main` branch contained 416 tracked file entries, 86 declared route patterns in `src/App.tsx`, 80 files under `src/components/` and 55 Netlify Function files. These numbers describe the inspected snapshot, not guaranteed totals in your current workspace. Recount everything before implementation.
+
+The existing stack includes:
+
+- React 19, TypeScript and Vite.
+- React Router for navigation and protected routes.
+- Tailwind CSS and existing CSS/design-token layers.
+- Firebase Authentication and Firestore.
+- Firebase Admin SDK and Netlify Functions.
+- Paystack payment initiation, verification and webhook/reconciliation flows.
+- Cloudinary image uploads and media handling.
+- Motion/Framer Motion animations.
+- Recharts for charts and dashboard visualisations.
+- Lucide React icons.
+- Existing PDF, ZIP, spreadsheet export and reporting utilities.
+- Existing light, dark and high-contrast visual behaviour.
+
+Prefer the current stack and existing project conventions. Do not introduce a completely different design framework, component library or application architecture merely because it is fashionable. Reuse and improve existing reusable components where practical, and introduce focused abstractions only when they meaningfully reduce duplication or inconsistency.
+
+Preserve the current Firebase project, the intended named Firestore database, deployment configuration, runtime requirements, server functions, role resolution and authentication contracts.
+
+## 3. PHASE ZERO — FULL REPOSITORY AND WORKFLOW AUDIT
+
+**Do this before redesigning components.**
+
+Inspect the entire current repository, including files that are not immediately imported by the primary dashboard components. Determine which files are active, shared, legacy, test-only, generated or referenced indirectly.
+
+Audit:
+
+1. Every route and nested route in `src/App.tsx`.
+2. Every page under `src/pages/`.
+3. Every component under `src/components/`, including nested component folders.
+4. All stylesheets, Tailwind configuration, CSS variables, theme rules, responsive utilities and shared styling overrides.
+5. All hooks, contexts, providers, utilities, validators, adapters and state-management logic.
+6. Every Netlify Function and the API/helper modules used by it.
+7. Firestore rules, indexes, storage rules, schema assumptions, query patterns, data migrations and legacy compatibility mechanisms.
+8. All existing tests, CI workflows, lint scripts, build scripts and deployment configuration.
+9. Every external integration, including payment, media, authentication, email, notification and reporting workflows.
+10. All features implemented through shared components, route aliases, modal entry points, query parameters, tabs, menus and context-dependent behaviours that might not be obvious from a page's initial render.
+
+Search for unused or duplicate components, multiple implementations of the same control, duplicated headers, inconsistent status labels, hardcoded mock data, stale CSS, hidden controls, incomplete states and overlapping styles.
+
+Do not assume a file is safe to remove just because it appears unused in a simple text search. Examine route references, dynamic imports, string-based lookups, indirect imports, Firebase interactions, API consumers and external workflows first.
+
+### Required audit artefacts
+
+Create a structured implementation inventory in the workspace, for example under `docs/ui-redesign/`, with:
+
+- `repository-inventory.md`
+- `route-and-role-matrix.md`
+- `feature-preservation-matrix.md`
+- `component-design-system.md`
+- `workflow-and-api-contracts.md`
+- `baseline-qa.md`
+- `redesign-progress.md`
+
+Adapt the filenames if a suitable documentation structure already exists.
+
+For every feature, record:
+
+- Feature identifier and name.
+- Page or route where it appears.
+- User roles allowed to use it.
+- Relevant components.
+- Data sources and collections.
+- Read and write operations.
+- Backend endpoints or functions.
+- Related integrations.
+- Expected success, loading, empty and error states.
+- Permissions and validation.
+- Existing tests or the tests that must be added.
+
+Include a feature-preservation matrix with an explicit status for each item: `Not audited`, `Audited`, `Redesign mapped`, `Implemented`, `Verified`, or `Blocked`.
+
+**A page is not considered audited because its title was listed. Its important controls, workflows and interactions must be mapped.**
+
+Capture the current application's appearance and interaction behaviour where browser tooling is available. Record baseline screenshots at desktop and mobile widths before changing the UI. If access to the live portal or a browser is unavailable, document that limitation and use the code, local build and available test infrastructure instead. Never invent screenshots or claim to have tested an inaccessible live environment.
+
+## 4. INVENTORY OF THE CURRENT UI SURFACE
+
+Use this list as a starting point and verify it against the actual working tree.
+
+### Public and shared application pages
+
+`Home`, `About`, `Programs`, `ProgramDetails`, `Services`, `ServiceDetails`, `Portfolio`, `Contact`, `ProjectRequest`, `SchoolPartnership`, `SchoolPartnershipV2`, `TutorApplication`, `FAQ`, `FindTutor`, `Resources`, `Blog`, `BlogPostDetails`, `Register`, `SecurePortalLogin`, `Portal` and `MagicParticles`.
+
+The main objective is the authenticated portal ecosystem. Keep the public marketing website's existing functionality and art direction intact unless a genuinely shared component requires a carefully scoped change.
+
+In particular, do not damage the existing homepage's protected Orb Hero/Galaxy Orbit animation, logo treatment, public navigation, CMS-driven content or public inquiry forms.
+
+### Administrator/CMS pages
+
+Audit and preserve:
+
+- `AdminDashboard`
+- `AdminActivityLogs`
+- `AdminApprovals`
+- `AdminBilling`
+- `AdminBlog` and `AdminBlogForm`
+- `AdminClassSchedules`
+- `AdminInquiries`
+- `AdminKidsProjects`
+- `AdminNotifications`
+- `AdminPageForm` and `AdminPages`
+- `AdminParents`
+- `AdminPortfolio` and `AdminPortfolioForm`
+- `AdminProgramForm` and `AdminPrograms`
+- `AdminReports`
+- `AdminResources`
+- `AdminSchoolOnboarding`
+- `AdminSchools`
+- `AdminServiceForm` and `AdminServices`
+- `AdminSettings`
+- `AdminStaff`
+- `AdminStudents`
+- `AdminTutorSubjects`
+- `AdminUsers`
+- `StaffSchoolAssignments`
+- `ImpersonateUserModal`
+- `ProtectedRoute`
+- Existing staff-school and approval workflows.
+
+### Student and shared portal pages
+
+Audit and preserve:
+
+- `StudentDashboard`
+- `StudentExaminations`
+- `StudentExamAttempt`
+- `StudentAchievements`
+- `StudentEdgeClub`
+- `StudentLiveClassrooms`
+- `StudentCredentialCenter`
+- `PortalCourses`
+- `ResourceLibrary`
+- `AssignmentCenter`
+- `MilestoneCenter`
+- `AssessmentCenter`
+- `PortalCalendar`
+- `BillingCenter`
+- `PortalPayments`
+- `PortalSettings`
+- `PortalSupport`
+- The existing student certificate, progress, resource and learning-path experiences.
+
+### Tutor/staff pages
+
+Audit and preserve:
+
+- `StaffDashboard`
+- `StaffStudentWorkspace`
+- `PortalLiveClasses`
+- `TutorExaminations`
+- `ExaminationHistory`
+- `TutorSubjects`
+- `StaffClassSchedulesManager`
+- `StudentCredentialCenter`
+- Assignments, milestones, assessments and resources.
+- Staff/school access assignments.
+- Existing billing, payouts and teaching schedule features.
+
+### Parent pages
+
+Audit and preserve:
+
+- `ParentDashboard`
+- `ParentExaminationResults`
+- `ParentLearningTracks`
+- `ParentTuitionModal`
+- Assignments, milestones, assessments, schedules and resources.
+- Payments, invoices, support and settings.
+- Child enrolment requests and linked-child access.
+
+### School administrator pages
+
+Audit and preserve:
+
+- `SchoolDashboard`
+- `SchoolRoster`
+- `SchoolStudentOnboarding`
+- `SchoolStudentOnboardingV2`
+- `SchoolLearnerInsights`
+- School examination overview and history routes.
+- Student credentials and school passcodes.
+- School class schedules, resources and links.
+- Partnership, billing, fees and payment workflows.
+- Support and settings.
+- School-scoped learner reports and exports.
+
+### Shared component inventory
+
+At minimum, inspect the existing implementations of:
+
+- `PortalLayout`
+- `AdminLayout`
+- `MainLayout`
+- `DashboardGreeting`
+- `JaystarblissLogo`
+- `NotificationBell`
+- `NotificationDrawer`
+- `AdminImpersonationBanner`
+- `SessionExpirationModal`
+- `ChangePasswordModal`
+- `StudentEnrollmentApprovalModal`
+- `ImpersonateUserModal`
+- `AdminAnalyticsWidget`
+- `ResourceListView`
+- `StudentAnalyticsVisualizer`
+- `SchoolClassScheduleTimeline`
+- `StaffClassSchedulesManager`
+- `TutorLearningTracksManager`
+- `ParentLearningTracks`
+- `TutorAllocationModal`
+- `TransferToTutorModal`
+- Wallet, withdrawal and transaction-history components.
+- `Button`, `Card`, `Badge`, `EmptyState`, `GlassCard`, `Skeleton`, `GlassCardSkeleton`, `PageLoader`, `PageTransition`, `PageHeader`, `ProgressStepper`, `Tooltip`, `SearchModal`, `ErrorBoundary` and `SEO`.
+- Existing upload, rich-text, image, support, toast, navigation and feedback components.
+- All components under the `home`, `ecosystem`, `admin`, `portal`, `common`, `ui`, `layout`, `kids`, `email` and `notifications` directories.
+
+This list is not permission to ignore other files. Inspect every component present in the current repository and document its role.
+
+## 5. BACKEND FUNCTION AND INTEGRATION PRESERVATION
+
+A visual redesign must not accidentally alter the contract or functionality of existing APIs.
+
+Inspect all currently tracked Netlify Functions, including but not limited to:
+
+`academic-assessments`, `academic-assignments`, `academic-attendance`, `academic-milestones`, `academic-schools`, `academic-students`, `admin-account-status`, `admin-approve-school-partnership`, `admin-auth-sync`, `admin-google-login`, `admin-onboard`, `admin-parent-family`, `admin-registration-notification`, `admin-role-change`, `admin-school-access-code`, `admin-school-admin-sync`, `admin-school-onboard`, `admin-student-onboard`, `admin-students-directory`, `admin-user-delete`, `audit-log`, `auth-password-reset`, `billing-admin`, `billing-data`, `class-schedule-status`, `class-schedules`, `examination-attempt`, `examination-passcode`, `jdi-exam-management`, `jdi-examinations`, `jdi-expire-exams`, `jdi-question-bank`, `parent-enrollment-request`, `parent-examination-results`, `payment-config`, `payment-due-reminders.mts`, `paystack-banks`, `paystack-initialize`, `paystack-verify`, `paystack-webhook`, `portal-access-login`, `school-admin`, `school-learner-insights`, `school-partnership-submit`, `school-student-onboard`, `school-student-status`, `school-students`, `send-client-email`, `staff-register`, `student-change-password`, `student-credential-issue`, `student-examinations`, `tutor-examinations`, `tutor-subject-review` and `wallet-withdraw`.
+
+Reconcile this list with the current tree; do not assume the list remains complete after repository changes.
+
+Also inspect the shared server-side helpers, including Firebase Admin initialization, assessment grading, student-login compatibility, billing, email and payment-reconciliation logic.
+
+**Keep existing API paths, methods, payloads, response contracts, authentication requirements and error semantics unless a proven defect requires a documented correction.** If a request/response contract must change, update all consumers and add compatibility tests.
+
+Preserve Paystack initiation, verification, webhook handling, reconciliation and banking workflows. Preserve Cloudinary uploads and existing upload permissions. Preserve audit logging, role updates, account status enforcement, school onboarding, student enrolment, authentication and password-reset flows.
+
+Do not redesign the interface by disabling security rules, bypassing backend checks, moving privileged writes to the browser or weakening role validation.
+
+## 6. DESIGN DIRECTION — THE NEW JAYSTARBLISS DESIGN SYSTEM
+
+Create a cohesive, restrained, modern education SaaS design with clear information hierarchy, excellent spacing, quick navigation and a strong sense of trust.
+
+It should feel like a deliberately designed product, not a collection of independently styled pages.
+
+### Brand and visual language
+
+Use the existing Jaystarbliss identity as the starting point:
+
+- Brand navy/slate: `#1E293B`
+- Brand red: `#B91C1C`
+- Neutral background: `#F8FAFC`
+- White/light surfaces with clear borders.
+- Existing accessible blue/focus accents where they fit the current theme.
+
+Keep the red as a meaningful brand and action accent, not an indiscriminate colour for every card, badge and icon. Use restrained semantic colours for statuses and alerts. Avoid introducing a completely different purple-heavy or rainbow dashboard palette.
+
+Review the existing `src/uiux-pro-max.css`, `src/index.css`, `src/components/portal/portal-polish.css`, Tailwind configuration and other stylesheets. Identify duplicate tokens, contradictory global overrides and overlapping visual treatments before changing them.
+
+Reduce excessive glassmorphism, heavy backdrop filters, decorative gradients, large shadows, decorative backgrounds, redundant card borders and unnecessary animations where they obscure content or reduce readability.
+
+Prefer subtle elevation, consistent spacing, neutral surfaces, crisp borders, predictable components and typography that remains readable on smaller screens.
+
+Maintain functional light mode, dark mode and existing high-contrast behaviour. Do not introduce a design token that is readable in light mode but disappears in dark mode.
+
+### Establish reusable design tokens
+
+Create or consolidate a documented source of truth for:
+
+- Colour and semantic status tokens.
+- Typography, font weights, heading scale and line heights.
+- Spacing scale and container widths.
+- Border widths and radii.
+- Elevation and shadows.
+- Control heights and touch-target sizes.
+- Responsive breakpoints and content grids.
+- Focus, hover, selected, loading, disabled and error states.
+- Z-index layers for sticky headers, overlays, drawers, dropdowns and modals.
+- Motion duration and reduced-motion behaviour.
+
+Use CSS variables and existing Tailwind conventions where possible. Do not build a parallel design system that conflicts with the existing theme engine.
+
+### Shared component foundation
+
+Audit existing components first, then standardise or introduce reusable variants for:
+
+- Compact page header.
+- Main content container.
+- Primary, secondary, quiet and destructive buttons.
+- Inputs, selects, text areas, checkboxes, radio controls and validation messages.
+- Searchable and filterable selectors.
+- Status badges and contextual alerts.
+- Cards and compact metric summaries.
+- Data tables, mobile row layouts, pagination, filters and row actions.
+- Accessible tabs and segmented controls.
+- Modals, drawers, popovers and confirmation dialogs.
+- Empty states, loading skeletons, inline errors, retry actions and success feedback.
+- File upload, image upload, question editor and preview states.
+- Notification lists, activity feeds and audit log rows.
+- Charts, labels and data legends.
+- Reports, printable summaries and download actions.
+- Tooltips and keyboard-focus treatments.
+
+Components must have predictable props, semantic HTML and documented variants. Avoid creating separate near-identical buttons or card components for each portal.
+
+### Card and information hierarchy
+
+Do not put every section inside a separate large rounded rectangle. Use a combination of open page sections, compact panels, clear dividers, data tables and occasional cards when each card genuinely represents a distinct object or task.
+
+Metric cards should only be used when the metric supports a decision or a useful glance. Do not manufacture metrics, fake trends or decorative numbers.
+
+Avoid duplicated page titles, greetings, dates, lengthy subtitles and brand slogans above the same content. Use a concise title and put meaningful instructions close to the workflow that needs them.
+
+Use consistent sentence case for content headings and simple, action-focused labels.
+
+## 7. SHARED NAVIGATION AND PAGE STRUCTURE
+
+### Compact sticky headers
+
+Redesign both `PortalLayout.tsx` and `AdminLayout.tsx` so that every authenticated dashboard page has one compact, consistent header that stays at the top when scrolling.
+
+The principal visible text in the header should be the **current page title**. Eliminate redundant “Workspace”, institute name, long greeting, role description and repeated title-banner text from the page-heading area.
+
+Retain important controls such as menu toggles, notifications, profile access, theme control, global search and admin-only utilities where appropriate. Use compact icon actions with accessible labels and tooltips when suitable.
+
+Ensure the header is truly sticky within the application's actual scroll container. Avoid duplicate sticky headers, stacked topbars or headings that cover focused controls.
+
+Remove the visible email-verification notification banner across all authenticated portals, including equivalent banners in separate layouts if they exist. This is a UI request only: do not remove authentication checks, verification support in the backend, account enforcement or any unrelated security mechanism.
+
+### Adaptive desktop and mobile navigation
+
+Use a responsive navigation layout based on the available viewport and user role.
+
+On desktop, provide a stable sidebar or collapsible navigation rail with concise labels, clear active states, predictable grouping and appropriate tooltips.
+
+On tablet, adapt the sidebar width and content density so the main content retains usable space.
+
+On mobile:
+
+- Use a compact topbar.
+- Allow the navigation drawer to open with a button.
+- Support swipe-right from the left edge to open it and swipe-left to close it, where safe and appropriate.
+- Ensure gestures do not interfere with vertical scrolling, text selection, inputs or horizontal data content.
+- Keep a backdrop and close action.
+- Close the drawer after navigation when appropriate.
+- Consider a compact bottom navigation for a small number of high-frequency user actions, but do not make the menu unnecessarily complex or duplicate every sidebar item at the bottom.
+- Preserve access to less-frequently-used sections such as settings and support.
+
+Navigation items must reflect actual permissions. A hidden or visible menu item is never the authority for backend access.
+
+### Route-aware page titles
+
+Map the current location to the correct title. Include nested and dynamic routes such as individual student details, examination attempts, create/edit forms, billing details, report views and CMS editing.
+
+Do not show “Dashboard” as the title when the user is working on a specific examination, report or account detail.
+
+Remove duplicate page headings when the shared header already communicates the page title. Keep section-level headings within the page when they help users understand the content.
+
+## 8. ROLE-SPECIFIC DASHBOARD REDESIGN
+
+Each role needs a coherent experience tailored to its actual tasks. Do not merely reuse an identical dashboard layout with the role name changed.
+
+### A. Super Admin and Administrator
+
+Redesign the admin console and all admin routes, including the dashboard, users/RBAC, account status, role changes and deletion, student and parent management, staff/tutor management, tutor-subject approval, school onboarding and assignments, partner schools, academic operations, schedules, notifications, billing, financial reporting, inquiries, activity logs, CMS pages, programmes, services, portfolio, Kids Zone projects, blog, resources, settings and impersonation tools.
+
+Provide a clean administrator overview with real operational information, actionable summaries and a clear hierarchy of common tasks.
+
+For management tables, use consistent filtering, search, sort, pagination, row actions and bulk operations where supported. Do not introduce a colourful card for every row.
+
+Keep create/edit forms focused, grouped and easy to complete. Retain all existing CMS fields, content editing, media uploads, validation, publication state, previews and deletion controls.
+
+Preserve user role updates, account disable/enable, permanent deletion permissions, school approvals, impersonation, audit logging and other administrative tools.
+
+Dangerous operations must have clear confirmation, accurate outcomes and proper error recovery.
+
+### B. Tutor/Staff
+
+Redesign the tutor's dashboard to prioritise the work they actually do: assigned learners and schools, teaching schedule, subjects, active tasks, assignments, student progress, examinations, resources, billing/payouts and important notifications.
+
+Improve the examination area as a cohesive workspace rather than a collection of unrelated screens.
+
+Preserve the existing examination system while making distinctions obvious between:
+
+- Exam creation and editing.
+- Native examination versus external-link examination.
+- Draft and scheduled examinations.
+- Active examinations.
+- Responses and grading.
+- Examination history and released results.
+- Question bank/import.
+- School assignments, access codes and reporting.
+
+When a tutor saves or republishes an existing examination, update the same record. Keep historical attempts and marks consistent.
+
+External-link exams need only the relevant configuration and external URL workflow. Native exams need their supported question authoring, point allocation, settings, timing, grading, response analysis, manual result release and reporting tools.
+
+Ensure score totals and denominators agree across student, tutor, school and report views. Preserve existing question-bank imports, text parsing, spreadsheet imports and supported report exports.
+
+Tutors must see only authorised schools, learners, examinations and question-bank content. Keep these permissions enforced server-side.
+
+### C. Student
+
+Redesign the student experience around a clear learning home.
+
+Prioritise upcoming examinations, active coursework, assignments, current learning tracks, schedules or live classes when relevant, progress and recent meaningful activity.
+
+Use simple, prominent actions for common tasks such as opening an assigned exam, continuing work, viewing released results, opening lesson resources or joining an authorised live class.
+
+Preserve access to all student features, including courses, milestones, assessments, question-based exams, external-link exams, timed attempt workflows, schedules, live classrooms, resources, achievements, certificates, Ed Club, payments where applicable, support and settings.
+
+Keep exam timing, autosaving, submission and result-release behaviour correct. Never reveal unreleased scores, answer keys or private tutor feedback just to populate a dashboard card.
+
+For mobile students, prioritise readable question text, clear answer controls, visible progress, predictable navigation and accessible submit/confirmation flows.
+
+### D. Parent
+
+Design the parent dashboard around linked children and their real education information.
+
+Make it easy to understand which child is selected and to navigate their authorised schedule, assignments, milestones, learning progress, assessment results and released examination results.
+
+Make school/programme context, tuition/payment status and important notices easy to find without giving every area equal visual weight.
+
+Keep parent enrolment requests, linked-child permissions, learning tracks, report viewing, billing, payments, notifications, support and account settings intact.
+
+Do not allow an arbitrary child ID in a URL, browser request or component state to expose records belonging to another family.
+
+### E. School Administrator
+
+Redesign school administration around the school's own records and responsibilities.
+
+Make school identity clear without adding bulky branding headers. Provide appropriate views for the school's students, roster, onboarding, class schedules, examinations, upcoming exams, examination history, access codes, learning progress, results/reports, resources, school links, fees, partnership settings and support.
+
+Overview and History must be genuinely different:
+
+- **Examination Overview** focuses on upcoming/active exams, relevant dates, classes, statuses, assigned subjects and permitted access codes.
+- **Examination History** focuses on completed/past exams, student attempts, scores, grades, release state and available reports.
+
+Do not show the same component or duplicate sections for both routes merely under different titles.
+
+Schools must see only the records associated with the authenticated school's canonical identity. Tutors must see only their assigned schools. Keep cross-school administrator access distinct from school access.
+
+Do not allow school administrators to create or edit examinations if that capability belongs to tutors or platform administrators.
+
+### F. Public-facing and shared experience
+
+Preserve the functionality of public registration, tutor application, school partnership inquiries, password resets, contact forms and public CMS pages.
+
+Keep the public site's existing brand identity intact, including the protected Orb Hero/Galaxy Orbit treatment. Do not apply authenticated dashboard styles indiscriminately to the public marketing pages.
+
+Any shared component used by both areas must be changed with explicit scope and regression tests.
+
+## 9. CRITICAL WORKFLOWS THAT MUST NOT BE LOST
+
+A visual redesign is incomplete if a component looks better but a workflow no longer works.
+
+Explicitly preserve and test:
+
+### Authentication and identity
+
+- Student login for existing and newly onboarded records.
+- Parent, tutor/staff, school and admin login.
+- Correct role persistence and portal redirects.
+- Role changes, account activation and suspension.
+- Password reset and password change.
+- Session expiry, sign-out and session cleanup.
+- Protected-route behaviour.
+- Existing student credential lookup compatibility.
+- Admin impersonation and safe exit from impersonation.
+
+### Students, parents, tutors and schools
+
+- Student onboarding and credential issuance.
+- Parent enrolment requests and family linking.
+- School partnership submission and approval.
+- School administrator provisioning.
+- Tutor registration, approval and subject management.
+- Tutor-school assignments.
+- Class and learner roster management.
+- Account status changes.
+- User deletion and associated record cleanup when appropriately authorised.
+- Role-specific access to records.
+
+### Academic operations
+
+- Assignments, submissions, grading, feedback and resubmission.
+- Milestones and progress tracking.
+- Attendance and schedules.
+- Live classroom links.
+- Curriculum resources and read-only versus write permissions.
+- Learning tracks and class standardisation.
+- Native examinations, external-link examinations, imports, question banks, access codes, timing, attempts, scoring, manual grading, result release, reports and exports.
+- Parent and school access to permitted student results.
+
+### Finance and administration
+
+- Billing and tuition records.
+- Wallet balances and transaction history.
+- Withdrawals, bank lookup and account resolution.
+- Paystack payments, verification, webhooks and reconciliation.
+- School fees and payment-due reminders.
+- Exports, invoices and reports.
+- Inquiry pipeline stages, follow-ups, notes and notifications.
+- Admin CMS create/read/update/delete operations.
+- Image and file uploads.
+- Notification preferences and delivery.
+- Audit logs and administrative actions.
+
+### Integrations and shared UI infrastructure
+
+- Firebase Auth and Firestore.
+- Firebase Admin and Netlify Functions.
+- Cloudinary.
+- Paystack.
+- Email delivery and password-reset flows.
+- Notifications and notification drawer.
+- Toasts, error boundary, loading states and route transitions.
+- PDF, ZIP, CSV and spreadsheet generation.
+- Light/dark/high-contrast themes.
+- Shared search, profile menu, help/support and settings.
+- Any additional integrations discovered in the audit.
+
+Do not remove a feature simply because it is currently difficult to use. Map the workflow, redesign its interface and then preserve its behaviour.
+
+## 10. EXAMINATION AND QUESTION AUTHORING DETAILS
+
+The redesign must include the full existing examination ecosystem.
+
+Provide a clean exam-management table or list, strong search and status filtering, clear creation actions, safe editing and no accidental duplication.
+
+Native examinations must support the existing question types and validated settings. Where the current schema and grading engine support them, provide accessible question cards, answer choices, correct answers, point values, required flags, answer feedback, question reordering, duplication and deletion.
+
+Use a clearly organised Import Questions workflow for the supported sources, such as formatted text, Excel/CSV and the authorised question bank. Show a preview, identify invalid questions and confirm before appending questions to the current draft.
+
+Never include demo or fabricated questions as default data. New exams should start empty unless the tutor explicitly imports or duplicates existing content.
+
+External-link examinations must remain distinct from native assessments. They should use the appropriate access code, external URL and assignment settings, without displaying native response analytics or falsely claiming that a third-party provider's responses are tracked.
+
+Keep native grading, timing, attempts, manual result release and historical attempt snapshots consistent with the existing backend.
+
+Ensure question-editing features do not inadvertently invalidate answers or marks from attempts already submitted. Do not recreate an examination record during ordinary editing or republishing.
+
+## 11. SCHOOL IDENTITY, GRADING AND DATA CONSISTENCY
+
+Ensure every report uses the correct actual partner-school name resolved through its authorised school record. Do not substitute the platform name for a partner school's name.
+
+Use a consistent authoritative scoring model. One mark out of three must remain 1/3, not 1/100. The percentage must be derived from the actual total possible marks, and the same authoritative result must appear across the relevant roles.
+
+Preserve school boundaries in all queries and exports. A redesigned table, search control or filter must not broaden the records a user can access.
+
+Do not invent missing scores or display fabricated dashboard statistics. If a real record is missing, show a clear and useful empty/unavailable state.
+
+Use actual application records for dashboards, charts, notifications, counts and report exports.
+
+## 12. RESPONSIVE DESIGN REQUIREMENTS
+
+Design mobile-first, then adapt for medium and wide screens. Do not shrink the desktop design proportionally and call it responsive.
+
+Test at representative widths such as 320, 360, 390, 430, 768, 1024, 1280 and 1440 CSS pixels.
+
+### Mobile requirements
+
+- No unintentional horizontal page overflow.
+- No clipped buttons, inputs, headings or important data.
+- No text that requires zooming to read.
+- No action hidden beyond the viewport.
+- No fixed-width form layout that breaks on narrow screens.
+- No full desktop table that becomes unusable on a phone.
+- No mobile modals that extend beyond the viewport.
+- No popovers positioned off-screen.
+- No overlapping sticky headers, footers, floating widgets or navigation drawers.
+- No keyboard-obscured form controls.
+- No accidental scroll locking that traps users.
+- No touch-only operations without equivalent accessible controls.
+
+For data tables, retain table semantics where appropriate. On narrow screens, use a well-designed responsive row/card presentation or deliberate table scrolling where the data genuinely requires two dimensions. Keep important row identifiers visible and provide accessible ways to access hidden columns and actions.
+
+For dense forms, use one clear column on phones and a sensible multi-column layout on wider screens. Preserve logical reading order and field grouping.
+
+Do not make every card taller, stack every decorative panel or replace a usable table with dozens of unrelated cards. Choose layouts according to the actual task.
+
+### Desktop and tablet requirements
+
+Use available screen space intelligently. Keep content at a readable maximum width, allow data-heavy tables to use adequate width, and do not centre narrow content in a sea of unused space.
+
+Use collapsible side navigation where appropriate, but keep the main content width stable and prevent sidebar animations from making the whole page jump.
+
+On tablet, adapt the layout based on available width and actual interaction requirements, not simply device type.
+
+## 13. ACCESSIBILITY AND INTERACTION QUALITY
+
+Use WCAG 2.2 Level AA as the target for the redesigned interface.
+
+Reference:
+- WCAG 2.2: https://www.w3.org/TR/wcag/
+- W3C WAI-ARIA Authoring Practices: https://www.w3.org/WAI/ARIA/apg/
+- US Web Design System: https://designsystem.digital.gov/documentation/
+- Material responsive navigation patterns: https://developer.android.com/design/ui/mobile/guides/layout-and-content/layout-and-nav-patterns
+- MDN responsive design: https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/CSS_layout/Responsive_Design
+- web.dev responsive design: https://web.dev/articles/responsive-web-design-basics
+- Carbon data-table guidance: https://www.carbondesignsystem.com/building-blocks/core/components/data-table/guidelines
+- Core Web Vitals: https://developers.google.com/search/docs/appearance/core-web-vitals
+
+Implement semantic buttons, links, headings, forms and tables. Provide visible focus indicators and ensure sticky elements do not obscure keyboard focus.
+
+Use keyboard-operable menus, dialogs, tabs, forms and data tables. Use correct ARIA roles, states and relationships when they are needed; do not add ARIA roles as decoration.
+
+Dialogs should manage focus appropriately, close predictably, support Escape when appropriate and return focus to the trigger. Tabs should have proper tab semantics and keyboard behaviour. Disclosures should expose their expanded state.
+
+Do not rely on colour alone to indicate success, errors, role, active state or status.
+
+Aim for comfortably tappable controls—preferably around 44×44 CSS pixels for common touch controls, while ensuring WCAG 2.2 minimum target-size and spacing requirements are met.
+
+Respect reduced-motion preferences. Keep animations subtle and purposeful. Avoid background movement, excessive hover transforms, large parallax effects and animations that slow down routine tasks.
+
+Preserve screen-reader labels for icon-only actions. Avoid placeholder-only forms. Place validation messages next to the related inputs and use useful error language.
+
+## 14. PERFORMANCE AND VISUAL STABILITY
+
+The new UI should feel faster as well as look better.
+
+Preserve route-level lazy loading where suitable. Avoid adding large dependencies for small visual improvements.
+
+Avoid unnecessary rerenders, duplicate Firestore listeners, repeated unrestricted collection reads, expensive animations and oversized image assets.
+
+Keep charts responsive and legible. Prevent layout shifts caused by delayed fonts, images, tables or changing card heights.
+
+Where browser performance tooling is available, measure and improve Core Web Vitals and actual interaction responsiveness. Use these as reference targets, not as claims without measurement:
+
+- LCP at or below 2.5 seconds where achievable.
+- INP below 200 milliseconds where measurable.
+- CLS below 0.1 where measurable.
+
+Preserve all real-time updates and data-refresh behaviour. Do not improve performance by silently removing features or reducing necessary data accuracy.
+
+## 15. IMPLEMENTATION STRATEGY — DO NOT REDESIGN EVERYTHING BLINDLY IN ONE PASS
+
+Work systematically and keep the existing application working throughout the process.
+
+### Phase A — Baseline and inventory
+
+Produce the route/role matrix and feature-preservation matrix. Identify the main layout shells, shared design primitives, conflicting style layers and highest-risk workflows.
+
+Record current behaviour before making changes.
+
+### Phase B — Design-system foundation
+
+Define the common tokens and standardise the reusable controls, typography, layout containers, compact sticky headers, tables, forms, status indicators, notifications, feedback states, navigation and responsive containers.
+
+Do not delete old CSS blindly. Identify which rules are still used and migrate them carefully.
+
+### Phase C — Shared application shell
+
+Redesign `PortalLayout` and `AdminLayout`, including navigation, compact title headers, responsive sidebar/drawer behaviour, profile and notification controls, theming, focus management and sticky-scroll behaviour.
+
+Apply the title/header rules consistently across routes. Remove redundant in-page title banners only where they duplicate the shared header, and preserve meaningful section headings and form instructions.
+
+Remove the visible email-verification notification banner across the authenticated portals without changing the underlying auth/security model.
+
+### Phase D — Redesign role-specific pages
+
+Implement each role's dashboard and its subpages. Work in logical groups and verify each group before moving to the next.
+
+Suggested groups:
+
+1. Admin dashboard and system management.
+2. Admin CMS and content-management workflows.
+3. Users, roles, onboarding, approvals and school administration.
+4. Tutor/staff dashboards, students, schedules, resources and exams.
+5. Student dashboards, coursework, examinations and learning tools.
+6. Parent dashboard, linked-child progress, results and payments.
+7. School dashboard, roster, upcoming exams, history, access codes and reports.
+8. Shared finance, billing, settings, support and resource modules.
+
+Do not stop after the main dashboard. Continue through all relevant page routes, forms, modal states, tab states, edit flows, error states and responsive layouts.
+
+### Phase E — Workflow-level integration
+
+Verify each UI control remains connected to the correct state, persisted record, API endpoint and backend permission. Remove fake or dead controls. Repair broken integrations discovered during implementation.
+
+Do not change API semantics simply to accommodate a redesigned component.
+
+### Phase F — Regression, accessibility and responsive QA
+
+Test the complete route inventory, feature checklist and role matrix. Compare the redesigned UI to the baseline and confirm that no workflow has disappeared.
+
+Fix defects introduced by the redesign before declaring completion.
+
+## 16. VISUAL QA AND SCREENSHOT PROTOCOL
+
+For every audited route, capture or review the page at representative desktop, tablet and mobile sizes where tooling permits.
+
+At minimum, test every major workflow in its meaningful states:
+
+- Initial/loading.
+- Normal populated state.
+- Empty state.
+- Error state.
+- Form validation.
+- Dialog/modal open and close.
+- Menu or drawer open and closed.
+- Read-only versus editable view.
+- Loading/saving feedback.
+- Successful completion.
+- Permission-denied state where relevant.
+- Long text, long names, large numbers and large data tables.
+- Light, dark and high-contrast themes where supported.
+
+Pay particular attention to examination creation, question imports, student attempts, result-release controls, school reports, user-role updates, approvals, payment workflows, bulk exports and dangerous admin actions.
+
+Use automated screenshot comparison or visual regression tools if already available or easily supported. Do not add substantial dependencies solely for a superficial test.
+
+Document which pages were actually visually inspected and which were not due to environment limitations.
+
+## 17. TESTS, BUILD AND ACCEPTANCE
+
+Run the project's existing verification commands, including where available:
+
+- `npm run lint`
+- `npm run build`
+- `npm run typecheck:functions`
+- `npm run test:assessment`
+- `npm run test:portal-login`
+- `npm run test:admin`
+- Firestore Rules Tests using the repository's existing setup.
+
+Add regression tests when a redesigned component changes a meaningful interaction or when the audit finds a pre-existing failure that this project of work must address.
+
+Do not disable existing tests, weaken security rules or make test fixtures more permissive just to produce a green result.
+
+### Acceptance criteria
+
+The project is not complete unless:
+
+1. The complete repository feature inventory has been reconciled with the redesigned implementation.
+2. Every existing route and important user workflow remains reachable and functional.
+3. The dashboard shell is consistent, compact and responsive across roles.
+4. Page titles are accurate, and duplicate page banners and redundant explanatory headers have been removed appropriately.
+5. Navigation works by mouse, keyboard and touch.
+6. All major pages have appropriate loading, empty, success and error states.
+7. Native/external examination distinctions, scores, timing, imports and result release remain correct.
+8. Parent and school data remain correctly scoped.
+9. User roles, account state, authentication and privileged operations are unchanged or have a separately documented, tested defect fix.
+10. Billing, Paystack, wallets, withdrawal, reconciliation and reports remain intact.
+11. Admin CMS operations, uploads, inquiries, notifications, schedules and academic features remain intact.
+12. PDF, ZIP, CSV and spreadsheet exports still produce correct output.
+13. Light/dark/high-contrast modes remain usable.
+14. The redesigned UI passes responsive and accessibility checks appropriate to the available environment.
+15. Lint, TypeScript checks, relevant tests and the production build pass, or every unresolved failure is explicitly documented.
+16. Any unverified production-only behaviour is honestly distinguished from locally implemented and automatically tested functionality.
+
+## 18. SAFETY AND CHANGE MANAGEMENT
+
+Before modifying files, inspect the Git state and preserve existing local changes.
+
+Work on a feature branch if possible. Never force-push, reset, discard uncommitted work or overwrite unrelated changes.
+
+Do not execute destructive production migrations or alter live security rules as part of a UI redesign without appropriate authorisation, an understood rollback plan and explicit evidence that the change is necessary.
+
+Do not fabricate data, delete real records, alter role definitions, remove API endpoints or modify the Firestore schema merely to simplify the presentation.
+
+Do not mark a control complete just because it looks right. It must perform its intended action and give the user accurate feedback.
+
+Do not claim that production has been updated because the local build passes. Report the actual commit, deployment status and live verification evidence where those can be established.
+
+## 19. REQUIRED FINAL REPORT
+
+At completion, produce a practical engineering report with:
+
+- The audit and feature-preservation inventory.
+- Routes, roles and components covered.
+- Design tokens and reusable components introduced or standardised.
+- The shared layout and navigation changes.
+- Changes to each role's dashboard and subpages.
+- Existing workflows preserved and any root-cause defects corrected.
+- Backend/API/security files modified, with a clear reason for each change.
+- Mobile, responsive and accessibility verification performed.
+- Performance and visual-regression results where measured.
+- Tests executed and their actual outcomes.
+- Lint, TypeScript and build results.
+- Git branch/commit information and actual deployment state.
+- Any remaining items that were not inspected, implemented or verified.
+
+Use clear status labels: **Implemented**, **Tested**, **Verified in browser**, **Production verified**, or **Not verified**.
+
+Never say “everything is fixed” unless the relevant evidence supports it.
+
+## 20. FINAL INSTRUCTION
+
+Start by auditing the actual working tree and preserving existing changes. Build the feature map and design-system plan, then proceed through the implementation phases without dropping existing capabilities.
+
+**Redesign the complete authenticated Jaystarbliss platform for usability, consistency, accessibility, responsiveness and professional visual quality. Preserve the working product. Do not skip pages, modals, components, integrations, permissions or backend contracts. Inspect, implement, test, compare, correct and report honestly.**

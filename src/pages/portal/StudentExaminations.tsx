@@ -31,13 +31,21 @@ import {
   calculateScorePercentage,
   resolvePartnerSchoolName,
   normalizeDeliveryMode,
+  normalizeWorkType,
+  isStudentEligibleForWork,
+  type WorkType,
 } from "../../lib/classes";
+import { ExamListSkeleton } from "../../components/ui/Skeleton";
+import { getFriendlyErrorMessage, logInternalDiagnostic } from "../../utils/friendlyErrors";
 
 type ExamCard = {
   id: string;
   title: string;
   description?: string;
   subject: string;
+  workType?: WorkType;
+  dueDate?: string;
+  isUngradedActivity?: boolean;
   deliveryMode?: "EXTERNAL_LINK" | "NATIVE";
   externalUrl?: string;
   status: "active" | "upcoming" | "completed";
@@ -66,6 +74,7 @@ type ExamCard = {
 
 export default function StudentExaminations() {
   const [tab, setTab] = useState<"active" | "upcoming" | "completed">("active");
+  const [workTypeTab, setWorkTypeTab] = useState<"ALL" | WorkType>("ALL");
   const [exams, setExams] = useState<ExamCard[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -216,6 +225,7 @@ export default function StudentExaminations() {
             if (Array.isArray(data.exams)) {
               loadedExams = data.exams.map((exam: any) => ({
                 ...exam,
+                workType: normalizeWorkType(exam.workType, exam),
                 deliveryMode: normalizeDeliveryMode(exam),
                 externalUrl: String(exam.externalUrl || "").trim(),
                 description: String(exam.description || exam.instructions || "").trim(),
@@ -248,35 +258,14 @@ export default function StudentExaminations() {
 
         const allRawExams = Array.from(examDocsMap.values());
 
-        const classEligibleExams = allRawExams.filter((exam: any) => {
-          if (exam.status === "draft" || exam.status === "archived") return false;
-
-          if (exam.audienceType === "individual") {
-            const studentIds = Array.isArray(exam.studentIds) ? exam.studentIds.map(String) : [];
-            const studentUids = Array.isArray(exam.studentUids) ? exam.studentUids.map(String) : [];
-            return studentIds.includes(currentStudentId) || studentUids.includes(currentUid);
-          }
-
-          if (exam.schoolId) {
-            if (
-              !currentSchId ||
-              exam.schoolId.toLowerCase().trim() !== currentSchId.toLowerCase().trim()
-            ) {
-              return false;
-            }
-          }
-
-          const targetClasses =
-            Array.isArray(exam.classIds) && exam.classIds.length > 0
-              ? exam.classIds
-              : exam.targetClass
-              ? [exam.targetClass]
-              : exam.className
-              ? [exam.className]
-              : [];
-
-          return classesMatch(studentClass, targetClasses);
-        });
+        const classEligibleExams = allRawExams.filter((exam: any) =>
+          isStudentEligibleForWork(exam, {
+            id: currentStudentId,
+            uid: currentUid,
+            schoolId: currentSchId,
+            class: studentClass,
+          })
+        );
 
         const attemptsSnap = await getDocs(collection(db, "jdiExamAttempts")).catch(
           () => ({ docs: [] } as any)
@@ -322,6 +311,9 @@ export default function StudentExaminations() {
             title: exam.title || "Examination Assessment",
             description: String(exam.description || exam.instructions || "").trim(),
             subject: exam.subject || "Computer Technology",
+            workType: normalizeWorkType(exam.workType, exam),
+            dueDate: exam.dueDate || undefined,
+            isUngradedActivity: Boolean(exam.isUngradedActivity),
             deliveryMode,
             externalUrl: String(exam.externalUrl || "").trim(),
             status: computedStatus,
@@ -379,7 +371,16 @@ export default function StudentExaminations() {
     void load();
   }, [studentInfo.schoolId, studentInfo.class]);
 
-  const filtered = useMemo(() => exams.filter((e) => e.status === tab), [exams, tab]);
+  const filtered = useMemo(
+    () =>
+      exams.filter((e) => {
+        if (workTypeTab !== "ALL" && normalizeWorkType(e.workType, e) !== workTypeTab) {
+          return false;
+        }
+        return e.status === tab;
+      }),
+    [exams, tab, workTypeTab]
+  );
   const upcomingCount = useMemo(
     () => exams.filter((e) => e.status === "upcoming").length,
     [exams]
@@ -514,9 +515,10 @@ export default function StudentExaminations() {
 
       window.location.assign(`/portal/student/exams/${encodeURIComponent(attemptId)}`);
     } catch (error) {
+      logInternalDiagnostic('StudentExaminations::ValidatePasscode', error);
       setMessage({
         id: examId,
-        text: error instanceof Error ? error.message : "Passcode could not be validated.",
+        text: getFriendlyErrorMessage(error),
         error: true,
       });
     } finally {
@@ -526,31 +528,6 @@ export default function StudentExaminations() {
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-5 p-3 sm:p-5 md:p-8 overflow-x-hidden">
-      {/* HEADER */}
-      <header className="rounded-2xl bg-slate-900 p-5 text-white shadow-sm sm:p-6 md:p-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <p className="text-xs sm:text-sm font-semibold tracking-wide text-blue-200">
-              JAYSTARBLISS DYNAMIC INSTITUTE · JDI
-            </p>
-            <h1 className="mt-1.5 text-2xl sm:text-3xl font-bold">My Class Examinations</h1>
-            <p className="mt-2 max-w-2xl text-xs sm:text-sm text-slate-200 leading-relaxed">
-              Assigned tests and upcoming assessments for your class
-              {studentInfo.class ? ` (${studentInfo.class})` : ""}. An authorized school passcode is
-              required to start an active test.
-            </p>
-          </div>
-          {studentInfo.class && (
-            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-left sm:text-center self-start sm:self-auto">
-              <span className="block text-[11px] uppercase tracking-wider text-slate-400">
-                Enrolled Class
-              </span>
-              <span className="text-sm font-bold text-white">{studentInfo.class}</span>
-            </div>
-          )}
-        </div>
-      </header>
-
       {/* UPCOMING / RECENT EXAM NOTIFICATIONS BANNER */}
       {notifications.length > 0 && (
         <section className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 shadow-sm">
@@ -570,8 +547,51 @@ export default function StudentExaminations() {
 
       {/* TABS & REFRESH */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm space-y-4">
+        {/* Clean Work-Type Category Tabs */}
+        <div className="flex items-center gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 touch-pan-x">
+          {(
+            [
+              { id: "ALL", label: "All Academic Work" },
+              { id: "ASSIGNMENT", label: "Assignments" },
+              { id: "ACTIVITY", label: "Activities" },
+              { id: "TEST", label: "Tests" },
+              { id: "EXAMINATION", label: "Examinations" },
+            ] as const
+          ).map((wt) => {
+            const active = workTypeTab === wt.id;
+            const count =
+              wt.id === "ALL"
+                ? exams.length
+                : exams.filter((e) => normalizeWorkType(e.workType, e) === wt.id).length;
+            return (
+              <button
+                key={wt.id}
+                type="button"
+                onClick={() => setWorkTypeTab(wt.id)}
+                className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  active ? "text-[#14284B]" : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <span>{wt.label}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                  {count}
+                </span>
+                {active && (
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b pb-4">
-          <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {studentInfo.class && (
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700">
+                Class: <span className="text-blue-700">{studentInfo.class}</span>
+              </span>
+            )}
+            <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
             {(["active", "upcoming", "completed"] as const).map((item) => {
               const count =
                 item === "active"
@@ -594,6 +614,7 @@ export default function StudentExaminations() {
                 </button>
               );
             })}
+            </div>
           </div>
           <button
             type="button"
@@ -601,7 +622,7 @@ export default function StudentExaminations() {
             disabled={loading}
             className="w-full sm:w-auto rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 shadow-xs transition-colors cursor-pointer"
           >
-            {loading ? "Checking Tests…" : "Refresh List"}
+            {loading ? "Checking Work…" : "Refresh List"}
           </button>
         </div>
 
@@ -643,8 +664,11 @@ export default function StudentExaminations() {
         )}
 
         {/* EXAM CARDS */}
-        <div className="grid gap-4">
-          {filtered.map((exam) => {
+        {loading ? (
+          <ExamListSkeleton count={3} />
+        ) : (
+          <div className="grid gap-4">
+            {filtered.map((exam) => {
             const isExternal = exam.deliveryMode === "EXTERNAL_LINK";
             const maxScore = computeExamMaxScore(exam);
             const pct =
@@ -664,6 +688,9 @@ export default function StudentExaminations() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#B91C1C]">
+                        {normalizeWorkType(exam.workType, exam)}
+                      </span>
                       <h2 className="text-base sm:text-lg font-bold text-slate-900 break-words">
                         {exam.title}
                       </h2>
@@ -872,6 +899,7 @@ export default function StudentExaminations() {
             );
           })}
         </div>
+      )}
       </section>
     </main>
   );

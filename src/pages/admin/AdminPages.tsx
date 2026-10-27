@@ -134,18 +134,8 @@ const AdminPages: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold text-brand-slate dark:text-white flex items-center gap-3">
-            <Layers className="text-brand-red w-8 h-8" />
-            Website &amp; Pages CMS
-          </h1>
-          <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
-            Edit live page section text, hero headers, program curriculum, services catalog, portfolio, and news broadcasts.
-          </p>
-        </div>
-
+      {/* Action Bar */}
+      <div className="flex items-center justify-end">
         <div className="flex items-center gap-3">
           <Link
             to="/admin/settings"

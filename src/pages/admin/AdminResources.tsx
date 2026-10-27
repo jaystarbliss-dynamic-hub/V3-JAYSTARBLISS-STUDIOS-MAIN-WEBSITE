@@ -357,19 +357,8 @@ const AdminResources: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-brand-slate dark:text-white flex items-center gap-3">
-            <BookOpen className="text-brand-red w-8 h-8" />
-            Learning Resources & Examinations
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Publish, manage, and dispatch general study guides, Google Drive downloads, platform links, and programming assessments.
-          </p>
-        </div>
-
-        {/* Search */}
+      {/* Search Toolbar */}
+      <div className="flex items-center justify-end">
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3.5 top-3 text-gray-400" size={16} />
           <input

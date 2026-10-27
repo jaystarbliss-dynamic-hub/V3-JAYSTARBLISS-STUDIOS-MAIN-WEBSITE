@@ -557,16 +557,10 @@ const AdminUsers: React.FC = () => {
         </div>
       )}
 
-      {/* Header & Main Actions */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-2xl font-black text-gray-900 dark:text-white">Users & Roles Management</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Manage dashboard access, role authorization, and security access policies.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setShowInviteModal(true)} className="min-h-10 rounded-xl bg-brand-red px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-red-700 transition-colors"><span className="inline-flex items-center gap-2"><Plus size={14} /> Onboard New User</span></button>
-          <button onClick={exportToCSV} disabled={users.length === 0} className="min-h-10 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-200"><span className="inline-flex items-center gap-2"><Download size={14} /> Export CSV</span></button>
-        </div>
+      {/* Main Actions */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button onClick={() => setShowInviteModal(true)} className="min-h-10 rounded-xl bg-brand-red px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-red-700 transition-colors"><span className="inline-flex items-center gap-2"><Plus size={14} /> Onboard New User</span></button>
+        <button onClick={exportToCSV} disabled={users.length === 0} className="min-h-10 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-200"><span className="inline-flex items-center gap-2"><Download size={14} /> Export CSV</span></button>
       </div>
 
       {/* Filter Icon Dropdown & Search Bar */}

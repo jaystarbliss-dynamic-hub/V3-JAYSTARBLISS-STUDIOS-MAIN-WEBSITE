@@ -3019,38 +3019,33 @@ const AdminSchools: React.FC = () => {
       ) : (
         /* View 2: Clean School Directory List View */
         <div className="space-y-6 animate-fadeIn">
-          {/* Header & Stats */}
-          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div>
-                <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white">
-                  Partner Schools
-                </h1>
-                <p className="text-xs md:text-sm text-slate-500 mt-1 max-w-2xl">
-                  Click any affiliated school to manage its undergoing programmes, custom billing fees, payment plans, passcodes, and student roster.
-                </p>
-              </div>
+          {/* Stats & Actions */}
+          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 md:p-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                Select any affiliated school to manage its programmes, billing fees, passcodes, and student roster.
+              </p>
 
               <div className="flex items-center gap-2.5">
                 <button
                   type="button"
                   onClick={() => void loadSchools()}
-                  className="min-h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-all"
+                  className="min-h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-all"
                 >
                   <RefreshCw size={14} /> Refresh
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowOnboardModal(true)}
-                  className="min-h-11 px-5 rounded-xl bg-brand-red hover:bg-red-700 text-white font-black text-xs inline-flex items-center gap-2 shadow-sm transition-all"
+                  className="min-h-10 px-4 rounded-xl bg-brand-red hover:bg-red-700 text-white font-black text-xs inline-flex items-center gap-2 shadow-sm transition-all"
                 >
-                  <Plus size={16} /> Onboard New School
+                  <Plus size={15} /> Onboard New School
                 </button>
               </div>
             </div>
 
             {/* Metric counters */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200/60 dark:border-slate-800">
                 <span className="text-slate-500 text-xs block">Total Partner Schools</span>
                 <span className="text-2xl font-black text-slate-900 dark:text-white mt-1 block">

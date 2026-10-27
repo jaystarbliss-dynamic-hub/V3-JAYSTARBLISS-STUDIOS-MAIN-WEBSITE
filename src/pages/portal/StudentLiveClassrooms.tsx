@@ -278,38 +278,11 @@ const StudentLiveClassrooms: React.FC = () => {
         noindex
       />
 
-      {/* Header */}
-      <section className="pro-surface rounded-3xl p-6 md:p-8">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="rounded-2xl bg-brand-red/10 p-3 text-brand-red">
-              <Video size={22} />
-            </div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-brand-red">Live Learning</p>
-              <h1 className="mt-1 text-2xl font-black text-slate-900 dark:text-white">Live Classrooms & Sessions</h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Join verified live sessions and review your scheduled upcoming timetable.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search sessions or tutors..."
-                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 pl-9 pr-3 py-2 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:border-brand-red"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Tab Filters */}
-        <div className="mt-6 flex flex-wrap gap-2 border-t border-slate-100 dark:border-slate-800 pt-4">
+      {/* Filter & Search Bar */}
+      <section className="pro-surface rounded-2xl p-4 sm:p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          {/* Tab Filters */}
+          <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setFilterTab('ALL')}
@@ -354,6 +327,18 @@ const StudentLiveClassrooms: React.FC = () => {
           >
             Completed
           </button>
+          </div>
+
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search sessions or tutors..."
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 pl-9 pr-3 py-2 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:border-brand-red"
+            />
+          </div>
         </div>
       </section>
 

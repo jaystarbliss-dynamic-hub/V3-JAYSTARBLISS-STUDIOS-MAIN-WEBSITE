@@ -3,6 +3,8 @@ import { academicApiWithFallback as api } from '../../lib/academicFallback';
 import { AlertCircle, BookOpen, CheckCircle2, ClipboardList, ExternalLink, FileText, GraduationCap, Loader2, MessageSquare, Send, UserRound, X } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
 import { DashboardGreeting } from '../../components/portal/DashboardGreeting';
+import { ExamListSkeleton } from '../../components/ui/Skeleton';
+import { getFriendlyErrorMessage, logInternalDiagnostic } from '../../utils/friendlyErrors';
 
 export type AssignmentCenterRole = 'student' | 'staff' | 'parent' | 'school';
 type Student = { id: string; fullName: string; username?: string; email?: string; plan?: string; schoolId?: string; parentId?: string; tutorId?: string; firebaseUid?: string };
@@ -36,7 +38,10 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
       ]);
       setAssignments(assignmentData.assignments || []);
       setStudents(studentData.students || []);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load assignments.'); }
+    } catch (e) {
+      logInternalDiagnostic('AssignmentCenter::Load', e);
+      setError(getFriendlyErrorMessage(e));
+    }
     finally { setLoading(false); }
   }, [selectedStudentId]);
 
@@ -72,7 +77,10 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
       setSuccess('Your assignment has been submitted to your tutor.');
       setDrafts(current => ({ ...current, [assignmentId]: { text: '', url: '' } }));
       await load();
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not submit assignment.'); }
+    } catch (e) {
+      logInternalDiagnostic('AssignmentCenter::Submit', e);
+      setError(getFriendlyErrorMessage(e));
+    }
     finally { setSubmittingId(''); }
   };
 
@@ -83,7 +91,10 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
       await api('/api/academic-assignments', { method: 'POST', body: JSON.stringify({ action: 'review', assignmentId: reviewing.id, grade: reviewForm.grade, feedback: reviewForm.feedback, reviewStatus: reviewForm.reviewStatus }) });
       setSuccess(reviewForm.reviewStatus === 'COMPLETED' ? 'Assignment reviewed and result sent to the learner.' : 'Resubmission request sent to the learner.');
       setReviewing(null); await load();
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not save the review.'); }
+    } catch (e) {
+      logInternalDiagnostic('AssignmentCenter::Review', e);
+      setError(getFriendlyErrorMessage(e));
+    }
   };
 
   const title = role === 'staff' ? 'Assignments & Review' : role === 'student' ? 'My Assignments' : role === 'parent' ? 'Learning Assignments' : 'School Assignments';
@@ -91,13 +102,6 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
 
   return <div className="dashboard-interface space-y-6">
     <SEO title={`${title} | Jaystarbliss Studios`} description={subtitle} noindex={true} />
-    <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
-      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-red">
-        <ClipboardList size={15} /> {role === 'staff' ? 'Teaching Workspace' : role === 'parent' ? 'Parent Learning View' : role === 'school' ? 'School Learning View' : 'Learner Workspace'}
-      </div>
-      <h1 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{title}</h1>
-      <p className="text-xs text-slate-500 mt-1">{subtitle}</p>
-    </div>
     {success && <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"><CheckCircle2 size={18} />{success}<button className="ml-auto" onClick={() => setSuccess('')} aria-label="Dismiss"><X size={16} /></button></div>}
     {error && <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><AlertCircle size={18} />{error}<button className="ml-auto" onClick={() => setError('')} aria-label="Dismiss"><X size={16} /></button></div>}
 
@@ -117,7 +121,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
 
     <div className="pro-surface rounded-3xl p-5 md:p-7">
       <div className="mb-5"><h2 className="text-xl font-black text-slate-900 dark:text-white">Assignment inbox</h2><p className="text-xs text-slate-500 mt-1">Each assignment follows a real publish → submit → review lifecycle.</p></div>
-      {loading ? <div className="py-12 text-center text-sm text-slate-500"><Loader2 className="mx-auto animate-spin mb-2" size={22} />Loading assignments…</div> : assignments.length === 0 ? <div className="py-14 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl"><ClipboardList className="mx-auto text-slate-300 mb-3" size={38} /><p className="font-bold text-slate-900 dark:text-white">No assignments yet</p><p className="text-sm text-slate-500 mt-1">{role === 'staff' ? 'Choose an assigned student and create their first assignment.' : 'When a tutor publishes work for this learner, it will appear here.'}</p></div> : <div className="space-y-4">{assignments.map(a => <AssignmentCard key={a.id} assignment={a} role={role} draft={drafts[a.id] || { text: '', url: '' }} onDraftChange={patch => updateDraft(a.id, patch)} onSubmit={submitAssignment} submitting={submittingId === a.id} onReview={() => { setReviewing(a); setReviewForm({ grade: a.grade == null ? '' : String(a.grade), feedback: a.feedback || '', reviewStatus: a.status === 'RESUBMISSION_REQUIRED' ? 'RESUBMISSION_REQUIRED' : 'COMPLETED' }); }} />)}</div>}
+      {loading ? <ExamListSkeleton count={3} /> : assignments.length === 0 ? <div className="py-14 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl"><ClipboardList className="mx-auto text-slate-300 mb-3" size={38} /><p className="font-bold text-slate-900 dark:text-white">No assignments yet</p><p className="text-sm text-slate-500 mt-1">{role === 'staff' ? 'Choose an assigned student and create their first assignment.' : 'When a tutor publishes work for this learner, it will appear here.'}</p></div> : <div className="space-y-4">{assignments.map(a => <AssignmentCard key={a.id} assignment={a} role={role} draft={drafts[a.id] || { text: '', url: '' }} onDraftChange={patch => updateDraft(a.id, patch)} onSubmit={submitAssignment} submitting={submittingId === a.id} onReview={() => { setReviewing(a); setReviewForm({ grade: a.grade == null ? '' : String(a.grade), feedback: a.feedback || '', reviewStatus: a.status === 'RESUBMISSION_REQUIRED' ? 'RESUBMISSION_REQUIRED' : 'COMPLETED' }); }} />)}</div>}
     </div>
 
     {showCreate && <Modal title="Create assignment" onClose={() => setShowCreate(false)}><form onSubmit={createAssignment} className="space-y-4"><p className="text-xs text-slate-500">Publishing this assignment will notify the learner and linked parent when available.</p><Field label="Title"><input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="e.g. Build a Python calculator" className="input" /></Field><Field label="Instructions"><textarea required rows={6} value={form.instructions} onChange={e => setForm({ ...form, instructions: e.target.value })} placeholder="Explain exactly what the learner should do, what to submit and any requirements." className="input resize-y" /></Field><Field label="Due date"><input required type="datetime-local" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} className="input" /></Field><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><Field label="Resource title (optional)"><input value={form.resourceTitle} onChange={e => setForm({ ...form, resourceTitle: e.target.value })} placeholder="Lesson guide" className="input" /></Field><Field label="Resource URL (optional)"><input type="url" value={form.resourceUrl} onChange={e => setForm({ ...form, resourceUrl: e.target.value })} placeholder="https://…" className="input" /></Field></div><div className="flex justify-end gap-3 pt-3"><button type="button" onClick={() => setShowCreate(false)} className="btn-secondary">Cancel</button><button type="submit" className="btn-primary"><Send size={16} /> Publish Assignment</button></div></form></Modal>}

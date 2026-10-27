@@ -763,3 +763,507 @@ export function answersForFinalization(currentAnswers = {}, requestedAnswers, de
   return deadlinePassed ? currentAnswers || {} : requestedAnswers || currentAnswers || {};
 }
 
+// ============================================================================
+// UNIFIED ACADEMIC WORK TYPES (ASSIGNMENT, ACTIVITY, TEST, EXAMINATION)
+// ============================================================================
+
+export const WORK_TYPES = ["ASSIGNMENT", "ACTIVITY", "TEST", "EXAMINATION"];
+
+export function normalizeWorkType(input, fallbackObj = null) {
+  const raw =
+    typeof input === "string" && input.trim()
+      ? input.trim().toUpperCase()
+      : String(
+          fallbackObj?.workType ??
+            fallbackObj?.assessmentCategory ??
+            fallbackObj?.workCategory ??
+            fallbackObj?.type ??
+            ""
+        )
+          .trim()
+          .toUpperCase();
+
+  if (["ASSIGNMENT", "HOMEWORK", "PROJECT", "COURSEWORK", "DELIVERABLE"].includes(raw)) {
+    return "ASSIGNMENT";
+  }
+  if (["ACTIVITY", "PRACTICE", "EXERCISE", "CLASSWORK", "REFLECTION", "DRILL", "LAB"].includes(raw)) {
+    return "ACTIVITY";
+  }
+  if (["TEST", "QUIZ", "CA", "CONTINUOUS_ASSESSMENT", "SHORT_TEST", "POP_QUIZ"].includes(raw)) {
+    return "TEST";
+  }
+  if (["EXAMINATION", "EXAM", "CBT", "MID_TERM", "FINAL_EXAM", "MOCK_EXAM"].includes(raw)) {
+    return "EXAMINATION";
+  }
+
+  if (fallbackObj && typeof fallbackObj === "object") {
+    if (fallbackObj.isUngradedActivity === true || fallbackObj.ungraded === true) {
+      return "ACTIVITY";
+    }
+    if (
+      fallbackObj.submissionFormat ||
+      (fallbackObj.dueDate && !fallbackObj.durationMinutes && !Array.isArray(fallbackObj.questions))
+    ) {
+      return "ASSIGNMENT";
+    }
+  }
+
+  return "EXAMINATION";
+}
+
+export function validateWorkTypeTransition(existingRecordOrOpts, nextWorkType, attemptCount = 0) {
+  let existingRecord = existingRecordOrOpts;
+  let targetRaw = nextWorkType;
+  let attempts = attemptCount;
+
+  if (
+    existingRecordOrOpts &&
+    typeof existingRecordOrOpts === "object" &&
+    ("currentType" in existingRecordOrOpts || "nextType" in existingRecordOrOpts)
+  ) {
+    existingRecord = {
+      workType: existingRecordOrOpts.currentType,
+      status: existingRecordOrOpts.status,
+      attemptCount: existingRecordOrOpts.attemptCount,
+      resultsReleased: existingRecordOrOpts.resultsReleased,
+    };
+    targetRaw = existingRecordOrOpts.nextType;
+    attempts = Number(existingRecordOrOpts.attemptCount || 0);
+  }
+
+  if (!existingRecord) {
+    return { allowed: true, workType: normalizeWorkType(targetRaw) };
+  }
+  const prevType = normalizeWorkType(existingRecord.workType, existingRecord);
+  const targetType = normalizeWorkType(targetRaw, existingRecord);
+  if (prevType === targetType) {
+    return { allowed: true, workType: targetType };
+  }
+  const status = String(existingRecord.status || "").trim().toLowerCase();
+  const totalAttempts = Number(attempts || existingRecord.attemptCount || existingRecord.submissionCount || 0);
+  const hasLiveHistory =
+    totalAttempts > 0 ||
+    status === "completed" ||
+    existingRecord.resultsReleased === true;
+
+  if (hasLiveHistory) {
+    const msg = `Cannot convert an existing ${prevType.toLowerCase()} into a ${targetType.toLowerCase()} because it already has ${totalAttempts || 1} recorded student submission(s) or released results. Create a new item or duplicate instead.`;
+    return {
+      allowed: false,
+      requiresConfirmation: true,
+      previousWorkType: prevType,
+      requestedWorkType: targetType,
+      reason: msg,
+      error: msg,
+    };
+  }
+  return { allowed: true, workType: targetType };
+}
+
+/**
+ * Normalises recipient targeting across School + Class, Private Learners, and Multi-target modes.
+ */
+export function normalizeRecipientTargets(body = {}, existingDoc = null) {
+  const rawMode = String(body.recipientMode ?? existingDoc?.recipientMode ?? "").trim().toUpperCase();
+  const rawSchoolIds = [
+    ...(Array.isArray(body.targetSchoolIds) ? body.targetSchoolIds : []),
+    ...(Array.isArray(body.schoolIds) ? body.schoolIds : []),
+    ...(body.schoolId ? [body.schoolId] : []),
+    ...(existingDoc?.schoolId && !body.schoolId && !body.targetSchoolIds ? [existingDoc.schoolId] : []),
+  ]
+    .map(s => String(s ?? "").trim())
+    .filter(s => s && s !== "all" && s !== "none" && s !== "private");
+  const targetSchoolIds = [...new Set(rawSchoolIds)];
+
+  const classIds = normalizeClassList(
+    body.classIds ?? body.targetClass ?? body.className ?? existingDoc?.classIds ?? existingDoc?.targetClass ?? []
+  );
+
+  const rawStudentIds = [
+    ...(Array.isArray(body.targetStudentIds) ? body.targetStudentIds : []),
+    ...(Array.isArray(body.assignedStudentIds) ? body.assignedStudentIds : []),
+    ...(body.studentId ? [body.studentId] : []),
+    ...(existingDoc?.targetStudentIds && !body.targetStudentIds ? existingDoc.targetStudentIds : []),
+  ]
+    .map(id => String(id ?? "").trim())
+    .filter(Boolean);
+  const targetStudentIds = [...new Set(rawStudentIds)];
+
+  let recipientMode = "SCHOOL_CLASS";
+  if (rawMode === "PRIVATE_LEARNERS" || rawMode === "PRIVATE" || (targetStudentIds.length > 0 && targetSchoolIds.length === 0)) {
+    recipientMode = "PRIVATE_LEARNERS";
+  } else if (rawMode === "MULTI_TARGET" || (targetStudentIds.length > 0 && targetSchoolIds.length > 0) || targetSchoolIds.length > 1) {
+    recipientMode = "MULTI_TARGET";
+  }
+
+  return {
+    recipientMode,
+    schoolId: targetSchoolIds[0] || (recipientMode === "PRIVATE_LEARNERS" ? "private" : ""),
+    targetSchoolIds,
+    schoolIds: targetSchoolIds,
+    classIds,
+    targetClass: classIds[0] || "",
+    targetStudentIds,
+  };
+}
+
+/**
+ * Checks whether a student is eligible to view/attempt a work item or resource.
+ */
+export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
+  let student = studentOrOpts;
+  let workItem = workItemArg;
+
+  if (
+    studentOrOpts &&
+    typeof studentOrOpts === "object" &&
+    ("work" in studentOrOpts || "studentSchoolId" in studentOrOpts || "studentClass" in studentOrOpts)
+  ) {
+    workItem = studentOrOpts.work || workItemArg || {};
+    student = {
+      id: studentOrOpts.studentId || studentOrOpts.id,
+      uid: studentOrOpts.studentUid || studentOrOpts.uid,
+      schoolId: studentOrOpts.studentSchoolId ?? studentOrOpts.schoolId,
+      className: studentOrOpts.studentClass ?? studentOrOpts.className,
+    };
+  }
+
+  if (!student || !workItem) return false;
+  const studentIds = [student.id, student.uid, student.studentUid, student.studentId]
+    .map(v => String(v ?? "").trim())
+    .filter(Boolean);
+
+  const targetStudentIds = [
+    ...(Array.isArray(workItem.targetStudentIds) ? workItem.targetStudentIds : []),
+    ...(Array.isArray(workItem.assignedStudentIds) ? workItem.assignedStudentIds : []),
+    ...(workItem.studentId ? [workItem.studentId] : []),
+  ]
+    .map(v => String(v ?? "").trim())
+    .filter(Boolean);
+
+  if (targetStudentIds.length > 0 && studentIds.some(id => targetStudentIds.includes(id))) {
+    return true;
+  }
+
+  const recipientMode = String(workItem.recipientMode || "").toUpperCase();
+  if (recipientMode === "PRIVATE_LEARNERS" && targetStudentIds.length > 0) {
+    return false;
+  }
+
+  const studentSchoolId = String(student.schoolId || "").trim().toLowerCase();
+  const workSchoolIds = [
+    ...(Array.isArray(workItem.targetSchoolIds) ? workItem.targetSchoolIds : []),
+    ...(Array.isArray(workItem.schoolIds) ? workItem.schoolIds : []),
+    ...(workItem.schoolId ? [workItem.schoolId] : []),
+  ]
+    .map(s => String(s ?? "").trim().toLowerCase())
+    .filter(s => s && s !== "private" && s !== "none");
+
+  if (workSchoolIds.length > 0 && !workSchoolIds.includes("all")) {
+    if (!studentSchoolId || !workSchoolIds.includes(studentSchoolId)) {
+      return false;
+    }
+  }
+
+  const studentClass = student.className || student.grade || student.class || student.level || "";
+  const targetClasses = workItem.classIds || workItem.targetClass || workItem.className || [];
+  return classesMatch(studentClass, targetClasses, { allowEmptyTarget: true });
+}
+
+// ============================================================================
+// BULK STUDENT ONBOARDING PARSER & VALIDATOR
+// ============================================================================
+
+export function parseBulkStudentText(rawText, defaultProgramme = "Digital Literacy") {
+  const lines = String(rawText ?? "")
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
+
+  const rows = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const delimiter = line.includes("|") ? "|" : line.includes("\t") ? "\t" : ",";
+    const cols = line.split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ""));
+
+    // Skip header row
+    const firstLower = (cols[0] || "").toLowerCase();
+    const secondLower = (cols[1] || "").toLowerCase();
+    if (
+      i === 0 &&
+      (firstLower === "full name" || firstLower === "fullname" || firstLower === "student name" || firstLower === "name") &&
+      (secondLower.includes("class") || secondLower.includes("grade"))
+    ) {
+      continue;
+    }
+
+    const fullName = String(cols[0] || "").replace(/\s+/g, " ").trim();
+    const rawClass = String(cols[1] || "").trim();
+    const programme = String(cols[2] || defaultProgramme || "Digital Literacy").trim();
+    const email = String(cols[3] || "").trim().toLowerCase();
+    const username = String(cols[4] || "").trim().toLowerCase();
+
+    const canonicalClass = rawClass ? normalizeClassName(rawClass, "") : "";
+    const validClass = Boolean(rawClass && CANONICAL_CLASS_ORDER.has(canonicalClass));
+
+    rows.push({
+      rowNumber: i + 1,
+      fullName,
+      rawClass,
+      canonicalClass: validClass ? canonicalClass : "",
+      className: validClass ? canonicalClass : rawClass,
+      isValidClass: validClass,
+      programme: programme || defaultProgramme,
+      programName: programme || defaultProgramme,
+      email,
+      username,
+    });
+  }
+  return rows;
+}
+
+export function validateBulkStudentRows(rows = [], existingStudentsOrOpts = []) {
+  const existingKeys = new Set();
+  const existingEmails = new Set();
+  const existingUsernames = new Set();
+
+  const existingStudentsList = Array.isArray(existingStudentsOrOpts)
+    ? existingStudentsOrOpts
+    : Array.isArray(existingStudentsOrOpts?.existingStudents)
+    ? existingStudentsOrOpts.existingStudents
+    : [];
+
+  if (existingStudentsOrOpts && !Array.isArray(existingStudentsOrOpts)) {
+    const extraUsernames = existingStudentsOrOpts.existingUsernames || [];
+    for (const u of extraUsernames) {
+      if (u) existingUsernames.add(String(u).trim().toLowerCase());
+    }
+    const extraEmails = existingStudentsOrOpts.existingEmails || [];
+    for (const e of extraEmails) {
+      if (e) existingEmails.add(String(e).trim().toLowerCase());
+    }
+  }
+
+  for (const s of existingStudentsList) {
+    const nameNorm = String(s?.fullName || s?.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+    const classNorm = normalizeClassName(s?.className || s?.grade || s?.class || "", "").toLowerCase();
+    if (nameNorm && classNorm) {
+      existingKeys.add(`${nameNorm}::${classNorm}`);
+    }
+    const emailNorm = String(s?.email || "").trim().toLowerCase();
+    if (emailNorm) existingEmails.add(emailNorm);
+    const userNorm = String(s?.username || s?.loginIdentifier || "").trim().toLowerCase();
+    if (userNorm) existingUsernames.add(userNorm);
+  }
+
+  const batchKeys = new Set();
+  const batchEmails = new Set();
+  const batchUsernames = new Set();
+
+  const validatedRows = rows.map((row, idx) => {
+    const errors = [];
+    const fullName = String(row?.fullName || "").replace(/\s+/g, " ").trim();
+    const rawClass = String(row?.rawClass ?? row?.canonicalClass ?? row?.className ?? "").trim();
+    const canonicalClass = rawClass ? normalizeClassName(rawClass, "") : "";
+    const isValidClass = Boolean(rawClass && CANONICAL_CLASS_ORDER.has(canonicalClass));
+    const programme = String(row?.programme || row?.programName || "Digital Literacy").trim();
+    const email = String(row?.email || "").trim().toLowerCase();
+    const username = String(row?.username || "").trim().toLowerCase();
+
+    if (!fullName || fullName.length < 2) {
+      errors.push("Full name is required (at least 2 characters).");
+    }
+    if (!rawClass) {
+      errors.push("Class/Grade is required.");
+    } else if (!isValidClass) {
+      errors.push(`Unrecognised class "${rawClass}". Use Early Years or Grade 1–12.`);
+    }
+    if (!programme) {
+      errors.push("Programme is required.");
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.push(`Invalid email format "${email}".`);
+    }
+
+    const nameKey = `${fullName.toLowerCase()}::${canonicalClass.toLowerCase()}`;
+    let status = "READY";
+
+    if (errors.length > 0) {
+      status = "INVALID";
+    } else if (
+      existingKeys.has(nameKey) ||
+      (email && existingEmails.has(email)) ||
+      (username && existingUsernames.has(username))
+    ) {
+      status = "DUPLICATE_EXISTING";
+      errors.push("Student already exists in this school roster.");
+    } else if (
+      batchKeys.has(nameKey) ||
+      (email && batchEmails.has(email)) ||
+      (username && batchUsernames.has(username))
+    ) {
+      status = "DUPLICATE_IN_BATCH";
+      errors.push("Duplicate student entry within this import batch.");
+    } else {
+      batchKeys.add(nameKey);
+      if (email) batchEmails.add(email);
+      if (username) batchUsernames.add(username);
+    }
+
+    const isReady = status === "READY";
+    return {
+      rowNumber: row?.rowNumber ?? idx + 1,
+      fullName,
+      rawClass,
+      canonicalClass: isValidClass ? canonicalClass : "",
+      className: isValidClass ? canonicalClass : rawClass,
+      isValidClass,
+      programme,
+      programName: programme,
+      email,
+      username,
+      status,
+      errors,
+      isValid: isReady,
+      valid: isReady,
+    };
+  });
+
+  const validCount = validatedRows.filter(r => r.valid).length;
+  const invalidCount = validatedRows.length - validCount;
+  Object.defineProperties(validatedRows, {
+    rows: { value: validatedRows, enumerable: false },
+    validCount: { value: validCount, enumerable: false },
+    invalidCount: { value: invalidCount, enumerable: false },
+  });
+  return validatedRows;
+}
+
+// ============================================================================
+// SESSION-AWARE ATTENDANCE IDENTITY
+// ============================================================================
+
+export function buildAttendanceRecordKey({ studentId, dateKey, date, scheduleId } = {}) {
+  const cleanStudentId = String(studentId || "").trim();
+  const rawDate = String(dateKey || date || "").trim();
+  const cleanDate = rawDate ? rawDate.slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const cleanScheduleId = String(scheduleId || "").trim();
+
+  if (!cleanStudentId) {
+    return "";
+  }
+  if (cleanScheduleId) {
+    return `${cleanScheduleId}__${cleanStudentId}__${cleanDate}`;
+  }
+  return `legacy__${cleanStudentId}__${cleanDate}`;
+}
+
+// ============================================================================
+// AGREEMENTS CENTRE: PROPOSALS, COMMUNICATIONS & CONTRACTS
+// ============================================================================
+
+export const AGREEMENT_CATEGORIES = ["PROPOSAL", "COMMUNICATION", "CONTRACT"];
+
+export const AGREEMENT_STATUSES = [
+  "DRAFT",
+  "SHARED",
+  "UNDER_DISCUSSION",
+  "REVISION_REQUESTED",
+  "AGREED",
+  "SIGNED",
+  "ACTIVE",
+  "EXPIRED",
+  "SUPERSEDED",
+  "ARCHIVED",
+];
+
+export function createAgreementVersionSnapshot(agreement = {}, actor = {}) {
+  const existingVersions = Array.isArray(agreement.versions) ? agreement.versions : [];
+  const nextVersionNumber = Number(agreement.versionNumber) || existingVersions.length + 1;
+  const nowIso = agreement.createdAt || new Date().toISOString();
+  const contentHtml = String(agreement.contentHtml || agreement.content || "").trim();
+
+  return {
+    versionNumber: nextVersionNumber,
+    immutable: true,
+    title: String(agreement.title || "").trim(),
+    category: AGREEMENT_CATEGORIES.includes(String(agreement.category || "").toUpperCase())
+      ? String(agreement.category).toUpperCase()
+      : "PROPOSAL",
+    status: AGREEMENT_STATUSES.includes(String(agreement.status || "").toUpperCase())
+      ? String(agreement.status).toUpperCase()
+      : "DRAFT",
+    contentHtml,
+    content: contentHtml,
+    effectiveDate: String(agreement.effectiveDate || "").trim(),
+    expiryDate: String(agreement.expiryDate || "").trim(),
+    attachmentUrl: String(agreement.attachmentUrl || "").trim(),
+    summary: String(agreement.versionSummary || agreement.summary || `Version ${nextVersionNumber}`).trim(),
+    createdAt: nowIso,
+    createdBy: String(actor.uid || agreement.updatedBy || agreement.createdBy || "").trim(),
+    createdByName: String(actor.name || agreement.updatedByName || "Administrator").trim(),
+  };
+}
+
+export function canAccessAgreement(agreementOrOpts = {}, actorArg = {}) {
+  let agreement = agreementOrOpts;
+  let actor = actorArg;
+
+  if (
+    agreementOrOpts &&
+    typeof agreementOrOpts === "object" &&
+    "agreement" in agreementOrOpts &&
+    agreementOrOpts.agreement
+  ) {
+    agreement = agreementOrOpts.agreement;
+    actor = {
+      uid: agreementOrOpts.uid,
+      role: agreementOrOpts.role,
+      schoolId: agreementOrOpts.schoolId,
+    };
+  }
+
+  if (!agreement || !actor) return false;
+  const role = String(actor.role || "").trim().toUpperCase();
+  if (isPlatformAdminRole(role)) return true;
+
+  const status = String(agreement.status || "").trim().toUpperCase();
+  if (status === "DRAFT" || status === "ARCHIVED") {
+    return false;
+  }
+
+  const recipientType = String(agreement.recipientType || "").trim().toUpperCase();
+  const recipientId = String(agreement.recipientId || "").trim();
+  const recipientSchoolId = String(agreement.recipientSchoolId || agreement.schoolId || "").trim();
+  const actorUid = String(actor.uid || "").trim();
+  const actorSchoolId = String(actor.schoolId || "").trim();
+
+  if (isSchoolAdminRole(role)) {
+    if (recipientType === "SCHOOL") {
+      return Boolean(
+        (recipientSchoolId && actorSchoolId && recipientSchoolId === actorSchoolId) ||
+          (recipientId && actorUid && recipientId === actorUid) ||
+          (recipientId && actorSchoolId && recipientId === actorSchoolId)
+      );
+    }
+    return false;
+  }
+
+  if (isTutorRole(role) || role === "MNO_TUTOR") {
+    if (recipientType === "TUTOR" || recipientType === "STAFF") {
+      return Boolean(recipientId && actorUid && recipientId === actorUid);
+    }
+    return false;
+  }
+
+  if (role === "PARENT") {
+    if (recipientType === "PARENT") {
+      return Boolean(recipientId && actorUid && recipientId === actorUid);
+    }
+    return false;
+  }
+
+  return false;
+}
+
+

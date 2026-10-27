@@ -776,38 +776,22 @@ Important Security Notice:
     <div className="space-y-6">
       <SEO title="Students Roster & Credentials | Jaystarbliss Studios" description="Secure school learner roster and portal access management." noindex />
       
-      {/* Header Banner */}
-      <div className="pro-surface rounded-3xl p-6 md:p-8 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-          <div className="flex items-start gap-3.5">
-            <div className="rounded-2xl bg-brand-red/10 p-3 text-brand-red shrink-0">
-              <GraduationCap size={24}/>
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-wider font-bold text-brand-red">School Administration</div>
-              <h1 className="text-2xl md:text-3xl font-black mt-0.5 text-slate-900 dark:text-white">Students Roster &amp; Credentials</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
-                Manage enrolled learners strictly registered under your school, assign academic curriculum tracks, and issue secure portal access credentials.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2.5 shrink-0">
-            <button 
-              type="button" 
-              onClick={() => void load(true)} 
-              disabled={loading || refreshing} 
-              className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
-            >
-              {refreshing ? <Loader2 size={15} className="animate-spin"/> : <RefreshCw size={15}/>} Refresh Records
-            </button>
-            <Link 
-              to="/portal/school/onboard-student" 
-              className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 inline-flex items-center gap-2 shadow-xs transition-colors"
-            >
-              <Plus size={16}/> Onboard Student
-            </Link>
-          </div>
-        </div>
+      {/* Action Toolbar */}
+      <div className="flex flex-wrap items-center justify-end gap-2.5">
+        <button 
+          type="button" 
+          onClick={() => void load(true)} 
+          disabled={loading || refreshing} 
+          className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+        >
+          {refreshing ? <Loader2 size={14} className="animate-spin"/> : <RefreshCw size={14}/>} Refresh Records
+        </button>
+        <Link 
+          to="/portal/school/onboard-student" 
+          className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 inline-flex items-center gap-2 shadow-xs transition-colors"
+        >
+          <Plus size={15}/> Onboard Student
+        </Link>
       </div>
 
       {/* 3 Dedicated Filter Tabs */}

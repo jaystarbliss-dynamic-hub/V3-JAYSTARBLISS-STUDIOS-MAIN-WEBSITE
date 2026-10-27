@@ -183,31 +183,16 @@ const PortalLiveClasses: React.FC = () => {
         noindex={true} 
       />
 
-      <section className="pro-surface rounded-3xl p-6 md:p-8 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-red">
-              <Video size={14} aria-hidden="true" /> Faculty Teaching Workspace
-            </p>
-            <h1 className="mt-1 text-2xl font-black text-slate-900 dark:text-white">
-              Class Schedules & Teaching Roster
-            </h1>
-            <p className="mt-1 max-w-2xl text-xs sm:text-sm text-slate-500">
-              Manage all assigned classroom sessions, update lesson attendance statuses, and broadcast virtual meeting rooms to learners.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setShowLinkModal(true)}
-              className="px-4 py-2.5 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold shadow-xs inline-flex items-center gap-1.5 transition-all cursor-pointer"
-            >
-              <Plus size={14} />
-              <span>Broadcast Live Link</span>
-            </button>
-          </div>
-        </div>
-      </section>
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => setShowLinkModal(true)}
+          className="px-4 py-2.5 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold shadow-xs inline-flex items-center gap-1.5 transition-all cursor-pointer"
+        >
+          <Plus size={14} />
+          <span>Broadcast Live Link</span>
+        </button>
+      </div>
 
       {message && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs font-bold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">

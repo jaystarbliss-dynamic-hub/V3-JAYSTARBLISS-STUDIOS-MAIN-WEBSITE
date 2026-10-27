@@ -275,14 +275,6 @@ export default function ParentExaminationResults() {
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 p-4 md:p-8">
-      <header className="rounded-2xl bg-slate-900 p-6 text-white md:p-8">
-        <p className="text-sm font-semibold tracking-wide text-blue-200">PARENT PORTAL</p>
-        <h1 className="mt-2 text-3xl font-bold">Official Examination Results</h1>
-        <p className="mt-2 max-w-2xl text-slate-200">
-          Review your linked children's released CBT examination results, download official
-          institutional transcripts, and view teacher feedback.
-        </p>
-      </header>
 
       {error && (
         <div

@@ -1,6 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
-import { computeExamMaxScore, normalizeClassName, resolvePartnerSchoolName } from '../../api/_lib/jdi-assessment.js';
+import { computeExamMaxScore, normalizeClassName, normalizeWorkType, resolvePartnerSchoolName } from '../../api/_lib/jdi-assessment.js';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -188,8 +188,9 @@ export const handler: Handler = async event => {
     const learner = rosterMap.get(learnerId);
     if (!learner) return json(404, { error: 'That learner does not belong to your school.' });
 
-    const [assessmentSnap, attendanceSnap, examAttempts, actorLogs, targetLogs] = await Promise.all([
+    const [assessmentSnap, assignmentSnap, attendanceSnap, examAttempts, actorLogs, targetLogs] = await Promise.all([
       adminDb.collection('academic_assessments').where('studentId', '==', learnerId).limit(200).get().catch(() => null),
+      adminDb.collection('assignments').where('studentId', '==', learnerId).limit(200).get().catch(() => null),
       adminDb.collection('attendance').where('studentId', '==', learnerId).limit(300).get().catch(() => null),
       adminDb.collection('jdiExamAttempts').where('studentId', '==', learnerId).limit(300).get().catch(() => null),
       learner.studentUid ? adminDb.collection('activityLogs').where('actorId', '==', learner.studentUid).limit(200).get().catch(() => null) : Promise.resolve(null),
@@ -200,6 +201,21 @@ export const handler: Handler = async event => {
       const a = d.data() || {};
       return { id: d.id, title: text(a.title || 'Assessment'), subject: text(a.subject || 'General'), assessmentType: text(a.assessmentType || 'OTHER'), score: typeof a.score === 'number' ? a.score : null, feedback: text(a.feedback, 1200), createdAt: asIso(a.createdAt), updatedAt: asIso(a.updatedAt), assessedBy: text(a.assessedBy) };
     }).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+
+    const assignments = (assignmentSnap?.docs || []).map(d => {
+      const a = d.data() || {};
+      return {
+        id: d.id,
+        title: text(a.title || 'Assignment'),
+        subject: text(a.subject || a.track || 'General'),
+        status: text(a.status || 'ASSIGNED'),
+        grade: typeof a.grade === 'number' ? a.grade : typeof a.score === 'number' ? a.score : null,
+        maxPoints: typeof a.maxPoints === 'number' ? a.maxPoints : 100,
+        dueDate: asIso(a.dueDate),
+        submittedAt: asIso(a.submittedAt || a.updatedAt),
+        feedback: text(a.feedback, 1200)
+      };
+    }).sort((a, b) => String(b.submittedAt || b.dueDate || '').localeCompare(String(a.submittedAt || a.dueDate || '')));
 
     const attendance = (attendanceSnap?.docs || []).map(d => {
       const a = d.data() || {};
@@ -226,6 +242,8 @@ export const handler: Handler = async event => {
       const autoFinal = ['submitted', 'expired', 'graded'].includes(text(a.status).toLowerCase()) && a.autoGraded === true;
       return {
         id: d.id, examId, title: examNames.get(examId) || 'Examination', subject: text(exam.subject || 'General'),
+        workType: normalizeWorkType(exam.workType || a.workType),
+        isUngradedActivity: Boolean(exam.isUngradedActivity || a.isUngradedActivity),
         status: text(a.status || 'unknown'), score: released || autoFinal ? (typeof a.score === 'number' ? a.score : null) : null,
         maxScore: computeExamMaxScore(exam, a),
         submittedAt: asIso(a.submittedAt), releasedAt: asIso(a.releasedAt), feedback: released ? text(a.feedback, 1200) : ''
@@ -250,11 +268,13 @@ export const handler: Handler = async event => {
       school: { id: school.id, schoolId: school.id, schoolCode: school.schoolCode, name: school.name },
       learner: { ...learner, studentUid: undefined, parentId: undefined },
       assessments,
+      assignments,
       examinations,
       attendance,
       activities,
       summary: {
         assessments: assessments.length,
+        assignments: assignments.length,
         examinations: examinations.length,
         attendanceRecords: attendance.length,
         activities: activities.length,
