@@ -132,12 +132,18 @@ export function classifyError(error: unknown, fallbackMessage?: string): ErrorCl
   // 3. Authentication: Credentials, Passwords & Access Codes
   if (
     rawCode === 'auth/invalid-credential' ||
+    rawCode === 'auth/invalid-login-credentials' ||
     rawCode === 'auth/wrong-password' ||
     rawCode === 'auth/user-not-found' ||
     rawCode === 'auth/invalid-email' ||
+    rawCode === 'auth/invalid-password' ||
+    rawCode === 'auth/missing-password' ||
     rawMessage.includes('invalid-credential') ||
+    rawMessage.includes('invalid-login-credentials') ||
+    rawMessage.includes('invalid_login_credentials') ||
     rawMessage.includes('wrong password') ||
     rawMessage.includes('invalid credentials') ||
+    rawMessage.includes('invalid access code') ||
     rawMessage.includes('incorrect access code') ||
     rawMessage.includes('no student record found') ||
     rawMessage.includes('enter your student username')
@@ -196,7 +202,23 @@ export function classifyError(error: unknown, fallbackMessage?: string): ErrorCl
     };
   }
 
-  // 7. Permissions & Access Control
+  // 7a. Portal Role / Profile Registration Mismatch
+  if (
+    rawMessage.includes('not registered as an affiliated school administrator') ||
+    rawMessage.includes('not registered as a school administrator') ||
+    rawMessage.includes('not registered as staff') ||
+    rawMessage.includes('no active portal profile was found')
+  ) {
+    const originalMsg = String((error as any)?.message || (typeof error === 'string' ? error : '')).trim();
+    return {
+      category: 'permission',
+      code: rawCode || 'ROLE_MISMATCH',
+      userMessage: originalMsg || 'This account is not registered for the selected portal role.',
+      recoverable: false,
+    };
+  }
+
+  // 7b. Permissions & Access Control
   if (
     rawCode === 'permission-denied' ||
     rawCode === 'unauthenticated' ||

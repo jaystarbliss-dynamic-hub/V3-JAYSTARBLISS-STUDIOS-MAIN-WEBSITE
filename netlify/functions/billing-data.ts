@@ -1,5 +1,5 @@
 import type { Handler } from "@netlify/functions";
-import { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
+import { adminAuth, adminDb, hasAdminAuth, hasAdminDb } from "../../api/_lib/firebase-admin";
 import { getPaymentConfig, getUserRecord, normaliseRole, isPrivilegedRole, isStaffRole, isActiveRecord } from "../../api/_lib/billing";
 
 const tokenFromEvent = (event: any) => {
@@ -117,10 +117,17 @@ const billingSummary = (payments: any[]) => {
 export const handler: Handler = async event => {
   if (event.httpMethod !== "GET") return { statusCode: 405, body: "Method Not Allowed" };
   try {
+    if (!hasAdminAuth() || !hasAdminDb()) {
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        body: JSON.stringify({ fallback: true })
+      };
+    }
     const token = tokenFromEvent(event);
     if (!token) return { statusCode: 401, body: JSON.stringify({ error: "Authentication required." }) };
     const decoded = await adminAuth.verifyIdToken(token);
-    const user = await getUserRecord(decoded.uid);
+    const user = await getUserRecord(decoded.uid, decoded.email);
     const role = normaliseRole(user.role);
     if (!isActiveRecord(user)) return { statusCode: 403, body: JSON.stringify({ error: "Your account is not active." }) };
     const config = await getPaymentConfig();
@@ -251,7 +258,7 @@ export const handler: Handler = async event => {
           schoolDoc = { id: byUidSnap.id, ...plain(byUidSnap.data()) };
           schoolId = schoolDoc.id;
         } else {
-          // Try finding by user email or contactEmail
+          // Try finding by user email or contactEmail or adminEmail or adminUid
           const userEmail = (decoded.email || (user as any).email || "").toLowerCase();
           if (userEmail) {
             const byEmailSnap = await adminDb.collection("schools").where("contactEmail", "==", userEmail).limit(1).get();
@@ -263,7 +270,20 @@ export const handler: Handler = async event => {
               if (!byEmail2.empty) {
                 schoolDoc = { id: byEmail2.docs[0].id, ...plain(byEmail2.docs[0].data()) };
                 schoolId = schoolDoc.id;
+              } else {
+                const byAdminEmail = await adminDb.collection("schools").where("adminEmail", "==", userEmail).limit(1).get();
+                if (!byAdminEmail.empty) {
+                  schoolDoc = { id: byAdminEmail.docs[0].id, ...plain(byAdminEmail.docs[0].data()) };
+                  schoolId = schoolDoc.id;
+                }
               }
+            }
+          }
+          if (!schoolDoc) {
+            const byAdminUid = await adminDb.collection("schools").where("adminUid", "==", decoded.uid).limit(1).get();
+            if (!byAdminUid.empty) {
+              schoolDoc = { id: byAdminUid.docs[0].id, ...plain(byAdminUid.docs[0].data()) };
+              schoolId = schoolDoc.id;
             }
           }
         }
@@ -272,13 +292,20 @@ export const handler: Handler = async event => {
       const effectiveSchoolId = schoolId || decoded.uid;
       const schoolName = String(schoolDoc?.name || (user as any).schoolName || (user as any).name || "").trim();
 
-      // Collect all payments matching school
+      // Collect all payments matching school (including migrated previousAdminUid / previousAdminEmail)
       const paymentQueries = [
         adminDb.collection("payments").where("schoolId", "==", effectiveSchoolId).limit(100).get(),
         adminDb.collection("payments").where("userId", "==", decoded.uid).limit(100).get(),
       ];
       if (schoolDoc?.id && schoolDoc.id !== effectiveSchoolId) {
         paymentQueries.push(adminDb.collection("payments").where("schoolId", "==", schoolDoc.id).limit(100).get());
+      }
+      if (schoolDoc?.previousAdminUid) {
+        paymentQueries.push(adminDb.collection("payments").where("userId", "==", String(schoolDoc.previousAdminUid)).limit(100).get());
+      }
+      if (schoolDoc?.previousAdminEmail) {
+        paymentQueries.push(adminDb.collection("payments").where("email", "==", String(schoolDoc.previousAdminEmail)).limit(100).get());
+        paymentQueries.push(adminDb.collection("payments").where("payerEmail", "==", String(schoolDoc.previousAdminEmail)).limit(100).get());
       }
       if (decoded.email) {
         paymentQueries.push(adminDb.collection("payments").where("email", "==", decoded.email).limit(100).get());
@@ -304,11 +331,12 @@ export const handler: Handler = async event => {
         studentQueries.push(adminDb.collection("students").where("schoolName", "==", schoolName).limit(200).get());
       }
 
+      const recipientIds = Array.from(new Set([decoded.uid, effectiveSchoolId, schoolDoc?.previousAdminUid].filter(Boolean)));
       const [paymentSnaps, studentSnaps, enrollmentsSnap, notificationSnap] = await Promise.all([
-        Promise.all(paymentQueries),
-        Promise.all(studentQueries),
-        adminDb.collection("enrollment_requests").where("schoolId", "==", effectiveSchoolId).limit(100).get(),
-        adminDb.collection("notifications").where("recipientId", "in", [decoded.uid, effectiveSchoolId]).limit(25).get()
+        Promise.all(paymentQueries.map(q => q.catch(() => ({ docs: [] as any[] })))),
+        Promise.all(studentQueries.map(q => q.catch(() => ({ docs: [] as any[] })))),
+        adminDb.collection("enrollment_requests").where("schoolId", "==", effectiveSchoolId).limit(100).get().catch(() => ({ docs: [] as any[] })),
+        adminDb.collection("notifications").where("recipientId", "in", recipientIds.slice(0, 10)).limit(25).get().catch(() => ({ docs: [] as any[] }))
       ]);
 
       const paymentMap = new Map<string, any>();
@@ -467,7 +495,11 @@ export const handler: Handler = async event => {
       })
     };
   } catch (error) {
-    console.error("Billing data lookup failed:", error);
-    return { statusCode: 500, body: JSON.stringify({ error: "Unable to load billing records." }) };
+    console.warn("Billing data lookup fallback engaged:", error);
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      body: JSON.stringify({ fallback: true })
+    };
   }
 };

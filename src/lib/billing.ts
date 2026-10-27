@@ -84,7 +84,7 @@ export const billingGet = async <T>(path: string): Promise<T> => {
 
     if (response && response.ok) {
       const data = await response.json().catch(() => null);
-      if (data && data.status !== 'dev_mock_success' && (data.config || data.schoolBilling || data.payments || data.schools || data.banks)) {
+      if (data && !data.fallback && data.status !== 'dev_mock_success' && (data.config || data.schoolBilling || data.payments || data.schools || data.banks)) {
         return data as T;
       }
     }
@@ -169,21 +169,43 @@ export const billingGet = async <T>(path: string): Promise<T> => {
         }
 
         const effectiveSchoolId = schoolDoc?.id || targetSchoolId || user.uid;
-        const [paymentsSnap, enrollmentsSnap, studentsSnap, notifSnap] = await Promise.all([
-          getDocs(query(collection(db, 'payments'), limit(200))).catch(() => ({ docs: [] } as any)),
-          getDocs(query(collection(db, 'enrollment_requests'), limit(100))).catch(() => ({ docs: [] } as any)),
-          getDocs(query(collection(db, 'students'), limit(200))).catch(() => ({ docs: [] } as any)),
-          getDocs(query(collection(db, 'notifications'), limit(30))).catch(() => ({ docs: [] } as any))
+        const recipientIds = Array.from(new Set([user.uid, effectiveSchoolId, schoolDoc?.previousAdminUid].filter(Boolean)));
+        const [
+          schoolPaymentsSnap,
+          userPaymentsSnap,
+          prevUserPaymentsSnap,
+          enrollmentsSnap,
+          studentsSnap,
+          indStudentsSnap,
+          notifSnap
+        ] = await Promise.all([
+          getDocs(query(collection(db, 'payments'), where('schoolId', '==', effectiveSchoolId), limit(200))).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'payments'), where('userId', '==', user.uid), limit(100))).catch(() => ({ docs: [] } as any)),
+          schoolDoc?.previousAdminUid
+            ? getDocs(query(collection(db, 'payments'), where('userId', '==', String(schoolDoc.previousAdminUid)), limit(100))).catch(() => ({ docs: [] } as any))
+            : Promise.resolve({ docs: [] } as any),
+          getDocs(query(collection(db, 'enrollment_requests'), where('schoolId', '==', effectiveSchoolId), limit(100))).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'students'), where('schoolId', '==', effectiveSchoolId), limit(200))).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'individualStudents'), where('schoolId', '==', effectiveSchoolId), limit(200))).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'notifications'), where('recipientId', 'in', recipientIds.slice(0, 10)), limit(30))).catch(() => ({ docs: [] } as any))
         ]);
 
-        const allPayments = paymentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        const schoolPayments = allPayments.filter((p: any) => 
-          String(p.schoolId || '') === effectiveSchoolId || 
-          String(p.schoolDocId || '') === effectiveSchoolId ||
-          String(p.userId || '') === user.uid ||
-          String(p.recipientId || '') === user.uid ||
-          (user.email && String(p.payerEmail || p.email || '').toLowerCase() === user.email.toLowerCase())
+        const paymentMap = new Map<string, any>();
+        [...schoolPaymentsSnap.docs, ...userPaymentsSnap.docs, ...prevUserPaymentsSnap.docs].forEach((d: any) => {
+          if (!paymentMap.has(d.id)) {
+            paymentMap.set(d.id, { id: d.id, ...d.data() });
+          }
+        });
+        const schoolPayments = Array.from(paymentMap.values()).sort(
+          (a: any, b: any) => new Date(b.paidAt || b.createdAt || 0).getTime() - new Date(a.paidAt || a.createdAt || 0).getTime()
         );
+
+        const studentMap = new Map<string, any>();
+        [...indStudentsSnap.docs, ...studentsSnap.docs].forEach((d: any) => {
+          if (!studentMap.has(d.id)) {
+            studentMap.set(d.id, { id: d.id, ...d.data() });
+          }
+        });
 
         const schoolBilling = schoolDoc?.billing || userDocData?.billing || null;
         const schoolPrograms = schoolDoc?.programs || [];
@@ -213,7 +235,7 @@ export const billingGet = async <T>(path: string): Promise<T> => {
           schoolPrograms,
           payments: schoolPayments,
           billingSummary: {
-            totalPaid: schoolPayments.reduce((acc: number, p: any) => acc + Number(p.baseAmount || p.amount || 0), 0),
+            totalPaid: schoolPayments.reduce((acc: number, p: any) => acc + Number(p.customerTotal || p.totalAmount || p.baseAmount || p.amount || 0), 0),
             monthlyRevenue: 0,
             transactionFees: schoolPayments.reduce((acc: number, p: any) => acc + Number(p.transactionFee || 0), 0),
             paymentCount: schoolPayments.length,
@@ -221,9 +243,9 @@ export const billingGet = async <T>(path: string): Promise<T> => {
             nextPaymentDue: schoolBilling ? schoolBilling.nextDueDate || null : null,
             overdue: schoolBilling ? schoolBilling.status === 'OVERDUE' : false
           },
-          enrollments: enrollmentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })).filter((e: any) => String(e.schoolId || '') === effectiveSchoolId),
-          students: studentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })).filter((s: any) => String(s.schoolId || '') === effectiveSchoolId),
-          notifications: notifSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })).filter((n: any) => [user.uid, effectiveSchoolId].includes(String(n.recipientId || '')))
+          enrollments: enrollmentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
+          students: Array.from(studentMap.values()),
+          notifications: notifSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
         } as unknown as T;
       }
 
@@ -440,7 +462,7 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
 
     if (response && response.ok) {
       apiResult = await response.json().catch(() => null);
-      if (apiResult) apiSuccess = true;
+      if (apiResult && !apiResult.fallback && apiResult.status !== 'dev_mock_success') apiSuccess = true;
     }
   } catch {
     // Continue to direct firestore action

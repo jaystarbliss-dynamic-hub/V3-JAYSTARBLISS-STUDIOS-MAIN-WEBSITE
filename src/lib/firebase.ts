@@ -2,8 +2,7 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { 
   initializeFirestore, 
   getFirestore, 
-  persistentLocalCache, 
-  persistentMultipleTabManager 
+  memoryLocalCache
 } from "firebase/firestore";
 import { 
   getAuth, 
@@ -36,9 +35,7 @@ let db: ReturnType<typeof getFirestore>;
 try {
   db = initializeFirestore(app, {
     experimentalAutoDetectLongPolling: true,
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager()
-    })
+    localCache: memoryLocalCache()
   }, PRIMARY_DATABASE_ID);
 } catch {
   db = getFirestore(app, PRIMARY_DATABASE_ID);
@@ -50,7 +47,7 @@ const defaultDb = db;
 export const getClientDatabases = () => [db];
 
 // Initialize Auth with multi-tier persistence (localStorage -> indexedDB -> sessionStorage -> memory)
-// and browserPopupRedirectResolver so signInWithPopup / signInWithRedirect work seamlessly
+// Note: browserPopupRedirectResolver is passed on-demand to signInWithPopup to avoid eager COOP window.closed checks
 let auth: ReturnType<typeof getAuth>;
 try {
   auth = initializeAuth(app, {
@@ -59,8 +56,7 @@ try {
       indexedDBLocalPersistence,
       browserSessionPersistence,
       inMemoryPersistence
-    ],
-    popupRedirectResolver: browserPopupRedirectResolver
+    ]
   });
 } catch {
   auth = getAuth(app);

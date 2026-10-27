@@ -1,5 +1,5 @@
 import type { Handler } from '@netlify/functions';
-import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
+import { adminAuth, adminDb, hasAdminAuth, hasAdminDb } from '../../api/_lib/firebase-admin';
 import { sendPasswordResetEmailResend, RESEND_CONFIG } from '../../api/_lib/email';
 
 const corsHeaders = {
@@ -37,6 +37,10 @@ export const handler: Handler = async (event) => {
 
     if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
       return json(400, { error: 'Please provide a valid email address.' });
+    }
+
+    if (!hasAdminAuth()) {
+      return json(200, { fallback: true });
     }
 
     let userRecord: any = null;

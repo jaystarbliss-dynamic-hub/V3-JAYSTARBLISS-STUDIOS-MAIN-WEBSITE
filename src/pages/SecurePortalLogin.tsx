@@ -85,18 +85,18 @@ const SecurePortalLogin: React.FC = () => {
 
   const routeManagedAccount = (data: any, user: any) => {
     const role = String(data.role || '').toUpperCase();
-    if (role.includes('ADMIN')) { 
-      storeSession('super_admin', user.uid, data.name || user.displayName || 'Admin', { userEmail: user.email || '' }); 
-      navigate('/admin'); 
-      return; 
-    }
-    if (role === 'SCHOOL') { 
+    if (['SCHOOL', 'SCHOOL_ADMIN', 'SCHOOLADMIN', 'PARTNER_SCHOOL', 'INSTITUTION'].includes(role)) { 
       storeSession('school', user.uid, data.name || data.schoolName || user.displayName || 'School Partner', { 
         userEmail: user.email || '', 
         schoolId: data.schoolId || user.uid, 
         schoolName: data.schoolName || '' 
       }); 
       navigate('/portal/school'); 
+      return; 
+    }
+    if (role.includes('ADMIN')) { 
+      storeSession('super_admin', user.uid, data.name || user.displayName || 'Admin', { userEmail: user.email || '' }); 
+      navigate('/admin'); 
       return; 
     }
     if (['STAFF', 'TUTOR', 'INSTRUCTOR', 'FACULTY'].includes(role)) { 
@@ -379,6 +379,22 @@ const SecurePortalLogin: React.FC = () => {
 
     let activeUser: any = null;
     const hasExistingAuthLink = Boolean(studentData.firebaseUid || studentData.userId || isRealEmail);
+    const resolveFallbackStudentAuthUser = () => {
+      const current = auth.currentUser;
+      if (
+        current &&
+        (current.uid === studentData.firebaseUid ||
+          current.uid === studentData.userId ||
+          (current.email && current.email.toLowerCase() === effectiveAuthEmail.toLowerCase()))
+      ) {
+        return current;
+      }
+      return {
+        uid: studentData.firebaseUid || studentData.userId || studentDocId,
+        email: effectiveAuthEmail,
+        displayName: resolvedUsername,
+      };
+    };
 
     try {
       if (!hasExistingAuthLink) {
@@ -399,7 +415,7 @@ const SecurePortalLogin: React.FC = () => {
             const cred4 = await createUserWithEmailAndPassword(auth, uniqueEmail, effectivePassword);
             activeUser = cred4.user;
           } catch {
-            activeUser = auth.currentUser || { uid: studentData.firebaseUid || studentDocId, email: effectiveAuthEmail, displayName: resolvedUsername };
+            activeUser = resolveFallbackStudentAuthUser();
           }
         }
       } else if (err1.code === 'auth/user-not-found' || err1.code === 'auth/invalid-credential' || err1.code === 'auth/invalid-login-credentials') {
@@ -413,10 +429,10 @@ const SecurePortalLogin: React.FC = () => {
               const cred4 = await createUserWithEmailAndPassword(auth, uniqueEmail, effectivePassword);
               activeUser = cred4.user;
             } catch {
-              activeUser = auth.currentUser || { uid: studentData.firebaseUid || studentDocId, email: effectiveAuthEmail, displayName: resolvedUsername };
+              activeUser = resolveFallbackStudentAuthUser();
             }
           } else {
-            activeUser = auth.currentUser || { uid: studentData.firebaseUid || studentDocId, email: effectiveAuthEmail, displayName: resolvedUsername };
+            activeUser = resolveFallbackStudentAuthUser();
           }
         }
       } else if (err1.code === 'auth/wrong-password') {
@@ -425,15 +441,15 @@ const SecurePortalLogin: React.FC = () => {
           const cred4 = await createUserWithEmailAndPassword(auth, uniqueEmail, effectivePassword);
           activeUser = cred4.user;
         } catch {
-          activeUser = auth.currentUser || { uid: studentData.firebaseUid || studentDocId, email: effectiveAuthEmail, displayName: resolvedUsername };
+          activeUser = resolveFallbackStudentAuthUser();
         }
       } else {
-        activeUser = auth.currentUser || { uid: studentData.firebaseUid || studentDocId, email: effectiveAuthEmail, displayName: resolvedUsername };
+        activeUser = resolveFallbackStudentAuthUser();
       }
     }
 
     if (!activeUser) {
-      activeUser = { uid: studentData.firebaseUid || studentDocId, email: effectiveAuthEmail, displayName: resolvedUsername };
+      activeUser = resolveFallbackStudentAuthUser();
     }
 
     const studentName = studentData.fullName || studentData.studentName || studentData.name || resolvedUsername;
@@ -452,30 +468,42 @@ const SecurePortalLogin: React.FC = () => {
       studentRegistrationType: regType
     });
 
-    // Update users/{uid} profile so ProtectedRoute & App authorizations succeed
+    // Update users/{uid} profile so ProtectedRoute & App authorizations succeed,
+    // but never overwrite an existing non-student account (e.g., SCHOOL, ADMIN, STAFF, PARENT)
+    let canSyncStudentUid = true;
     try {
-      await setDoc(doc(db, 'users', activeUser.uid), {
-        uid: activeUser.uid,
-        name: studentName,
-        fullName: studentName,
-        email: effectiveAuthEmail,
-        role: 'STUDENT',
-        studentDocId: studentDocId || activeUser.uid,
-        username: resolvedUsername,
-        schoolId: schoolId || null,
-        schoolName: schoolName || '',
-        class: studentClass,
-        accountStatus: 'ACTIVE',
-        status: 'ACTIVE',
-        portalAccessEnabled: true,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      const existingUserSnap = await getDoc(doc(db, 'users', activeUser.uid)).catch(() => null);
+      const existingRole = String(existingUserSnap?.data()?.role || '').toUpperCase();
+      if (
+        existingUserSnap?.exists() &&
+        existingRole &&
+        !['STUDENT', 'SCHOLAR', 'CADET', 'INDIVIDUAL_STUDENT'].includes(existingRole)
+      ) {
+        canSyncStudentUid = false;
+      } else {
+        await setDoc(doc(db, 'users', activeUser.uid), {
+          uid: activeUser.uid,
+          name: studentName,
+          fullName: studentName,
+          email: effectiveAuthEmail,
+          role: 'STUDENT',
+          studentDocId: studentDocId || activeUser.uid,
+          username: resolvedUsername,
+          schoolId: schoolId || null,
+          schoolName: schoolName || '',
+          class: studentClass,
+          accountStatus: 'ACTIVE',
+          status: 'ACTIVE',
+          portalAccessEnabled: true,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
     } catch (uErr) {
       console.warn('User profile sync notice:', uErr);
     }
 
     // Link back only to existing student document(s) and keep school/class fields intact
-    if (studentDocId) {
+    if (studentDocId && canSyncStudentUid) {
       const syncFields: Record<string, any> = {
         firebaseUid: activeUser.uid,
         userId: activeUser.uid,
@@ -528,21 +556,31 @@ const SecurePortalLogin: React.FC = () => {
     let snap = await getDoc(doc(db, 'users', user.uid)); 
     let data: any = snap.exists() ? snap.data() || {} : {};
 
-    if (target === 'school' && (!snap.exists() || !data.schoolId || String(data.role || '').toUpperCase() !== 'SCHOOL')) {
-      const schoolSnap = await getDocs(query(collection(db, 'schools'), where('contactEmail', '==', email), limit(1))).catch(() => null);
-      if (schoolSnap && !schoolSnap.empty) {
-        const s = schoolSnap.docs[0]; 
+    const schoolRoles = ['SCHOOL', 'SCHOOL_ADMIN', 'SCHOOLADMIN', 'PARTNER_SCHOOL', 'INSTITUTION'];
+    if (target === 'school' && (!snap.exists() || !data.schoolId || !schoolRoles.includes(String(data.role || '').toUpperCase()))) {
+      const schoolLookups = await Promise.all([
+        getDocs(query(collection(db, 'schools'), where('contactEmail', '==', email), limit(1))).catch(() => null),
+        getDocs(query(collection(db, 'schools'), where('email', '==', email), limit(1))).catch(() => null),
+        getDocs(query(collection(db, 'schools'), where('adminEmail', '==', email), limit(1))).catch(() => null),
+        getDocs(query(collection(db, 'schools'), where('adminUid', '==', user.uid), limit(1))).catch(() => null),
+        getDocs(query(collection(db, 'schools'), where('userId', '==', user.uid), limit(1))).catch(() => null),
+      ]);
+      const matchedSchoolSnap = schoolLookups.find(res => res && !res.empty);
+      if (matchedSchoolSnap && !matchedSchoolSnap.empty) {
+        const s = matchedSchoolSnap.docs[0]; 
         const sd = s.data();
         await setDoc(doc(db, 'users', user.uid), { 
           uid: user.uid, 
-          name: user.displayName || sd.contactName || 'School Administrator', 
-          fullName: user.displayName || sd.contactName || 'School Administrator', 
+          name: user.displayName || sd.contactName || sd.name || 'School Administrator', 
+          fullName: user.displayName || sd.contactName || sd.name || 'School Administrator', 
           email, 
           role: 'SCHOOL', 
           schoolId: s.id, 
+          schoolCode: sd.schoolCode || '',
           schoolName: sd.name || '', 
           accountStatus: 'ACTIVE', 
           status: 'ACTIVE', 
+          portalAccessEnabled: true,
           updatedAt: serverTimestamp() 
         }, { merge: true });
         snap = await getDoc(doc(db, 'users', user.uid)); 
@@ -636,7 +674,7 @@ const SecurePortalLogin: React.FC = () => {
       throw new Error(`This account is ${String(data.accountStatus || data.status).toLowerCase()}. Please contact an administrator.`); 
     }
     const role = String(data.role || '').toUpperCase();
-    if (target === 'school' && role !== 'SCHOOL' && !role.includes('ADMIN')) { 
+    if (target === 'school' && !schoolRoles.includes(role) && !role.includes('ADMIN')) { 
       await signOut(auth).catch(() => undefined); 
       throw new Error('This account is not registered as an affiliated school administrator.'); 
     }
@@ -700,10 +738,12 @@ const SecurePortalLogin: React.FC = () => {
       });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        sent = true;
-        toast.success(data.message || 'Password reset link sent to your email.');
-        setError('Check your email inbox (and spam folder) for the password reset link.');
-        return;
+        if (!data.fallback) {
+          sent = true;
+          toast.success(data.message || 'Password reset link sent to your email.');
+          setError('Check your email inbox (and spam folder) for the password reset link.');
+          return;
+        }
       }
     } catch {
       // Netlify function unavailable in local dev preview, fall through to client Firebase
@@ -749,21 +789,31 @@ const SecurePortalLogin: React.FC = () => {
       }
       let snap = await getDoc(doc(db, 'users', user.uid)); 
       let data: any = snap.exists() ? snap.data() || {} : {};
-      if (portalMode === 'institute' && instituteTab === 'school' && (!snap.exists() || String(data.role || '').toUpperCase() !== 'SCHOOL')) {
-        const schoolSnap = await getDocs(query(collection(db, 'schools'), where('contactEmail', '==', email), limit(1))).catch(() => null);
-        if (schoolSnap && !schoolSnap.empty) {
-          const s = schoolSnap.docs[0]; 
+      const schoolRoles = ['SCHOOL', 'SCHOOL_ADMIN', 'SCHOOLADMIN', 'PARTNER_SCHOOL', 'INSTITUTION'];
+      if (portalMode === 'institute' && instituteTab === 'school' && (!snap.exists() || !schoolRoles.includes(String(data.role || '').toUpperCase()))) {
+        const schoolLookups = await Promise.all([
+          getDocs(query(collection(db, 'schools'), where('contactEmail', '==', email), limit(1))).catch(() => null),
+          getDocs(query(collection(db, 'schools'), where('email', '==', email), limit(1))).catch(() => null),
+          getDocs(query(collection(db, 'schools'), where('adminEmail', '==', email), limit(1))).catch(() => null),
+          getDocs(query(collection(db, 'schools'), where('adminUid', '==', user.uid), limit(1))).catch(() => null),
+          getDocs(query(collection(db, 'schools'), where('userId', '==', user.uid), limit(1))).catch(() => null),
+        ]);
+        const matchedSchoolSnap = schoolLookups.find(res => res && !res.empty);
+        if (matchedSchoolSnap && !matchedSchoolSnap.empty) {
+          const s = matchedSchoolSnap.docs[0]; 
           const sd = s.data();
           await setDoc(doc(db, 'users', user.uid), { 
             uid: user.uid, 
-            name: user.displayName || sd.contactName || 'School Administrator', 
-            fullName: user.displayName || sd.contactName || 'School Administrator', 
+            name: user.displayName || sd.contactName || sd.name || 'School Administrator', 
+            fullName: user.displayName || sd.contactName || sd.name || 'School Administrator', 
             email: user.email || email, 
             role: 'SCHOOL', 
             schoolId: s.id, 
+            schoolCode: sd.schoolCode || '',
             schoolName: sd.name || '', 
             accountStatus: 'ACTIVE', 
             status: 'ACTIVE', 
+            portalAccessEnabled: true,
             updatedAt: serverTimestamp() 
           }, { merge: true });
           snap = await getDoc(doc(db, 'users', user.uid)); 
@@ -856,7 +906,7 @@ const SecurePortalLogin: React.FC = () => {
         throw new Error('This account is currently disabled. Please contact an administrator.'); 
       }
       const role = String(data.role || '').toUpperCase();
-      if (portalMode === 'institute' && instituteTab === 'school' && role !== 'SCHOOL' && !role.includes('ADMIN')) { 
+      if (portalMode === 'institute' && instituteTab === 'school' && !schoolRoles.includes(role) && !role.includes('ADMIN')) { 
         await signOut(auth).catch(() => undefined); 
         throw new Error('This Google account is not registered as a school administrator.'); 
       }

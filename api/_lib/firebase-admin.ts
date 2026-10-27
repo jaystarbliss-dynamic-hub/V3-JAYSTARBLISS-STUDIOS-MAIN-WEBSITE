@@ -95,12 +95,11 @@ export function getAdminApp(): App | null {
     }
   }
 
-  // Fallback initialization only if running with ambient GCP credentials (Cloud Run / Cloud Functions / local ADC file)
+  // Fallback initialization only if running with explicit ADC file or matching GCP project
   const hasAmbientGcpCreds = Boolean(
     process.env.GOOGLE_APPLICATION_CREDENTIALS ||
-    process.env.K_SERVICE ||
-    process.env.FUNCTION_TARGET ||
-    process.env.FIREBASE_CONFIG
+    process.env.FIREBASE_CONFIG ||
+    process.env.GOOGLE_CLOUD_PROJECT === "jaystarbliss-studios"
   );
   if (hasAmbientGcpCreds) {
     try {

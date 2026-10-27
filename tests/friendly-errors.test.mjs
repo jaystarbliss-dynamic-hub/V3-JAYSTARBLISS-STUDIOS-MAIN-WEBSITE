@@ -42,6 +42,22 @@ test("invalid authentication credentials never leak user-not-found or wrong-pass
     getFriendlyErrorMessage(errInvalidCredential),
     "The username or password is incorrect. Check your details and try again."
   );
+
+  const errInvalidLoginCredentials = { code: "auth/invalid-login-credentials", message: "Firebase: Error (auth/invalid-login-credentials)." };
+  const loginCredClassification = classifyError(errInvalidLoginCredentials);
+  assert.equal(loginCredClassification.category, "authentication");
+  assert.equal(
+    getFriendlyErrorMessage(errInvalidLoginCredentials),
+    "The username or password is incorrect. Check your details and try again."
+  );
+
+  const errRoleMismatch = new Error("This account is not registered as an affiliated school administrator.");
+  const roleMismatchClassification = classifyError(errRoleMismatch);
+  assert.equal(roleMismatchClassification.category, "permission");
+  assert.equal(
+    getFriendlyErrorMessage(errRoleMismatch),
+    "This account is not registered as an affiliated school administrator."
+  );
 });
 
 test("expired sessions prompt the user to sign in again calmly", () => {
