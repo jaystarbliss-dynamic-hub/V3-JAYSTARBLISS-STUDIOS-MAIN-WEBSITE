@@ -924,11 +924,41 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
       id: studentOrOpts.studentId || studentOrOpts.id,
       uid: studentOrOpts.studentUid || studentOrOpts.uid,
       schoolId: studentOrOpts.studentSchoolId ?? studentOrOpts.schoolId,
-      className: studentOrOpts.studentClass ?? studentOrOpts.className,
+      schoolAliases: studentOrOpts.schoolAliases,
+      schoolName: studentOrOpts.schoolName,
+      className: studentOrOpts.studentClass ?? studentOrOpts.className ?? studentOrOpts.class,
     };
+  } else if (
+    studentOrOpts &&
+    workItemArg &&
+    typeof studentOrOpts === "object" &&
+    typeof workItemArg === "object" &&
+    ("questions" in studentOrOpts ||
+      "workType" in studentOrOpts ||
+      "deliveryMode" in studentOrOpts ||
+      "passcode" in studentOrOpts ||
+      "passcodeHash" in studentOrOpts ||
+      "recipientMode" in studentOrOpts ||
+      "targetClass" in studentOrOpts ||
+      "classIds" in studentOrOpts ||
+      "targetStudentIds" in studentOrOpts ||
+      "targetSchoolIds" in studentOrOpts) &&
+    !("questions" in workItemArg) &&
+    !("workType" in workItemArg) &&
+    !("deliveryMode" in workItemArg)
+  ) {
+    // Auto-correct callers that passed (workItem, student)
+    workItem = studentOrOpts;
+    student = workItemArg;
   }
 
   if (!student || !workItem) return false;
+
+  const rawStatus = String(workItem.status || "").trim().toLowerCase();
+  if (rawStatus === "draft" || rawStatus === "archived") {
+    return false;
+  }
+
   const studentIds = [student.id, student.uid, student.studentUid, student.studentId]
     .map(v => String(v ?? "").trim())
     .filter(Boolean);
@@ -936,6 +966,8 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
   const targetStudentIds = [
     ...(Array.isArray(workItem.targetStudentIds) ? workItem.targetStudentIds : []),
     ...(Array.isArray(workItem.assignedStudentIds) ? workItem.assignedStudentIds : []),
+    ...(Array.isArray(workItem.studentIds) ? workItem.studentIds : []),
+    ...(Array.isArray(workItem.studentUids) ? workItem.studentUids : []),
     ...(workItem.studentId ? [workItem.studentId] : []),
   ]
     .map(v => String(v ?? "").trim())
@@ -946,27 +978,46 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
   }
 
   const recipientMode = String(workItem.recipientMode || "").toUpperCase();
-  if (recipientMode === "PRIVATE_LEARNERS" && targetStudentIds.length > 0) {
+  const audienceType = String(workItem.audienceType || "").toLowerCase();
+  if (
+    (recipientMode === "PRIVATE_LEARNERS" || recipientMode === "PRIVATE" || audienceType === "individual") &&
+    targetStudentIds.length > 0
+  ) {
     return false;
   }
 
-  const studentSchoolId = String(student.schoolId || "").trim().toLowerCase();
+  const studentSchoolKeys = new Set(
+    [
+      student.schoolId,
+      student.schoolCode,
+      ...(Array.isArray(student.schoolAliases) ? student.schoolAliases : []),
+      resolvePartnerSchoolName(student.schoolName),
+    ]
+      .map(s => String(s ?? "").trim().toLowerCase())
+      .filter(s => s && s !== "private" && s !== "none")
+  );
+
   const workSchoolIds = [
     ...(Array.isArray(workItem.targetSchoolIds) ? workItem.targetSchoolIds : []),
     ...(Array.isArray(workItem.schoolIds) ? workItem.schoolIds : []),
     ...(workItem.schoolId ? [workItem.schoolId] : []),
+    ...(resolvePartnerSchoolName(workItem.schoolName) ? [resolvePartnerSchoolName(workItem.schoolName)] : []),
   ]
     .map(s => String(s ?? "").trim().toLowerCase())
     .filter(s => s && s !== "private" && s !== "none");
 
   if (workSchoolIds.length > 0 && !workSchoolIds.includes("all")) {
-    if (!studentSchoolId || !workSchoolIds.includes(studentSchoolId)) {
+    const matchesSchool = workSchoolIds.some(ws => studentSchoolKeys.has(ws));
+    if (!matchesSchool) {
       return false;
     }
   }
 
   const studentClass = student.className || student.grade || student.class || student.level || "";
-  const targetClasses = workItem.classIds || workItem.targetClass || workItem.className || [];
+  const targetClasses =
+    Array.isArray(workItem.classIds) && workItem.classIds.length > 0
+      ? workItem.classIds
+      : workItem.targetClass || workItem.className || workItem.class || [];
   return classesMatch(studentClass, targetClasses, { allowEmptyTarget: true });
 }
 

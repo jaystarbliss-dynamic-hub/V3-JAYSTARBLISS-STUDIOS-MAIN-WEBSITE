@@ -91,6 +91,7 @@ export default function StudentExaminations() {
     id: string;
     uid: string;
     schoolId: string;
+    schoolAliases: string[];
     schoolName: string;
     class: string;
     name: string;
@@ -98,122 +99,197 @@ export default function StudentExaminations() {
     id: "",
     uid: "",
     schoolId: "",
+    schoolAliases: [],
     schoolName: "",
     class: "",
     name: "",
   });
 
-  // 1. Resolve Current Student Identity (across users, individualStudents, and students)
-  useEffect(() => {
-    let isMounted = true;
-    const resolveStudent = async () => {
-      const user = auth.currentUser;
-      const cachedSchId = sessionStorage.getItem("schoolId") || "";
-      const cachedSchName = sessionStorage.getItem("schoolName") || "";
-      const cachedClass = sessionStorage.getItem("studentClass") || "";
-      const cachedDocId = sessionStorage.getItem("studentDocId") || "";
-      const cachedName = sessionStorage.getItem("userName") || "";
+  // 1. Resolve Current Student Identity & School Aliases (across users, individualStudents, students, and schools)
+  const resolveStudentContext = async () => {
+    const user = auth.currentUser;
+    const cachedSchId = sessionStorage.getItem("schoolId") || "";
+    const cachedSchName = sessionStorage.getItem("schoolName") || "";
+    const cachedClass = sessionStorage.getItem("studentClass") || "";
+    const cachedDocId =
+      sessionStorage.getItem("studentDocId") ||
+      localStorage.getItem("jaystar_cached_student_doc_id") ||
+      "";
+    const cachedUsername =
+      sessionStorage.getItem("studentUsername") ||
+      localStorage.getItem("jaystar_cached_student_username") ||
+      "";
+    const cachedName =
+      sessionStorage.getItem("userName") ||
+      localStorage.getItem("jaystar_cached_user_name") ||
+      "";
 
-      const resolvedUid = user?.uid || "";
-      let resolvedDocId = cachedDocId;
-      let resolvedSchId = cachedSchId;
-      let resolvedSchName = cachedSchName;
-      let resolvedClass = cachedClass;
-      let resolvedName = cachedName;
+    const resolvedUid =
+      user?.uid ||
+      sessionStorage.getItem("userId") ||
+      localStorage.getItem("jaystar_cached_user_id") ||
+      "";
+    let resolvedDocId = cachedDocId;
+    let resolvedSchId = cachedSchId;
+    let resolvedSchName = cachedSchName;
+    let resolvedClass = cachedClass;
+    let resolvedName = cachedName;
+    const aliasSet = new Set<string>();
+    const addAlias = (val: unknown) => {
+      const s = String(val ?? "").trim();
+      if (s && s !== "private" && s !== "none") aliasSet.add(s);
+    };
+    addAlias(cachedSchId);
 
-      if (user) {
-        try {
-          const userDocSnap = await getDoc(doc(db, "users", user.uid)).catch(() => null);
-          if (userDocSnap?.exists()) {
-            const udata = userDocSnap.data();
-            if (udata.studentDocId) resolvedDocId = udata.studentDocId;
-            if (udata.schoolId) resolvedSchId = udata.schoolId;
-            if (udata.schoolName) resolvedSchName = udata.schoolName;
-            if (udata.class || udata.grade || udata.className) {
-              resolvedClass = udata.class || udata.grade || udata.className;
-            }
-            if (udata.name || udata.fullName) resolvedName = udata.name || udata.fullName;
+    try {
+      if (resolvedUid) {
+        const userDocSnap = await getDoc(doc(db, "users", resolvedUid)).catch(() => null);
+        if (userDocSnap?.exists()) {
+          const udata = userDocSnap.data();
+          if (udata.studentDocId) resolvedDocId = udata.studentDocId;
+          if (udata.schoolId) {
+            resolvedSchId = udata.schoolId;
+            addAlias(udata.schoolId);
           }
-
-          const populateFromStudentDoc = (sData: any, docId: string) => {
-            if (!resolvedDocId) resolvedDocId = docId;
-            if (sData.class || sData.grade || sData.className) {
-              resolvedClass = sData.class || sData.grade || sData.className;
-            }
-            if (sData.schoolId) resolvedSchId = sData.schoolId;
-            if (sData.schoolName) resolvedSchName = sData.schoolName;
-            if (sData.fullName || sData.studentName || sData.name) {
-              resolvedName = sData.fullName || sData.studentName || sData.name;
-            }
-          };
-
-          if (!resolvedClass || !resolvedSchId) {
-            if (resolvedDocId) {
-              const [indSnap, stdSnap] = await Promise.all([
-                getDoc(doc(db, "individualStudents", resolvedDocId)).catch(() => null),
-                getDoc(doc(db, "students", resolvedDocId)).catch(() => null),
-              ]);
-              if (indSnap?.exists()) populateFromStudentDoc(indSnap.data(), indSnap.id);
-              else if (stdSnap?.exists()) populateFromStudentDoc(stdSnap.data(), stdSnap.id);
-            }
-
-            if (!resolvedClass || !resolvedSchId) {
-              const [indQ, stdQ] = await Promise.all([
-                getDocs(
-                  query(collection(db, "individualStudents"), where("userId", "==", user.uid))
-                ).catch(() => ({ docs: [] } as any)),
-                getDocs(query(collection(db, "students"), where("userId", "==", user.uid))).catch(
-                  () => ({ docs: [] } as any)
-                ),
-              ]);
-              if (indQ.docs?.length > 0) {
-                populateFromStudentDoc(indQ.docs[0].data(), indQ.docs[0].id);
-              } else if (stdQ.docs?.length > 0) {
-                populateFromStudentDoc(stdQ.docs[0].data(), stdQ.docs[0].id);
-              }
-            }
+          if (udata.schoolCode) addAlias(udata.schoolCode);
+          if (udata.schoolName) resolvedSchName = udata.schoolName;
+          if (udata.class || udata.grade || udata.className) {
+            resolvedClass = udata.class || udata.grade || udata.className;
           }
-
-          if (resolvedSchId && !resolvePartnerSchoolName(resolvedSchName)) {
-            const schSnap = await getDoc(doc(db, "schools", resolvedSchId)).catch(() => null);
-            if (schSnap?.exists()) {
-              const s = schSnap.data();
-              resolvedSchName = resolvePartnerSchoolName(s.name, s.schoolName);
-            }
-          }
-        } catch (e) {
-          console.warn("Could not load user profile doc:", e);
+          if (udata.name || udata.fullName) resolvedName = udata.name || udata.fullName;
         }
       }
 
-      const canonicalClass = normalizeClassName(resolvedClass) || resolvedClass;
-      if (isMounted) {
-        setStudentInfo({
-          id: resolvedDocId || resolvedUid,
-          uid: resolvedUid,
-          schoolId: resolvedSchId,
-          schoolName: resolvePartnerSchoolName(resolvedSchName),
-          class: canonicalClass,
-          name: resolvedName,
-        });
-      }
-    };
+      const populateFromStudentDoc = (sData: any, docId: string) => {
+        if (!resolvedDocId) resolvedDocId = docId;
+        if (sData.class || sData.grade || sData.className || sData.classLevel) {
+          resolvedClass = sData.class || sData.grade || sData.className || sData.classLevel;
+        }
+        if (sData.schoolId || sData.schoolDocId || sData.school_id) {
+          resolvedSchId = sData.schoolId || sData.schoolDocId || sData.school_id;
+          addAlias(sData.schoolId);
+          addAlias(sData.schoolDocId);
+          addAlias(sData.school_id);
+        }
+        if (sData.schoolCode || sData.school) {
+          addAlias(sData.schoolCode);
+          addAlias(sData.school);
+        }
+        if (sData.schoolName) resolvedSchName = sData.schoolName;
+        if (sData.fullName || sData.studentName || sData.name) {
+          resolvedName = sData.fullName || sData.studentName || sData.name;
+        }
+      };
 
-    void resolveStudent();
-    return () => {
-      isMounted = false;
+      if (resolvedDocId) {
+        const [indSnap, stdSnap] = await Promise.all([
+          getDoc(doc(db, "individualStudents", resolvedDocId)).catch(() => null),
+          getDoc(doc(db, "students", resolvedDocId)).catch(() => null),
+        ]);
+        if (indSnap?.exists()) populateFromStudentDoc(indSnap.data(), indSnap.id);
+        if (stdSnap?.exists()) populateFromStudentDoc(stdSnap.data(), stdSnap.id);
+      }
+
+      if ((!resolvedClass || !resolvedSchId) && resolvedUid) {
+        const [indByUser, stdByUser, indByFb, stdByFb] = await Promise.all([
+          getDocs(
+            query(collection(db, "individualStudents"), where("userId", "==", resolvedUid))
+          ).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, "students"), where("userId", "==", resolvedUid))).catch(
+            () => ({ docs: [] } as any)
+          ),
+          getDocs(
+            query(collection(db, "individualStudents"), where("firebaseUid", "==", resolvedUid))
+          ).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, "students"), where("firebaseUid", "==", resolvedUid))).catch(
+            () => ({ docs: [] } as any)
+          ),
+        ]);
+        [
+          ...(indByUser.docs || []),
+          ...(stdByUser.docs || []),
+          ...(indByFb.docs || []),
+          ...(stdByFb.docs || []),
+        ].forEach((d: any) => populateFromStudentDoc(d.data(), d.id));
+      }
+
+      if ((!resolvedClass || !resolvedSchId) && cachedUsername) {
+        const cleanUser = cachedUsername.toLowerCase().replace(/^@/, "").trim();
+        const [indByUname, stdByUname] = await Promise.all([
+          getDocs(
+            query(collection(db, "individualStudents"), where("username", "==", cleanUser))
+          ).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, "students"), where("username", "==", cleanUser))).catch(
+            () => ({ docs: [] } as any)
+          ),
+        ]);
+        const matchedDoc = indByUname.docs?.[0] || stdByUname.docs?.[0];
+        if (matchedDoc) {
+          populateFromStudentDoc(matchedDoc.data(), matchedDoc.id);
+        }
+      }
+
+      if (resolvedSchId) {
+        addAlias(resolvedSchId);
+        const schSnap = await getDoc(doc(db, "schools", resolvedSchId)).catch(() => null);
+        if (schSnap?.exists()) {
+          const s = schSnap.data();
+          addAlias(schSnap.id);
+          addAlias(s.schoolId);
+          addAlias(s.code);
+          addAlias(s.schoolCode);
+          resolvedSchName = resolvePartnerSchoolName(s.name, s.schoolName, resolvedSchName);
+        } else {
+          const byCodeSnap = await getDocs(
+            query(collection(db, "schools"), where("schoolId", "==", resolvedSchId))
+          ).catch(() => ({ docs: [] } as any));
+          if (byCodeSnap.docs?.length > 0) {
+            const d = byCodeSnap.docs[0];
+            const s = d.data();
+            resolvedSchId = d.id;
+            addAlias(d.id);
+            addAlias(s.schoolId);
+            addAlias(s.code);
+            addAlias(s.schoolCode);
+            resolvedSchName = resolvePartnerSchoolName(s.name, s.schoolName, resolvedSchName);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load user profile doc:", e);
+    }
+
+    const canonicalClass = normalizeClassName(resolvedClass) || resolvedClass;
+    const cleanSchoolName = resolvePartnerSchoolName(resolvedSchName);
+    if (cleanSchoolName) addAlias(cleanSchoolName);
+
+    if (resolvedSchId) sessionStorage.setItem("schoolId", resolvedSchId);
+    if (cleanSchoolName) sessionStorage.setItem("schoolName", cleanSchoolName);
+    if (canonicalClass) sessionStorage.setItem("studentClass", canonicalClass);
+    if (resolvedDocId) sessionStorage.setItem("studentDocId", resolvedDocId);
+
+    const ctx = {
+      id: resolvedDocId || resolvedUid,
+      uid: resolvedUid,
+      schoolId: resolvedSchId,
+      schoolAliases: Array.from(aliasSet),
+      schoolName: cleanSchoolName,
+      class: canonicalClass,
+      name: resolvedName,
     };
-  }, []);
+    setStudentInfo(ctx);
+    return ctx;
+  };
 
   // 2. Load Examinations with Canonical Class Matching & Upcoming Notifications
   const load = async () => {
     setLoading(true);
     setMessage(null);
     try {
-      let loadedExams: ExamCard[] = [];
-      let serverResponded = false;
+      const ctx = await resolveStudentContext();
+      const examMap = new Map<string, ExamCard>();
 
-      // 1. Try server endpoint
+      // 1. Try server endpoint (ignore fallback: true responses)
       try {
         if (auth.currentUser) {
           const token = await auth.currentUser.getIdToken();
@@ -222,15 +298,16 @@ export default function StudentExaminations() {
           });
           if (response.ok) {
             const data = await response.json().catch(() => ({}));
-            if (Array.isArray(data.exams)) {
-              loadedExams = data.exams.map((exam: any) => ({
-                ...exam,
-                workType: normalizeWorkType(exam.workType, exam),
-                deliveryMode: normalizeDeliveryMode(exam),
-                externalUrl: String(exam.externalUrl || "").trim(),
-                description: String(exam.description || exam.instructions || "").trim(),
-              }));
-              serverResponded = true;
+            if (!data.fallback && Array.isArray(data.exams)) {
+              data.exams.forEach((exam: any) => {
+                examMap.set(String(exam.id), {
+                  ...exam,
+                  workType: normalizeWorkType(exam.workType, exam),
+                  deliveryMode: normalizeDeliveryMode(exam),
+                  externalUrl: String(exam.externalUrl || "").trim(),
+                  description: String(exam.description || exam.instructions || "").trim(),
+                });
+              });
             }
           }
         }
@@ -238,107 +315,122 @@ export default function StudentExaminations() {
         console.warn("Server student-examinations notice, engaging direct Firestore fallback:", apiErr);
       }
 
-      // 2. Direct Firestore fallback
-      if (!serverResponded) {
-        const studentClass = studentInfo.class || sessionStorage.getItem("studentClass") || "";
-        const currentSchId = studentInfo.schoolId || sessionStorage.getItem("schoolId") || "";
-        const currentUid = auth.currentUser?.uid || "";
-        const currentStudentId = studentInfo.id || sessionStorage.getItem("studentDocId") || "";
+      // 2. Direct Firestore merge across jdiExams, schoolExams, and legacy exams
+      const studentClass = ctx.class || sessionStorage.getItem("studentClass") || "";
+      const currentSchId = ctx.schoolId || sessionStorage.getItem("schoolId") || "";
+      const currentUid = auth.currentUser?.uid || ctx.uid || "";
+      const currentStudentId = ctx.id || sessionStorage.getItem("studentDocId") || "";
 
-        const examDocsMap = new Map<string, any>();
-        const [jdiSnap, schoolExamsSnap, legacyExamsSnap] = await Promise.all([
-          getDocs(collection(db, "jdiExams")).catch(() => ({ docs: [] } as any)),
-          getDocs(collection(db, "schoolExams")).catch(() => ({ docs: [] } as any)),
-          getDocs(collection(db, "exams")).catch(() => ({ docs: [] } as any)),
-        ]);
+      const rawDocsMap = new Map<string, any>();
+      const [jdiSnap, schoolExamsSnap, legacyExamsSnap] = await Promise.all([
+        getDocs(collection(db, "jdiExams")).catch(() => ({ docs: [] } as any)),
+        getDocs(collection(db, "schoolExams")).catch(() => ({ docs: [] } as any)),
+        getDocs(collection(db, "exams")).catch(() => ({ docs: [] } as any)),
+      ]);
 
-        [...jdiSnap.docs, ...schoolExamsSnap.docs, ...legacyExamsSnap.docs].forEach((d: any) => {
-          examDocsMap.set(d.id, { id: d.id, ...d.data() });
-        });
+      [...jdiSnap.docs, ...schoolExamsSnap.docs, ...legacyExamsSnap.docs].forEach((d: any) => {
+        rawDocsMap.set(d.id, { id: d.id, ...d.data() });
+      });
 
-        const allRawExams = Array.from(examDocsMap.values());
+      const allRawExams = Array.from(rawDocsMap.values());
 
-        const classEligibleExams = allRawExams.filter((exam: any) =>
-          isStudentEligibleForWork(exam, {
+      const classEligibleExams = allRawExams.filter((exam: any) =>
+        isStudentEligibleForWork(
+          {
             id: currentStudentId,
             uid: currentUid,
             schoolId: currentSchId,
+            schoolAliases: ctx.schoolAliases,
+            schoolName: ctx.schoolName,
             class: studentClass,
-          })
-        );
+          },
+          exam
+        )
+      );
 
-        const attemptsSnap = await getDocs(collection(db, "jdiExamAttempts")).catch(
-          () => ({ docs: [] } as any)
-        );
-        const attemptsByExam: Record<string, any> = {};
+      const attemptsSnap = await getDocs(collection(db, "jdiExamAttempts")).catch(
+        () => ({ docs: [] } as any)
+      );
+      const attemptsByExam: Record<string, any> = {};
 
-        attemptsSnap.docs?.forEach((ad: any) => {
-          const a = ad.data();
-          if (a.studentUid === currentUid || a.studentId === currentStudentId) {
-            attemptsByExam[String(a.examId)] = {
-              attemptId: ad.id,
-              attemptStatus: a.status,
-              score: a.releasedAt ? a.score : undefined,
-              maxScore: a.maxScore,
-              releasedAt: a.releasedAt || undefined,
-            };
-          }
-        });
-
-        const now = Date.now();
-        loadedExams = classEligibleExams.map((exam: any) => {
-          const from = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
-          const until = exam.availableUntil
-            ? new Date(exam.availableUntil).getTime()
-            : Number.MAX_SAFE_INTEGER;
-          const computedStatus: "active" | "upcoming" | "completed" =
-            exam.status === "completed" || now >= until
-              ? "completed"
-              : now < from || exam.status === "scheduled"
-              ? "upcoming"
-              : "active";
-
-          const att = attemptsByExam[exam.id] || {};
-          const deliveryMode = normalizeDeliveryMode(exam);
-          const maxScore = computeExamMaxScore(exam, att);
-          const percentage =
-            att.releasedAt && typeof att.score === "number"
-              ? calculateScorePercentage(att.score, maxScore)
-              : undefined;
-
-          return {
-            id: exam.id,
-            title: exam.title || "Examination Assessment",
-            description: String(exam.description || exam.instructions || "").trim(),
-            subject: exam.subject || "Computer Technology",
-            workType: normalizeWorkType(exam.workType, exam),
-            dueDate: exam.dueDate || undefined,
-            isUngradedActivity: Boolean(exam.isUngradedActivity),
-            deliveryMode,
-            externalUrl: String(exam.externalUrl || "").trim(),
-            status: computedStatus,
-            durationMinutes:
-              deliveryMode === "EXTERNAL_LINK"
-                ? Number(exam.durationMinutes) || 0
-                : Number(exam.durationMinutes) || 30,
-            maxScore,
-            questionCount: Array.isArray(exam.questions) ? exam.questions.length : 0,
-            seriesName: exam.seriesName,
-            courseName: exam.courseName,
-            learningVideoUrl: exam.learningVideoUrl,
-            availableFrom: exam.availableFrom,
-            availableUntil: exam.availableUntil,
-            schoolId: exam.schoolId,
-            schoolName: resolvePartnerSchoolName(exam.schoolName, studentInfo.schoolName),
-            targetClass: normalizeClassName(exam.targetClass || exam.className || ""),
-            passcode: exam.passcode,
-            passcodeHash: exam.passcodeHash,
-            questions: exam.questions,
-            ...att,
-            percentage,
+      attemptsSnap.docs?.forEach((ad: any) => {
+        const a = ad.data();
+        if (
+          (currentUid && a.studentUid === currentUid) ||
+          (currentStudentId && a.studentId === currentStudentId)
+        ) {
+          attemptsByExam[String(a.examId)] = {
+            attemptId: ad.id,
+            attemptStatus: a.status,
+            score: a.releasedAt ? a.score : undefined,
+            maxScore: a.maxScore,
+            releasedAt: a.releasedAt || undefined,
           };
+        }
+      });
+
+      const now = Date.now();
+      classEligibleExams.forEach((exam: any) => {
+        const from = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
+        const until = exam.availableUntil
+          ? new Date(exam.availableUntil).getTime()
+          : Number.MAX_SAFE_INTEGER;
+        const computedStatus: "active" | "upcoming" | "completed" =
+          exam.status === "completed" || now >= until
+            ? "completed"
+            : now < from || exam.status === "scheduled"
+            ? "upcoming"
+            : "active";
+
+        const att = attemptsByExam[exam.id] || {};
+        const deliveryMode = normalizeDeliveryMode(exam);
+        const maxScore = computeExamMaxScore(exam, att);
+        const percentage =
+          att.releasedAt && typeof att.score === "number"
+            ? calculateScorePercentage(att.score, maxScore)
+            : undefined;
+
+        const existingServerItem = examMap.get(String(exam.id));
+        examMap.set(String(exam.id), {
+          id: exam.id,
+          title: exam.title || "Examination Assessment",
+          description: String(exam.description || exam.instructions || "").trim(),
+          subject: exam.subject || "Computer Technology",
+          workType: normalizeWorkType(exam.workType, exam),
+          dueDate: exam.dueDate || undefined,
+          isUngradedActivity: Boolean(exam.isUngradedActivity),
+          deliveryMode,
+          externalUrl: String(exam.externalUrl || exam.url || exam.link || "").trim(),
+          status: existingServerItem?.status || computedStatus,
+          durationMinutes:
+            deliveryMode === "EXTERNAL_LINK"
+              ? Number(exam.durationMinutes) || 0
+              : Number(exam.durationMinutes) || 30,
+          maxScore,
+          questionCount: Array.isArray(exam.questions) ? exam.questions.length : 0,
+          seriesName: exam.seriesName,
+          courseName: exam.courseName,
+          learningVideoUrl: exam.learningVideoUrl,
+          availableFrom: exam.availableFrom,
+          availableUntil: exam.availableUntil,
+          schoolId: exam.schoolId,
+          schoolName: resolvePartnerSchoolName(exam.schoolName, ctx.schoolName),
+          targetClass: normalizeClassName(exam.targetClass || exam.className || ""),
+          passcode: exam.passcode,
+          passcodeHash: exam.passcodeHash,
+          questions: exam.questions,
+          ...att,
+          ...(existingServerItem?.attemptId ? {
+            attemptId: existingServerItem.attemptId,
+            attemptStatus: existingServerItem.attemptStatus,
+            score: existingServerItem.score,
+            releasedAt: existingServerItem.releasedAt,
+            percentage: existingServerItem.percentage ?? percentage,
+          } : { percentage }),
         });
-      }
+      });
+
+      const loadedExams = Array.from(examMap.values());
 
       // Load student's examination notifications
       if (auth.currentUser) {
@@ -369,7 +461,7 @@ export default function StudentExaminations() {
 
   useEffect(() => {
     void load();
-  }, [studentInfo.schoolId, studentInfo.class]);
+  }, []);
 
   const filtered = useMemo(
     () =>

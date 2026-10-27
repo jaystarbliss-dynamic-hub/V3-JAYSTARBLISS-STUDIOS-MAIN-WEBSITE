@@ -365,10 +365,12 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             encodeURIComponent(schoolId || "");
           const r = await fetch(url, { headers: { Authorization: "Bearer " + token } });
           if (r.ok) {
-            const d = await r.json();
-            if (Array.isArray(d.exams)) loadedExams = d.exams;
-            if (Array.isArray(d.attempts)) loadedAttempts = d.attempts;
-            serverResponded = true;
+            const d = await r.json().catch(() => ({}));
+            if (!d.fallback && Array.isArray(d.exams)) {
+              loadedExams = d.exams;
+              if (Array.isArray(d.attempts)) loadedAttempts = d.attempts;
+              serverResponded = true;
+            }
           }
         }
       } catch (err) {

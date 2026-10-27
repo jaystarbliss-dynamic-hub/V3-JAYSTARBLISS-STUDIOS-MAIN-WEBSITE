@@ -49,6 +49,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
 import { isStudentClassMatch } from '../../utils/classMatching';
+import { isStudentEligibleForWork, normalizeWorkType } from '../../lib/classes';
 import {
   generateModuleCertificatePdf,
   type ModuleCertificateData,
@@ -134,8 +135,11 @@ interface ExamItem {
   link?: string;
   url?: string;
   subject?: string;
+  workType?: string;
+  status?: string;
   dueDate?: string;
   duration?: string;
+  durationMinutes?: number;
   targetClass?: string;
   class?: string;
   passcodeProtected?: boolean;
@@ -242,17 +246,25 @@ export const StudentDashboard: React.FC = () => {
       let studentRecord: StudentInfo | null = null;
       let studentId = cachedStudentId || '';
 
-      // 1. Direct document query if ID available
+      // 1. Direct document query if ID available (merge students + individualStudents so partial stubs never mask school/class)
       if (cachedStudentId) {
         try {
-          const directDoc = await getDoc(doc(db, 'students', cachedStudentId));
-          if (directDoc.exists()) {
-            studentRecord = { id: directDoc.id, ...(directDoc.data() as object) } as StudentInfo;
-          } else {
-            const indivDoc = await getDoc(doc(db, 'individualStudents', cachedStudentId));
-            if (indivDoc.exists()) {
-              studentRecord = { id: indivDoc.id, ...(indivDoc.data() as object) } as StudentInfo;
-            }
+          const [directDoc, indivDoc] = await Promise.all([
+            getDoc(doc(db, 'students', cachedStudentId)).catch(() => null),
+            getDoc(doc(db, 'individualStudents', cachedStudentId)).catch(() => null),
+          ]);
+          if (directDoc?.exists() || indivDoc?.exists()) {
+            const stdData = (directDoc?.exists() ? directDoc.data() : {}) as Record<string, any>;
+            const indData = (indivDoc?.exists() ? indivDoc.data() : {}) as Record<string, any>;
+            studentRecord = {
+              id: cachedStudentId,
+              ...indData,
+              ...stdData,
+              schoolId: stdData.schoolId || indData.schoolId || sessionStorage.getItem('schoolId') || '',
+              schoolName: stdData.schoolName || indData.schoolName || sessionStorage.getItem('schoolName') || '',
+              class: stdData.class || stdData.grade || indData.class || indData.grade || cachedClass || '',
+              fullName: stdData.fullName || stdData.name || indData.fullName || indData.name || '',
+            } as StudentInfo;
           }
         } catch (e) {
           console.warn('Direct studentDoc lookup warning:', e);
@@ -594,17 +606,25 @@ export const StudentDashboard: React.FC = () => {
             ]
           : [];
 
-        const [pRes, pLink, rSnap, eSnap] = await Promise.all([
+        const [pRes, pLink, rSnap, eSnap, jdiExamsSnap, schoolExamsSnap] = await Promise.all([
           Promise.all(pResQueries),
           Promise.all(pLinkQueries),
           getDocs(query(collection(db, 'resources'), limit(25))).catch(() => ({ docs: [] } as any)),
-          getDocs(query(collection(db, 'exams'), limit(15))).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'exams'), limit(50))).catch(() => ({ docs: [] } as any)),
+          getDocs(collection(db, 'jdiExams')).catch(() => ({ docs: [] } as any)),
+          getDocs(collection(db, 'schoolExams')).catch(() => ({ docs: [] } as any)),
         ]);
 
         personalResourceResults = pRes;
         personalLinkResults = pLink;
         resourceSnapshot = rSnap;
-        examSnapshot = eSnap;
+        examSnapshot = {
+          docs: [
+            ...(jdiExamsSnap.docs || []),
+            ...(schoolExamsSnap.docs || []),
+            ...(eSnap.docs || []),
+          ],
+        };
       } catch (rErr) {
         console.warn('Resources & schedules fetch warning:', rErr);
       }
@@ -701,11 +721,42 @@ export const StudentDashboard: React.FC = () => {
       setClassResources(classList);
       setGeneralResources(generalList);
 
-      const examList: ExamItem[] = (examSnapshot.docs || []).map((examDoc: any) => ({
-        id: examDoc.id,
-        ...examDoc.data(),
-      } as ExamItem));
-      setExams(examList);
+      const examMap = new Map<string, ExamItem>();
+      const studentSchoolAliases = [
+        activeSchoolId,
+        studentRecord.schoolId,
+        studentRecord.schoolCode,
+        studentRecord.schoolName,
+        studentRecord.school,
+        sessionStorage.getItem('schoolId'),
+        sessionStorage.getItem('schoolName'),
+      ]
+        .map((v) => String(v || '').trim())
+        .filter(Boolean);
+
+      (examSnapshot.docs || []).forEach((examDoc: any) => {
+        const raw = examDoc.data() || {};
+        if (
+          isStudentEligibleForWork(
+            {
+              id: currentStudentId,
+              uid: currentUid,
+              schoolId: activeSchoolId || '',
+              schoolAliases: studentSchoolAliases,
+              schoolName: studentRecord?.schoolName || '',
+              class: assignedClass,
+            },
+            raw
+          )
+        ) {
+          examMap.set(examDoc.id, {
+            id: examDoc.id,
+            ...raw,
+            workType: normalizeWorkType(raw.workType, raw),
+          } as ExamItem);
+        }
+      });
+      setExams(Array.from(examMap.values()));
 
       // Student verified modules (for certificates)
       try {
@@ -1286,6 +1337,76 @@ export const StudentDashboard: React.FC = () => {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+          </section>
+
+          {/* 🧪 ASSIGNED TESTS, EXAMINATIONS & ASSESSMENTS SECTION */}
+          <section className="rounded-2xl bg-white dark:bg-slate-900 p-5 sm:p-6 border border-slate-200/90 dark:border-slate-800 shadow-xs">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <FileText size={18} className="text-brand-red" /> Assigned Tests, Examinations &amp; Assessments ({exams.length})
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  Class tests, formal examinations, and interactive learning activities assigned to your class or account.
+                </p>
+              </div>
+              <Link
+                to="/portal/student/assessments"
+                className="text-xs font-black text-brand-red inline-flex items-center gap-1 hover:underline"
+              >
+                Open Assessments &amp; Work <ArrowRight size={13} />
+              </Link>
+            </div>
+
+            {exams.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-5 text-center space-y-1.5">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">No active tests or examinations right now</p>
+                <p className="text-[11px] text-slate-500">
+                  Any test, quiz, activity, or examination assigned to your class will appear here and in your Assessments &amp; Work tab.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {exams.slice(0, 6).map((ex) => (
+                  <div
+                    key={ex.id}
+                    className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900/80 p-4 flex flex-col justify-between shadow-xs hover:border-brand-red/40 transition-colors gap-3"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-red-50 dark:bg-red-950/60 px-2 py-0.5 text-[9px] font-black uppercase text-brand-red dark:text-red-300">
+                          {ex.workType || 'ASSESSMENT'}
+                        </span>
+                        {ex.targetClass && (
+                          <span className="text-[10px] font-bold text-slate-500">
+                            {ex.targetClass}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="mt-2 text-sm font-black text-slate-900 dark:text-white line-clamp-1">
+                        {ex.title}
+                      </h4>
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        {ex.subject || 'Computer Technology'}
+                        {ex.durationMinutes ? ` • ${ex.durationMinutes} mins` : ''}
+                      </p>
+                    </div>
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        Assigned to your class
+                      </span>
+                      <Link
+                        to="/portal/student/assessments"
+                        className="px-3.5 py-1.5 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-black inline-flex items-center gap-1.5 transition-all shadow-xs"
+                      >
+                        <span>Open Assessment</span>
+                        <ArrowRight size={12} />
+                      </Link>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </section>

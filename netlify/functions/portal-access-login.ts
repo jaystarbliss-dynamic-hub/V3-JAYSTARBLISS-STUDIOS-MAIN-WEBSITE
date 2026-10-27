@@ -356,7 +356,11 @@ export const handler: Handler = async (event) => {
     if (role === "student") {
       const dbs = getAdminDatabases();
       if (dbs.length === 0) {
-        return { statusCode: 500, body: JSON.stringify({ error: "Firebase Admin is not configured." }) };
+        return {
+          statusCode: 200,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          body: JSON.stringify({ fallback: true, error: "Direct client resolver active." }),
+        };
       }
 
       let candidate: StudentLoginCandidate | null = null;

@@ -600,4 +600,51 @@ test("creates immutable agreement version snapshots and enforces strict recipien
   );
 });
 
+test("isStudentEligibleForWork handles both (student, exam) and (exam, student) argument orders, school aliases, and excludes drafts", () => {
+  const publishedTest = {
+    id: "test-grade-5",
+    title: "Grade 5 Coding Test",
+    workType: "TEST",
+    deliveryMode: "NATIVE",
+    status: "active",
+    schoolId: "sch-doc-id-123",
+    schoolName: "Safari Explorer Montessori School",
+    targetClass: "Grade 5",
+    classIds: ["Grade 5"],
+    questions: [{ id: "q1", prompt: "What is HTML?", points: 2 }],
+  };
+
+  const studentWithAlias = {
+    id: "stu-101",
+    uid: "uid-101",
+    schoolId: "SAFARI-CODE-01",
+    schoolAliases: ["SAFARI-CODE-01", "sch-doc-id-123"],
+    schoolName: "Safari Explorer Montessori School",
+    class: "Basic 5",
+  };
+
+  // Standard (student, workItem) call order
+  assert.equal(isStudentEligibleForWork(studentWithAlias, publishedTest), true);
+
+  // Reversed (workItem, student) call order
+  assert.equal(isStudentEligibleForWork(publishedTest, studentWithAlias), true);
+
+  // Student in different class should not see Grade 5 test
+  assert.equal(
+    isStudentEligibleForWork({ ...studentWithAlias, class: "Grade 8" }, publishedTest),
+    false
+  );
+
+  // Draft and archived exams must never be visible to students
+  assert.equal(
+    isStudentEligibleForWork(studentWithAlias, { ...publishedTest, status: "draft" }),
+    false
+  );
+  assert.equal(
+    isStudentEligibleForWork(studentWithAlias, { ...publishedTest, status: "archived" }),
+    false
+  );
+});
+
+
 

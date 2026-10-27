@@ -15,6 +15,7 @@ import {
   resolvePartnerSchoolName,
   normalizeDeliveryMode,
   validateExamCreationPayload,
+  isStudentEligibleForWork,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -70,23 +71,56 @@ async function caller(event: any) {
   return { uid: decoded.uid, email: String(decoded.email || user.email || "").toLowerCase(), role: norm(user.role), user };
 }
 
-async function getStudent(uid: string, userDoc?: Record<string, any>) {
+async function getStudent(uid: string, userDoc?: Record<string, any>): Promise<{ id: string; data: Record<string, any> } | null> {
   const studentDocId = String(userDoc?.studentDocId || "").trim();
+  const mergeStudentFields = (primary: Record<string, any>, secondary: Record<string, any> = {}): Record<string, any> => ({
+    ...secondary,
+    ...primary,
+    schoolId: primary.schoolId || secondary.schoolId || userDoc?.schoolId || "",
+    schoolName: primary.schoolName || secondary.schoolName || userDoc?.schoolName || "",
+    class:
+      primary.class ||
+      primary.className ||
+      primary.grade ||
+      secondary.class ||
+      secondary.className ||
+      secondary.grade ||
+      userDoc?.class ||
+      userDoc?.className ||
+      "",
+    fullName:
+      primary.fullName ||
+      primary.studentName ||
+      primary.name ||
+      secondary.fullName ||
+      secondary.studentName ||
+      secondary.name ||
+      userDoc?.fullName ||
+      userDoc?.name ||
+      "",
+  });
+
   if (studentDocId) {
-    for (const collectionName of ["individualStudents", "students"]) {
-      const snap = await adminDb.collection(collectionName).doc(studentDocId).get();
-      if (snap.exists) return { id: snap.id, data: snap.data() || {} };
+    const [indSnap, stdSnap] = await Promise.all([
+      adminDb.collection("individualStudents").doc(studentDocId).get().catch(() => null),
+      adminDb.collection("students").doc(studentDocId).get().catch(() => null),
+    ]);
+    if (stdSnap?.exists || indSnap?.exists) {
+      return {
+        id: studentDocId,
+        data: mergeStudentFields(stdSnap?.data() || {}, indSnap?.data() || {}),
+      };
     }
   }
-  for (const collectionName of ["individualStudents", "students"]) {
+  for (const collectionName of ["students", "individualStudents"]) {
     const direct = await adminDb.collection(collectionName).doc(uid).get();
-    if (direct.exists) return { id: direct.id, data: direct.data() || {} };
+    if (direct.exists) return { id: direct.id, data: mergeStudentFields(direct.data() || {}) };
   }
-  for (const collectionName of ["individualStudents", "students"]) {
+  for (const collectionName of ["students", "individualStudents"]) {
     const q = await adminDb.collection(collectionName).where("firebaseUid", "==", uid).limit(1).get();
-    if (!q.empty) return { id: q.docs[0].id, data: q.docs[0].data() };
+    if (!q.empty) return { id: q.docs[0].id, data: mergeStudentFields(q.docs[0].data()) };
     const q2 = await adminDb.collection(collectionName).where("userId", "==", uid).limit(1).get();
-    if (!q2.empty) return { id: q2.docs[0].id, data: q2.docs[0].data() };
+    if (!q2.empty) return { id: q2.docs[0].id, data: mergeStudentFields(q2.docs[0].data()) };
   }
   if (userDoc && isAssessmentStudentRole(userDoc.role)) {
     return { id: studentDocId || uid, data: userDoc };
@@ -363,20 +397,35 @@ export const handler: Handler = async event => {
       ).trim();
       const studentClassNormalized = normalizeClassName(studentClassRaw);
 
-      const [schoolExams, individualById, individualByUid] = await Promise.all([
-        schoolId ? adminDb.collection("jdiExams").where("schoolId", "==", schoolId).limit(150).get() : Promise.resolve(null),
-        adminDb.collection("jdiExams").where("studentIds", "array-contains", student.id).limit(100).get(),
-        adminDb.collection("jdiExams").where("studentUids", "array-contains", c.uid).limit(100).get(),
+      const [jdiSnap, schoolExamsSnap] = await Promise.all([
+        adminDb.collection("jdiExams").limit(250).get().catch(() => null),
+        adminDb.collection("schoolExams").limit(250).get().catch(() => null),
       ]);
 
       const examDocs = new Map<string, any>();
-      for (const snap of [schoolExams, individualById, individualByUid]) {
+      for (const snap of [jdiSnap, schoolExamsSnap]) {
         snap?.docs.forEach(d => examDocs.set(d.id, d));
       }
 
       const resolvedSchoolName = schoolId
         ? await resolveSchoolNameById(schoolId, student.data.schoolName || c.user.schoolName || "")
         : "";
+
+      const schoolAliases = new Set<string>([schoolId, resolvedSchoolName].filter(Boolean));
+      if (schoolId) {
+        try {
+          const schDoc = await adminDb.collection("schools").doc(schoolId).get();
+          if (schDoc.exists) {
+            const sd = schDoc.data() || {};
+            [schDoc.id, sd.schoolId, sd.code, sd.schoolCode, sd.name, sd.schoolName]
+              .map(v => String(v || "").trim())
+              .filter(Boolean)
+              .forEach(v => schoolAliases.add(v));
+          }
+        } catch {
+          // ignore
+        }
+      }
 
       const now = Date.now();
       const rows = Array.from(examDocs.values())
@@ -388,31 +437,23 @@ export const handler: Handler = async event => {
             id: doc.id,
             ...metadata,
             schoolName: resolvePartnerSchoolName(raw.schoolName, resolvedSchoolName),
-            _targetStudentIds: Array.isArray(raw.studentIds) ? raw.studentIds.map(String) : [],
-            _targetStudentUids: Array.isArray(raw.studentUids) ? raw.studentUids.map(String) : [],
+            _raw: raw,
             _rawStatus: String(raw.status || "draft"),
           };
         })
-        .filter((exam: any) => {
-          if (exam._rawStatus === "draft" || exam._rawStatus === "archived") return false;
-          const individual = exam.audienceType === "individual";
-          const directlyAssigned =
-            exam._targetStudentIds.includes(student.id) || exam._targetStudentUids.includes(c.uid);
-          if (individual || directlyAssigned) return directlyAssigned;
-
-          const classes =
-            Array.isArray(exam.classIds) && exam.classIds.length
-              ? exam.classIds.map(String)
-              : exam.targetClass
-                ? [String(exam.targetClass)]
-                : [];
-          const schoolEligible = Boolean(
-            schoolId &&
-              exam.schoolId === schoolId &&
-              classesMatch(studentClassNormalized || studentClassRaw, classes, { allowEmptyTarget: true })
-          );
-          return schoolEligible;
-        })
+        .filter((exam: any) =>
+          isStudentEligibleForWork(
+            {
+              id: student.id,
+              uid: c.uid,
+              schoolId,
+              schoolAliases: Array.from(schoolAliases),
+              schoolName: resolvedSchoolName,
+              class: studentClassNormalized || studentClassRaw,
+            },
+            exam._raw
+          )
+        )
         .map((exam: any) => {
           const from = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
           const until = exam.availableUntil ? new Date(exam.availableUntil).getTime() : Number.MAX_SAFE_INTEGER;
@@ -424,7 +465,7 @@ export const handler: Handler = async event => {
                 : exam._rawStatus === "active"
                   ? "active"
                   : "upcoming";
-          const { _targetStudentIds, _targetStudentUids, _rawStatus, ...safeExam } = exam;
+          const { _raw, _rawStatus, ...safeExam } = exam;
           return { ...safeExam, rawStatus: _rawStatus, status };
         });
 
@@ -483,8 +524,12 @@ export const handler: Handler = async event => {
       const student = await getStudent(c.uid, c.user);
       if (!student) return json(403, { error: "This account is not assigned to a student record." });
 
-      const ref = adminDb.collection("jdiExams").doc(examId);
-      const examSnap = await ref.get();
+      let ref = adminDb.collection("jdiExams").doc(examId);
+      let examSnap = await ref.get();
+      if (!examSnap.exists) {
+        ref = adminDb.collection("schoolExams").doc(examId);
+        examSnap = await ref.get();
+      }
       if (!examSnap.exists) return json(403, { error: "The passcode could not be validated for this examination." });
       const exam = examSnap.data() || {};
       const now = Date.now();
@@ -493,12 +538,6 @@ export const handler: Handler = async event => {
       const schoolId = String(
         student.data.schoolId || student.data.school_id || student.data.schoolDocId || c.user.schoolId || ""
       ).trim();
-      const classes =
-        Array.isArray(exam.classIds) && exam.classIds.length
-          ? exam.classIds.map(String)
-          : exam.targetClass
-            ? [String(exam.targetClass)]
-            : [];
       const studentClass = String(
         student.data.class ||
           student.data.className ||
@@ -510,11 +549,19 @@ export const handler: Handler = async event => {
           ""
       ).trim();
 
-      const assigned =
-        exam.audienceType === "individual"
-          ? (Array.isArray(exam.studentIds) && exam.studentIds.map(String).includes(student.id)) ||
-            (Array.isArray(exam.studentUids) && exam.studentUids.map(String).includes(c.uid))
-          : exam.schoolId === schoolId && classesMatch(studentClass, classes, { allowEmptyTarget: true });
+      const studentSchoolName = schoolId
+        ? await resolveSchoolNameById(schoolId, student.data.schoolName || c.user.schoolName || "")
+        : "";
+      const assigned = isStudentEligibleForWork(
+        {
+          id: student.id,
+          uid: c.uid,
+          schoolId,
+          schoolName: studentSchoolName,
+          class: studentClass,
+        },
+        exam
+      );
 
       const active =
         exam.status === "active" &&

@@ -271,6 +271,40 @@ const SecurePortalLogin: React.FC = () => {
           }
         }
       }
+
+      // Enrich studentData across both collections if studentDocId was resolved from a partial stub or users doc
+      if (studentDocId) {
+        const [stdCheck, indCheck] = await Promise.all([
+          getDoc(doc(db, 'students', studentDocId)).catch(() => null),
+          getDoc(doc(db, 'individualStudents', studentDocId)).catch(() => null),
+        ]);
+        const stdFields = stdCheck?.exists() ? stdCheck.data() : {};
+        const indFields = indCheck?.exists() ? indCheck.data() : {};
+        studentData = {
+          ...indFields,
+          ...stdFields,
+          ...studentData,
+          schoolId: studentData?.schoolId || stdFields?.schoolId || indFields?.schoolId || '',
+          schoolName: studentData?.schoolName || stdFields?.schoolName || indFields?.schoolName || '',
+          class:
+            studentData?.class ||
+            studentData?.grade ||
+            stdFields?.class ||
+            stdFields?.grade ||
+            indFields?.class ||
+            indFields?.grade ||
+            '',
+          fullName:
+            studentData?.fullName ||
+            studentData?.studentName ||
+            studentData?.name ||
+            stdFields?.fullName ||
+            stdFields?.name ||
+            indFields?.fullName ||
+            indFields?.name ||
+            '',
+        };
+      }
     } catch (lookupErr) {
       console.warn('Student lookup info:', lookupErr);
     }
@@ -344,34 +378,48 @@ const SecurePortalLogin: React.FC = () => {
     const effectivePassword = inputCodeClean.length >= 6 ? inputCodeClean : `${inputCodeClean}123456`;
 
     let activeUser: any = null;
+    const hasExistingAuthLink = Boolean(studentData.firebaseUid || studentData.userId || isRealEmail);
 
     try {
-      const cred = await signInWithEmailAndPassword(auth, effectiveAuthEmail, effectivePassword);
-      activeUser = cred.user;
+      if (!hasExistingAuthLink) {
+        const created = await createUserWithEmailAndPassword(auth, effectiveAuthEmail, effectivePassword);
+        activeUser = created.user;
+      } else {
+        const cred = await signInWithEmailAndPassword(auth, effectiveAuthEmail, effectivePassword);
+        activeUser = cred.user;
+      }
     } catch (err1: any) {
-      if (err1.code === 'auth/user-not-found' || err1.code === 'auth/invalid-credential' || err1.code === 'auth/invalid-login-credentials') {
+      if (err1.code === 'auth/email-already-in-use') {
+        try {
+          const cred = await signInWithEmailAndPassword(auth, effectiveAuthEmail, effectivePassword);
+          activeUser = cred.user;
+        } catch {
+          try {
+            const uniqueEmail = `std_${resolvedUsername}_${Date.now().toString(36)}@jaystarbliss-studios.firebaseapp.com`;
+            const cred4 = await createUserWithEmailAndPassword(auth, uniqueEmail, effectivePassword);
+            activeUser = cred4.user;
+          } catch {
+            activeUser = auth.currentUser || { uid: studentData.firebaseUid || studentDocId, email: effectiveAuthEmail, displayName: resolvedUsername };
+          }
+        }
+      } else if (err1.code === 'auth/user-not-found' || err1.code === 'auth/invalid-credential' || err1.code === 'auth/invalid-login-credentials') {
         try {
           const cred2 = await createUserWithEmailAndPassword(auth, effectiveAuthEmail, effectivePassword);
           activeUser = cred2.user;
         } catch (err2: any) {
           if (err2.code === 'auth/email-already-in-use') {
             try {
-              const cred3 = await signInWithEmailAndPassword(auth, effectiveAuthEmail, effectivePassword);
-              activeUser = cred3.user;
+              const uniqueEmail = `std_${resolvedUsername}_${Date.now().toString(36)}@jaystarbliss-studios.firebaseapp.com`;
+              const cred4 = await createUserWithEmailAndPassword(auth, uniqueEmail, effectivePassword);
+              activeUser = cred4.user;
             } catch {
-              try {
-                const uniqueEmail = `std_${resolvedUsername}_${Date.now().toString(36)}@jaystarbliss-studios.firebaseapp.com`;
-                const cred4 = await createUserWithEmailAndPassword(auth, uniqueEmail, effectivePassword);
-                activeUser = cred4.user;
-              } catch {
-                activeUser = auth.currentUser || { uid: studentData.firebaseUid || studentDocId, email: effectiveAuthEmail, displayName: resolvedUsername };
-              }
+              activeUser = auth.currentUser || { uid: studentData.firebaseUid || studentDocId, email: effectiveAuthEmail, displayName: resolvedUsername };
             }
           } else {
             activeUser = auth.currentUser || { uid: studentData.firebaseUid || studentDocId, email: effectiveAuthEmail, displayName: resolvedUsername };
           }
         }
-      } else if (err1.code === 'auth/email-already-in-use' || err1.code === 'auth/wrong-password') {
+      } else if (err1.code === 'auth/wrong-password') {
         try {
           const uniqueEmail = `std_${resolvedUsername}_${Date.now().toString(36)}@jaystarbliss-studios.firebaseapp.com`;
           const cred4 = await createUserWithEmailAndPassword(auth, uniqueEmail, effectivePassword);
@@ -426,12 +474,31 @@ const SecurePortalLogin: React.FC = () => {
       console.warn('User profile sync notice:', uErr);
     }
 
-    // Link back to students / individualStudents
+    // Link back only to existing student document(s) and keep school/class fields intact
     if (studentDocId) {
-      await Promise.all([
-        setDoc(doc(db, 'students', studentDocId), { firebaseUid: activeUser.uid, userId: activeUser.uid, portalAccessEnabled: true }, { merge: true }).catch(() => null),
-        setDoc(doc(db, 'individualStudents', studentDocId), { firebaseUid: activeUser.uid, userId: activeUser.uid, portalAccessEnabled: true }, { merge: true }).catch(() => null)
+      const syncFields: Record<string, any> = {
+        firebaseUid: activeUser.uid,
+        userId: activeUser.uid,
+        portalAccessEnabled: true,
+        ...(schoolId ? { schoolId } : {}),
+        ...(schoolName ? { schoolName } : {}),
+        ...(studentClass ? { class: studentClass } : {}),
+        ...(studentName ? { fullName: studentName } : {}),
+      };
+      const [stdSnap, indSnap] = await Promise.all([
+        getDoc(doc(db, 'students', studentDocId)).catch(() => null),
+        getDoc(doc(db, 'individualStudents', studentDocId)).catch(() => null),
       ]);
+      const updates: Promise<any>[] = [];
+      if (stdSnap?.exists()) {
+        updates.push(setDoc(doc(db, 'students', studentDocId), syncFields, { merge: true }).catch(() => null));
+      }
+      if (indSnap?.exists()) {
+        updates.push(setDoc(doc(db, 'individualStudents', studentDocId), syncFields, { merge: true }).catch(() => null));
+      }
+      if (updates.length > 0) {
+        await Promise.all(updates);
+      }
     }
 
     toast.success(`Welcome ${String(studentName).split(' ')[0]}! Logged in successfully.`);
