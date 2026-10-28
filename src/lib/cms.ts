@@ -333,6 +333,9 @@ export const CMS_PAGES: EditablePageConfig[] = [
 /**
  * Hook to retrieve live section data from Firestore with immediate default fallback
  */
+const CMS_CACHE_PREFIX = 'jdi_cms_section_v1_';
+const CMS_CACHE_TTL_MS = 15 * 60 * 1000;
+
 export function usePageSection<T extends Record<string, any>>(
   pageId: string,
   sectionId: string,
@@ -348,28 +351,61 @@ export function usePageSection<T extends Record<string, any>>(
   }, [defaultData]);
 
   useEffect(() => {
-    const docRef = doc(db, 'page_sections', `${pageId}_${sectionId}`);
-    
-    const unsubscribe = onSnapshot(
-      docRef,
-      (docSnap) => {
+    let isMounted = true;
+    const sectionKey = `${pageId}_${sectionId}`;
+    const cacheKey = `${CMS_CACHE_PREFIX}${sectionKey}`;
+
+    try {
+      const cachedRaw = sessionStorage.getItem(cacheKey);
+      if (cachedRaw) {
+        const parsed = JSON.parse(cachedRaw);
+        if (parsed && typeof parsed.ts === 'number' && Date.now() - parsed.ts < CMS_CACHE_TTL_MS) {
+          if (parsed.exists && parsed.data) {
+            setData({ ...defaultDataRef.current, ...parsed.data } as T);
+          } else {
+            setData(defaultDataRef.current);
+          }
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    const docRef = doc(db, 'page_sections', sectionKey);
+    getDoc(docRef)
+      .then((docSnap) => {
+        if (!isMounted) return;
         if (docSnap.exists()) {
           const fetchedData = docSnap.data();
           setData({ ...defaultDataRef.current, ...fetchedData } as T);
+          try {
+            sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), exists: true, data: fetchedData }));
+          } catch {
+            // ignore storage errors
+          }
         } else {
           setData(defaultDataRef.current);
+          try {
+            sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), exists: false, data: null }));
+          } catch {
+            // ignore storage errors
+          }
         }
         setLoading(false);
-      },
-      (err) => {
-        console.warn(`CMS Section load note for ${pageId}_${sectionId}:`, err.message);
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        console.warn(`CMS Section load note for ${sectionKey}:`, err.message);
         setError(err.message);
         setData(defaultDataRef.current);
         setLoading(false);
-      }
-    );
+      });
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+    };
   }, [pageId, sectionId]);
 
   return { data, loading, error };
@@ -383,7 +419,8 @@ export async function savePageSection(
   sectionId: string,
   data: Record<string, any>
 ): Promise<void> {
-  const docRef = doc(db, 'page_sections', `${pageId}_${sectionId}`);
+  const sectionKey = `${pageId}_${sectionId}`;
+  const docRef = doc(db, 'page_sections', sectionKey);
   await setDoc(
     docRef,
     {
@@ -394,6 +431,11 @@ export async function savePageSection(
     },
     { merge: true }
   );
+  try {
+    sessionStorage.removeItem(`${CMS_CACHE_PREFIX}${sectionKey}`);
+  } catch {
+    // ignore storage errors
+  }
 }
 
 /**

@@ -30,6 +30,11 @@ const TARGETS = [
     legacySchoolId: 'peniel',
   },
   {
+    email: 'peniellily@gmail.com',
+    names: ['Peniel Lily', 'Peniel Lily Montessori School'],
+    legacySchoolId: 'peniel',
+  },
+  {
     email: 'studentseasystars@gmail.com',
     names: ['Easy Stars Early Years Academy'],
     legacySchoolId: 'easystars',
@@ -41,7 +46,12 @@ const TARGETS = [
   },
   {
     email: 'sapphirestudent@gmail.com',
-    names: ['Sapphire Explorer Montessori School'],
+    names: ['Sapphire Explorer Montessori School', 'Sapphire Explorer School'],
+    legacySchoolId: 'sapphire',
+  },
+  {
+    email: 'sapphire@gmail.com',
+    names: ['Sapphire Explorer Montessori School', 'Sapphire Explorer School'],
     legacySchoolId: 'sapphire',
   },
 ];

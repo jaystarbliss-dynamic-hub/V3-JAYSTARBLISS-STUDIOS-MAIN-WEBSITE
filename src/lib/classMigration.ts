@@ -12,9 +12,11 @@ let lastMigrationRunAt = 0;
  * eliminating duplicate grades (e.g. "Grade 5, Grade 5").
  */
 export async function migrateAllFirestoreClasses(force = false): Promise<number> {
+  // Never run automatic 13-collection scans on normal page mounts to protect Firestore read quotas.
+  if (!force) return 0;
   const now = Date.now();
   if (migrationInProgress) return 0;
-  if (!force && now - lastMigrationRunAt < 60_000) return 0;
+  if (now - lastMigrationRunAt < 60_000) return 0;
 
   migrationInProgress = true;
   lastMigrationRunAt = now;

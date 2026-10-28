@@ -8,11 +8,11 @@ const firebaseConfig = {
   storageBucket: "jaystarbliss-studios.firebasestorage.app",
   messagingSenderId: "885364100276",
   appId: "1:885364100276:web:1159c4cbd9159aaa0e1be1",
-  firestoreDatabaseId: "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c"
+  firestoreDatabaseId: "(default)"
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-const db = initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId);
+const db = initializeFirestore(app, {});
 
 async function main() {
   console.log("Seeding parent accounts and students...");

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, onSnapshot, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { AlertTriangle, X, Radio, ArrowRight, ShieldAlert, Info, CheckCircle2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -32,27 +32,38 @@ export const MarqueeBanner: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
+    const CACHE_KEY = 'jaystar_banner_cache_v1';
+    const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.data && Date.now() - Number(parsed.ts || 0) < CACHE_TTL_MS) {
+          setConfig(prev => ({ ...prev, ...parsed.data }));
+          return;
+        }
+      }
+    } catch {
+      // Ignore storage parse issues
+    }
+
     const bannerRef = doc(db, 'settings', 'banner');
-
-    getDoc(bannerRef).then((snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as BannerConfig;
-        setConfig(prev => ({ ...prev, ...data }));
-      }
-    }).catch(err => {
-      console.warn('Banner doc fetch fallback error:', err);
-    });
-
-    const unsubscribe = onSnapshot(bannerRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data() as BannerConfig;
-        setConfig(prev => ({ ...prev, ...data }));
-      }
-    }, (error) => {
-      console.warn('Realtime banner subscription info:', error);
-    });
-
-    return () => unsubscribe();
+    getDoc(bannerRef)
+      .then((snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as BannerConfig;
+          setConfig(prev => ({ ...prev, ...data }));
+          try {
+            sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+          } catch {
+            // Ignore quota errors
+          }
+        }
+      })
+      .catch(() => {
+        // Fallback silently to DEFAULT_BANNER when offline or when free read quota is reached
+      });
   }, []);
 
   if (!config.enabled || isDismissed) {

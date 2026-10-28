@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../../lib/firebase';
+import { doc, getDoc, setDoc, collection, getDocs, getFirestore, serverTimestamp } from 'firebase/firestore';
+import { app, db, auth, LEGACY_NAMED_DATABASE_ID } from '../../lib/firebase';
 import { useTheme } from '../../contexts/ThemeContext';
 import { 
   Loader2, Save, AlertCircle, CheckCircle2, 
-  Radio, Mail, Send, Check, ShieldCheck, Sun, Moon, Eye, X 
+  Radio, Mail, Send, Check, ShieldCheck, Sun, Moon, Eye, X, Database, RefreshCw 
 } from 'lucide-react';
 import { PasswordResetEmailTemplate } from '../../components/email/PasswordResetEmailTemplate';
 
@@ -19,6 +19,8 @@ const AdminSettings: React.FC = () => {
   const [sendingTestEmail, setSendingTestEmail] = useState(false);
   const [testEmailResult, setTestEmailResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showEmailPreview, setShowEmailPreview] = useState(false);
+  const [syncingLegacyDb, setSyncingLegacyDb] = useState(false);
+  const [legacySyncResult, setLegacySyncResult] = useState<{ success: boolean; message: string } | null>(null);
   
   const [settings, setSettings] = useState({
     companyName: 'Jaystarbliss Studios',
@@ -213,6 +215,74 @@ const AdminSettings: React.FC = () => {
       });
     } finally {
       setSendingTestEmail(false);
+    }
+  };
+
+  const handleSyncFromLegacyDatabase = async () => {
+    setSyncingLegacyDb(true);
+    setLegacySyncResult(null);
+    try {
+      const legacyDb = getFirestore(app, LEGACY_NAMED_DATABASE_ID);
+      const collectionsToSync = [
+        'jdiExams',
+        'schoolExams',
+        'jdiExamAttempts',
+        'jdiQuestionBank',
+        'users',
+        'schools',
+        'students',
+        'individualStudents',
+        'documentHeaderConfigs',
+        'settings',
+        'classSchedules',
+        'notifications',
+        'jdiNotifications'
+      ];
+      let totalCopied = 0;
+      const summaryParts: string[] = [];
+
+      for (const colName of collectionsToSync) {
+        let snap;
+        try {
+          snap = await getDocs(collection(legacyDb, colName));
+        } catch (colErr) {
+          try {
+            const { getDocsFromCache } = await import('firebase/firestore');
+            snap = await getDocsFromCache(collection(legacyDb, colName));
+          } catch {
+            throw colErr;
+          }
+        }
+        if (!snap || snap.empty) continue;
+        let colCount = 0;
+        for (const docSnap of snap.docs) {
+          await setDoc(doc(db, colName, docSnap.id), docSnap.data(), { merge: true });
+          colCount++;
+          totalCopied++;
+        }
+        if (colCount > 0) {
+          summaryParts.push(`${colName}: ${colCount}`);
+        }
+      }
+
+      setLegacySyncResult({
+        success: true,
+        message:
+          totalCopied > 0
+            ? `Synced ${totalCopied} documents from legacy AI Studio DB into (default) [${summaryParts.join(', ')}].`
+            : 'Connected to legacy AI Studio DB — no additional documents needed syncing.'
+      });
+    } catch (err: any) {
+      const msg = String(err?.message || err || '');
+      const isQuota = msg.toLowerCase().includes('quota') || err?.code === 'resource-exhausted';
+      setLegacySyncResult({
+        success: false,
+        message: isQuota
+          ? 'The legacy AI Studio database is still in its daily read cooldown (resets at midnight Pacific Time). Your active (default) Standard Edition database is already live and serving all students and assessments.'
+          : `Unable to read legacy database: ${msg}`
+      });
+    } finally {
+      setSyncingLegacyDb(false);
     }
   };
 
@@ -876,6 +946,51 @@ const AdminSettings: React.FC = () => {
           </button>
         </div>
       </form>
+
+      {/* Primary Database Status & Legacy Sync */}
+      <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-800 p-6 md:p-7 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <Database size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                Primary Firestore Database: <span className="font-mono text-emerald-600 dark:text-emerald-400">(default)</span>
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Standard Edition (`nam5`) — Unrestricted by AI Shared Quota lock. Active for all students, tutors, and schools.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleSyncFromLegacyDatabase}
+            disabled={syncingLegacyDb}
+            className="px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition-colors"
+          >
+            {syncingLegacyDb ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            <span>{syncingLegacyDb ? 'Syncing Legacy Records...' : 'Sync Legacy AI Studio DB → (default)'}</span>
+          </button>
+        </div>
+
+        {legacySyncResult && (
+          <div
+            className={`p-3.5 rounded-xl text-xs flex items-start gap-2.5 ${
+              legacySyncResult.success
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                : 'bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+            }`}
+          >
+            {legacySyncResult.success ? (
+              <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <AlertCircle size={16} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+            )}
+            <p className="leading-relaxed font-medium">{legacySyncResult.message}</p>
+          </div>
+        )}
+      </section>
     </div>
   );
 };

@@ -1051,8 +1051,27 @@ export function parseBulkStudentText(rawText, defaultProgramme = "Digital Litera
     const fullName = String(cols[0] || "").replace(/\s+/g, " ").trim();
     const rawClass = String(cols[1] || "").trim();
     const programme = String(cols[2] || defaultProgramme || "Digital Literacy").trim();
-    const email = String(cols[3] || "").trim().toLowerCase();
-    const username = String(cols[4] || "").trim().toLowerCase();
+    const col3 = String(cols[3] || "").trim();
+    const col4 = String(cols[4] || "").trim();
+    const col5 = String(cols[5] || "").trim();
+
+    let email = "";
+    let username = "";
+    let accessCode = "";
+
+    for (const c of [col3, col4, col5]) {
+      if (!c) continue;
+      if (/^https?:\/\//i.test(c) || c.startsWith("/portal")) continue;
+      if (c.includes("@")) {
+        if (!email) email = c.toLowerCase();
+      } else if (/^JBS-[A-Z0-9]+$/i.test(c) || (username && !accessCode && /^[A-Z0-9-]{4,24}$/i.test(c))) {
+        accessCode = c.toUpperCase();
+      } else if (!username) {
+        username = c.toLowerCase().replace(/\s+/g, "_");
+      } else if (!accessCode) {
+        accessCode = c.toUpperCase();
+      }
+    }
 
     const canonicalClass = rawClass ? normalizeClassName(rawClass, "") : "";
     const validClass = Boolean(rawClass && CANONICAL_CLASS_ORDER.has(canonicalClass));
@@ -1068,6 +1087,7 @@ export function parseBulkStudentText(rawText, defaultProgramme = "Digital Litera
       programName: programme || defaultProgramme,
       email,
       username,
+      accessCode,
     });
   }
   return rows;
@@ -1119,7 +1139,11 @@ export function validateBulkStudentRows(rows = [], existingStudentsOrOpts = []) 
     const isValidClass = Boolean(rawClass && CANONICAL_CLASS_ORDER.has(canonicalClass));
     const programme = String(row?.programme || row?.programName || "Digital Literacy").trim();
     const email = String(row?.email || "").trim().toLowerCase();
-    const username = String(row?.username || "").trim().toLowerCase();
+    const fallbackUsername = fullName
+      ? fullName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+      : "";
+    const username = String(row?.username || fallbackUsername).trim().toLowerCase();
+    const accessCode = String(row?.accessCode || "").trim().toUpperCase();
 
     if (!fullName || fullName.length < 2) {
       errors.push("Full name is required (at least 2 characters).");
@@ -1173,6 +1197,7 @@ export function validateBulkStudentRows(rows = [], existingStudentsOrOpts = []) 
       programName: programme,
       email,
       username,
+      accessCode,
       status,
       errors,
       isValid: isReady,

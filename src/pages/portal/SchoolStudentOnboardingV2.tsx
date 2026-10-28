@@ -439,7 +439,8 @@ const SchoolStudentOnboardingV2: React.FC = () => {
           }
           try {
             const studentId = `sch_${row.username}_${Date.now().toString(36)}_${row.rowNumber}`;
-            const accessCode = generateAccessCode();
+            const suppliedCode = String((row as any).accessCode || '').trim().toUpperCase();
+            const accessCode = suppliedCode || generateAccessCode();
             let accessCodeHash = '';
             try {
               const msgBuffer = new TextEncoder().encode(accessCode.toUpperCase());

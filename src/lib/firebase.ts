@@ -2,6 +2,8 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { 
   initializeFirestore, 
   getFirestore, 
+  persistentLocalCache,
+  persistentMultipleTabManager,
   memoryLocalCache
 } from "firebase/firestore";
 import { 
@@ -15,7 +17,12 @@ import {
 } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 
-const PRIMARY_DATABASE_ID = "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
+const envDbId = typeof import.meta !== "undefined" ? (import.meta as any).env?.VITE_FIREBASE_DATABASE_ID : "";
+export const LEGACY_NAMED_DATABASE_ID = "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
+const PRIMARY_DATABASE_ID =
+  envDbId && String(envDbId).trim()
+    ? String(envDbId).trim()
+    : "(default)";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD_lq2Z4qBrZZkzYmEMPPMtCKQmfSx2rkY",
@@ -30,15 +37,33 @@ const firebaseConfig = {
 // Initialize Firebase App
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize primary Firestore (named database where schools, onboarded students, programs, and schedules live)
+// Initialize primary Firestore with persistent IndexedDB cache (fallback to memory cache in restricted contexts)
 let db: ReturnType<typeof getFirestore>;
 try {
-  db = initializeFirestore(app, {
-    experimentalAutoDetectLongPolling: true,
-    localCache: memoryLocalCache()
-  }, PRIMARY_DATABASE_ID);
+  db = initializeFirestore(
+    app,
+    {
+      experimentalAutoDetectLongPolling: true,
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    },
+    PRIMARY_DATABASE_ID === "(default)" ? undefined : PRIMARY_DATABASE_ID
+  );
 } catch {
-  db = getFirestore(app, PRIMARY_DATABASE_ID);
+  try {
+    db = initializeFirestore(
+      app,
+      {
+        experimentalAutoDetectLongPolling: true,
+        localCache: memoryLocalCache(),
+      },
+      PRIMARY_DATABASE_ID === "(default)" ? undefined : PRIMARY_DATABASE_ID
+    );
+  } catch {
+    db =
+      PRIMARY_DATABASE_ID === "(default)"
+        ? getFirestore(app)
+        : getFirestore(app, PRIMARY_DATABASE_ID);
+  }
 }
 
 // Keep defaultDb aliased to the primary named database so all reads/writes target the provisioned database

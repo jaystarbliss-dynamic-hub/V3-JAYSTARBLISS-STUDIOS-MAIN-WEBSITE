@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { 
-  collection, query, where, orderBy, limit, onSnapshot, 
+  collection, query, where, orderBy, limit, 
   doc, getDoc, updateDoc, getDocs, Timestamp 
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -60,22 +60,32 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setUserRole('');
         setSchoolId('');
         setStudentDocId('');
-        // Resolve the role from the authenticated user's Firestore profile.
-        // Cached session roles are not an authorization source for notifications.
-        try {
-          const profile = await getDoc(doc(db, 'users', user.uid));
-          if (sequence !== authSequence) return;
-          const data = profile.exists() ? profile.data() : {};
-          const profileRole = String(data.role || '').trim().toLowerCase();
-          setUserRole(['school_admin', 'schooladmin'].includes(profileRole) ? 'school' : profileRole);
-          setSchoolId(String(data.schoolId || data.school_id || sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || ''));
-          setStudentDocId(String(data.studentDocId || data.studentId || sessionStorage.getItem('studentDocId') || ''));
-        } catch (error) {
-          if (sequence !== authSequence) return;
-          console.warn('Could not resolve notification audience from user profile:', error);
-          setUserRole('');
-          setSchoolId('');
-          setStudentDocId('');
+        const cachedRole = String(sessionStorage.getItem('userRole') || '').trim().toLowerCase();
+        const cachedSchoolId = String(sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || '');
+        const cachedStudentId = String(sessionStorage.getItem('studentDocId') || '');
+
+        if (cachedRole) {
+          setUserRole(['school_admin', 'schooladmin'].includes(cachedRole) ? 'school' : cachedRole);
+          setSchoolId(cachedSchoolId);
+          setStudentDocId(cachedStudentId);
+        } else {
+          try {
+            const profile = await getDoc(doc(db, 'users', user.uid));
+            if (sequence !== authSequence) return;
+            const data = profile.exists() ? profile.data() : {};
+            const profileRole = String(data.role || '').trim().toLowerCase();
+            const normalizedRole = ['school_admin', 'schooladmin'].includes(profileRole) ? 'school' : profileRole;
+            const resolvedSchoolId = String(data.schoolId || data.school_id || cachedSchoolId);
+            const resolvedStudentId = String(data.studentDocId || data.studentId || cachedStudentId);
+            setUserRole(normalizedRole);
+            setSchoolId(resolvedSchoolId);
+            setStudentDocId(resolvedStudentId);
+          } catch {
+            if (sequence !== authSequence) return;
+            setUserRole(cachedRole);
+            setSchoolId(cachedSchoolId);
+            setStudentDocId(cachedStudentId);
+          }
         }
 
         try {
@@ -128,7 +138,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return false;
   }, [currentUser, localReadIds]);
 
-  // Real-time Firestore query listener
+  // Quota-friendly notification loader (uses 5-minute sessionStorage cache instead of 7 concurrent onSnapshot streams)
   useEffect(() => {
     if (!currentUser) {
       setNotifications([]);
@@ -136,16 +146,32 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       return;
     }
 
+    let cancelled = false;
     const uid = currentUser.uid;
     const email = currentUser.email?.toLowerCase() || '';
     const role = userRole;
     const currentSchoolId = schoolId;
     const currentStudentDocId = studentDocId;
-
     const isAdmin = ['super_admin', 'superadmin', 'admin'].includes(role);
 
+    const CACHE_KEY = `jaystar_notif_cache_v1_${uid}_${role || 'user'}`;
+    const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+    try {
+      const cachedRaw = sessionStorage.getItem(CACHE_KEY);
+      if (cachedRaw) {
+        const parsed = JSON.parse(cachedRaw);
+        if (parsed && Array.isArray(parsed.items) && Date.now() - Number(parsed.ts || 0) < CACHE_TTL_MS) {
+          setNotifications(parsed.items);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {
+      // Ignore cache read issues
+    }
+
     setLoading(true);
-    const unsubs: (() => void)[] = [];
     const notificationMap = new Map<string, AppNotification>();
 
     const updateFromDocs = (docs: any[]) => {
@@ -169,13 +195,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           linkText: data.linkText,
           read: data.isRead === true || data.read,
           readBy: Array.isArray(data.readBy) ? data.readBy : (data.isRead === true ? [uid] : []),
-          timestamp: data.timestamp || data.createdAt || Date.now(),
+          timestamp: data.timestamp instanceof Timestamp ? data.timestamp.toMillis() : (data.timestamp || data.createdAt || Date.now()),
           createdAt: data.createdAt,
           senderName: data.senderName || 'Jaystar Central',
           senderRole: data.senderRole || 'Administration'
         };
 
-        // Strict Audience Filtering: private notices are visible only to their actual recipient.
         let isRelevant = false;
         if (notif.id.startsWith("jdi:")) {
           isRelevant = data.recipientUid === uid;
@@ -209,78 +234,60 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       });
 
-      // Sort newest first
       const sortedList = Array.from(notificationMap.values()).sort((a, b) => {
         const timeA = a.timestamp instanceof Timestamp ? a.timestamp.toMillis() : new Date(a.timestamp || 0).getTime() || 0;
         const timeB = b.timestamp instanceof Timestamp ? b.timestamp.toMillis() : new Date(b.timestamp || 0).getTime() || 0;
         return timeB - timeA;
       });
 
-      setNotifications(sortedList);
-      setLoading(false);
+      if (!cancelled) {
+        setNotifications(sortedList);
+        setLoading(false);
+        try {
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), items: sortedList }));
+        } catch {
+          // Ignore storage quota
+        }
+      }
     };
 
-    try {
-      if (isAdmin) {
-        // Admins receive the global legacy feed, but JDI exam/payment notices remain recipient-private.
-        const adminQ = query(collection(db, 'notifications'), orderBy('timestamp', 'desc'), limit(100));
-        const unsub = onSnapshot(adminQ, (snap) => {
-          updateFromDocs(snap.docs);
-        }, (err) => {
-          console.warn('Admin notifications stream warning:', err);
-          getDocs(collection(db, 'notifications')).then(snap => updateFromDocs(snap.docs)).catch(() => {});
-        });
-        const jdiAdminQ = query(collection(db, 'jdiNotifications'), where('recipientUid', '==', uid), limit(100));
-        const unsubJdi = onSnapshot(jdiAdminQ, snap => updateFromDocs(snap.docs), err => {
-          console.warn('Admin JDI notifications stream warning:', err.message);
-        });
-        unsubs.push(unsub, unsubJdi);
-      } else {
-        // Build specific targeted listeners
-        const queryList = [
-          query(collection(db, 'notifications'), where('recipientType', '==', 'all'), where('targetRole', '==', 'all'), limit(30)),
-          query(collection(db, 'notifications'), where('recipientId', '==', uid), limit(30)),
-          query(collection(db, 'notifications'), where('targetUid', '==', uid), limit(30))
-        ];
-
-        if (role === 'student') {
-          queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', 'all_students'), limit(30)));
-          if (currentStudentDocId) {
-            queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', currentStudentDocId), limit(30)));
+    const loadOnce = async () => {
+      try {
+        if (isAdmin) {
+          const [adminSnap, jdiSnap] = await Promise.allSettled([
+            getDocs(query(collection(db, 'notifications'), orderBy('timestamp', 'desc'), limit(40))),
+            getDocs(query(collection(db, 'jdiNotifications'), where('recipientUid', '==', uid), limit(30))),
+          ]);
+          const allDocs: any[] = [];
+          if (adminSnap.status === 'fulfilled') allDocs.push(...adminSnap.value.docs);
+          if (jdiSnap.status === 'fulfilled') allDocs.push(...jdiSnap.value.docs);
+          updateFromDocs(allDocs);
+        } else {
+          const queryList = [
+            query(collection(db, 'notifications'), where('recipientId', '==', uid), limit(15)),
+            query(collection(db, "jdiNotifications"), where("recipientUid", "==", uid), limit(20)),
+          ];
+          if (role === 'student' && currentStudentDocId) {
+            queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', currentStudentDocId), limit(15)));
+          } else if (role === 'school' && currentSchoolId) {
+            queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', currentSchoolId), limit(15)));
           }
-          if (currentSchoolId) {
-            queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', `school_students_${currentSchoolId}`), limit(30)));
-          }
-        } else if (role === 'parent') {
-          queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', 'all_parents'), limit(30)));
-        } else if (['staff', 'tutor', 'instructor'].includes(role)) {
-          queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', 'all_staff'), limit(30)));
-        } else if (role === 'school') {
-          queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', 'all_schools'), limit(30)));
-          if (currentSchoolId) {
-            queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', currentSchoolId), limit(30)));
-            queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', `school_${currentSchoolId}`), limit(30)));
-          }
-        }
-
-        queryList.push(query(collection(db, "jdiNotifications"), where("recipientUid", "==", uid), limit(50)));
-
-        queryList.forEach(q => {
-          const unsub = onSnapshot(q, (snap) => {
-            updateFromDocs(snap.docs);
-          }, (err) => {
-            console.warn('Targeted notification stream note:', err.message);
+          const snaps = await Promise.allSettled(queryList.map(q => getDocs(q)));
+          const allDocs: any[] = [];
+          snaps.forEach(res => {
+            if (res.status === 'fulfilled') allDocs.push(...res.value.docs);
           });
-          unsubs.push(unsub);
-        });
+          updateFromDocs(allDocs);
+        }
+      } catch {
+        if (!cancelled) setLoading(false);
       }
-    } catch (e) {
-      console.warn('Notification listener initialization error:', e);
-      setLoading(false);
-    }
+    };
+
+    void loadOnce();
 
     return () => {
-      unsubs.forEach(u => u());
+      cancelled = true;
     };
   }, [currentUser, userRole, schoolId, studentDocId]);
 

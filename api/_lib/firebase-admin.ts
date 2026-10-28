@@ -123,28 +123,32 @@ export function getAdminAuth(): Auth | null {
 }
 
 let cachedDefaultDb: Firestore | null = null;
-const NAMED_DATABASE_ID = "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
+export const LEGACY_NAMED_DATABASE_ID = "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
 
 export function getAdminDb(): Firestore | null {
   if (cachedDb) return cachedDb;
   const app = getAdminApp();
   if (!app) return null;
-  const databaseId =
-    process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== "(default)"
-      ? process.env.FIREBASE_DATABASE_ID
-      : NAMED_DATABASE_ID;
-  try {
-    cachedDb = getFirestore(app, databaseId);
-    return cachedDb;
-  } catch {
-    cachedDb = getFirestore(app);
-    return cachedDb;
+  const configuredDbId = process.env.FIREBASE_DATABASE_ID?.trim();
+  if (configuredDbId && configuredDbId !== "(default)") {
+    try {
+      cachedDb = getFirestore(app, configuredDbId);
+      return cachedDb;
+    } catch {
+      cachedDb = getFirestore(app);
+      return cachedDb;
+    }
   }
+  cachedDb = getFirestore(app);
+  return cachedDb;
 }
 
 export function getDefaultAdminDb(): Firestore | null {
   if (cachedDefaultDb) return cachedDefaultDb;
-  return getAdminDb();
+  const app = getAdminApp();
+  if (!app) return null;
+  cachedDefaultDb = getFirestore(app);
+  return cachedDefaultDb;
 }
 
 export function getAdminDatabases(): Firestore[] {

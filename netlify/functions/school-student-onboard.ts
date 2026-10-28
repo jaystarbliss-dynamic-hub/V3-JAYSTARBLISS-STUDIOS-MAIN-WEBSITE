@@ -106,7 +106,8 @@ export const handler: Handler = async (event) => {
 
         let rowUid = '';
         try {
-          const accessCode = makeCode();
+          const suppliedCode = String((row as any).accessCode || '').trim().toUpperCase();
+          const accessCode = suppliedCode || makeCode();
           const accessCodeHash = hashAccessCode(accessCode);
           const syntheticEmail = `student-${randomBytes(10).toString('hex')}@jbs-portal.local`;
           const authUser = await adminAuth.createUser({
