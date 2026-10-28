@@ -1,6 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
-import { computeExamMaxScore, normalizeClassName, normalizeWorkType, resolvePartnerSchoolName } from '../../api/_lib/jdi-assessment.js';
+import { computeExamMaxScore, isAttemptResultReleased, normalizeClassName, normalizeWorkType, resolvePartnerSchoolName } from '../../api/_lib/jdi-assessment.js';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -227,7 +227,7 @@ export const handler: Handler = async event => {
     const exams = await Promise.all(Array.from(new Set(attemptDocs.map(d => text(d.data()?.examId)).filter(Boolean))).map(async id => {
       const snap = await adminDb.collection('jdiExams').doc(id).get().catch(() => null);
       if (snap?.exists && school.aliases.includes(text(snap.data()?.schoolId))) {
-        examNames.set(id, text(snap.data()?.title || 'Examination'));
+        examNames.set(id, text(snap.data()?.title || 'Assessment'));
         return { id, data: snap.data() || {} };
       }
       return null;
@@ -238,15 +238,14 @@ export const handler: Handler = async event => {
       const examId = text(a.examId);
       if (!allowedExamIds.has(examId)) return null;
       const exam = exams.find(e => e?.id === examId)?.data || {};
-      const released = Boolean(a.releasedAt);
-      const autoFinal = ['submitted', 'expired', 'graded'].includes(text(a.status).toLowerCase()) && a.autoGraded === true;
+      const released = isAttemptResultReleased(a);
       return {
-        id: d.id, examId, title: examNames.get(examId) || 'Examination', subject: text(exam.subject || 'General'),
+        id: d.id, examId, title: examNames.get(examId) || 'Assessment', subject: text(exam.subject || 'General'),
         workType: normalizeWorkType(exam.workType || a.workType),
         isUngradedActivity: Boolean(exam.isUngradedActivity || a.isUngradedActivity),
-        status: text(a.status || 'unknown'), score: released || autoFinal ? (typeof a.score === 'number' ? a.score : null) : null,
+        status: text(a.status || 'unknown'), score: released ? (typeof a.score === 'number' ? a.score : null) : null,
         maxScore: computeExamMaxScore(exam, a),
-        submittedAt: asIso(a.submittedAt), releasedAt: asIso(a.releasedAt), feedback: released ? text(a.feedback, 1200) : ''
+        submittedAt: asIso(a.submittedAt), releasedAt: released ? asIso(a.releasedAt) : null, feedback: released ? text(a.feedback, 1200) : ''
       };
     }).filter(Boolean).sort((a: any, b: any) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')));
 

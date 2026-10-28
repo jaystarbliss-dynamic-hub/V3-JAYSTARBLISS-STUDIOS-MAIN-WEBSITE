@@ -509,6 +509,10 @@ service cloud.firestore {
       allow read: if true; 
       allow write: if isAnyAdmin() || (isAuth() && isSameSchool(schoolId)); 
     }
+    match /documentHeaderConfigs/{configId} {
+      allow read: if isAuth();
+      allow write: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || (isAuth() && configId == request.auth.uid);
+    }
     match /schoolPrograms/{document=**} { allow read: if true; allow write: if isAnyAdmin() || isSchoolUser(); }
     match /classSchedules/{scheduleId} { 
       allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth(); 

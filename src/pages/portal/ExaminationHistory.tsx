@@ -22,8 +22,17 @@ import {
   canManageExamRecord,
   normalizeDeliveryMode,
   normalizeWorkType,
+  getWorkTypeLabels,
+  isAttemptResultReleased,
   type WorkType,
 } from "../../lib/classes";
+import {
+  type DocumentHeaderConfig,
+  loadSavedDocumentHeaderConfig,
+  TUTOR_REMARK_PRESETS,
+  getSuggestedTutorRemark,
+} from "../../lib/documentHeaderTemplates";
+import DocumentHeaderCustomizerModal from "../../components/portal/DocumentHeaderCustomizerModal";
 import {
   School,
   BookOpenCheck,
@@ -43,6 +52,11 @@ import {
   History,
   FileText,
   AlertCircle,
+  Lock,
+  LayoutTemplate,
+  MessageSquare,
+  Sparkles,
+  X,
 } from "lucide-react";
 import { TableSkeleton, MetricGridSkeleton } from "../../components/ui/Skeleton";
 
@@ -112,6 +126,7 @@ type Attempt = {
     maxPoints: number;
   }[];
   feedback?: string;
+  tutorFeedback?: string;
 };
 
 interface ExaminationHistoryProps {
@@ -157,6 +172,10 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   const [zipProgress, setZipProgress] = useState("");
   const [copiedExamId, setCopiedExamId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [showHeaderDesigner, setShowHeaderDesigner] = useState(false);
+  const [headerConfig, setHeaderConfig] = useState<DocumentHeaderConfig | null>(null);
+  const [releaseModalAttempt, setReleaseModalAttempt] = useState<Attempt | null>(null);
+  const [releaseRemarkInput, setReleaseRemarkInput] = useState<string>("");
 
   const isSchoolUser =
     isSchoolPortal || ["SCHOOL", "SCHOOL_ADMIN"].includes(userRole.toUpperCase());
@@ -449,8 +468,10 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           const parentExam = examMap.get(data.examId);
           if (!matchesScope(data.schoolId) && !parentExam) return;
 
+          const isReleased = isAttemptResultReleased(data);
+          const canSeeScore = isReleased || !isSchoolUser;
           const maxScore = computeExamMaxScore(parentExam, data);
-          const score = typeof data.score === "number" ? data.score : undefined;
+          const score = canSeeScore && typeof data.score === "number" ? data.score : undefined;
           const percentage =
             score !== undefined ? calculateScorePercentage(score, maxScore) : undefined;
           const sLabel = resolveSchoolLabel(
@@ -461,10 +482,15 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           attList.push({
             id: d.id,
             ...data,
+            score,
+            percentage,
+            feedback: canSeeScore ? data.feedback : undefined,
+            questionResults: canSeeScore ? data.questionResults : undefined,
+            manualMarks: canSeeScore ? data.manualMarks : undefined,
+            answers: canSeeScore ? data.answers : undefined,
             className: normalizeClassName(data.className || "") || data.className || "—",
             schoolName: sLabel,
             maxScore,
-            percentage,
           });
         });
         loadedAttempts = attList;
@@ -484,8 +510,10 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         });
         loadedAttempts = loadedAttempts.map((att) => {
           const ex = examLookup.get(att.examId);
+          const isReleased = isAttemptResultReleased(att);
+          const canSeeScore = isReleased || !isSchoolUser;
           const maxScore = computeExamMaxScore(ex, att);
-          const score = typeof att.score === "number" ? att.score : undefined;
+          const score = canSeeScore && typeof att.score === "number" ? att.score : undefined;
           const percentage =
             score !== undefined ? calculateScorePercentage(score, maxScore) : undefined;
           const sLabel = resolveSchoolLabel(
@@ -494,10 +522,14 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           );
           return {
             ...att,
+            score,
+            percentage,
+            feedback: canSeeScore ? att.feedback : undefined,
+            questionResults: canSeeScore ? att.questionResults : undefined,
+            manualMarks: canSeeScore ? att.manualMarks : undefined,
             className: normalizeClassName(att.className || "") || att.className || "—",
             schoolName: sLabel,
             maxScore,
-            percentage,
           };
         });
       }
@@ -505,7 +537,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       setExams(loadedExams);
       setAttempts(loadedAttempts);
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Unable to load examination records.");
+      setMessage(e instanceof Error ? e.message : "Unable to load assessment records.");
     } finally {
       setLoading(false);
     }
@@ -514,11 +546,32 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   useEffect(() => {
     if (scopeReady) {
       void load();
+      const fallbackSchoolName =
+        availableSchools.find((s) => s.id === schoolId)?.name ||
+        availableSchools[0]?.name ||
+        resolveSchoolLabel(schoolId);
+      void loadSavedDocumentHeaderConfig({
+        scopeKey: schoolId || "default",
+        schoolId,
+        fallbackSchoolName,
+      }).then((cfg) => setHeaderConfig(cfg));
     }
   }, [scopeReady, schoolId]);
 
-  const manage = async (attempt: Attempt, action: "release") => {
+  const openReleaseRemarkModal = (attempt: Attempt) => {
     if (isSchoolUser) return;
+    const existingRemark = String(attempt.feedback || attempt.tutorFeedback || "").trim();
+    setReleaseRemarkInput(existingRemark);
+    setReleaseModalAttempt(attempt);
+  };
+
+  const manage = async (attempt: Attempt, action: "release", customRemark?: string) => {
+    if (isSchoolUser) return;
+    const trimmedRemark = String(
+      customRemark !== undefined
+        ? customRemark
+        : attempt.feedback || attempt.tutorFeedback || ""
+    ).trim();
     setActionBusy(attempt.id + action);
     setMessage("");
     try {
@@ -533,6 +586,8 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               examId: attempt.examId,
               attemptId: attempt.id,
               action,
+              feedback: trimmedRemark,
+              tutorFeedback: trimmedRemark,
             }),
           });
           if (response.ok) serverSuccess = true;
@@ -547,12 +602,26 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           resultReleased: true,
           releasedAt: serverTimestamp(),
           status: "graded",
+          ...(trimmedRemark
+            ? { feedback: trimmedRemark, tutorFeedback: trimmedRemark }
+            : {}),
           updatedAt: serverTimestamp(),
         });
+      } else if (trimmedRemark) {
+        await updateDoc(doc(db, "jdiExamAttempts", attempt.id), {
+          feedback: trimmedRemark,
+          tutorFeedback: trimmedRemark,
+          updatedAt: serverTimestamp(),
+        }).catch(() => undefined);
       }
 
+      setReleaseModalAttempt(null);
       await load();
-      setMessage("Result released to student and school portals!");
+      setMessage(
+        trimmedRemark
+          ? "Result and official tutor remark released to student and school portals!"
+          : "Result released to student and school portals!"
+      );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Could not complete action.");
     } finally {
@@ -695,13 +764,27 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     setTimeout(() => setCopiedExamId(null), 2000);
   };
 
+  const releasedFiltered = useMemo(
+    () => filtered.filter((a) => isAttemptResultReleased(a)),
+    [filtered]
+  );
+
   const csv = () => {
+    const exportSource = isSchoolUser ? releasedFiltered : filtered;
+    if (!exportSource.length) {
+      setMessage(
+        isSchoolUser
+          ? "No released assessment results are available to export yet. Results must be released by the tutor first."
+          : "No assessment records are available in the current view to export."
+      );
+      return;
+    }
     const rows: (string | number | null | undefined)[][] = [
       [
         "Student",
         "Class",
         "Partner School",
-        "Examination",
+        "Assessment",
         "Status",
         "Score",
         "Maximum Score",
@@ -710,27 +793,35 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         "Released",
         "Teacher Feedback",
       ],
-      ...filtered.map((a) => {
+      ...exportSource.map((a) => {
         const exam = exams.find((e) => e.id === a.examId);
+        const isReleased = isAttemptResultReleased(a);
+        const canSeeScore = isReleased || !isSchoolUser;
         const maxScore = computeExamMaxScore(exam, a);
         const pct =
-          typeof a.score === "number" ? calculateScorePercentage(a.score, maxScore) : null;
+          canSeeScore && typeof a.score === "number"
+            ? calculateScorePercentage(a.score, maxScore)
+            : null;
         return [
           a.studentName,
           a.className,
           resolveSchoolLabel(a.schoolId || exam?.schoolId, a.schoolName || exam?.schoolName),
           exam?.title || a.examId,
-          a.releasedAt || a.resultReleased ? "released" : a.status,
-          a.score === undefined ? "Not graded" : a.score,
+          isReleased ? "released" : a.status,
+          !canSeeScore
+            ? "Awaiting Tutor Release"
+            : a.score === undefined
+            ? "Not graded"
+            : a.score,
           maxScore,
           pct !== null ? `${pct}%` : "",
           a.submittedAt?.toDate ? a.submittedAt.toDate().toISOString() : String(a.submittedAt || ""),
-          String(a.releasedAt || ""),
-          a.feedback || "",
+          String(a.releasedAt || (isReleased ? "Released" : "")),
+          canSeeScore ? a.feedback || "" : "",
         ];
       }),
     ];
-    const file = createXlsx(rows, "JDI Exam Results");
+    const file = createXlsx(rows, "JDI Assessment Results");
     const url = URL.createObjectURL(
       new Blob([file.buffer as ArrayBuffer], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -738,12 +829,17 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     );
     const a = document.createElement("a");
     a.href = url;
-    a.download = "JDI-examination-history.xlsx";
+    a.download = "JDI-assessment-history.xlsx";
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const renderPdfBytes = async (a: Attempt) => {
+    if (!isAttemptResultReleased(a)) {
+      throw new Error(
+        "Assessment results have not been released by the tutor yet. Printing is disabled until results are released."
+      );
+    }
     const exam = exams.find((e) => e.id === a.examId);
     const authoritativeSchoolName = resolveSchoolLabel(
       a.schoolId || exam?.schoolId,
@@ -763,6 +859,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             id: exam.id,
             title: exam.title,
             subject: exam.subject,
+            workType: exam.workType,
             schoolId: exam.schoolId,
             schoolName: authoritativeSchoolName,
             maxScore,
@@ -770,11 +867,14 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             questions: exam.questions,
           }
         : {
-            title: "Examination Assessment",
+            title: "Assessment",
             subject: "General",
             schoolName: authoritativeSchoolName,
             maxScore,
-          }
+          },
+      {
+        headerConfig: headerConfig || undefined,
+      }
     );
   };
 
@@ -794,17 +894,19 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   };
 
   const bulkZip = async () => {
-    if (!filtered.length) {
-      setMessage("No student reports are available in the current view to package.");
+    if (!releasedFiltered.length) {
+      setMessage(
+        "No released student reports are available in the current view to package. Results must be released by the tutor before printing."
+      );
       return;
     }
     setZipBusy(true);
-    setZipProgress(`Preparing 0 / ${filtered.length} PDF reports…`);
+    setZipProgress(`Preparing 0 / ${releasedFiltered.length} PDF reports…`);
     try {
       const files: { name: string; data: Uint8Array }[] = [];
       const batchSize = 5;
-      for (let i = 0; i < filtered.length; i += batchSize) {
-        const chunk = filtered.slice(i, i + batchSize);
+      for (let i = 0; i < releasedFiltered.length; i += batchSize) {
+        const chunk = releasedFiltered.slice(i, i + batchSize);
         const generatedChunk = await Promise.all(
           chunk.map(async (a) => ({
             name: `${(a.className || "Class").replace(/[^a-z0-9]+/gi, "-")}_${(
@@ -815,7 +917,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         );
         files.push(...generatedChunk);
         setZipProgress(
-          `Generating ${Math.min(filtered.length, i + batchSize)} / ${filtered.length} PDF reports…`
+          `Generating ${Math.min(releasedFiltered.length, i + batchSize)} / ${releasedFiltered.length} PDF reports…`
         );
       }
 
@@ -824,7 +926,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       const schoolSlug = resolveSchoolLabel(schoolId, availableSchools[0]?.name)
         .replace(/[^a-z0-9]+/gi, "-")
         .toLowerCase();
-      const examSlug = (selectedExamObj?.title || "all-examinations")
+      const examSlug = (selectedExamObj?.title || "all-assessments")
         .replace(/[^a-z0-9]+/gi, "-")
         .toLowerCase();
 
@@ -836,7 +938,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       link.download = `${schoolSlug}-${examSlug}-reports.zip`;
       link.click();
       URL.revokeObjectURL(url);
-      setMessage(`Successfully packaged ${files.length} PDF report(s) into a ZIP archive.`);
+      setMessage(`Successfully packaged ${files.length} released PDF report(s) into a ZIP archive.`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Could not generate bulk PDF ZIP.");
     } finally {
@@ -846,21 +948,40 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   };
 
   const pdf = async (a: Attempt) => {
+    if (!isAttemptResultReleased(a)) {
+      setMessage(
+        "Assessment results have not been released by the tutor yet. Printing is disabled until results are released."
+      );
+      return;
+    }
     try {
       await downloadPdf(a);
-    } catch {
-      setMessage("Could not generate this report. Please try again.");
+    } catch (e) {
+      setMessage(
+        e instanceof Error ? e.message : "Could not generate this report. Please try again."
+      );
     }
   };
 
   // ============================================================================
-  // VIEW A: EXAMINATION OVERVIEW (/portal/school/exams)
-  // Focuses exclusively on current & upcoming examinations, classes, subjects,
+  // VIEW A: ASSESSMENT OVERVIEW (/portal/school/exams)
+  // Focuses exclusively on current & upcoming assessments, classes, subjects,
   // schedules, statuses, access codes, and summary counts for the school.
   // ============================================================================
   if (effectiveMode === "overview") {
     return (
       <main className="mx-auto max-w-6xl space-y-6">
+        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
+              Assessment Overview
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+              Monitor active and upcoming assessments, class assignments, schedules, and student access codes.
+            </p>
+          </div>
+        </header>
+
         {/* WORK TYPE CATEGORY TABS */}
         <div className="flex items-center gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-slate-800 touch-pan-x">
           {(
@@ -961,7 +1082,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             </label>
 
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Search Examinations
+              Search Assessments
               <div className="relative mt-1.5">
                 <Search
                   size={15}
@@ -1023,7 +1144,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
               >
                 <History size={14} className="text-blue-600" />
-                Examination History &amp; Reports
+                Assessment History &amp; Reports
               </Link>
             </div>
           </div>
@@ -1038,15 +1159,15 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           </p>
         )}
 
-        {/* CURRENT & UPCOMING EXAMINATIONS CARDS */}
+        {/* CURRENT & UPCOMING ASSESSMENTS CARDS */}
         <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <div>
               <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                Assigned School Examinations &amp; Access Codes
+                Assigned School Assessments &amp; Access Codes
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Share the examination access passcode with eligible students in the target class when their assessment window is active.
+                Share the assessment access passcode with eligible students in the target class when their assessment window is active.
               </p>
             </div>
           </div>
@@ -1055,10 +1176,10 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             <div className="p-12 text-center text-slate-500">
               <FileText size={38} className="mx-auto mb-3 text-slate-400" />
               <p className="font-bold text-slate-700 dark:text-slate-200">
-                No current or upcoming examinations found
+                No current or upcoming assessments found
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                When an examination is scheduled or activated for your school, its schedule and student access code will appear here.
+                When an assessment is scheduled or activated for your school, its schedule and student access code will appear here.
               </p>
             </div>
           ) : (
@@ -1079,6 +1200,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#B91C1C]">
+                            {getWorkTypeLabels(ex.workType, ex).singular}
+                          </span>
                           <span
                             className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase ${
                               isUpcoming
@@ -1173,17 +1297,28 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   }
 
   // ============================================================================
-  // VIEW B: EXAMINATION HISTORY (/portal/school/exam-history, /portal/staff/exam-history, /admin/examination-history)
-  // Focuses on completed, closed or past examinations and actual student attempts,
+  // VIEW B: ASSESSMENT HISTORY (/portal/school/exam-history, /portal/staff/exam-history, /admin/examination-history)
+  // Focuses on completed, closed or past assessments and actual student attempts,
   // scores, grading, result-release states, individual reports and bulk exports.
   // ============================================================================
   return (
     <main className="mx-auto max-w-6xl space-y-6">
+      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
+            Assessment History
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+            Review student assessment submissions, tutor release status, and official printable performance reports.
+          </p>
+        </div>
+      </header>
+
       {/* WORK TYPE CATEGORY TABS */}
       <div className="flex items-center gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-slate-800 touch-pan-x">
         {(
           [
-            { id: "ALL", label: "All History" },
+            { id: "ALL", label: "All Assessments" },
             { id: "ASSIGNMENT", label: "Assignments" },
             { id: "ACTIVITY", label: "Activities" },
             { id: "TEST", label: "Tests" },
@@ -1215,7 +1350,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            Past / Closed Exams
+            Past / Closed Assessments
           </p>
           <p className="mt-2 text-3xl font-black text-slate-900 dark:text-white">
             {categorizedExams.completed.length}
@@ -1284,13 +1419,13 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           )}
 
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Examination
+            Assessment
             <select
               className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
             >
-              <option value="">All Examinations</option>
+              <option value="">All Assessments</option>
               {exams.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.title} — {e.subject}
@@ -1343,25 +1478,43 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
               {loading ? "Refreshing…" : "Refresh Records"}
             </button>
+            <button
+              type="button"
+              onClick={() => setShowHeaderDesigner(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 px-4 py-2.5 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-100 cursor-pointer"
+            >
+              <LayoutTemplate size={15} />
+              Document Header Customizer
+            </button>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              disabled={!filtered.length}
+              disabled={isSchoolUser ? !releasedFiltered.length : !filtered.length}
+              title={
+                isSchoolUser && !releasedFiltered.length
+                  ? "Export is disabled until the tutor releases assessment results."
+                  : undefined
+              }
               onClick={csv}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               <FileSpreadsheet size={15} className="text-emerald-600" />
               Download Excel (.xlsx)
             </button>
             <button
-              disabled={!filtered.length || zipBusy}
+              disabled={!releasedFiltered.length || zipBusy}
+              title={
+                !releasedFiltered.length
+                  ? "Bulk PDF download is disabled until the tutor releases assessment results."
+                  : undefined
+              }
               onClick={() => void bulkZip()}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 dark:bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 dark:bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               <FileArchive size={15} className="text-blue-300" />
               {zipBusy
                 ? zipProgress || "Packaging ZIP…"
-                : `Download All PDF Reports (ZIP) (${filtered.length})`}
+                : `Download Released PDF Reports (ZIP) (${releasedFiltered.length})`}
             </button>
           </div>
         </div>
@@ -1381,7 +1534,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         <div className="border-b border-slate-100 dark:border-slate-800 p-5 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-              Student Examination Attempts &amp; Official Reports
+              Student Assessment Attempts &amp; Official Reports
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {filtered.length} attempt record(s) matching current filters
@@ -1393,7 +1546,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               onClick={() => setSelected("")}
               className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
             >
-              Clear examination filter
+              Clear assessment filter
             </button>
           )}
         </div>
@@ -1403,10 +1556,10 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           <div className="p-12 text-center text-slate-500">
             <BookOpenCheck size={40} className="mx-auto mb-3 text-slate-400" />
             <p className="font-semibold text-slate-700 dark:text-slate-200">
-              No examination attempts to show
+              No assessment attempts to show
             </p>
             <p className="text-xs text-slate-500 mt-1">
-              When students take an examination, their submissions, grading statuses and printable PDF reports appear here.
+              When students take an assessment, their submissions, grading statuses and printable PDF reports appear here.
             </p>
           </div>
         ) : (
@@ -1415,14 +1568,17 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             <div className="divide-y divide-slate-100 dark:divide-slate-800 md:hidden">
               {filtered.map((a) => {
                 const exam = exams.find((e) => e.id === a.examId);
+                const isReleased = isAttemptResultReleased(a);
+                const canSeeScore = isReleased || !isSchoolUser;
                 const maxScore = computeExamMaxScore(exam, a);
                 const pct =
-                  typeof a.score === "number" ? calculateScorePercentage(a.score, maxScore) : null;
+                  canSeeScore && typeof a.score === "number"
+                    ? calculateScorePercentage(a.score, maxScore)
+                    : null;
                 const schoolDisplay = resolveSchoolLabel(
                   a.schoolId || exam?.schoolId,
                   a.schoolName || exam?.schoolName
                 );
-                const isReleased = Boolean(a.releasedAt || a.resultReleased);
                 const stateLabel = isReleased
                   ? "Released"
                   : a.status === "in_progress"
@@ -1465,7 +1621,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         {exam?.title || a.examId}
                       </span>
                       <span className="font-bold font-mono tabular-nums text-slate-900 dark:text-white shrink-0">
-                        {typeof a.score === "number" ? (
+                        {canSeeScore && typeof a.score === "number" ? (
                           <span>
                             {a.score} / {maxScore}{" "}
                             <span className="text-blue-700 dark:text-blue-400">({pct}%)</span>
@@ -1473,6 +1629,10 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         ) : a.status === "in_progress" ? (
                           <span className="text-amber-600 dark:text-amber-400 font-sans">
                             In progress
+                          </span>
+                        ) : !isReleased && isSchoolUser ? (
+                          <span className="text-amber-700 dark:text-amber-400 font-sans">
+                            Awaiting Tutor Release
                           </span>
                         ) : a.status === "expired" ? (
                           <span className="text-rose-600 dark:text-rose-400 font-sans">
@@ -1487,11 +1647,26 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                       <button
                         type="button"
+                        disabled={!isReleased}
+                        aria-disabled={!isReleased}
+                        title={
+                          isReleased
+                            ? "Download official assessment report PDF"
+                            : "Printing is disabled until the tutor releases the assessment result."
+                        }
                         onClick={() => void pdf(a)}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
+                        className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
+                          isReleased
+                            ? "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
+                            : "border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/40 text-slate-400 dark:text-slate-500 opacity-60 cursor-not-allowed"
+                        }`}
                       >
-                        <Download size={14} className="text-blue-600" />
-                        Print Official PDF
+                        {isReleased ? (
+                          <Download size={14} className="text-blue-600" />
+                        ) : (
+                          <Lock size={14} className="text-slate-400" />
+                        )}
+                        {isReleased ? "Print Official PDF" : "Print Official PDF (Locked)"}
                       </button>
                       {!isSchoolUser &&
                         ["submitted", "expired", "graded"].includes(a.status) &&
@@ -1499,7 +1674,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                           <button
                             type="button"
                             disabled={actionBusy === a.id + "release"}
-                            onClick={() => void manage(a, "release")}
+                            onClick={() => openReleaseRemarkModal(a)}
                             className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
                           >
                             <CheckCircle2 size={14} />
@@ -1520,7 +1695,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     <th className="p-4">Student</th>
                     <th className="p-4">Class</th>
                     <th className="p-4">Partner School</th>
-                    <th className="p-4">Examination</th>
+                    <th className="p-4">Assessment</th>
                     <th className="p-4">State</th>
                     <th className="p-4">Score &amp; Percentage</th>
                     <th className="p-4 text-right">Official Report</th>
@@ -1529,16 +1704,17 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filtered.map((a) => {
                     const exam = exams.find((e) => e.id === a.examId);
+                    const isReleased = isAttemptResultReleased(a);
+                    const canSeeScore = isReleased || !isSchoolUser;
                     const maxScore = computeExamMaxScore(exam, a);
                     const pct =
-                      typeof a.score === "number"
+                      canSeeScore && typeof a.score === "number"
                         ? calculateScorePercentage(a.score, maxScore)
                         : null;
                     const schoolDisplay = resolveSchoolLabel(
                       a.schoolId || exam?.schoolId,
                       a.schoolName || exam?.schoolName
                     );
-                    const isReleased = Boolean(a.releasedAt || a.resultReleased);
                     const stateLabel = isReleased
                       ? "Released"
                       : a.status === "in_progress"
@@ -1564,7 +1740,12 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                           {schoolDisplay}
                         </td>
                         <td className="p-4 text-slate-700 dark:text-slate-200">
-                          {exam?.title || a.examId}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="rounded bg-red-50 dark:bg-red-950/60 px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#B91C1C] dark:text-red-300">
+                              {getWorkTypeLabels(exam?.workType, exam).singular}
+                            </span>
+                            <span>{exam?.title || a.examId}</span>
+                          </div>
                         </td>
                         <td className="p-4">
                           <span
@@ -1583,7 +1764,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                           </span>
                         </td>
                         <td className="p-4 font-bold font-mono tabular-nums text-slate-900 dark:text-white">
-                          {typeof a.score === "number" ? (
+                          {canSeeScore && typeof a.score === "number" ? (
                             <span>
                               {a.score} / {maxScore}{" "}
                               <span className="text-xs font-semibold text-blue-700 dark:text-blue-400">
@@ -1593,6 +1774,10 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                           ) : a.status === "in_progress" ? (
                             <span className="text-amber-600 dark:text-amber-400 text-xs font-sans font-semibold">
                               Attempt in progress
+                            </span>
+                          ) : !isReleased && isSchoolUser ? (
+                            <span className="text-amber-700 dark:text-amber-400 text-xs font-sans font-semibold">
+                              Awaiting Tutor Release
                             </span>
                           ) : a.status === "expired" ? (
                             <span className="text-rose-600 dark:text-rose-400 text-xs font-sans font-semibold">
@@ -1607,24 +1792,49 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         <td className="p-4 text-right space-x-2 whitespace-nowrap">
                           <button
                             type="button"
+                            disabled={!isReleased}
+                            aria-disabled={!isReleased}
+                            title={
+                              isReleased
+                                ? "Download official assessment report PDF"
+                                : "Printing is disabled until the tutor releases the assessment result."
+                            }
                             onClick={() => void pdf(a)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                              isReleased
+                                ? "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
+                                : "border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/40 text-slate-400 dark:text-slate-500 opacity-60 cursor-not-allowed"
+                            }`}
                           >
-                            <Download size={14} className="text-blue-600" />
+                            {isReleased ? (
+                              <Download size={14} className="text-blue-600" />
+                            ) : (
+                              <Lock size={14} className="text-slate-400" />
+                            )}
                             Print Official PDF
                           </button>
                           {!isSchoolUser &&
                             ["submitted", "expired", "graded"].includes(a.status) && (
                               <>
-                                {!isReleased && (
+                                {!isReleased ? (
                                   <button
                                     type="button"
                                     disabled={actionBusy === a.id + "release"}
-                                    onClick={() => void manage(a, "release")}
+                                    onClick={() => openReleaseRemarkModal(a)}
                                     className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
                                   >
                                     <CheckCircle2 size={14} />
                                     Release Result
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={actionBusy === a.id + "release"}
+                                    onClick={() => openReleaseRemarkModal(a)}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-950/40 px-2.5 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100 cursor-pointer"
+                                  >
+                                    <MessageSquare size={13} />
+                                    Remark
                                   </button>
                                 )}
                               </>
@@ -1640,15 +1850,15 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         )}
       </section>
 
-      {/* COMPLETED / PAST EXAMINATIONS ARCHIVE */}
+      {/* COMPLETED / PAST ASSESSMENTS ARCHIVE */}
       {categorizedExams.completed.length > 0 && (
         <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
           <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
             <h2 className="text-base font-bold text-slate-900 dark:text-white">
-              Completed &amp; Past Examinations Archive
+              Completed &amp; Past Assessments Archive
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Select any past examination below to filter the student attempts table above.
+              Select any past assessment below to filter the student attempts table above.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1690,6 +1900,140 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           </div>
         </section>
       )}
+
+      {/* Tutor Remark Selection & Custom Input Modal when Releasing Results */}
+      {releaseModalAttempt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Select or Write Tutor Remark Before Releasing Result"
+        >
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-600/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                  <MessageSquare size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {isAttemptResultReleased(releaseModalAttempt)
+                      ? "Update Official Tutor Remark"
+                      : "Release Result with Official Tutor Remark"}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Candidate: <strong>{releaseModalAttempt.studentName}</strong> ({releaseModalAttempt.className})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReleaseModalAttempt(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  1. Quick-Select a Preset Remark (Optional)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ex = exams.find((e) => e.id === releaseModalAttempt.examId);
+                    const max = computeExamMaxScore(ex, releaseModalAttempt);
+                    const pct =
+                      typeof releaseModalAttempt.score === "number"
+                        ? calculateScorePercentage(releaseModalAttempt.score, max)
+                        : 0;
+                    setReleaseRemarkInput(getSuggestedTutorRemark(pct));
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600/10 text-blue-700 dark:text-blue-300 text-[11px] font-bold hover:bg-blue-600/20 cursor-pointer"
+                >
+                  <Sparkles size={12} />
+                  Suggest Remark for Score
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                {TUTOR_REMARK_PRESETS.map((preset) => {
+                  const selectedPreset = releaseRemarkInput.trim() === preset.text.trim();
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => setReleaseRemarkInput(preset.text)}
+                      className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all cursor-pointer ${
+                        selectedPreset
+                          ? "border-blue-600 bg-blue-600 text-white"
+                          : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-blue-400"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  2. Or Type / Customize Your Personal Tutor Remark
+                </label>
+                <textarea
+                  rows={4}
+                  value={releaseRemarkInput}
+                  onChange={(e) => setReleaseRemarkInput(e.target.value)}
+                  placeholder="Write a custom tutor remark or edit a selected preset above. This remark will accompany the student's released result and PDF report..."
+                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-xs text-slate-900 dark:text-white focus:border-blue-600 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setReleaseModalAttempt(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionBusy === releaseModalAttempt.id + "release"}
+                onClick={() =>
+                  void manage(releaseModalAttempt, "release", releaseRemarkInput)
+                }
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer shadow-xs"
+              >
+                <CheckCircle2 size={14} />
+                {actionBusy === releaseModalAttempt.id + "release"
+                  ? "Saving & Releasing..."
+                  : isAttemptResultReleased(releaseModalAttempt)
+                  ? "Save Tutor Remark"
+                  : "Release Result & Remark"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <DocumentHeaderCustomizerModal
+        isOpen={showHeaderDesigner}
+        onClose={() => setShowHeaderDesigner(false)}
+        scopeKey={schoolId || "default"}
+        schoolId={schoolId}
+        fallbackSchoolName={
+          availableSchools.find((s) => s.id === schoolId)?.name ||
+          availableSchools[0]?.name ||
+          resolveSchoolLabel(schoolId)
+        }
+        userUid={auth.currentUser?.uid || ""}
+        canUpdateSchoolProfile={isSchoolUser || isPlatformAdmin}
+        onSaved={(savedCfg) => setHeaderConfig(savedCfg)}
+      />
     </main>
   );
 }

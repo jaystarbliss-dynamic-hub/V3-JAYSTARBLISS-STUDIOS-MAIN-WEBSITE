@@ -30,14 +30,23 @@ import {
   AGREEMENT_STATUSES as SHARED_AGREEMENT_STATUSES,
   createAgreementVersionSnapshot as sharedCreateAgreementVersionSnapshot,
   canAccessAgreement as sharedCanAccessAgreement,
+  isAttemptResultReleased as sharedIsAttemptResultReleased,
+  canViewOrPrintAttemptResult as sharedCanViewOrPrintAttemptResult,
+  getWorkTypeLabels as sharedGetWorkTypeLabels,
+  type WorkTypeLabels as SharedWorkTypeLabels,
 } from '../../api/_lib/jdi-assessment.js';
 
 export type AcademicWorkType = 'ASSIGNMENT' | 'ACTIVITY' | 'TEST' | 'EXAMINATION';
 export type WorkType = AcademicWorkType;
+export type WorkTypeLabels = SharedWorkTypeLabels;
 export const WORK_TYPES: AcademicWorkType[] = SHARED_WORK_TYPES as AcademicWorkType[];
 
 export function normalizeWorkType(input: unknown, fallbackObj?: Record<string, any> | null): AcademicWorkType {
   return sharedNormalizeWorkType(input, fallbackObj) as AcademicWorkType;
+}
+
+export function getWorkTypeLabels(input?: unknown, fallbackObj?: Record<string, any> | null): WorkTypeLabels {
+  return sharedGetWorkTypeLabels(input, fallbackObj);
 }
 
 export function validateWorkTypeTransition(
@@ -262,5 +271,17 @@ export function validateExamCreationPayload(
 ) {
   return sharedValidateExamCreationPayload(body, existingDoc);
 }
+
+export function isAttemptResultReleased(attempt?: Record<string, any> | null): boolean {
+  return sharedIsAttemptResultReleased(attempt || {});
+}
+
+export function canViewOrPrintAttemptResult(
+  attempt?: Record<string, any> | null,
+  callerRole?: unknown
+): boolean {
+  return sharedCanViewOrPrintAttemptResult(attempt || {}, callerRole);
+}
+
 
 

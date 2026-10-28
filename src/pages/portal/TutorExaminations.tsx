@@ -62,8 +62,15 @@ import {
   X,
   Link2,
   Layers,
+  LayoutTemplate,
+  MessageSquare,
 } from "lucide-react";
 import { ExamListSkeleton } from "../../components/ui/Skeleton";
+import {
+  TUTOR_REMARK_PRESETS,
+  getSuggestedTutorRemark,
+} from "../../lib/documentHeaderTemplates";
+import DocumentHeaderCustomizerModal from "../../components/portal/DocumentHeaderCustomizerModal";
 
 type ExistingExamItem = {
   id: string;
@@ -130,6 +137,8 @@ type ExamAttemptRecord = {
   deadlineAt?: string;
   releasedAt?: any;
   resultReleased?: boolean;
+  feedback?: string;
+  tutorFeedback?: string;
 };
 
 type EnrolledStudent = {
@@ -201,9 +210,9 @@ export default function TutorExaminations() {
   // Questions State — starts empty without hardcoded/seeded demo questions
   const [questions, setQuestions] = useState<any[]>([]);
 
-  // Settings Tab State (for Native Examinations)
+  // Settings Tab State (for Native Assessments)
   const [makeQuiz, setMakeQuiz] = useState(true);
-  const [releaseGradesPolicy, setReleaseGradesPolicy] = useState<"immediate" | "manual">("immediate");
+  const [releaseGradesPolicy, setReleaseGradesPolicy] = useState<"immediate" | "manual">("manual");
   const [showMissedQuestions, setShowMissedQuestions] = useState(true);
   const [showCorrectAnswers, setShowCorrectAnswers] = useState(true);
   const [showPointValues, setShowPointValues] = useState(true);
@@ -212,7 +221,7 @@ export default function TutorExaminations() {
   const [shuffleQuestions, setShuffleQuestions] = useState(false);
   const [shuffleOptions, setShuffleOptions] = useState(false);
   const [confirmationMessage, setConfirmationMessage] = useState(
-    "Your examination has been recorded and submitted successfully."
+    "Your assessment has been recorded and submitted successfully."
   );
 
   // Access & Lifecycle State
@@ -241,6 +250,9 @@ export default function TutorExaminations() {
   const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(null);
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState(0);
   const [releasingResultId, setReleasingResultId] = useState<string | null>(null);
+  const [savingRemarkId, setSavingRemarkId] = useState<string | null>(null);
+  const [tutorRemarksByAttempt, setTutorRemarksByAttempt] = useState<Record<string, string>>({});
+  const [showHeaderCustomizer, setShowHeaderCustomizer] = useState(false);
 
   // Existing Examinations List & Management State
   const [existingExams, setExistingExams] = useState<ExistingExamItem[]>([]);
@@ -588,7 +600,7 @@ export default function TutorExaminations() {
           questionCount: resolvedMode === "EXTERNAL_LINK" ? 0 : qList.length,
           maxScore,
           description: data.description || data.instructions || "",
-          releaseGradesPolicy: data.releaseGradesPolicy || "immediate",
+          releaseGradesPolicy: data.releaseGradesPolicy || "manual",
           showMissedQuestions: data.showMissedQuestions !== false,
           showCorrectAnswers: data.showCorrectAnswers !== false,
           showPointValues: data.showPointValues !== false,
@@ -598,7 +610,7 @@ export default function TutorExaminations() {
           limitOneAttempt: data.limitOneAttempt !== false,
           confirmationMessage:
             data.confirmationMessage ||
-            "Your examination has been recorded and submitted successfully.",
+            "Your assessment has been recorded and submitted successfully.",
           createdBy: data.createdBy,
           tutorId: data.tutorId,
           updatedAt: data.updatedAt || data.createdAt,
@@ -656,9 +668,20 @@ export default function TutorExaminations() {
             deadlineAt: at.deadlineAt,
             releasedAt: at.releasedAt,
             resultReleased: Boolean(at.resultReleased || at.releasedAt),
+            feedback: String(at.feedback || at.tutorFeedback || ""),
+            tutorFeedback: String(at.tutorFeedback || at.feedback || ""),
           };
         });
         setExamAttempts(records);
+        setTutorRemarksByAttempt((prev) => {
+          const next = { ...prev };
+          records.forEach((rec) => {
+            if (next[rec.id] === undefined && (rec.feedback || rec.tutorFeedback)) {
+              next[rec.id] = rec.feedback || rec.tutorFeedback || "";
+            }
+          });
+          return next;
+        });
         setLoadingAttempts(false);
       },
       (err) => {
@@ -963,7 +986,7 @@ export default function TutorExaminations() {
     setRawScriptText("");
     setParsedImportQuestions([]);
     setMessage(
-      `Successfully imported ${parsedImportQuestions.length} question(s) into your examination.`
+      `Successfully imported ${parsedImportQuestions.length} question(s) into your assessment.`
     );
   };
 
@@ -1247,7 +1270,7 @@ ANSWER KEY
     const savedQuestions = Array.isArray(exam.questions) ? exam.questions : [];
     setQuestions(savedQuestions);
     setMakeQuiz(exam.makeQuiz !== false);
-    setReleaseGradesPolicy(exam.releaseGradesPolicy || "immediate");
+    setReleaseGradesPolicy(exam.releaseGradesPolicy || "manual");
     setShowMissedQuestions(exam.showMissedQuestions !== false);
     setShowCorrectAnswers(exam.showCorrectAnswers !== false);
     setShowPointValues(exam.showPointValues !== false);
@@ -1256,7 +1279,7 @@ ANSWER KEY
 
     setEditorTab("questions");
     setErrorMessage("");
-    setMessage(`Editing "${exam.title}". Changes will update this ${resolvedWorkType.toLowerCase()} directly.`);
+    setMessage(`Editing "${exam.title}". Changes will update this assessment directly.`);
     scrollToCreatorTop();
   };
 
@@ -1354,28 +1377,74 @@ ANSWER KEY
         setMessage(`"${exam.title}" was permanently deleted.`);
       }
     } catch (e) {
-      setErrorMessage(e instanceof Error ? e.message : "Could not delete examination.");
+      setErrorMessage(e instanceof Error ? e.message : "Could not delete assessment.");
     } finally {
       setItemActionBusy(null);
     }
   };
 
-  // Release Result for individual student
+  // Save Tutor Remark for individual student attempt
+  const handleSaveTutorRemark = async (attempt: ExamAttemptRecord, remarkInput?: string) => {
+    const trimmedRemark = String(
+      remarkInput !== undefined
+        ? remarkInput
+        : tutorRemarksByAttempt[attempt.id] ?? attempt.feedback ?? attempt.tutorFeedback ?? ""
+    ).trim();
+    setSavingRemarkId(attempt.id);
+    try {
+      await updateDoc(doc(db, "jdiExamAttempts", attempt.id), {
+        feedback: trimmedRemark,
+        tutorFeedback: trimmedRemark,
+        updatedAt: serverTimestamp(),
+      });
+      setTutorRemarksByAttempt((prev) => ({ ...prev, [attempt.id]: trimmedRemark }));
+      setExamAttempts((prev) =>
+        prev.map((at) =>
+          at.id === attempt.id
+            ? { ...at, feedback: trimmedRemark, tutorFeedback: trimmedRemark }
+            : at
+        )
+      );
+      setMessage(`Saved tutor remark for ${attempt.studentName}.`);
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Failed to save tutor remark.");
+    } finally {
+      setSavingRemarkId(null);
+    }
+  };
+
+  // Release Result for individual student (saving selected/typed tutor remark with the release)
   const handleReleaseResult = async (attempt: ExamAttemptRecord) => {
     setReleasingResultId(attempt.id);
     try {
       const nextState = !attempt.resultReleased;
+      const currentRemark = String(
+        tutorRemarksByAttempt[attempt.id] ?? attempt.feedback ?? attempt.tutorFeedback ?? ""
+      ).trim();
       await updateDoc(doc(db, "jdiExamAttempts", attempt.id), {
         resultReleased: nextState,
         releasedAt: nextState ? serverTimestamp() : null,
+        ...(currentRemark
+          ? { feedback: currentRemark, tutorFeedback: currentRemark }
+          : {}),
         updatedAt: serverTimestamp(),
       });
       setExamAttempts((prev) =>
-        prev.map((at) => (at.id === attempt.id ? { ...at, resultReleased: nextState } : at))
+        prev.map((at) =>
+          at.id === attempt.id
+            ? {
+                ...at,
+                resultReleased: nextState,
+                ...(currentRemark
+                  ? { feedback: currentRemark, tutorFeedback: currentRemark }
+                  : {}),
+              }
+            : at
+        )
       );
       setMessage(
         nextState
-          ? `Released result to ${attempt.studentName}.`
+          ? `Released result${currentRemark ? " & tutor remark" : ""} to ${attempt.studentName}.`
           : `Result unreleased for ${attempt.studentName}.`
       );
     } catch (e) {
@@ -1553,6 +1622,16 @@ ANSWER KEY
               <Clock size={15} />
               <span>History</span>
             </Link>
+
+            <button
+              type="button"
+              onClick={() => setShowHeaderCustomizer(true)}
+              className="min-h-[42px] px-3.5 py-2 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-100 transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
+              title="Official Document Header Customizer"
+            >
+              <LayoutTemplate size={15} />
+              <span className="hidden sm:inline">Document Header Customizer</span>
+            </button>
 
             {deliveryMode === "NATIVE" && (
               <button
@@ -1800,7 +1879,7 @@ ANSWER KEY
                 }
               />
               <div className="min-w-0">
-                <p className="font-bold text-xs">Native Jaystarbliss Examination</p>
+                <p className="font-bold text-xs">Native Jaystarbliss Assessment</p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
                   Full question builder, grading, timer &amp; live proctor
                 </p>
@@ -1808,10 +1887,10 @@ ANSWER KEY
             </button>
           </div>
 
-          {/* Center Tabs: Shown ONLY for Native Jaystarbliss Examination */}
+          {/* Center Tabs: Shown ONLY for Native Jaystarbliss Assessment */}
           {deliveryMode === "NATIVE" && (
             <nav
-              aria-label="Native examination sections"
+              aria-label="Native assessment sections"
               className="grid grid-cols-3 sm:inline-flex items-center p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl w-full sm:w-auto shrink-0"
             >
               <button
@@ -1868,7 +1947,7 @@ ANSWER KEY
             <div>
               <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
                 <ExternalLink size={18} className="text-blue-600 shrink-0" />
-                External Link / Google Forms Examination
+                External Link / Google Forms Assessment
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 Configure the external assessment link and portal access code. Questions and responses are hosted externally.
@@ -1880,13 +1959,13 @@ ANSWER KEY
             {/* Title & Description */}
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Examination Title *
+                {workType.charAt(0) + workType.slice(1).toLowerCase()} Title *
               </label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Grade 5 Digital Literacy Mid-Term Assessment"
+                placeholder={`e.g. Grade 5 Digital Literacy ${workType.charAt(0) + workType.slice(1).toLowerCase()}`}
                 className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:border-blue-600"
               />
             </div>
@@ -1898,7 +1977,7 @@ ANSWER KEY
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Enter instructions for students before they open the external examination link..."
+                placeholder="Enter instructions for students before they open the external assessment link..."
                 rows={2}
                 className="w-full text-xs text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl p-3 focus:outline-none focus:border-blue-600 resize-none bg-slate-50/50 dark:bg-slate-900/40"
               />
@@ -1908,7 +1987,7 @@ ANSWER KEY
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="md:col-span-2">
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                  External Examination / Google Forms URL *
+                  External Assessment / Google Forms URL *
                 </label>
                 <input
                   type="url"
@@ -2053,7 +2132,7 @@ ANSWER KEY
                 <KeyRound size={14} className="text-blue-600 shrink-0" />
                 <span>
                   Eligible students in <strong>{selectedClass}</strong> will unlock and click{" "}
-                  <strong>Open Examination</strong> using code <strong>{activePasscode}</strong>.
+                  <strong>Open Assessment</strong> using code <strong>{activePasscode}</strong>.
                 </span>
               </div>
 
@@ -2083,7 +2162,9 @@ ANSWER KEY
                   className="min-h-[42px] rounded-xl bg-blue-600 px-5 py-2.5 font-bold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer text-xs"
                 >
                   {busy ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-                  {editingExamId ? "Update & Republish" : "Publish Examination"}
+                  {editingExamId
+                    ? "Update & Republish"
+                    : `Publish ${workType.charAt(0) + workType.slice(1).toLowerCase()}`}
                 </button>
               </div>
             </div>
@@ -2092,7 +2173,7 @@ ANSWER KEY
       )}
 
       {/* ============================================================== */}
-      {/* MODE B: NATIVE JAYSTARBLISS EXAMINATION WORKSPACE              */}
+      {/* MODE B: NATIVE JAYSTARBLISS ASSESSMENT WORKSPACE               */}
       {/* ============================================================== */}
       {deliveryMode === "NATIVE" && (
         <>
@@ -2105,7 +2186,7 @@ ANSWER KEY
                     Student Preview Mode
                   </span>
                   <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
-                    {title || "Untitled Examination"}
+                    {title || "Untitled Assessment"}
                   </h2>
                   <p className="text-xs text-slate-500">
                     {subject || "General"} · {selectedClass} · {duration} mins · {totalExamMarks} Marks
@@ -2166,20 +2247,20 @@ ANSWER KEY
                 <div className="space-y-3">
                   <div>
                     <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                      Examination Title *
+                      {workType.charAt(0) + workType.slice(1).toLowerCase()} Title *
                     </label>
                     <input
                       type="text"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      placeholder="Enter examination title (e.g. Grade 4 Coding & Robotics Assessment)"
+                      placeholder={`Enter ${workType.toLowerCase()} title (e.g. Grade 4 Coding & Robotics ${workType.charAt(0) + workType.slice(1).toLowerCase()})`}
                       className="w-full text-base sm:text-xl font-black text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2 focus:outline-none focus:border-blue-600 bg-transparent"
                     />
                   </div>
                   <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Examination description or student instructions (optional)"
+                    placeholder={`${workType.charAt(0) + workType.slice(1).toLowerCase()} description or student instructions (optional)`}
                     rows={2}
                     className="w-full text-xs text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl p-3 focus:outline-none focus:border-blue-600 resize-none bg-slate-50/50 dark:bg-slate-900/40"
                   />
@@ -2313,10 +2394,10 @@ ANSWER KEY
                   </div>
                   <div className="max-w-md mx-auto space-y-1">
                     <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
-                      This examination has no questions yet
+                      This assessment has no questions yet
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Start building your native examination by adding questions one by one or importing formatted questions from text or CSV.
+                      Start building your native assessment by adding questions one by one or importing formatted questions from text or CSV.
                     </p>
                   </div>
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2.5 pt-1 max-w-md mx-auto">
@@ -2694,7 +2775,7 @@ ANSWER KEY
                   <div className="rounded-2xl border border-slate-200/80 bg-white dark:bg-[#161B26] dark:border-slate-800 overflow-hidden shadow-xs">
                     <div className="px-4 sm:px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
                       <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                        <Activity size={16} className="text-blue-600" /> Live Examination Candidate Roster
+                        <Activity size={16} className="text-blue-600" /> Live Assessment Candidate Roster
                       </h3>
                       <span className="text-xs text-slate-500 font-semibold">
                         Class: <strong>{selectedClass}</strong>
@@ -2703,7 +2784,7 @@ ANSWER KEY
 
                     {examAttempts.length === 0 ? (
                       <div className="p-8 text-center text-xs text-slate-500">
-                        No student has started this examination yet. Share the access code{" "}
+                        No student has started this assessment yet. Share the access code{" "}
                         <strong>{activePasscode}</strong> with eligible candidates.
                       </div>
                     ) : (
@@ -3001,7 +3082,7 @@ ANSWER KEY
                 <div className="rounded-2xl border border-slate-200/80 bg-white dark:bg-[#161B26] dark:border-slate-800 p-4 sm:p-6 shadow-xs space-y-4">
                   {questions.length === 0 ? (
                     <p className="text-xs text-slate-500 text-center py-6">
-                      No questions in this examination yet.
+                      No questions in this assessment yet.
                     </p>
                   ) : (
                     <>
@@ -3125,7 +3206,7 @@ ANSWER KEY
                     if (!targetAttempt) {
                       return (
                         <div className="py-8 text-center text-xs text-slate-500">
-                          No attempts available to display for this examination.
+                          No attempts available to display for this assessment.
                         </div>
                       );
                     }
@@ -3149,6 +3230,113 @@ ANSWER KEY
                             <p className="text-[10px] text-slate-500">
                               {targetAttempt.percentage ?? 0}% achieved
                             </p>
+                          </div>
+                        </div>
+
+                        {/* Tutor Remark Selection & Custom Input Panel before/during Result Release */}
+                        <div className="p-4 rounded-xl border border-blue-200/80 dark:border-blue-900/60 bg-blue-50/40 dark:bg-blue-950/20 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <MessageSquare size={15} className="text-blue-600 dark:text-blue-400" />
+                              <span className="text-xs font-bold text-slate-900 dark:text-white">
+                                Official Tutor Remark (Select a Preset or Write Your Own Remark)
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const suggested = getSuggestedTutorRemark(
+                                  Number(targetAttempt.percentage ?? 0)
+                                );
+                                setTutorRemarksByAttempt((prev) => ({
+                                  ...prev,
+                                  [targetAttempt.id]: suggested,
+                                }));
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600/10 text-blue-700 dark:text-blue-300 text-[11px] font-bold hover:bg-blue-600/20 cursor-pointer"
+                            >
+                              <Sparkles size={12} />
+                              Suggest Remark for {targetAttempt.percentage ?? 0}%
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5">
+                            {TUTOR_REMARK_PRESETS.map((preset) => {
+                              const currentVal =
+                                tutorRemarksByAttempt[targetAttempt.id] ??
+                                targetAttempt.feedback ??
+                                targetAttempt.tutorFeedback ??
+                                "";
+                              const isSelected = currentVal.trim() === preset.text.trim();
+                              return (
+                                <button
+                                  key={preset.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setTutorRemarksByAttempt((prev) => ({
+                                      ...prev,
+                                      [targetAttempt.id]: preset.text,
+                                    }))
+                                  }
+                                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all cursor-pointer ${
+                                    isSelected
+                                      ? "border-blue-600 bg-blue-600 text-white shadow-2xs"
+                                      : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-blue-400"
+                                  }`}
+                                >
+                                  {preset.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="space-y-2">
+                            <textarea
+                              rows={3}
+                              value={
+                                tutorRemarksByAttempt[targetAttempt.id] ??
+                                targetAttempt.feedback ??
+                                targetAttempt.tutorFeedback ??
+                                ""
+                              }
+                              onChange={(e) =>
+                                setTutorRemarksByAttempt((prev) => ({
+                                  ...prev,
+                                  [targetAttempt.id]: e.target.value,
+                                }))
+                              }
+                              placeholder="Select a preset remark above or type your personalized tutor remark to go out with the student's result..."
+                              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none"
+                            />
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-[11px] text-slate-500">
+                                This remark is included in the student&apos;s result portal and official PDF transcript.
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  disabled={savingRemarkId === targetAttempt.id}
+                                  onClick={() => void handleSaveTutorRemark(targetAttempt)}
+                                  className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 disabled:opacity-50 cursor-pointer"
+                                >
+                                  {savingRemarkId === targetAttempt.id
+                                    ? "Saving Remark..."
+                                    : "Save Remark Only"}
+                                </button>
+                                {!targetAttempt.resultReleased && (
+                                  <button
+                                    type="button"
+                                    disabled={releasingResultId === targetAttempt.id}
+                                    onClick={() => void handleReleaseResult(targetAttempt)}
+                                    className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
+                                  >
+                                    {releasingResultId === targetAttempt.id
+                                      ? "Releasing..."
+                                      : "Release Result with Remark"}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
 
@@ -3449,7 +3637,7 @@ ANSWER KEY
                     <div>
                       <p>Limit to 1 attempt</p>
                       <p className="text-[11px] text-slate-500 font-normal">
-                        Enforce single examination attempt per student record
+                        Enforce single assessment attempt per student record
                       </p>
                     </div>
                     <input
@@ -3509,7 +3697,7 @@ ANSWER KEY
               Assessments Overview &amp; Active Schedule
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Monitor current and upcoming assignments, activities, tests, and examinations across your authorised schools and private learners.
+              Monitor current and upcoming assignments, activities, tests, and assessments across your authorised schools and private learners.
             </p>
           </div>
 
@@ -3935,7 +4123,7 @@ ANSWER KEY
                     </div>
                     <div className="space-y-1 min-w-0">
                       <p className="font-black text-xs sm:text-sm text-slate-900 dark:text-white">
-                        Native Jaystarbliss {workType.charAt(0) + workType.slice(1).toLowerCase()} Editor
+                        Native Jaystarbliss Assessment Editor
                       </p>
                       <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                         Question authoring, formatted text/CSV import, point allocation, recipient targeting (school class or private learners), and automatic/manual grading.
@@ -3953,7 +4141,7 @@ ANSWER KEY
                     </div>
                     <div className="space-y-1 min-w-0">
                       <p className="font-black text-xs sm:text-sm text-slate-900 dark:text-white">
-                        External Link / Google Forms {workType.charAt(0) + workType.slice(1).toLowerCase()}
+                        External Link / Google Forms Assessment
                       </p>
                       <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                         Configure an external assessment URL, recipient target, and portal access verification. Manual score entry and release remain supported.
@@ -3986,7 +4174,7 @@ ANSWER KEY
             <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                  <Upload size={18} className="text-blue-600 shrink-0" /> Import Questions to Examination
+                  <Upload size={18} className="text-blue-600 shrink-0" /> Import Questions to Assessment
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Paste formatted questions and answer keys or upload a structured CSV file.
@@ -4156,6 +4344,20 @@ ANSWER KEY
           </div>
         </div>
       )}
+
+      <DocumentHeaderCustomizerModal
+        isOpen={showHeaderCustomizer}
+        onClose={() => setShowHeaderCustomizer(false)}
+        scopeKey={schoolId || "default"}
+        schoolId={schoolId}
+        fallbackSchoolName={
+          assignedSchools.find((s) => s.id === schoolId)?.name ||
+          assignedSchools[0]?.name ||
+          ""
+        }
+        userUid={auth.currentUser?.uid || ""}
+        canUpdateSchoolProfile={isAdminWorkspace}
+      />
     </main>
   );
 }

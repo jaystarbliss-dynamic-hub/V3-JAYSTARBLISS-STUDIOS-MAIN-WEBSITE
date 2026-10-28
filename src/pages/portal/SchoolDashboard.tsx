@@ -364,7 +364,7 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
           <DashboardGreeting
             name={schoolName.split(' ')[0] || schoolName}
             role="Partner Institution"
-            subtitle="Manage student enrollment, examination overview, class schedules, and billing."
+            subtitle="Manage student enrollment, assessment overview, class schedules, and billing."
           />
 
           {/* Focused school overview: operational metrics and shortcuts only. Detailed programmes,
@@ -465,9 +465,9 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                <Key size={18} className="text-brand-red"/> Exam Passcodes
+                <Key size={18} className="text-brand-red"/> Assessment Passcodes
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Examination keys for CBT invigilation.</p>
+              <p className="text-xs text-slate-500 mt-0.5">Assessment keys for CBT invigilation.</p>
             </div>
             <button onClick={() => setPasscodeForm({ classLevel: '', subject: '', examTitle: '', passcode: generatePasscode(), isActive: true, validUntil: '' })} className="min-h-9 rounded-xl bg-brand-red text-white px-3 text-xs font-bold inline-flex items-center gap-1.5">
               <Key size={14}/> New passcode
@@ -476,7 +476,7 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
 
           {passcodes.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-xs text-slate-500">
-              No exam passcodes configured.
+              No assessment passcodes configured.
             </div>
           ) : (
             <div className="space-y-2.5">

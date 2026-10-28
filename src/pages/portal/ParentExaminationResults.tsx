@@ -13,6 +13,7 @@ import { generateExamReportPdf } from "../../lib/examReportPdfGenerator";
 import {
   computeExamMaxScore,
   calculateScorePercentage,
+  isAttemptResultReleased,
   normalizeClassName,
   resolvePartnerSchoolName,
 } from "../../lib/classes";
@@ -134,7 +135,7 @@ export default function ParentExaminationResults() {
         const foundResults: Result[] = [];
         for (const ad of attemptsSnap.docs || []) {
           const a = ad.data();
-          if (childIds.has(a.studentId) && a.releasedAt) {
+          if (childIds.has(a.studentId) && isAttemptResultReleased(a)) {
             const exam = examDocsMap.get(a.examId) || {};
             const child = childMap.get(a.studentId);
             const score = typeof a.score === "number" ? a.score : 0;
@@ -157,7 +158,7 @@ export default function ParentExaminationResults() {
                 "",
               schoolId: a.schoolId || exam.schoolId || child?.schoolId,
               schoolName,
-              title: exam.title || a.examTitle || "Examination Assessment",
+              title: exam.title || a.examTitle || "Assessment",
               subject: exam.subject || "General",
               status: a.status || "graded",
               score,
@@ -189,7 +190,7 @@ export default function ParentExaminationResults() {
       setChildren(data.children);
       setResults(data.results);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to load examination results.");
+      setError(e instanceof Error ? e.message : "Unable to load assessment results.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -354,7 +355,7 @@ export default function ParentExaminationResults() {
         <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
           <h2 className="text-lg font-bold text-slate-900">No linked learner profiles found</h2>
           <p className="mt-2 text-sm text-slate-600">
-            When your parent account is linked to a learner profile, their released examination
+            When your parent account is linked to a learner profile, their released assessment
             results will appear here.
           </p>
         </section>
@@ -362,8 +363,8 @@ export default function ParentExaminationResults() {
         <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
           <h2 className="text-lg font-bold text-slate-900">No released results yet</h2>
           <p className="mt-2 text-sm text-slate-600">
-            Submitted examinations remain pending here until verified and released by your child's
-            tutor or school.
+            Submitted assessments remain pending here until verified and released by your child's
+            tutor.
           </p>
         </section>
       ) : (
@@ -377,7 +378,7 @@ export default function ParentExaminationResults() {
                 <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider text-blue-700">
-                      {result.subject || "Examination"}
+                      {result.subject || "Assessment"}
                       {result.className ? ` · ${result.className}` : ""}
                       {result.schoolName ? ` · ${result.schoolName}` : ""}
                     </p>

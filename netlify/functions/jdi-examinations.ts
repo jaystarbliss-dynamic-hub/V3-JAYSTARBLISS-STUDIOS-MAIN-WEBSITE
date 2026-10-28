@@ -16,6 +16,7 @@ import {
   normalizeDeliveryMode,
   validateExamCreationPayload,
   isStudentEligibleForWork,
+  isAttemptResultReleased,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -328,8 +329,8 @@ async function notifyStudentsOfPublishedExam(examId: string, examData: Record<st
 
   const title =
     status === "active"
-      ? `Examination Now Active: ${examData.title}`
-      : `Upcoming Examination Scheduled: ${examData.title}`;
+      ? `Assessment Now Active: ${examData.title}`
+      : `Upcoming Assessment Scheduled: ${examData.title}`;
   const message = `${examData.title} (${examData.subject || "General"} • ${classLabel}) is ${
     status === "active" ? "now open for attempts" : `scheduled for ${dateLabel}`
   }.`;
@@ -484,14 +485,18 @@ export const handler: Handler = async event => {
         if (!current || startedMs >= (current.startedAtMs || 0)) {
           const examDoc = examDocs.get(String(a.examId))?.data() || {};
           const maxScore = computeExamMaxScore(examDoc, a);
-          const released = Boolean(a.releasedAt);
+          const released = isAttemptResultReleased(a);
+          const resolvedReleasedAt = a.releasedAt?.toDate
+            ? a.releasedAt.toDate().toISOString()
+            : a.releasedAt || (released ? (a.updatedAt?.toDate ? a.updatedAt.toDate().toISOString() : a.updatedAt || a.submittedAt || new Date().toISOString()) : undefined);
           attemptsByExam[String(a.examId)] = {
             attemptId: attemptDoc.id,
             attemptStatus: a.status,
             score: released ? a.score : undefined,
             maxScore,
             percentage: released && typeof a.score === "number" ? calculateScorePercentage(a.score, maxScore) : undefined,
-            releasedAt: a.releasedAt?.toDate ? a.releasedAt.toDate().toISOString() : a.releasedAt || undefined,
+            releasedAt: released ? resolvedReleasedAt : undefined,
+            resultReleased: released,
             startedAtMs: startedMs,
           };
         }
@@ -519,7 +524,7 @@ export const handler: Handler = async event => {
       const examId = String(body.examId || "").trim();
       const passcode = String(body.passcode || "").trim();
       if (!examId || !passcode || passcode.length > 128) {
-        return json(400, { error: "Enter the examination passcode." });
+        return json(400, { error: "Enter the assessment passcode." });
       }
       const student = await getStudent(c.uid, c.user);
       if (!student) return json(403, { error: "This account is not assigned to a student record." });
@@ -530,7 +535,7 @@ export const handler: Handler = async event => {
         ref = adminDb.collection("schoolExams").doc(examId);
         examSnap = await ref.get();
       }
-      if (!examSnap.exists) return json(403, { error: "The passcode could not be validated for this examination." });
+      if (!examSnap.exists) return json(403, { error: "The passcode could not be validated for this assessment." });
       const exam = examSnap.data() || {};
       const now = Date.now();
       const from = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
@@ -608,7 +613,7 @@ export const handler: Handler = async event => {
         return json(429, { error: "Too many incorrect attempts. Wait 15 minutes before trying again." });
       }
       if (!assigned || !active || !validCode) {
-        return json(403, { error: "The passcode could not be validated for this examination." });
+        return json(403, { error: "The passcode could not be validated for this assessment." });
       }
 
       const resolvedDeliveryMode = normalizeDeliveryMode(exam.deliveryMode, exam);
@@ -682,7 +687,7 @@ export const handler: Handler = async event => {
 
       const attempt = {
         examId,
-        examTitle: String(exam.title || "Examination"),
+        examTitle: String(exam.title || "Assessment"),
         subject: String(exam.subject || "General"),
         studentId: student.id,
         studentUid: c.uid,
@@ -758,7 +763,7 @@ export const handler: Handler = async event => {
 
     if (method === "GET" && path.endsWith("/tutor-examinations")) {
       if (!canAuthorOrMutateExam(c.role)) {
-        return json(403, { error: "Only authorised tutors and Super Admins can access examination authoring data." });
+        return json(403, { error: "Only authorised tutors and Super Admins can access assessment authoring data." });
       }
       const requestedSchoolId = event.queryStringParameters?.schoolId;
       const schoolId =
@@ -855,10 +860,10 @@ export const handler: Handler = async event => {
 
     if (method === "POST" && path.endsWith("/tutor-examinations")) {
       if (String(event.body || "").length > 500000) {
-        return json(413, { error: "Examination draft is too large." });
+        return json(413, { error: "Assessment draft is too large." });
       }
       if (!canAuthorOrMutateExam(c.role)) {
-        return json(403, { error: "Only authorised tutors and Super Admins can create or edit examinations." });
+        return json(403, { error: "Only authorised tutors and Super Admins can create or edit assessments." });
       }
       const body = JSON.parse(event.body || "{}");
       const requestedExamId = String(body.examId || body.id || "").trim();
@@ -869,7 +874,7 @@ export const handler: Handler = async event => {
         if (existingSnap.exists) {
           existingDoc = existingSnap.data() || {};
           if (!canManageExamRecord(existingDoc, c.uid, c.role)) {
-            return json(403, { error: "You can only edit or republish examinations that you created." });
+            return json(403, { error: "You can only edit or republish assessments that you created." });
           }
         }
       }
@@ -913,7 +918,7 @@ export const handler: Handler = async event => {
             const linkedSchool = String(record.schoolId || record.school_id || "");
             const hasSchoolAccess = Boolean(linkedSchool && (await permittedSchool(c, linkedSchool)));
             if (!assignedToTutor && !hasSchoolAccess) {
-              return json(403, { error: "You are not authorised to assign an examination to student " + studentId });
+              return json(403, { error: "You are not authorised to assign an assessment to student " + studentId });
             }
           }
           const uid = String(record.firebaseUid || record.userId || record.uid || studentId);
@@ -964,7 +969,7 @@ export const handler: Handler = async event => {
         (untilTime !== null && !Number.isFinite(untilTime)) ||
         (fromTime !== null && untilTime !== null && untilTime <= fromTime)
       ) {
-        return json(400, { error: "The examination closing time must be after its opening time." });
+        return json(400, { error: "The assessment closing time must be after its opening time." });
       }
 
       const rawPasscode = String(body.passcode || existingDoc?.passcode || randomBytes(4).toString("hex").toUpperCase()).trim();
@@ -984,7 +989,7 @@ export const handler: Handler = async event => {
                 ? "archived"
                 : "draft";
       if (status === "scheduled" && fromTime === null) {
-        return json(400, { error: "Scheduled examinations need an opening date and time." });
+        return json(400, { error: "Scheduled assessments need an opening date and time." });
       }
 
       const normalizedClassIds =
@@ -1116,18 +1121,18 @@ export const handler: Handler = async event => {
     }
 
 
-    return json(404, { error: "Examination endpoint not found." });
+    return json(404, { error: "Assessment endpoint not found." });
   } catch (error) {
     if (error instanceof Error && error.message === "AUTH") return json(401, { error: "Authentication required." });
     if (error instanceof Error && error.message === "PROFILE") return json(403, { error: "Portal profile not found." });
     if (error instanceof Error && error.message === "INACTIVE") return json(403, { error: "Your account is not active." });
     if (error instanceof Error && error.message === "INACTIVE_EXAM")
-      return json(409, { error: "This examination is no longer active." });
+      return json(409, { error: "This assessment is no longer active." });
     if (error instanceof Error && error.message === "ATTEMPT_EXISTS")
-      return json(409, { error: "An attempt for this examination has already been submitted." });
+      return json(409, { error: "An attempt for this assessment has already been submitted." });
     if (error instanceof Error && error.message === "ATTEMPT_LIMIT")
-      return json(409, { error: "You have used all allowed attempts for this examination." });
-    console.error("JDI examination handler failed", error);
+      return json(409, { error: "You have used all allowed attempts for this assessment." });
+    console.error("JDI assessment handler failed", error);
     return json(200, { fallback: true, exams: [], error: "Server handler unavailable; using client resolver." });
   }
 };

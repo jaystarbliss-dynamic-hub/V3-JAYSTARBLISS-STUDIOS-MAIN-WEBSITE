@@ -1317,4 +1317,114 @@ export function canAccessAgreement(agreementOrOpts = {}, actorArg = {}) {
   return false;
 }
 
+// ============================================================================
+// ASSESSMENT RESULT RELEASE & PRINTING AUTHORIZATION
+// ============================================================================
 
+export function isAttemptResultReleased(attempt = {}) {
+  if (!attempt || typeof attempt !== "object") return false;
+  return Boolean(attempt.releasedAt || attempt.resultReleased === true);
+}
+
+export function canViewOrPrintAttemptResult(attempt = {}, callerRole = "") {
+  if (!attempt || typeof attempt !== "object") return false;
+  const status = String(attempt.status || "").trim().toLowerCase();
+  if (!["submitted", "expired", "graded"].includes(status)) {
+    return false;
+  }
+  const role = String(callerRole || "").trim().toUpperCase();
+  if (canAuthorOrMutateExam(role)) {
+    return true;
+  }
+  return isAttemptResultReleased(attempt);
+}
+
+// ============================================================================
+// ASSESSMENT TYPE LABELS (RULE A UMBRELLA vs RULE B SPECIFIC WORK TYPES)
+// ============================================================================
+
+const WORK_TYPE_LABEL_MAP = {
+  ASSIGNMENT: {
+    code: "ASSIGNMENT",
+    workType: "ASSIGNMENT",
+    singular: "Assignment",
+    plural: "Assignments",
+    lowerSingular: "assignment",
+    lowerPlural: "assignments",
+    articleSingular: "an assignment",
+    startLabel: "Start Assignment",
+    startCta: "Start Assignment",
+    resumeLabel: "Resume Assignment",
+    resumeCta: "Resume Assignment",
+    submitLabel: "Submit Assignment",
+    submitCta: "Submit Assignment",
+    unlockAndStartCta: "Unlock & Start Assignment",
+    publishCta: "Publish Assignment",
+    reportTitle: "Official Assignment Performance Report",
+  },
+  ACTIVITY: {
+    code: "ACTIVITY",
+    workType: "ACTIVITY",
+    singular: "Activity",
+    plural: "Activities",
+    lowerSingular: "activity",
+    lowerPlural: "activities",
+    articleSingular: "an activity",
+    startLabel: "Start Activity",
+    startCta: "Start Activity",
+    resumeLabel: "Resume Activity",
+    resumeCta: "Resume Activity",
+    submitLabel: "Submit Activity",
+    submitCta: "Submit Activity",
+    unlockAndStartCta: "Unlock & Start Activity",
+    publishCta: "Publish Activity",
+    reportTitle: "Official Activity Performance Report",
+  },
+  TEST: {
+    code: "TEST",
+    workType: "TEST",
+    singular: "Test",
+    plural: "Tests",
+    lowerSingular: "test",
+    lowerPlural: "tests",
+    articleSingular: "a test",
+    startLabel: "Start Test",
+    startCta: "Start Test",
+    resumeLabel: "Resume Test",
+    resumeCta: "Resume Test",
+    submitLabel: "Submit Test",
+    submitCta: "Submit Test",
+    unlockAndStartCta: "Unlock & Start Test",
+    publishCta: "Publish Test",
+    reportTitle: "Official Test Performance Report",
+  },
+  EXAMINATION: {
+    code: "EXAMINATION",
+    workType: "EXAMINATION",
+    singular: "Examination",
+    plural: "Examinations",
+    lowerSingular: "examination",
+    lowerPlural: "examinations",
+    articleSingular: "an examination",
+    startLabel: "Start Examination",
+    startCta: "Start Examination",
+    resumeLabel: "Resume Examination",
+    resumeCta: "Resume Examination",
+    submitLabel: "Submit Examination",
+    submitCta: "Submit Examination",
+    unlockAndStartCta: "Unlock & Start Examination",
+    publishCta: "Publish Examination",
+    reportTitle: "Official Examination Performance Report",
+  },
+};
+
+export function getWorkTypeLabels(input = null, fallbackObj = null) {
+  const sourceObj =
+    input && typeof input === "object" ? input : fallbackObj && typeof fallbackObj === "object" ? fallbackObj : null;
+  const rawType =
+    input && typeof input === "string"
+      ? input
+      : sourceObj?.workType || sourceObj?.examWorkType || sourceObj?.type || "";
+  const normalized = normalizeWorkType(rawType, sourceObj);
+  return WORK_TYPE_LABEL_MAP[normalized] || WORK_TYPE_LABEL_MAP.EXAMINATION;
+}

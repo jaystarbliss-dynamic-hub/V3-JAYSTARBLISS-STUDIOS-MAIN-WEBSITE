@@ -10,6 +10,7 @@ import {
   resolvePartnerSchoolName,
   resolveAttemptQuestions,
   normalizeClassName,
+  isAttemptResultReleased,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -108,8 +109,8 @@ async function notifyStaff(a: any, exam: any, attemptId: string) {
       recipientUid: uid,
       isRead: false,
       type: "exam_submitted",
-      title: "Examination attempt submitted",
-      message: String(exam.title || "An examination") + " was submitted or timed out.",
+      title: "Assessment attempt submitted",
+      message: String(exam.title || "An assessment") + " was submitted or timed out.",
       examId: a.examId,
       attemptId,
       schoolId: schoolId || null,
@@ -139,7 +140,7 @@ export const handler: Handler = async event => {
         return json(403, { error: "Not authorised." });
       }
       const examSnap = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
-      if (!examSnap.exists) return json(404, { error: "Examination not found." });
+      if (!examSnap.exists) return json(404, { error: "Assessment not found." });
       const exam = examSnap.data() || {};
 
       const effectiveQuestions = resolveAttemptQuestions(exam, a);
@@ -199,9 +200,10 @@ export const handler: Handler = async event => {
           );
         }
         if (expiry.kind === "active") {
-          return json(409, { error: "The examination timer has not expired yet." });
+          return json(409, { error: "The assessment timer has not expired yet." });
         }
         const latest = expiry.kind === "closed" ? expiry.current : { ...expiry.current, status: "expired" };
+        const latestReleased = isAttemptResultReleased(latest);
         return json(200, {
           attempt: {
             id,
@@ -213,13 +215,14 @@ export const handler: Handler = async event => {
             schoolName,
             status: String(latest.status || "expired"),
             deadlineAt: latest.deadlineAt,
-            score: latest.releasedAt ? latest.score : undefined,
+            score: latestReleased ? latest.score : undefined,
             maxScore,
             percentage:
-              latest.releasedAt && typeof latest.score === "number"
+              latestReleased && typeof latest.score === "number"
                 ? calculateScorePercentage(latest.score, maxScore)
                 : undefined,
-            releasedAt: latest.releasedAt || undefined,
+            releasedAt: latestReleased ? (latest.releasedAt || latest.updatedAt || new Date().toISOString()) : undefined,
+            resultReleased: latestReleased,
           },
           exam: {
             id: a.examId,
@@ -235,7 +238,7 @@ export const handler: Handler = async event => {
       }
 
       const submitted = ["submitted", "expired", "graded"].includes(String(a.status));
-      const released = Boolean(a.releasedAt);
+      const released = isAttemptResultReleased(a);
       const safeQuestions = effectiveQuestions.map(safeQuestion);
       const questionById = new Map(safeQuestions.map((q: any) => [String(q.id), q]));
       const orderedQuestions = Array.isArray(a.questionOrder)
@@ -267,7 +270,9 @@ export const handler: Handler = async event => {
           }))
         : [];
 
-      const releasedAtIso = a.releasedAt?.toDate ? a.releasedAt.toDate().toISOString() : a.releasedAt || undefined;
+      const releasedAtIso = a.releasedAt?.toDate
+        ? a.releasedAt.toDate().toISOString()
+        : a.releasedAt || (released ? (a.updatedAt?.toDate ? a.updatedAt.toDate().toISOString() : a.updatedAt || new Date().toISOString()) : undefined);
       const submittedAtIso = a.submittedAt?.toDate ? a.submittedAt.toDate().toISOString() : a.submittedAt || undefined;
 
       return json(200, {
@@ -288,6 +293,7 @@ export const handler: Handler = async event => {
           percentage:
             released && typeof a.score === "number" ? calculateScorePercentage(a.score, maxScore) : undefined,
           releasedAt: released ? releasedAtIso : undefined,
+          resultReleased: released,
           feedback: released ? String(a.feedback || "") : undefined,
           questionResults: released && Array.isArray(a.questionResults) ? a.questionResults : undefined,
           manualMarks: released && Array.isArray(a.manualMarks) ? a.manualMarks : undefined,
@@ -324,11 +330,11 @@ export const handler: Handler = async event => {
         return json(403, { error: "Not authorised." });
       }
       if (a.status !== "in_progress") {
-        return json(409, { error: "This examination attempt is no longer editable." });
+        return json(409, { error: "This assessment attempt is no longer editable." });
       }
       const deadline = new Date(a.deadlineAt).getTime();
       const examSnap = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
-      if (!examSnap.exists) return json(404, { error: "Examination not found." });
+      if (!examSnap.exists) return json(404, { error: "Assessment not found." });
       const exam = examSnap.data() || {};
       const effectiveQuestions = resolveAttemptQuestions(exam, a);
 
@@ -357,7 +363,7 @@ export const handler: Handler = async event => {
         });
         if (expiry.kind === "missing") return json(404, { error: "Attempt not found." });
         if (expiry.kind === "owner") return json(403, { error: "Not authorised." });
-        if (expiry.kind === "active") return json(409, { error: "The examination timer has not expired yet." });
+        if (expiry.kind === "active") return json(409, { error: "The assessment timer has not expired yet." });
         if (expiry.kind === "expired") {
           await notifyStaff(expiry.attempt, exam, id).catch(err =>
             console.warn("JDI staff notification failed", err)
@@ -366,7 +372,7 @@ export const handler: Handler = async event => {
         return json(409, {
           error:
             expiry.kind === "closed"
-              ? "This examination attempt is already closed."
+              ? "This assessment attempt is already closed."
               : "Time has expired. Your attempt has been closed.",
           status: expiry.kind === "expired" ? "expired" : expiry.status,
           autoGraded: expiry.kind === "expired" ? expiry.grading.autoGraded : undefined,
@@ -402,10 +408,10 @@ export const handler: Handler = async event => {
         });
         if (saveResult === "missing") return json(404, { error: "Attempt not found." });
         if (saveResult === "owner") return json(403, { error: "Not authorised." });
-        if (saveResult === "closed") return json(409, { error: "This examination attempt is no longer editable." });
+        if (saveResult === "closed") return json(409, { error: "This assessment attempt is no longer editable." });
         if (saveResult === "expired") {
           return json(409, {
-            error: "The examination time has expired. Submit is no longer available.",
+            error: "The assessment time has expired. Submit is no longer available.",
             status: "expired",
           });
         }
@@ -413,7 +419,7 @@ export const handler: Handler = async event => {
       }
 
       if (action === "expire" && Date.now() < deadline) {
-        return json(403, { error: "The examination timer has not expired yet." });
+        return json(403, { error: "The assessment timer has not expired yet." });
       }
 
       if (action === "submit" || action === "expire") {
@@ -476,10 +482,10 @@ export const handler: Handler = async event => {
         if (submission.kind === "missing") return json(404, { error: "Attempt not found." });
         if (submission.kind === "owner") return json(403, { error: "Not authorised." });
         if (submission.kind === "closed") {
-          return json(409, { error: "This examination attempt is already closed.", status: submission.status });
+          return json(409, { error: "This assessment attempt is already closed.", status: submission.status });
         }
         if (submission.kind === "active") {
-          return json(403, { error: "The examination timer has not expired yet." });
+          return json(403, { error: "The assessment timer has not expired yet." });
         }
         if (submission.kind === "expired") {
           await notifyStaff(submission.attempt, exam, id).catch(err =>
@@ -498,23 +504,25 @@ export const handler: Handler = async event => {
         await notifyStaff(submission.attempt, exam, id).catch(err =>
           console.warn("JDI staff notification failed", err)
         );
+        const released = isAttemptResultReleased(submission.attempt);
         return json(200, {
           ok: true,
           status: "submitted",
           autoGraded: submission.grading.autoGraded,
-          score: submission.grading.autoGraded ? submission.grading.score : undefined,
+          score: released && submission.grading.autoGraded ? submission.grading.score : undefined,
           maxScore: submission.grading.maxScore,
+          resultReleased: released,
         });
       }
       return json(400, { error: "Unknown action." });
     }
-    return json(404, { error: "Examination attempt endpoint not found." });
+    return json(404, { error: "Assessment attempt endpoint not found." });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "";
     if (msg === "AUTH") return json(401, { error: "Authentication required." });
     if (msg === "PROFILE") return json(403, { error: "Portal profile not found." });
     if (msg === "INACTIVE") return json(403, { error: "Account is inactive." });
     console.error("JDI attempt handler failed", e);
-    return json(500, { error: "Unable to process this examination attempt." });
+    return json(500, { error: "Unable to process this assessment attempt." });
   }
 };

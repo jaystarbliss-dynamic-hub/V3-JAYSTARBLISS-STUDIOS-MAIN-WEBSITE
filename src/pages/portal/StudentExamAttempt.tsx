@@ -10,6 +10,9 @@ import {
   normalizeClassName,
   resolvePartnerSchoolName,
   normalizeDeliveryMode,
+  normalizeWorkType,
+  getWorkTypeLabels,
+  isAttemptResultReleased,
 } from "../../lib/classes";
 import {
   buildExamReportViewModel,
@@ -24,6 +27,7 @@ import {
   School,
   User,
   ExternalLink,
+  Lock,
 } from "lucide-react";
 
 type Q = {
@@ -53,6 +57,7 @@ type D = {
     percentage?: number;
     submittedAt?: unknown;
     releasedAt?: unknown;
+    resultReleased?: boolean;
     autoGraded?: boolean;
     answers?: Record<string, string | string[]>;
     feedback?: string;
@@ -75,6 +80,7 @@ type D = {
     id?: string;
     title: string;
     subject: string;
+    workType?: string;
     deliveryMode?: "EXTERNAL_LINK" | "NATIVE";
     externalUrl?: string;
     schoolId?: string;
@@ -129,7 +135,7 @@ export default function StudentExamAttempt() {
       if (!loadedData) {
         const attemptRef = doc(db, "jdiExamAttempts", attemptId);
         const attemptSnap = await getDoc(attemptRef);
-        if (!attemptSnap.exists()) throw new Error("Examination attempt record could not be found.");
+        if (!attemptSnap.exists()) throw new Error("Assessment attempt record could not be found.");
         const attemptData: any = { id: attemptSnap.id, ...attemptSnap.data() };
 
         // Load exam document
@@ -141,7 +147,7 @@ export default function StudentExamAttempt() {
         }
         const examData: any = examSnap.exists()
           ? examSnap.data()
-          : { title: "Examination", subject: "General" };
+          : { title: "Assessment", subject: "General" };
 
         // Resolve authoritative partner school name
         const effectiveSchoolId = String(attemptData.schoolId || examData.schoolId || "").trim();
@@ -162,7 +168,7 @@ export default function StudentExamAttempt() {
 
         const rawQuestions: Q[] = resolveAttemptQuestions(examData, attemptData) as Q[];
         const isClosed = attemptData.status !== "in_progress";
-        const isReleased = Boolean(attemptData.releasedAt);
+        const isReleased = isAttemptResultReleased(attemptData);
 
         const safeQuestions: Q[] = rawQuestions.map((q) => {
           if (!isClosed || !isReleased) {
@@ -173,11 +179,20 @@ export default function StudentExamAttempt() {
         });
 
         const maxScore = computeExamMaxScore(examData, attemptData);
-        const score = typeof attemptData.score === "number" ? attemptData.score : undefined;
+        const score = isReleased && typeof attemptData.score === "number" ? attemptData.score : undefined;
 
         loadedData = {
           attempt: {
             ...attemptData,
+            score,
+            percentage: score !== undefined ? calculateScorePercentage(score, maxScore) : undefined,
+            questionResults: isReleased ? attemptData.questionResults : undefined,
+            manualMarks: isReleased ? attemptData.manualMarks : undefined,
+            feedback: isReleased ? attemptData.feedback : undefined,
+            releasedAt: isReleased
+              ? attemptData.releasedAt || attemptData.updatedAt || attemptData.submittedAt || new Date().toISOString()
+              : undefined,
+            resultReleased: isReleased,
             studentName:
               attemptData.studentName ||
               sessionStorage.getItem("userName") ||
@@ -190,13 +205,13 @@ export default function StudentExamAttempt() {
             schoolId: effectiveSchoolId,
             schoolName: resolvedSchoolName,
             maxScore,
-            percentage: score !== undefined ? calculateScorePercentage(score, maxScore) : undefined,
             deadlineAt: attemptData.deadlineAt || new Date(Date.now() + 30 * 60000).toISOString(),
           },
           exam: {
             id: attemptData.examId,
-            title: examData.title || "Examination",
+            title: examData.title || "Assessment",
             subject: examData.subject || "General",
+            workType: normalizeWorkType(examData.workType, examData),
             deliveryMode: normalizeDeliveryMode(examData),
             externalUrl: String(examData.externalUrl || "").trim(),
             schoolId: effectiveSchoolId,
@@ -238,7 +253,7 @@ export default function StudentExamAttempt() {
       );
       setSeconds(remaining);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to load examination attempt.");
+      setError(e instanceof Error ? e.message : "Unable to load assessment attempt.");
     } finally {
       setBusy(false);
     }
@@ -403,44 +418,50 @@ export default function StudentExamAttempt() {
 
           setData((prev) => {
             if (!prev) return null;
+            const released = isAttemptResultReleased(prev.attempt);
             return {
               ...prev,
               attempt: {
                 ...prev.attempt,
                 status: finalStatus,
-                score: grading.score,
+                score: released ? grading.score : undefined,
                 maxScore: grading.maxScore,
-                percentage: grading.percentage,
-                questionResults: grading.questionResults as any,
+                percentage: released ? grading.percentage : undefined,
+                questionResults: released ? (grading.questionResults as any) : undefined,
               },
             };
           });
 
+          const currentTypeLabels = getWorkTypeLabels(fullExam?.workType || data.exam.workType, fullExam || data.exam);
           setNotice(
             action === "expire"
-              ? "Time expired! Your examination was automatically submitted."
-              : "Your examination was submitted successfully!"
+              ? `Time expired! Your ${currentTypeLabels.lowerSingular} was automatically submitted.`
+              : `Your ${currentTypeLabels.lowerSingular} was submitted successfully!`
           );
         }
       } else {
         if (action === "save") {
           setNotice("Answers saved.");
         } else {
+          const currentTypeLabels = getWorkTypeLabels(data.exam.workType, data.exam);
           setData((prev) => {
             if (!prev) return null;
+            const released = Boolean(resultData?.resultReleased || isAttemptResultReleased(prev.attempt));
             return {
               ...prev,
               attempt: {
                 ...prev.attempt,
                 status: action === "expire" ? "expired" : "submitted",
-                score: resultData?.score ?? prev.attempt.score,
+                score: released ? (resultData?.score ?? prev.attempt.score) : undefined,
                 maxScore: resultData?.maxScore ?? prev.attempt.maxScore,
-                percentage: resultData?.percentage ?? prev.attempt.percentage,
+                percentage: released ? (resultData?.percentage ?? prev.attempt.percentage) : undefined,
               },
             };
           });
           setNotice(
-            action === "expire" ? "Time expired. Attempt closed." : "Your examination was submitted."
+            action === "expire"
+              ? `Time expired. ${currentTypeLabels.singular} attempt closed.`
+              : `Your ${currentTypeLabels.lowerSingular} was submitted.`
           );
         }
       }
@@ -461,6 +482,10 @@ export default function StudentExamAttempt() {
   // Download PDF Report
   const handleDownloadReport = async () => {
     if (!data) return;
+    if (!isAttemptResultReleased(data.attempt)) {
+      setError("Assessment results have not been released by your tutor yet. Printing is disabled until results are released.");
+      return;
+    }
     setDownloadingPdf(true);
     try {
       const bytes = await generateExamReportPdf(
@@ -498,12 +523,14 @@ export default function StudentExamAttempt() {
   if (!data) {
     return (
       <main className="mx-auto max-w-4xl p-6 sm:p-8 text-center">
-        <p className="text-slate-600 font-semibold">{error || "Loading examination session…"}</p>
+        <p className="text-slate-600 font-semibold">{error || "Loading assessment session…"}</p>
       </main>
     );
   }
 
-  // Handle External Link Exam if opened via attempt route
+  const typeLabels = getWorkTypeLabels(data.exam.workType, data.exam);
+
+  // Handle External Link Assessment if opened via attempt route
   if (data.exam.deliveryMode === "EXTERNAL_LINK" && data.exam.externalUrl) {
     return (
       <main className="mx-auto max-w-3xl space-y-6 p-4 sm:p-8">
@@ -511,10 +538,13 @@ export default function StudentExamAttempt() {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
             <ExternalLink size={28} />
           </div>
+          <span className="inline-block rounded-md bg-blue-50 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-blue-700">
+            {typeLabels.singular}
+          </span>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900">{data.exam.title}</h1>
           <p className="text-sm text-slate-600 max-w-lg mx-auto">
             {data.exam.instructions ||
-              "This examination is hosted externally. Click the button below to launch your examination."}
+              `This ${typeLabels.lowerSingular} is hosted externally. Click the button below to launch your ${typeLabels.lowerSingular}.`}
           </p>
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
             <a
@@ -523,7 +553,7 @@ export default function StudentExamAttempt() {
               rel="noopener noreferrer"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 shadow-sm"
             >
-              Open Examination
+              Open {typeLabels.singular}
               <ExternalLink size={16} />
             </a>
             <button
@@ -532,7 +562,7 @@ export default function StudentExamAttempt() {
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
               <ArrowLeft size={16} />
-              Return to Tests
+              Return to Assessments
             </button>
           </div>
         </section>
@@ -541,7 +571,17 @@ export default function StudentExamAttempt() {
   }
 
   const closed = data.attempt.status !== "in_progress";
-  const isReleased = Boolean(data.attempt.releasedAt);
+  const isReleased = isAttemptResultReleased(data.attempt);
+  const answeredCount = data.questions.filter((q) => {
+    const val = answers[q.id];
+    if (Array.isArray(val)) return val.length > 0;
+    return val !== undefined && val !== null && String(val).trim() !== "";
+  }).length;
+  const isLowTime = !closed && seconds > 0 && seconds <= 300;
+  const formattedTime = `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${String(
+    seconds % 60
+  ).padStart(2, "0")}`;
+
   const reportVm = isReleased
     ? buildExamReportViewModel(
         {
@@ -553,6 +593,7 @@ export default function StudentExamAttempt() {
           id: data.exam.id,
           title: data.exam.title,
           subject: data.exam.subject,
+          workType: data.exam.workType,
           schoolName: data.exam.schoolName || data.attempt.schoolName,
           maxScore: data.exam.maxScore || data.attempt.maxScore,
           durationMinutes: data.exam.durationMinutes,
@@ -562,26 +603,67 @@ export default function StudentExamAttempt() {
     : null;
 
   return (
-    <main className="mx-auto max-w-4xl space-y-5 p-3 sm:p-5 md:p-8 overflow-x-hidden">
-      {/* COMPACT EXAM INFO & TIMER BAR */}
-      <section className="rounded-2xl bg-slate-900 p-4 sm:p-5 text-white shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-lg sm:text-xl font-bold break-words">{data.exam.title}</h2>
-            <p className="text-xs sm:text-sm text-slate-300 mt-0.5">{data.exam.subject}</p>
+    <main className="mx-auto max-w-4xl space-y-5 p-3 sm:p-5 md:p-8">
+      {/* STICKY ASSESSMENT INFO & COUNTDOWN TIMER BAR */}
+      <section
+        aria-label={`${typeLabels.singular} status and countdown timer`}
+        className={`${
+          closed ? "" : "sticky top-[52px] sm:top-[56px] z-30"
+        } rounded-2xl bg-slate-900/95 backdrop-blur-md p-3.5 sm:p-5 text-white shadow-md border border-slate-800`}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2 mb-0.5">
+              <span className="inline-flex items-center rounded-md bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-200">
+                {typeLabels.singular}
+              </span>
+              <h2 className="text-base sm:text-xl font-bold truncate sm:whitespace-normal sm:break-words">
+                {data.exam.title}
+              </h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-slate-300 mt-0.5">
+              <span>{data.exam.subject}</span>
+              {!closed && data.questions.length > 0 && (
+                <span className="inline-flex items-center rounded-md bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-slate-200">
+                  {answeredCount} / {data.questions.length} Answered
+                </span>
+              )}
+            </div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 sm:px-5 sm:py-2.5 text-center self-start sm:self-auto shrink-0">
+          <div
+            role="timer"
+            aria-live="off"
+            aria-label={closed ? "Assessment status" : `Time remaining ${formattedTime}`}
+            className={`rounded-xl border px-3.5 py-2 sm:px-5 sm:py-2.5 text-center shrink-0 transition-colors ${
+              closed
+                ? "border-white/10 bg-white/5"
+                : isLowTime
+                ? "border-red-400/50 bg-red-500/20 animate-pulse"
+                : "border-amber-400/30 bg-white/10"
+            }`}
+          >
             {closed ? (
               <span className="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider">
                 {isReleased ? "Released" : data.attempt.status}
               </span>
             ) : (
               <div className="flex items-center gap-2">
-                <Clock className="text-amber-400 shrink-0" size={18} />
-                <span className="font-mono text-xl sm:text-2xl font-black text-amber-300">
-                  {Math.floor(seconds / 60).toString().padStart(2, "0")}:
-                  {String(seconds % 60).padStart(2, "0")}
-                </span>
+                <Clock
+                  className={isLowTime ? "text-red-300 shrink-0" : "text-amber-400 shrink-0"}
+                  size={18}
+                />
+                <div className="text-left">
+                  <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-300 leading-none mb-0.5">
+                    Time Left
+                  </span>
+                  <span
+                    className={`font-mono text-lg sm:text-2xl font-black leading-none ${
+                      isLowTime ? "text-red-200" : "text-amber-300"
+                    }`}
+                  >
+                    {formattedTime}
+                  </span>
+                </div>
               </div>
             )}
           </div>
@@ -637,7 +719,7 @@ export default function StudentExamAttempt() {
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50"
                   >
                     <ArrowLeft size={16} />
-                    Return to Tests
+                    Return to Assessments
                   </button>
                 </div>
               </div>
@@ -830,35 +912,50 @@ export default function StudentExamAttempt() {
               <CheckCircle2 size={48} className="mx-auto text-emerald-600" />
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
-                  Examination Submitted Successfully
+                  {typeLabels.singular} Submitted Successfully
                 </h2>
                 <p className="mt-1 text-xs sm:text-sm text-slate-600">
-                  Your examination answers have been securely recorded in the central academic
+                  Your {typeLabels.lowerSingular} answers have been securely recorded in the central academic
                   ledger.
                 </p>
               </div>
-              <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 max-w-md mx-auto text-xs text-slate-600">
-                Official results and your downloadable performance transcript will appear here once
-                verified and released by your tutor.
+              <div className="rounded-xl bg-amber-50/70 border border-amber-200 p-4 max-w-md mx-auto text-xs text-amber-900 space-y-1">
+                <p className="font-bold flex items-center justify-center gap-1.5">
+                  <Lock size={14} className="shrink-0" />
+                  Awaiting Tutor Result Release
+                </p>
+                <p className="text-amber-800">
+                  Official results and your printable {typeLabels.lowerSingular} performance report remain locked until your tutor reviews and releases the results.
+                </p>
               </div>
-              <div className="pt-2">
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  title="Printing is disabled until your tutor releases the result."
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-slate-200 px-5 py-3 text-xs sm:text-sm font-bold text-slate-500 opacity-60 cursor-not-allowed"
+                >
+                  <Lock size={16} />
+                  Print Official Result PDF (Awaiting Tutor Release)
+                </button>
                 <button
                   onClick={() => nav("/portal/student/exams")}
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   <ArrowLeft size={16} />
-                  Return to Tests
+                  Return to Assessments
                 </button>
               </div>
             </div>
           )}
         </section>
       ) : (
-        /* ACTIVE TEST QUESTIONS */
+        /* ACTIVE ASSESSMENT QUESTIONS */
         <>
           {data.exam.instructions && (
             <section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 text-xs sm:text-sm text-slate-800">
-              <p className="font-bold text-blue-950 mb-1">Examination Instructions</p>
+              <p className="font-bold text-blue-950 mb-1">{typeLabels.singular} Instructions</p>
               <p className="leading-relaxed break-words">{data.exam.instructions}</p>
             </section>
           )}
@@ -970,7 +1067,7 @@ export default function StudentExamAttempt() {
             {confirmingSubmit ? (
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl bg-amber-50 border border-amber-200 p-3">
                 <p className="text-xs sm:text-sm font-semibold text-amber-950">
-                  Submit your examination now? Answers cannot be changed once submitted.
+                  Submit your {typeLabels.lowerSingular} now? Answers cannot be changed once submitted.
                 </p>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
@@ -987,13 +1084,13 @@ export default function StudentExamAttempt() {
                     onClick={() => void send("submit")}
                     className="flex-1 sm:flex-initial rounded-xl bg-blue-600 px-5 py-2 text-xs sm:text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {busy ? "Submitting…" : "Confirm Submit"}
+                    {busy ? "Submitting…" : `Confirm ${typeLabels.submitLabel}`}
                   </button>
                 </div>
               </div>
             ) : (
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center justify-between sm:justify-start gap-2">
+                <div className="flex items-center justify-between sm:justify-start gap-2.5">
                   <span className="text-xs font-semibold text-slate-600">
                     {saveStatus === "pending"
                       ? "Pending autosave…"
@@ -1003,9 +1100,15 @@ export default function StudentExamAttempt() {
                       ? "Autosave delayed"
                       : "✓ All answers saved"}
                   </span>
-                  <span className="sm:hidden font-mono text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
-                    {Math.floor(seconds / 60).toString().padStart(2, "0")}:
-                    {String(seconds % 60).padStart(2, "0")}
+                  <span
+                    className={`inline-flex items-center gap-1.5 font-mono text-xs font-bold px-2.5 py-1 rounded-lg border ${
+                      isLowTime
+                        ? "text-red-700 bg-red-50 border-red-200"
+                        : "text-amber-800 bg-amber-50 border-amber-200"
+                    }`}
+                  >
+                    <Clock size={13} className="shrink-0" />
+                    {formattedTime}
                   </span>
                 </div>
                 <div className="flex items-center gap-2.5">
@@ -1023,7 +1126,7 @@ export default function StudentExamAttempt() {
                     onClick={() => setConfirmingSubmit(true)}
                     className="flex-1 sm:flex-initial rounded-xl bg-blue-600 px-5 sm:px-6 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-blue-700 shadow-sm disabled:opacity-50"
                   >
-                    Submit Examination
+                    {typeLabels.submitLabel}
                   </button>
                 </div>
               </div>

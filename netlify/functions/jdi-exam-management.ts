@@ -18,6 +18,7 @@ import {
   normalizeQuestions,
   normalizeDeliveryMode,
   validateExternalExamUrl,
+  isAttemptResultReleased,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -490,20 +491,21 @@ export const handler: Handler = async event => {
             student.className ||
             "";
 
-          const schoolCanViewFinal =
-            schoolRoles.includes(c.role) &&
-            (a.status === "graded" || ((a.status === "submitted" || a.status === "expired") && a.autoGraded === true));
+          const released = isAttemptResultReleased(a);
           const canSeeScore = Boolean(
-            a.releasedAt || tutors.includes(c.role) || admins.includes(c.role) || schoolCanViewFinal
+            released || tutors.includes(c.role) || admins.includes(c.role)
           );
           const numericScore = canSeeScore && typeof a.score === "number" ? Number(a.score) : undefined;
           const percentage =
             numericScore !== undefined && maxScore > 0 ? calculateScorePercentage(numericScore, maxScore) : undefined;
+          const resolvedReleasedAt = a.releasedAt?.toDate
+            ? a.releasedAt.toDate().toISOString()
+            : a.releasedAt || (a.resultReleased === true ? (a.updatedAt?.toDate ? a.updatedAt.toDate().toISOString() : a.updatedAt || a.submittedAt || new Date().toISOString()) : null);
 
           const row: any = {
             id: d.id,
             examId: a.examId,
-            examTitle: e.title || a.examTitle || "Examination",
+            examTitle: e.title || a.examTitle || "Assessment",
             subject: e.subject || a.subject || "General",
             schoolId: resolvedSchoolId,
             schoolName: resolvedSchoolName,
@@ -516,7 +518,8 @@ export const handler: Handler = async event => {
             percentage,
             submittedAt: a.submittedAt?.toDate ? a.submittedAt.toDate().toISOString() : a.submittedAt || null,
             deadlineAt: a.deadlineAt || null,
-            releasedAt: a.releasedAt?.toDate ? a.releasedAt.toDate().toISOString() : a.releasedAt || null,
+            releasedAt: resolvedReleasedAt,
+            resultReleased: released,
             autoGraded: a.autoGraded,
           };
 
@@ -535,8 +538,8 @@ export const handler: Handler = async event => {
               acceptedAnswers: Array.isArray(q.acceptedAnswers) ? q.acceptedAnswers : [],
               explanation: q.explanation || "",
             }));
-          } else if (a.releasedAt || schoolCanViewFinal) {
-            row.feedback = a.releasedAt ? String(a.feedback || "") : "";
+          } else if (released) {
+            row.feedback = String(a.feedback || "");
             row.questionResults = Array.isArray(a.questionResults)
               ? a.questionResults.map(schoolSafeQuestionResult)
               : [];
@@ -635,16 +638,16 @@ export const handler: Handler = async event => {
 
     if (method === "POST") {
       if (!canAuthorOrMutateExam(c.role)) {
-        return json(403, { error: "School accounts have read-only access to examinations and reports." });
+        return json(403, { error: "School accounts have read-only access to assessments and reports." });
       }
       const examId = String(body.examId || "").trim();
-      if (!examId) return json(400, { error: "Examination ID is required." });
+      if (!examId) return json(400, { error: "Assessment ID is required." });
       const ref = adminDb.collection("jdiExams").doc(examId);
       const snap = await ref.get();
-      if (!snap.exists) return json(404, { error: "Examination not found." });
+      if (!snap.exists) return json(404, { error: "Assessment not found." });
       const exam = snap.data() || {};
       if (!(await canManageExam(c, exam))) {
-        return json(403, { error: "Not authorised to manage this examination." });
+        return json(403, { error: "Not authorised to manage this assessment." });
       }
 
       if (action === "delete") {
@@ -678,7 +681,7 @@ export const handler: Handler = async event => {
             mode: "archived",
             archived: true,
             attemptCount: attemptsSnap.size,
-            message: "Examination has student attempts and was archived to preserve historical records.",
+            message: "Assessment has student attempts and was archived to preserve historical records.",
           });
         }
       }
@@ -686,7 +689,7 @@ export const handler: Handler = async event => {
       if (action === "update" || action === "republish") {
         const updates = body.updates || body;
         if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
-          return json(400, { error: "Provide valid examination settings." });
+          return json(400, { error: "Provide valid assessment settings." });
         }
 
         const attemptsSnap = await adminDb
@@ -769,7 +772,7 @@ export const handler: Handler = async event => {
         if (updates.status !== undefined) {
           const nextStatus = String(updates.status);
           if (!["draft", "scheduled", "active", "completed", "archived"].includes(nextStatus)) {
-            return json(400, { error: "Invalid examination status." });
+            return json(400, { error: "Invalid assessment status." });
           }
           patch.status = nextStatus;
         }
@@ -794,11 +797,11 @@ export const handler: Handler = async event => {
           (fromTime !== null && untilTime !== null && untilTime <= fromTime)
         ) {
           return json(400, {
-            error: "The examination closing time must be after its opening time, and both dates must be valid.",
+            error: "The assessment closing time must be after its opening time, and both dates must be valid.",
           });
         }
         if (String(patch.status ?? exam.status ?? "draft") === "scheduled" && !nextAvailableFrom) {
-          return json(400, { error: "Scheduled examinations need an opening date and time." });
+          return json(400, { error: "Scheduled assessments need an opening date and time." });
         }
         if (updates.availableFrom !== undefined) patch.availableFrom = nextAvailableFrom;
         if (updates.availableUntil !== undefined) patch.availableUntil = nextAvailableUntil;
@@ -837,7 +840,7 @@ export const handler: Handler = async event => {
             recipients,
             {
               type: mergedExam.status === "active" ? "exam_active" : "exam_scheduled",
-              title: `Examination ${mergedExam.status === "active" ? "Active" : "Scheduled"}: ${mergedExam.title}`,
+              title: `Assessment ${mergedExam.status === "active" ? "Active" : "Scheduled"}: ${mergedExam.title}`,
               message: `${mergedExam.title} (${mergedExam.subject || "General"} • ${classLabel}) is ${mergedExam.status}.`,
               examId,
             },
@@ -1013,10 +1016,10 @@ export const handler: Handler = async event => {
           if (parentId) recipients.push(parentId);
           await notify(recipients, {
             type: "exam_result_corrected",
-            title: "Examination result corrected",
+            title: "Assessment result corrected",
             message:
               "A correction was made to the answer key for " +
-              String(exam.title || "an examination") +
+              String(exam.title || "an assessment") +
               ". The affected result has been recalculated.",
             examId,
             attemptId: a.id,
@@ -1124,6 +1127,7 @@ export const handler: Handler = async event => {
 
       if (action === "release") {
         const attemptId = String(body.attemptId || "");
+        const customFeedback = String(body.feedback ?? body.tutorFeedback ?? "").trim().slice(0, 4000);
         const aRef = adminDb.collection("jdiExamAttempts").doc(attemptId);
         const aSnap = await aRef.get();
         if (!aSnap.exists || aSnap.data()?.examId !== examId) return json(404, { error: "Attempt not found." });
@@ -1156,8 +1160,8 @@ export const handler: Handler = async event => {
         }
         const notificationPayload = {
           type: "exam_result_released",
-          title: "Examination result released",
-          message: "The result for " + String(exam.title || "an examination") + " has been released.",
+          title: "Assessment result released",
+          message: "The result for " + String(exam.title || "an assessment") + " has been released.",
           examId,
           attemptId,
         };
@@ -1166,7 +1170,16 @@ export const handler: Handler = async event => {
           const currentSnap = await tx.get(aRef);
           if (!currentSnap.exists || currentSnap.data()?.examId !== examId) return { kind: "missing" as const };
           const current = currentSnap.data() || {};
-          if (current.releasedAt) return { kind: "unchanged" as const, auditId: String(current.releaseAuditId || "") };
+          if (current.releasedAt) {
+            if (customFeedback) {
+              tx.update(aRef, {
+                feedback: customFeedback,
+                tutorFeedback: customFeedback,
+                updatedAt: FieldValue.serverTimestamp(),
+              });
+            }
+            return { kind: "unchanged" as const, auditId: String(current.releaseAuditId || "") };
+          }
           if (
             !["submitted", "expired", "graded"].includes(String(current.status)) ||
             (current.autoGraded === false && current.status !== "graded")
@@ -1180,13 +1193,16 @@ export const handler: Handler = async event => {
             actorUid: c.uid,
             score: current.score ?? null,
             maxScore,
+            ...(customFeedback ? { feedback: customFeedback } : {}),
             createdAt: FieldValue.serverTimestamp(),
           });
           tx.update(aRef, {
             maxScore,
+            resultReleased: true,
             releasedAt: FieldValue.serverTimestamp(),
             releasedBy: c.uid,
             releaseAuditId: releaseAudit.id,
+            ...(customFeedback ? { feedback: customFeedback, tutorFeedback: customFeedback } : {}),
             updatedAt: FieldValue.serverTimestamp(),
           });
           return { kind: "released" as const, auditId: releaseAudit.id };
@@ -1211,7 +1227,7 @@ export const handler: Handler = async event => {
         const currentStatus = String(exam.status || "draft");
         if (!(statusTransitions[currentStatus] || []).includes(status)) {
           return json(409, {
-            error: "This examination status transition is not allowed.",
+            error: "This assessment status transition is not allowed.",
           });
         }
         const unchanged = currentStatus === status;
@@ -1237,8 +1253,8 @@ export const handler: Handler = async event => {
           recipients,
           {
             type: "exam_status_changed",
-            title: "Examination updated",
-            message: String(exam.title || "An examination") + " is now " + status + ".",
+            title: "Assessment updated",
+            message: String(exam.title || "An assessment") + " is now " + status + ".",
             examId,
           },
           `exam-status:${examId}:${status}`
@@ -1246,7 +1262,7 @@ export const handler: Handler = async event => {
         return json(200, { ok: true, status, unchanged });
       }
 
-      return json(404, { error: "Unknown examination management action." });
+      return json(404, { error: "Unknown assessment management action." });
     }
 
     return json(405, { error: "Method not allowed." });
@@ -1256,6 +1272,6 @@ export const handler: Handler = async event => {
     if (m === "PROFILE") return json(403, { error: "Portal profile not found." });
     if (m === "INACTIVE") return json(403, { error: "Account is inactive." });
     console.error("JDI exam management error", e);
-    return json(500, { error: "Unable to complete examination management request." });
+    return json(500, { error: "Unable to complete assessment management request." });
   }
 };

@@ -4,7 +4,7 @@ import jsPDF from 'jspdf';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { auth, db, getClientDatabases } from '../../lib/firebase';
 import { getEffectiveAuth } from '../../utils/impersonation';
-import { computeExamMaxScore, formatScoreSummary, normalizeClassName, normalizeWorkType, resolvePartnerSchoolName } from '../../lib/classes';
+import { computeExamMaxScore, formatScoreSummary, isAttemptResultReleased, normalizeClassName, normalizeWorkType, resolvePartnerSchoolName } from '../../lib/classes';
 import SEO from '../../components/ui/SEO';
 
 import { MetricGridSkeleton, RosterListSkeleton, DocumentReaderSkeleton } from '../../components/ui/Skeleton';
@@ -210,18 +210,19 @@ const clientFallbackApi = async (studentId?: string) => {
   const examinations: ExamResult[] = (examAttempts?.docs || []).map(d => {
     const a = d.data() || {};
     const examData = examDocCache.get(String(a.examId || '')) || {};
+    const released = isAttemptResultReleased(a);
     return {
       id: d.id,
-      title: String(examData.title || a.examTitle || a.title || 'Examination'),
+      title: String(examData.title || a.examTitle || a.title || 'Assessment'),
       subject: String(examData.subject || a.subject || 'General'),
       workType: normalizeWorkType(examData.workType || a.workType),
       isUngradedActivity: Boolean(examData.isUngradedActivity || a.isUngradedActivity),
       status: String(a.status || 'submitted'),
-      score: typeof a.score === 'number' ? a.score : null,
+      score: released && typeof a.score === 'number' ? a.score : null,
       maxScore: computeExamMaxScore(examData, a),
       submittedAt: asIso(a.submittedAt),
-      releasedAt: asIso(a.releasedAt),
-      feedback: String(a.feedback || '')
+      releasedAt: released ? asIso(a.releasedAt) : null,
+      feedback: released ? String(a.feedback || '') : ''
     };
   }).sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')));
 
@@ -380,7 +381,7 @@ const SchoolLearnerInsights: React.FC = () => {
     line('Class: ' + detail.learner.className + '  •  Learner ID: ' + detail.learner.id);
     line('Generated: ' + new Date().toLocaleString());
     line('SUMMARY', 12, true);
-    line('Assignments: ' + categorizedWork.assignments.length + '  •  Activities: ' + categorizedWork.activities.length + '  •  Tests: ' + categorizedWork.tests.length + '  •  Examinations: ' + categorizedWork.examinations.length);
+    line('Assignments: ' + categorizedWork.assignments.length + '  •  Activities: ' + categorizedWork.activities.length + '  •  Tests: ' + categorizedWork.tests.length + '  •  Assessments: ' + categorizedWork.examinations.length);
     line('Academic assessments: ' + detail.summary.assessments + '  •  Average assessment score: ' + (detail.summary.averageAssessmentScore === null ? 'No scored assessments' : detail.summary.averageAssessmentScore.toFixed(1) + '/100'));
     line('Attendance rate: ' + (detail.summary.attendanceRate === null ? 'No attendance recorded' : detail.summary.attendanceRate.toFixed(1) + '%'));
     line('ASSIGNMENTS', 12, true);
@@ -393,9 +394,9 @@ const SchoolLearnerInsights: React.FC = () => {
     if (!categorizedWork.tests.length && !detail.assessments.length) line('No tests or academic assessments recorded.');
     categorizedWork.tests.forEach(a => line(dateLabel(a.submittedAt) + ' | ' + a.title + ' | ' + a.subject + ' | ' + scoreLabel(a.score, a.maxScore) + ' | ' + a.status));
     detail.assessments.forEach(a => line(dateLabel(a.updatedAt || a.createdAt) + ' | ' + a.title + ' | ' + a.subject + ' | ' + scoreLabel(a.score, 100) + (a.feedback ? ' | Feedback: ' + a.feedback : '')));
-    line('EXAMINATION HISTORY', 12, true);
-    if (!categorizedWork.examinations.length) line('No examination attempts recorded.');
-    categorizedWork.examinations.forEach(a => line(dateLabel(a.submittedAt) + ' | ' + a.title + ' | ' + a.subject + ' | ' + scoreLabel(a.score, a.maxScore) + ' | ' + a.status + (a.releasedAt ? ' | Released ' + dateLabel(a.releasedAt) : '')));
+    line('ASSESSMENT HISTORY', 12, true);
+    if (!categorizedWork.examinations.length) line('No assessment attempts recorded.');
+    categorizedWork.examinations.forEach(a => line(dateLabel(a.submittedAt) + ' | ' + a.title + ' | ' + a.subject + ' | ' + scoreLabel(a.score, a.maxScore) + ' | ' + a.status + (a.releasedAt ? ' | Released ' + dateLabel(a.releasedAt) : ' | Awaiting Tutor Release')));
     line('ATTENDANCE HISTORY', 12, true);
     if (!detail.attendance.length) line('No attendance records recorded.');
     detail.attendance.forEach(a => line(dateLabel(a.date) + ' | ' + a.status + (a.notes ? ' | ' + a.notes : '')));
@@ -408,12 +409,12 @@ const SchoolLearnerInsights: React.FC = () => {
     { id: 'assignments', label: `Assignments (${categorizedWork.assignments.length})`, icon: ClipboardList },
     { id: 'activities', label: `Activities (${categorizedWork.activities.length})`, icon: Activity },
     { id: 'tests', label: `Tests (${categorizedWork.tests.length + (detail?.assessments.length || 0)})`, icon: BookOpenCheck },
-    { id: 'examinations', label: `Examinations (${categorizedWork.examinations.length})`, icon: ShieldCheck },
+    { id: 'examinations', label: `Assessments (${categorizedWork.examinations.length})`, icon: ShieldCheck },
     { id: 'attendance', label: `Attendance (${detail?.attendance.length || 0})`, icon: CalendarCheck }
   ] as const;
 
   return <div className="space-y-5">
-    <SEO title="Learner Progress | School Portal" description="Review learner assignments, activities, tests, examination history, attendance and reports." noindex />
+    <SEO title="Learner Progress | School Portal" description="Review learner assignments, activities, tests, assessment history, attendance and reports." noindex />
     <div className="flex flex-wrap items-center justify-between gap-3">
       {school ? (
         <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300">
@@ -472,20 +473,20 @@ const SchoolLearnerInsights: React.FC = () => {
                     ['Assignments', categorizedWork.assignments.length],
                     ['Activities', categorizedWork.activities.length],
                     ['Tests', categorizedWork.tests.length + detail.assessments.length],
-                    ['Examinations', categorizedWork.examinations.length],
+                    ['Assessments', categorizedWork.examinations.length],
                     ['Attendance rate', detail.summary.attendanceRate === null ? '—' : detail.summary.attendanceRate.toFixed(1) + '%']
                   ].map(([label, value]) => <div key={String(label)} className="rounded-2xl bg-slate-50 dark:bg-white/5 p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-xl font-black">{value}</p></div>)}
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Separate denominators are preserved across Assignments, Activities, Tests, and Examinations so ungraded practice and different point scales are never mixed into a misleading composite score.
+                  Separate denominators are preserved across Assignments, Activities, Tests, and Assessments so ungraded practice and different point scales are never mixed into a misleading composite score.
                 </p>
                 <h3 className="font-black">Recent academic work & results</h3>
                 {[
                   ...categorizedWork.assignments.map(a => ({ id: 'asg-' + a.id, title: a.title, subject: a.subject, date: a.submittedAt || a.dueDate, score: scoreLabel(a.grade, a.maxPoints), status: `Assignment · ${a.status}` })),
                   ...detail.assessments.map(a => ({ id: 'aca-' + a.id, title: a.title, subject: a.subject, date: a.updatedAt || a.createdAt, score: scoreLabel(a.score, 100), status: `Assessment (${a.assessmentType})` })),
-                  ...detail.examinations.map(a => ({ id: 'exm-' + a.id, title: a.title, subject: a.subject, date: a.submittedAt, score: scoreLabel(a.score, a.maxScore, a.isUngradedActivity), status: `${normalizeWorkType(a.workType)} · ${a.status}` }))
+                  ...detail.examinations.map(a => ({ id: 'exm-' + a.id, title: a.title, subject: a.subject, date: a.submittedAt, score: scoreLabel(a.score, a.maxScore, a.isUngradedActivity), status: `${normalizeWorkType(a.workType) === 'EXAMINATION' ? 'ASSESSMENT' : normalizeWorkType(a.workType)} · ${a.status}` }))
                 ].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 10).map(a => <div key={a.id} className="flex flex-col gap-1 border-b border-slate-100 dark:border-slate-800 py-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-bold">{a.title}</p><p className="text-xs text-slate-500">{a.subject} · {dateLabel(a.date)} · {a.status}</p></div><span className="text-sm font-black text-brand-red">{a.score}</span></div>)}
-                {!categorizedWork.assignments.length && !detail.assessments.length && !detail.examinations.length && <p className="py-6 text-sm text-slate-500">No assignments, activities, tests, or examination results have been recorded for this learner yet.</p>}
+                {!categorizedWork.assignments.length && !detail.assessments.length && !detail.examinations.length && <p className="py-6 text-sm text-slate-500">No assignments, activities, tests, or assessment results have been recorded for this learner yet.</p>}
               </div>}
               {tab === 'assignments' && <div className="space-y-4">
                 <h3 className="font-black">Assignments</h3>
@@ -509,8 +510,8 @@ const SchoolLearnerInsights: React.FC = () => {
                 </div>
               </div>}
               {tab === 'examinations' && <div className="space-y-4">
-                <h3 className="font-black">Examination history</h3>
-                {categorizedWork.examinations.length ? <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800"><table className="w-full min-w-[540px] text-left text-sm"><thead className="bg-slate-50 dark:bg-white/5 text-xs text-slate-500"><tr><th className="p-3">Examination</th><th className="p-3">Submitted</th><th className="p-3">Status</th><th className="p-3">Score</th></tr></thead><tbody>{categorizedWork.examinations.map(a => <tr key={a.id} className="border-t border-slate-100 dark:border-slate-800"><td className="p-3"><p className="font-bold">{a.title}</p><p className="text-xs text-slate-500">{a.subject}</p></td><td className="p-3">{dateLabel(a.submittedAt)}</td><td className="p-3 capitalize">{a.status.replace(/_/g, ' ')}</td><td className="p-3 font-bold">{scoreLabel(a.score, a.maxScore)}</td></tr>)}</tbody></table></div> : <p className="rounded-2xl bg-slate-50 dark:bg-white/5 p-6 text-sm text-slate-500">No examination attempts recorded.</p>}
+                <h3 className="font-black">Assessment History</h3>
+                {categorizedWork.examinations.length ? <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800"><table className="w-full min-w-[540px] text-left text-sm"><thead className="bg-slate-50 dark:bg-white/5 text-xs text-slate-500"><tr><th className="p-3">Assessment</th><th className="p-3">Submitted</th><th className="p-3">Status</th><th className="p-3">Score</th></tr></thead><tbody>{categorizedWork.examinations.map(a => <tr key={a.id} className="border-t border-slate-100 dark:border-slate-800"><td className="p-3"><p className="font-bold">{a.title}</p><p className="text-xs text-slate-500">{a.subject}</p></td><td className="p-3">{dateLabel(a.submittedAt)}</td><td className="p-3 capitalize">{a.status.replace(/_/g, ' ')}</td><td className="p-3 font-bold">{scoreLabel(a.score, a.maxScore)}</td></tr>)}</tbody></table></div> : <p className="rounded-2xl bg-slate-50 dark:bg-white/5 p-6 text-sm text-slate-500">No assessment attempts recorded.</p>}
               </div>}
               {tab === 'attendance' && <div><h3 className="mb-3 font-black">Attendance history</h3>{detail.attendance.length ? <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800"><table className="w-full min-w-[420px] text-left text-sm"><thead className="bg-slate-50 dark:bg-white/5 text-xs text-slate-500"><tr><th className="p-3">Date</th><th className="p-3">Class</th><th className="p-3">Status</th><th className="p-3">Notes</th></tr></thead><tbody>{detail.attendance.map(a => <tr key={a.id} className="border-t border-slate-100 dark:border-slate-800"><td className="p-3">{dateLabel(a.date)}</td><td className="p-3">{a.className || detail.learner.className}</td><td className="p-3">{a.status}</td><td className="p-3">{a.notes || '—'}</td></tr>)}</tbody></table></div> : <p className="rounded-2xl bg-slate-50 dark:bg-white/5 p-6 text-sm text-slate-500">No attendance records recorded.</p>}</div>}
             </div> : <p className="py-8 text-sm text-slate-500">Learner details are unavailable.</p>}

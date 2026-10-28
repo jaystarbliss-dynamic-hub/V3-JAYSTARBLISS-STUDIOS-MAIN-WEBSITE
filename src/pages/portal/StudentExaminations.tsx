@@ -12,6 +12,7 @@ import {
   Bell,
   ExternalLink,
   CheckCircle2,
+  Lock,
 } from "lucide-react";
 import { auth, db } from "../../lib/firebase";
 import {
@@ -32,7 +33,9 @@ import {
   resolvePartnerSchoolName,
   normalizeDeliveryMode,
   normalizeWorkType,
+  getWorkTypeLabels,
   isStudentEligibleForWork,
+  isAttemptResultReleased,
   type WorkType,
 } from "../../lib/classes";
 import { ExamListSkeleton } from "../../components/ui/Skeleton";
@@ -62,6 +65,7 @@ type ExamCard = {
   score?: number;
   percentage?: number;
   releasedAt?: unknown;
+  resultReleased?: boolean;
   schoolId?: string;
   schoolName?: string;
   classIds?: string[];
@@ -359,12 +363,16 @@ export default function StudentExaminations() {
           (currentUid && a.studentUid === currentUid) ||
           (currentStudentId && a.studentId === currentStudentId)
         ) {
+          const isReleased = isAttemptResultReleased(a);
           attemptsByExam[String(a.examId)] = {
             attemptId: ad.id,
             attemptStatus: a.status,
-            score: a.releasedAt ? a.score : undefined,
+            score: isReleased ? a.score : undefined,
             maxScore: a.maxScore,
-            releasedAt: a.releasedAt || undefined,
+            releasedAt: isReleased
+              ? a.releasedAt || a.updatedAt || a.submittedAt || new Date().toISOString()
+              : undefined,
+            resultReleased: isReleased,
           };
         }
       });
@@ -386,14 +394,14 @@ export default function StudentExaminations() {
         const deliveryMode = normalizeDeliveryMode(exam);
         const maxScore = computeExamMaxScore(exam, att);
         const percentage =
-          att.releasedAt && typeof att.score === "number"
+          isAttemptResultReleased(att) && typeof att.score === "number"
             ? calculateScorePercentage(att.score, maxScore)
             : undefined;
 
         const existingServerItem = examMap.get(String(exam.id));
         examMap.set(String(exam.id), {
           id: exam.id,
-          title: exam.title || "Examination Assessment",
+          title: exam.title || "Assessment",
           description: String(exam.description || exam.instructions || "").trim(),
           subject: exam.subject || "Computer Technology",
           workType: normalizeWorkType(exam.workType, exam),
@@ -451,7 +459,7 @@ export default function StudentExaminations() {
         text:
           error instanceof Error
             ? error.message
-            : "Examinations could not be loaded. Please refresh.",
+            : "Assessments could not be loaded. Please refresh.",
         error: true,
       });
     } finally {
@@ -492,13 +500,13 @@ export default function StudentExaminations() {
     }
   };
 
-  // Validate Passcode & Begin Test or Unlock External Link
+  // Validate Passcode & Begin Assessment or Unlock External Link
   const unlock = async (examId: string) => {
     const inputPasscode = (passcodes[examId] || "").trim();
     if (!inputPasscode) {
       setMessage({
         id: examId,
-        text: "Please enter the examination passcode provided by your tutor.",
+        text: "Please enter the assessment passcode provided by your tutor.",
         error: true,
       });
       return;
@@ -537,7 +545,7 @@ export default function StudentExaminations() {
 
       // 2. Direct Firestore fallback
       if (!attemptId && !unlockedExternalUrl) {
-        if (!targetExam) throw new Error("Examination details could not be found.");
+        if (!targetExam) throw new Error("Assessment details could not be found.");
 
         const cleanInput = inputPasscode.trim().toUpperCase();
         const inputHash = await computeHash(inputPasscode.trim());
@@ -549,14 +557,14 @@ export default function StudentExaminations() {
           (storedPlain && storedPlain === cleanInput) || (storedHash && storedHash === inputHash);
         if (!isValid) {
           throw new Error(
-            "Invalid examination passcode. Please contact your tutor or school coordinator."
+            "Invalid assessment passcode. Please contact your tutor or school coordinator."
           );
         }
 
         if (isExternalExam) {
           unlockedExternalUrl = String(targetExam.externalUrl || "").trim();
           if (!unlockedExternalUrl) {
-            throw new Error("The external examination link has not been configured by the tutor.");
+            throw new Error("The external assessment link has not been configured by the tutor.");
           }
         } else {
           const newAttemptId = `att_${Date.now().toString(36)}_${Math.random()
@@ -599,7 +607,7 @@ export default function StudentExaminations() {
         setUnlockedExternalUrls((prev) => ({ ...prev, [examId]: unlockedExternalUrl }));
         setMessage({
           id: examId,
-          text: "Access code verified. Click 'Open Examination' below to launch your examination.",
+          text: "Access code verified. Click 'Open Assessment' below to launch your assessment.",
           error: false,
         });
         return;
@@ -620,13 +628,13 @@ export default function StudentExaminations() {
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-5 p-3 sm:p-5 md:p-8 overflow-x-hidden">
-      {/* UPCOMING / RECENT EXAM NOTIFICATIONS BANNER */}
+      {/* UPCOMING / RECENT ASSESSMENT NOTIFICATIONS BANNER */}
       {notifications.length > 0 && (
         <section className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 shadow-sm">
           <div className="flex items-start gap-3">
             <Bell className="mt-0.5 text-blue-600 shrink-0" size={18} />
             <div className="space-y-1 text-xs sm:text-sm text-blue-950 min-w-0">
-              <p className="font-bold">Class Examination Notices</p>
+              <p className="font-bold">Class Assessment Notices</p>
               {notifications.map((n) => (
                 <p key={n.id} className="text-blue-900 break-words">
                   • <strong>{n.title}:</strong> {n.message}
@@ -643,7 +651,7 @@ export default function StudentExaminations() {
         <div className="flex items-center gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 touch-pan-x">
           {(
             [
-              { id: "ALL", label: "All Academic Work" },
+              { id: "ALL", label: "All Assessments" },
               { id: "ASSIGNMENT", label: "Assignments" },
               { id: "ACTIVITY", label: "Activities" },
               { id: "TEST", label: "Tests" },
@@ -732,10 +740,10 @@ export default function StudentExaminations() {
           <div className="py-12 sm:py-14 text-center px-3">
             <BookOpenCheck className="mx-auto mb-3 text-blue-600" size={44} />
             <h2 className="text-lg sm:text-xl font-bold text-slate-900">
-              No Tests Found For Your Class
+              No Assessments Found For Your Class
             </h2>
             <p className="mt-1.5 max-w-md mx-auto text-xs sm:text-sm text-slate-600">
-              Examinations are tailored strictly to your specific class level (
+              Assessments are tailored strictly to your specific class level (
               {studentInfo.class || "enrolled class"}). When your tutor assigns an assessment to
               your class, it will appear here.
             </p>
@@ -750,12 +758,12 @@ export default function StudentExaminations() {
 
         {filtered.length === 0 && exams.length > 0 && (
           <p className="py-12 text-center text-sm font-medium text-slate-500">
-            There are no <span className="font-bold capitalize">{tab}</span> examinations for your
+            There are no <span className="font-bold capitalize">{tab}</span> assessments for your
             class right now.
           </p>
         )}
 
-        {/* EXAM CARDS */}
+        {/* ASSESSMENT CARDS */}
         {loading ? (
           <ExamListSkeleton count={3} />
         ) : (
@@ -763,11 +771,13 @@ export default function StudentExaminations() {
             {filtered.map((exam) => {
             const isExternal = exam.deliveryMode === "EXTERNAL_LINK";
             const maxScore = computeExamMaxScore(exam);
+            const isReleased = Boolean(exam.releasedAt || exam.resultReleased);
             const pct =
-              exam.releasedAt && typeof exam.score === "number"
+              isReleased && typeof exam.score === "number"
                 ? calculateScorePercentage(exam.score, maxScore)
                 : undefined;
             const unlockedUrl = unlockedExternalUrls[exam.id];
+            const typeLabels = getWorkTypeLabels(exam.workType, exam);
 
             return (
               <article
@@ -781,7 +791,7 @@ export default function StudentExaminations() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#B91C1C]">
-                        {normalizeWorkType(exam.workType, exam)}
+                        {typeLabels.singular}
                       </span>
                       <h2 className="text-base sm:text-lg font-bold text-slate-900 break-words">
                         {exam.title}
@@ -820,14 +830,18 @@ export default function StudentExaminations() {
                         <span>
                           Status:{" "}
                           <span className="capitalize font-bold text-slate-900">
-                            {exam.releasedAt ? "Released" : exam.attemptStatus.replace("_", " ")}
+                            {isReleased ? "Released" : exam.attemptStatus.replace("_", " ")}
                           </span>
                         </span>
-                        {Boolean(exam.releasedAt) && exam.score !== undefined && (
+                        {isReleased && exam.score !== undefined ? (
                           <span className="text-emerald-700 font-bold">
                             · Official Score: {exam.score} / {maxScore} ({pct}%)
                           </span>
-                        )}
+                        ) : ["submitted", "expired", "graded"].includes(exam.attemptStatus) ? (
+                          <span className="text-amber-700 font-semibold">
+                            · Awaiting Tutor Release
+                          </span>
+                        ) : null}
                       </div>
                     )}
 
@@ -863,7 +877,7 @@ export default function StudentExaminations() {
                         }
                         className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700"
                       >
-                        Resume Examination
+                        {typeLabels.resumeLabel}
                         <ArrowRight size={16} />
                       </button>
                     </div>
@@ -872,7 +886,7 @@ export default function StudentExaminations() {
                 {!isExternal &&
                   exam.attemptId &&
                   ["submitted", "expired", "graded"].includes(exam.attemptStatus || "") && (
-                    <div className="mt-4 pt-4 border-t">
+                    <div className="mt-4 pt-4 border-t flex flex-wrap items-center gap-2.5">
                       <button
                         type="button"
                         onClick={() =>
@@ -882,10 +896,22 @@ export default function StudentExaminations() {
                         }
                         className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-blue-600 bg-white px-5 py-2.5 text-sm font-bold text-blue-700 hover:bg-blue-50"
                       >
-                        {exam.releasedAt
+                        {isReleased
                           ? "View Official Report & Download PDF"
                           : "View Submission Status"}
                       </button>
+                      {!isReleased && (
+                        <button
+                          type="button"
+                          disabled
+                          aria-disabled="true"
+                          title="Printing is disabled until your tutor releases the result."
+                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed"
+                        >
+                          <Lock size={15} />
+                          Print Official PDF (Awaiting Tutor Release)
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -897,8 +923,8 @@ export default function StudentExaminations() {
                       Access Verified — Ready to Launch
                     </div>
                     <p className="text-xs text-emerald-800">
-                      Your portal access code has been verified. Click the button below to open your
-                      examination in a new tab.
+                      Your portal access code has been verified. Click the button below to open your{" "}
+                      {typeLabels.lowerSingular} in a new tab.
                     </p>
                     <div className="pt-1">
                       <a
@@ -907,7 +933,7 @@ export default function StudentExaminations() {
                         rel="noopener noreferrer"
                         className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 shadow-sm transition-colors"
                       >
-                        Open Examination
+                        Open {typeLabels.singular}
                         <ExternalLink size={16} />
                       </a>
                     </div>
@@ -923,13 +949,13 @@ export default function StudentExaminations() {
                     <div className="mt-4 sm:mt-5 rounded-2xl bg-blue-50/70 p-4 sm:p-5 border border-blue-100">
                       <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
                         <LockKeyhole size={18} className="text-blue-700 shrink-0" />
-                        Enter Examination Passcode
+                        Enter {typeLabels.singular} Passcode
                       </div>
                       <p className="mt-1 text-xs text-slate-600">
                         Enter the passcode provided by your tutor or school coordinator to{" "}
                         {isExternal
-                          ? "unlock the external examination link."
-                          : "unlock and start this test."}
+                          ? `unlock the external ${typeLabels.lowerSingular} link.`
+                          : `unlock and start this ${typeLabels.lowerSingular}.`}
                       </p>
                       <div className="mt-3 flex flex-col gap-2.5 sm:flex-row">
                         <div className="relative flex-1 min-w-0">
@@ -967,7 +993,7 @@ export default function StudentExaminations() {
                             ? "Validating…"
                             : isExternal
                             ? "Verify Access Code"
-                            : "Unlock & Begin Test"}
+                            : `Unlock & ${typeLabels.startLabel}`}
                         </button>
                       </div>
                       {message?.id === exam.id && (
@@ -983,7 +1009,7 @@ export default function StudentExaminations() {
                       )}
                       <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500">
                         <ShieldCheck size={14} className="text-blue-600 shrink-0" />
-                        Protected by Jaystarbliss Central CBT Examination Security.
+                        Protected by Jaystarbliss Central CBT Assessment Security.
                       </p>
                     </div>
                   )}

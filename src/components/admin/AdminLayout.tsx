@@ -56,8 +56,8 @@ function resolveAdminPageTitle(pathname: string, flatNavList: NavItem[]): string
   if (clean === '/admin/reports') return 'Reports';
   if (clean === '/admin/tutor-subjects') return 'Tutor Subjects';
   if (clean === '/admin/agreements') return 'Agreements Centre';
-  if (clean === '/admin/examinations') return 'Examinations';
-  if (clean === '/admin/examination-history') return 'Examination History';
+  if (clean === '/admin/examinations') return 'Assessments';
+  if (clean === '/admin/examination-history') return 'Assessment History';
   if (clean === '/admin/billing') return 'Billing';
   if (clean === '/admin/settings') return 'Settings';
   if (clean === '/admin/support') return 'Support';
@@ -159,8 +159,8 @@ const AdminLayout: React.FC = () => {
     {
       sectionTitle: "CBT Assessment",
       items: [
-        { name: "Examinations", href: "/admin/examinations", icon: FileText, desc: "Create, schedule, secure and manage examinations" },
-        { name: "Submissions & Reports", href: "/admin/examination-history", icon: FileText, desc: "Review submissions, grading, results and export reports" },
+        { name: "Assessments", href: "/admin/examinations", icon: FileText, desc: "Create, schedule, secure and manage assessments" },
+        { name: "Assessment History", href: "/admin/examination-history", icon: FileText, desc: "Review submissions, grading, results and export reports" },
       ]
     },
     {

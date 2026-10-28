@@ -55,17 +55,17 @@ function resolveRoleSubtitle(role: string): string {
 function resolvePortalPageTitle(pathname: string, role: string, navGroups: NavGroup[]): string {
   const clean = pathname.replace(/\/+$/, '') || `/portal/${role}`;
   if (clean === `/portal/${role}`) return 'Dashboard';
-  if (clean.startsWith('/portal/student/exams/')) return 'Examination Attempt';
+  if (clean.startsWith('/portal/student/exams/')) return 'Assessment Attempt';
   if (clean.startsWith('/portal/staff/students/')) return 'Student Details';
   if (clean.endsWith('/onboard-student')) return 'Onboard Student';
   if (clean.endsWith('/agreements')) return 'Agreements';
-  if (clean.endsWith('/exam-history')) return role === 'staff' ? 'Assessment History' : 'Examination History';
+  if (clean.endsWith('/exam-history')) return 'Assessment History';
   if (clean.endsWith('/exam-authoring') || clean.endsWith('/exams')) {
-    if (role === 'school') return 'Examination Overview';
+    if (role === 'school') return 'Assessment Overview';
     if (role === 'staff') return 'Assessments';
-    return 'Examinations';
+    return 'Assessments';
   }
-  if (clean.endsWith('/examinations')) return 'Examination Results';
+  if (clean.endsWith('/examinations')) return 'Assessment Results';
   if (clean.endsWith('/credentials')) return 'Student Access';
   if (clean.endsWith('/payments')) return 'Billing';
   if (clean.endsWith('/settings')) return 'Settings';
@@ -295,9 +295,9 @@ const PortalLayout: React.FC = () => {
         {
           label: 'Academics',
           items: [
-            { name: 'Examination Overview', path: '/portal/school/exams', icon: <FileText size={19} />, desc: 'School examination management' },
-            { name: 'Examination History', path: '/portal/school/exam-history', icon: <History size={19} />, desc: 'Submissions & past examination records' },
-            { name: 'Learner Progress', path: '/portal/school/learner-progress', icon: <ChartNoAxesColumn size={19} />, desc: 'Assignments, activities, tests, exams & attendance' }
+            { name: 'Assessment Overview', path: '/portal/school/exams', icon: <FileText size={19} />, desc: 'School assessment management' },
+            { name: 'Assessment History', path: '/portal/school/exam-history', icon: <History size={19} />, desc: 'Submissions & past assessment records' },
+            { name: 'Learner Progress', path: '/portal/school/learner-progress', icon: <ChartNoAxesColumn size={19} />, desc: 'Assignments, activities, tests, assessments & attendance' }
           ]
         },
         {
@@ -403,10 +403,10 @@ const PortalLayout: React.FC = () => {
           ]
         },
         {
-          label: 'Academics & Tests',
+          label: 'Academics & Assessments',
           items: [
-            { name: 'Assessments', path: '/portal/staff/assessments', icon: <ClipboardCheck size={19} />, desc: 'Create & manage assignments, activities, tests & examinations' },
-            { name: 'Assessment History', path: '/portal/staff/exam-history', icon: <History size={19} />, desc: 'Review history across assignments, activities, tests & exams' }
+            { name: 'Assessments', path: '/portal/staff/assessments', icon: <ClipboardCheck size={19} />, desc: 'Create & manage assignments, activities, tests & assessments' },
+            { name: 'Assessment History', path: '/portal/staff/exam-history', icon: <History size={19} />, desc: 'Review history across assignments, activities, tests & assessments' }
           ]
         },
         {
@@ -451,7 +451,7 @@ const PortalLayout: React.FC = () => {
           items: [
             { name: 'Assignments', path: '/portal/parent/assignments', icon: <ClipboardCheck size={19} />, desc: 'Track assigned work' },
             { name: 'Assessments & Quizzes', path: '/portal/parent/assessments', icon: <ClipboardCheck size={19} />, desc: 'View learning assessments' },
-            { name: 'Examination Results', path: '/portal/parent/examinations', icon: <FileCheck2 size={19} />, desc: 'View released results for linked children' }
+            { name: 'Assessment Results', path: '/portal/parent/examinations', icon: <FileCheck2 size={19} />, desc: 'View released results for linked children' }
           ]
         },
         {

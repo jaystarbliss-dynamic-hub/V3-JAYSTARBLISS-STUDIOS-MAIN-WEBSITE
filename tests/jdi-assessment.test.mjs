@@ -34,6 +34,9 @@ import {
   buildAttendanceRecordKey,
   createAgreementVersionSnapshot,
   canAccessAgreement,
+  isAttemptResultReleased,
+  canViewOrPrintAttemptResult,
+  getWorkTypeLabels,
 } from "../api/_lib/jdi-assessment.js";
 
 const objective = (overrides = {}) => ({
@@ -646,5 +649,108 @@ test("isStudentEligibleForWork handles both (student, exam) and (exam, student) 
   );
 });
 
+test("enforces tutor-controlled result release before students, parents, or school admins can view or print results", () => {
+  const inProgressAttempt = {
+    id: "att-1",
+    status: "in_progress",
+    score: 8,
+    maxScore: 10,
+  };
+  const submittedUnreleasedAttempt = {
+    id: "att-2",
+    status: "submitted",
+    autoGraded: true,
+    score: 9,
+    maxScore: 10,
+    releasedAt: null,
+    resultReleased: false,
+  };
+  const releasedViaTimestampAttempt = {
+    id: "att-3",
+    status: "submitted",
+    autoGraded: true,
+    score: 9,
+    maxScore: 10,
+    releasedAt: "2026-10-27T12:00:00.000Z",
+  };
+  const releasedViaBooleanAttempt = {
+    id: "att-4",
+    status: "graded",
+    score: 10,
+    maxScore: 10,
+    resultReleased: true,
+  };
 
+  assert.equal(isAttemptResultReleased(null), false);
+  assert.equal(isAttemptResultReleased(inProgressAttempt), false);
+  assert.equal(isAttemptResultReleased(submittedUnreleasedAttempt), false);
+  assert.equal(isAttemptResultReleased(releasedViaTimestampAttempt), true);
+  assert.equal(isAttemptResultReleased(releasedViaBooleanAttempt), true);
 
+  // In-progress attempts cannot be printed even by tutors/admins
+  assert.equal(canViewOrPrintAttemptResult(inProgressAttempt, "TUTOR"), false);
+  assert.equal(canViewOrPrintAttemptResult(inProgressAttempt, "ADMIN"), false);
+  assert.equal(canViewOrPrintAttemptResult(inProgressAttempt, "STUDENT"), false);
+  assert.equal(canViewOrPrintAttemptResult(inProgressAttempt, "SCHOOL"), false);
+
+  // Submitted but UNRELEASED attempts:
+  // Students, Individual Students, School Admins, and Parents are strictly blocked from viewing/printing scores
+  for (const restrictedRole of ["STUDENT", "INDIVIDUAL_STUDENT", "SCHOOL", "SCHOOL_ADMIN", "PARENT"]) {
+    assert.equal(
+      canViewOrPrintAttemptResult(submittedUnreleasedAttempt, restrictedRole),
+      false,
+      `Role ${restrictedRole} must not print/view unreleased attempt results`
+    );
+  }
+
+  // Tutors and Platform Admins can review submitted attempts in the grading/release workflow
+  for (const staffRole of ["TUTOR", "STAFF", "INSTRUCTOR", "ADMIN", "SUPER_ADMIN"]) {
+    assert.equal(
+      canViewOrPrintAttemptResult(submittedUnreleasedAttempt, staffRole),
+      true,
+      `Role ${staffRole} can inspect submitted attempt during grading`
+    );
+  }
+
+  // Once tutor releases the result, Students, School Admins, and Parents can view and print
+  for (const role of ["STUDENT", "INDIVIDUAL_STUDENT", "SCHOOL", "SCHOOL_ADMIN", "PARENT", "TUTOR", "ADMIN"]) {
+    assert.equal(canViewOrPrintAttemptResult(releasedViaTimestampAttempt, role), true);
+    assert.equal(canViewOrPrintAttemptResult(releasedViaBooleanAttempt, role), true);
+  }
+});
+
+test("preserves exact workType labels (Test, Activity, Assignment, Examination) throughout student and tutor workflows", () => {
+  const testLabels = getWorkTypeLabels("TEST");
+  assert.equal(testLabels.code, "TEST");
+  assert.equal(testLabels.singular, "Test");
+  assert.equal(testLabels.plural, "Tests");
+  assert.equal(testLabels.submitCta, "Submit Test");
+  assert.equal(testLabels.startCta, "Start Test");
+  assert.equal(testLabels.resumeCta, "Resume Test");
+  assert.equal(testLabels.unlockAndStartCta, "Unlock & Start Test");
+  assert.equal(testLabels.publishCta, "Publish Test");
+
+  const activityLabels = getWorkTypeLabels("ACTIVITY");
+  assert.equal(activityLabels.code, "ACTIVITY");
+  assert.equal(activityLabels.singular, "Activity");
+  assert.equal(activityLabels.plural, "Activities");
+  assert.equal(activityLabels.submitCta, "Submit Activity");
+  assert.equal(activityLabels.startCta, "Start Activity");
+  assert.equal(activityLabels.publishCta, "Publish Activity");
+
+  const assignmentLabels = getWorkTypeLabels("ASSIGNMENT");
+  assert.equal(assignmentLabels.code, "ASSIGNMENT");
+  assert.equal(assignmentLabels.singular, "Assignment");
+  assert.equal(assignmentLabels.plural, "Assignments");
+  assert.equal(assignmentLabels.submitCta, "Submit Assignment");
+  assert.equal(assignmentLabels.startCta, "Start Assignment");
+  assert.equal(assignmentLabels.publishCta, "Publish Assignment");
+
+  const examLabels = getWorkTypeLabels("EXAMINATION");
+  assert.equal(examLabels.code, "EXAMINATION");
+  assert.equal(examLabels.singular, "Examination");
+  assert.equal(examLabels.plural, "Examinations");
+  assert.equal(examLabels.submitCta, "Submit Examination");
+  assert.equal(examLabels.startCta, "Start Examination");
+  assert.equal(examLabels.publishCta, "Publish Examination");
+});

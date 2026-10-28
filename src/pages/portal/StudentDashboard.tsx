@@ -1341,15 +1341,15 @@ export const StudentDashboard: React.FC = () => {
             )}
           </section>
 
-          {/* 🧪 ASSIGNED TESTS, EXAMINATIONS & ASSESSMENTS SECTION */}
+          {/* 🧪 ASSIGNED ASSESSMENTS & WORK SECTION */}
           <section className="rounded-2xl bg-white dark:bg-slate-900 p-5 sm:p-6 border border-slate-200/90 dark:border-slate-800 shadow-xs">
             <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <FileText size={18} className="text-brand-red" /> Assigned Tests, Examinations &amp; Assessments ({exams.length})
+                  <FileText size={18} className="text-brand-red" /> Assigned Assessments &amp; Work ({exams.length})
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                  Class tests, formal examinations, and interactive learning activities assigned to your class or account.
+                  Class tests, formal assessments, and interactive learning activities assigned to your class or account.
                 </p>
               </div>
               <Link
@@ -1362,9 +1362,9 @@ export const StudentDashboard: React.FC = () => {
 
             {exams.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-5 text-center space-y-1.5">
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">No active tests or examinations right now</p>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">No active assessments right now</p>
                 <p className="text-[11px] text-slate-500">
-                  Any test, quiz, activity, or examination assigned to your class will appear here and in your Assessments &amp; Work tab.
+                  Any test, quiz, activity, or assessment assigned to your class will appear here and in your Assessments &amp; Work tab.
                 </p>
               </div>
             ) : (
@@ -1377,7 +1377,7 @@ export const StudentDashboard: React.FC = () => {
                     <div>
                       <div className="flex items-center justify-between gap-2">
                         <span className="inline-flex items-center gap-1 rounded-md bg-red-50 dark:bg-red-950/60 px-2 py-0.5 text-[9px] font-black uppercase text-brand-red dark:text-red-300">
-                          {ex.workType || 'ASSESSMENT'}
+                          {ex.workType || 'EXAMINATION'}
                         </span>
                         {ex.targetClass && (
                           <span className="text-[10px] font-bold text-slate-500">
@@ -1401,7 +1401,9 @@ export const StudentDashboard: React.FC = () => {
                         to="/portal/student/assessments"
                         className="px-3.5 py-1.5 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-black inline-flex items-center gap-1.5 transition-all shadow-xs"
                       >
-                        <span>Open Assessment</span>
+                        <span>
+                          Open {ex.workType ? ex.workType.charAt(0).toUpperCase() + ex.workType.slice(1).toLowerCase() : 'Assessment'}
+                        </span>
                         <ArrowRight size={12} />
                       </Link>
                     </div>

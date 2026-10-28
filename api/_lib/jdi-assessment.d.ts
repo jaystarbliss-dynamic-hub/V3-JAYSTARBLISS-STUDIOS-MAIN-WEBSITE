@@ -268,4 +268,36 @@ export function canAccessAgreement(
   actor?: { uid?: string; role?: string; schoolId?: string }
 ): boolean;
 
+export function isAttemptResultReleased(
+  attempt?: Record<string, any> | null
+): boolean;
+
+export function canViewOrPrintAttemptResult(
+  attempt?: Record<string, any> | null,
+  callerRole?: unknown
+): boolean;
+
+export interface WorkTypeLabels {
+  code: AcademicWorkType;
+  workType: AcademicWorkType;
+  singular: "Assignment" | "Activity" | "Test" | "Examination";
+  plural: "Assignments" | "Activities" | "Tests" | "Examinations";
+  lowerSingular: "assignment" | "activity" | "test" | "examination";
+  lowerPlural: "assignments" | "activities" | "tests" | "examinations";
+  articleSingular: "an assignment" | "an activity" | "a test" | "an examination";
+  startLabel: "Start Assignment" | "Start Activity" | "Start Test" | "Start Examination";
+  startCta: "Start Assignment" | "Start Activity" | "Start Test" | "Start Examination";
+  resumeLabel: "Resume Assignment" | "Resume Activity" | "Resume Test" | "Resume Examination";
+  resumeCta: "Resume Assignment" | "Resume Activity" | "Resume Test" | "Resume Examination";
+  submitLabel: "Submit Assignment" | "Submit Activity" | "Submit Test" | "Submit Examination";
+  submitCta: "Submit Assignment" | "Submit Activity" | "Submit Test" | "Submit Examination";
+  unlockAndStartCta: "Unlock & Start Assignment" | "Unlock & Start Activity" | "Unlock & Start Test" | "Unlock & Start Examination";
+  publishCta: "Publish Assignment" | "Publish Activity" | "Publish Test" | "Publish Examination";
+  reportTitle: string;
+}
+
+export function getWorkTypeLabels(
+  input?: unknown,
+  fallbackObj?: Record<string, any> | null
+): WorkTypeLabels;
 
