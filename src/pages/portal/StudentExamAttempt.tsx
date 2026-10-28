@@ -136,7 +136,7 @@ export default function StudentExamAttempt() {
       // access controls if client rules are accidentally broad.
       if (!loadedData) {
         throw new Error("The assessment service is temporarily unavailable. Please try again shortly.");
-      }      } else {
+      } else {
         // Ensure partner school name is resolved if missing or placeholder
         const effectiveSchoolId = String(
           loadedData.attempt.schoolId || loadedData.exam.schoolId || ""
