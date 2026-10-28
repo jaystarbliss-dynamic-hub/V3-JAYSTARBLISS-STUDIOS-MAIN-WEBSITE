@@ -131,100 +131,12 @@ export default function StudentExamAttempt() {
         console.warn("Server exam attempt notice, engaging Firestore resolver:", err);
       }
 
-      // 2. Direct Firestore Fallback
+      // Keep assessment reads behind the authenticated server endpoint. Direct
+      // client fallback reads amplify Firestore usage and can bypass server-side
+      // access controls if client rules are accidentally broad.
       if (!loadedData) {
-        const attemptRef = doc(db, "jdiExamAttempts", attemptId);
-        const attemptSnap = await getDoc(attemptRef);
-        if (!attemptSnap.exists()) throw new Error("Assessment attempt record could not be found.");
-        const attemptData: any = { id: attemptSnap.id, ...attemptSnap.data() };
-
-        // Load exam document
-        const examRef = doc(db, "jdiExams", attemptData.examId);
-        let examSnap = await getDoc(examRef);
-        if (!examSnap.exists()) {
-          const fallbackRef = doc(db, "schoolExams", attemptData.examId);
-          examSnap = await getDoc(fallbackRef);
-        }
-        const examData: any = examSnap.exists()
-          ? examSnap.data()
-          : { title: "Assessment", subject: "General" };
-
-        // Resolve authoritative partner school name
-        const effectiveSchoolId = String(attemptData.schoolId || examData.schoolId || "").trim();
-        let schoolDocName = "";
-        if (effectiveSchoolId) {
-          const schSnap = await getDoc(doc(db, "schools", effectiveSchoolId)).catch(() => null);
-          if (schSnap?.exists()) {
-            const s = schSnap.data();
-            schoolDocName = s.name || s.schoolName || "";
-          }
-        }
-        const resolvedSchoolName = resolvePartnerSchoolName(
-          schoolDocName,
-          attemptData.schoolName,
-          examData.schoolName,
-          sessionStorage.getItem("schoolName") || ""
-        );
-
-        const rawQuestions: Q[] = resolveAttemptQuestions(examData, attemptData) as Q[];
-        const isClosed = attemptData.status !== "in_progress";
-        const isReleased = isAttemptResultReleased(attemptData);
-
-        const safeQuestions: Q[] = rawQuestions.map((q) => {
-          if (!isClosed || !isReleased) {
-            const { correctOptionIds, acceptedAnswers, explanation, ...rest } = q;
-            return rest as Q;
-          }
-          return q;
-        });
-
-        const maxScore = computeExamMaxScore(examData, attemptData);
-        const score = isReleased && typeof attemptData.score === "number" ? attemptData.score : undefined;
-
-        loadedData = {
-          attempt: {
-            ...attemptData,
-            score,
-            percentage: score !== undefined ? calculateScorePercentage(score, maxScore) : undefined,
-            questionResults: isReleased ? attemptData.questionResults : undefined,
-            manualMarks: isReleased ? attemptData.manualMarks : undefined,
-            feedback: isReleased ? attemptData.feedback : undefined,
-            releasedAt: isReleased
-              ? attemptData.releasedAt || attemptData.updatedAt || attemptData.submittedAt || new Date().toISOString()
-              : undefined,
-            resultReleased: isReleased,
-            studentName:
-              attemptData.studentName ||
-              sessionStorage.getItem("userName") ||
-              auth.currentUser.displayName ||
-              "Student",
-            className:
-              normalizeClassName(attemptData.className || sessionStorage.getItem("studentClass") || "") ||
-              attemptData.className ||
-              "",
-            schoolId: effectiveSchoolId,
-            schoolName: resolvedSchoolName,
-            maxScore,
-            deadlineAt: attemptData.deadlineAt || new Date(Date.now() + 30 * 60000).toISOString(),
-          },
-          exam: {
-            id: attemptData.examId,
-            title: examData.title || "Assessment",
-            subject: examData.subject || "General",
-            workType: normalizeWorkType(examData.workType, examData),
-            deliveryMode: normalizeDeliveryMode(examData),
-            externalUrl: String(examData.externalUrl || "").trim(),
-            schoolId: effectiveSchoolId,
-            schoolName: resolvedSchoolName,
-            maxScore,
-            instructions: examData.instructions || examData.description || "",
-            durationMinutes: examData.durationMinutes || 30,
-            gradingMode: examData.gradingMode || "automatic",
-            questions: isReleased ? rawQuestions : safeQuestions,
-          },
-          questions: safeQuestions,
-        };
-      } else {
+        throw new Error("The assessment service is temporarily unavailable. Please try again shortly.");
+      }      } else {
         // Ensure partner school name is resolved if missing or placeholder
         const effectiveSchoolId = String(
           loadedData.attempt.schoolId || loadedData.exam.schoolId || ""
@@ -276,7 +188,7 @@ export default function StudentExamAttempt() {
     return () => window.clearInterval(interval);
   }, [data?.attempt.deadlineAt, data?.attempt.status]);
 
-  // Autosave answers every 1000ms
+  // Debounced autosave: wait 2 seconds after the latest answer change
   useEffect(() => {
     if (!data || data.attempt.status !== "in_progress" || busy) return;
     let live = true;
@@ -288,27 +200,16 @@ export default function StudentExamAttempt() {
       const queued = saveQueue.current
         .catch(() => undefined)
         .then(async () => {
-          let serverOk = false;
-          try {
-            if (auth.currentUser) {
-              const token = await auth.currentUser.getIdToken();
-              const res = await fetch("/.netlify/functions/examination-attempt", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ attemptId, action: "save", answers: answersToSave }),
-              });
-              if (res.ok) serverOk = true;
-            }
-          } catch {}
-
-          if (!serverOk) {
-            const attemptRef = doc(db, "jdiExamAttempts", attemptId);
-            await updateDoc(attemptRef, {
-              answers: answersToSave,
-              updatedAt: serverTimestamp(),
-              lastHeartbeat: serverTimestamp(),
-              isOnline: true,
-            });
+          if (!auth.currentUser) throw new Error("Please sign in again.");
+          const token = await auth.currentUser.getIdToken();
+          const res = await fetch("/.netlify/functions/examination-attempt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ attemptId, action: "save", answers: answersToSave }),
+          });
+          if (!res.ok) {
+            const payload = await res.json().catch(() => ({}));
+            throw new Error(payload.error || "The assessment service could not save your answers.");
           }
         });
 
@@ -320,10 +221,10 @@ export default function StudentExamAttempt() {
         .catch(() => {
           if (live) {
             setSaveStatus("error");
-            setError("Auto-saving was delayed. Please use 'Save Answers' button.");
+            setError("Auto-save failed. Keep this page open and try Save Answers again. Your latest changes may not be saved yet.");
           }
         });
-    }, 1000);
+    }, 2000);
 
     return () => {
       live = false;
@@ -393,8 +294,7 @@ export default function StudentExamAttempt() {
       if (!serverOk) {
         const attemptRef = doc(db, "jdiExamAttempts", attemptId);
         if (action === "save") {
-          await updateDoc(attemptRef, { answers, updatedAt: serverTimestamp() });
-          setNotice("Answers saved successfully.");
+          throw new Error("The assessment saving service is unavailable. Please try again; your answers have not been confirmed as saved.");
         } else {
           // Compute grade locally using assessment domain logic
           const examDocSnap = await getDoc(doc(db, "jdiExams", data.attempt.examId)).catch(() => null);
