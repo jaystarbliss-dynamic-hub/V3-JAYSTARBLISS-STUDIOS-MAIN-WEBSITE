@@ -27,6 +27,7 @@ type Student = {
   schoolId?: string;
   track?: string;
   programName?: string;
+  accessCode?: string;
   portalAccessEnabled?: boolean;
   accountStatus?: string;
 };
@@ -66,6 +67,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                 // If school portal, strictly enforce schoolId match
                 if (isSchool && targetSchoolId && s.schoolId !== targetSchoolId) return;
 
+                const existingCode = String(s.accessCode || s.passcode || s.code || '').trim();
                 combinedMap.set(s.id, {
                   id: s.id,
                   fullName: s.fullName || s.studentName || s.name || 'Student',
@@ -75,6 +77,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                   schoolName: s.schoolName || '',
                   schoolId: s.schoolId || targetSchoolId,
                   track: s.track || s.programName || s.plan || 'Digital Literacy Junior',
+                  accessCode: existingCode || undefined,
                   portalAccessEnabled: s.portalAccessEnabled !== false,
                   accountStatus: s.accountStatus || 'ACTIVE'
                 });
@@ -139,6 +142,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                 if (isDuplicate(data, d.id)) return;
                 recordSeen(data, d.id);
 
+                const existingCode = String(data.accessCode || data.passcode || data.code || '').trim();
                 combinedMap.set(key, {
                   id: key,
                   fullName: data.fullName || data.studentName || data.name || 'Student',
@@ -148,6 +152,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                   schoolName: data.schoolName || '',
                   schoolId: targetSchoolId,
                   track: data.track || data.programName || data.plan || 'Digital Literacy Junior',
+                  accessCode: existingCode || undefined,
                   portalAccessEnabled: data.portalAccessEnabled !== false,
                   accountStatus: data.accountStatus || 'ACTIVE'
                 });
@@ -159,7 +164,21 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
         }
       }
 
-      setStudents(Array.from(combinedMap.values()));
+      const loadedList = Array.from(combinedMap.values());
+      setStudents(loadedList);
+      setIssued(prev => {
+        const next = { ...prev };
+        loadedList.forEach(st => {
+          if (st.accessCode && !next[st.id]) {
+            next[st.id] = {
+              username: st.username || st.id,
+              accessCode: st.accessCode,
+              portal: `${window.location.origin}/portal`
+            };
+          }
+        });
+        return next;
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to load students.');
     } finally {
@@ -419,14 +438,53 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
             <strong>Zero-Knowledge Security:</strong> {isSchool ? 'School' : 'Staff'} student passcodes are securely hashed. When you click <em>Issue / Rotate Code</em>, the new access code is displayed for this session so you can print or export the access pack immediately.
           </span>
         </div>
-        <button 
-          type="button" 
-          onClick={() => void load()} 
-          className="shrink-0 rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          Refresh Records
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              const rowsWithCode = visibleStudents.filter(s => issued[s.id]?.accessCode || s.accessCode);
+              if (rowsWithCode.length === 0) {
+                toast.error('Issue or load student access codes first before exporting CSV.');
+                return;
+              }
+              const csvRows = [
+                ['Full Name', 'Class', 'Programme', 'Username', 'Access Code', 'Portal URL'],
+                ...rowsWithCode.map(s => {
+                  const cred = issued[s.id];
+                  const uname = cred?.username || s.username || s.id;
+                  const code = cred?.accessCode || s.accessCode || '';
+                  return [
+                    `"${String(s.fullName || s.studentName || 'Student').replace(/"/g, '""')}"`,
+                    `"${String(s.class || 'Grade 1')}"`,
+                    `"${String(s.track || s.programName || 'Digital Literacy')}"`,
+                    `"${uname}"`,
+                    `"${code}"`,
+                    `"${window.location.origin}/portal"`
+                  ];
+                })
+              ];
+              const blob = new Blob([csvRows.map(r => r.join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'student_credentials_export.csv';
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-700 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+          >
+            <Download size={14} />
+            Export Credentials (CSV)
+          </button>
+          <button 
+            type="button" 
+            onClick={() => void load()} 
+            className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Refresh Records
+          </button>
+        </div>
       </div>
 
       {/* Controls & Filter bar */}

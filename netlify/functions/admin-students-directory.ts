@@ -1,4 +1,5 @@
 import type { Handler } from '@netlify/functions';
+import { createHash, randomBytes } from 'node:crypto';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -17,7 +18,7 @@ const roleOf = (value: unknown) => String(value || '').trim().toUpperCase();
 const nameOf = (data: any) => String(data?.fullName || data?.studentName || data?.name || data?.displayName || data?.username || data?.email || 'Student').trim();
 
 export const handler: Handler = async event => {
-  if (event.httpMethod !== 'GET') return json(405, { error: 'Method Not Allowed' });
+  if (event.httpMethod !== 'GET' && event.httpMethod !== 'POST') return json(405, { error: 'Method Not Allowed' });
 
   try {
     const raw = event.headers?.authorization || event.headers?.Authorization || '';
@@ -26,6 +27,73 @@ export const handler: Handler = async event => {
     const adminSnap = await adminDb.collection('users').doc(decoded.uid).get();
     const admin = adminSnap.data() || {};
     if (!roles.has(roleOf(admin.role)) || blocked(admin)) return json(403, { error: 'Only active administrators can view the complete student directory.' });
+
+    if (event.httpMethod === 'POST') {
+      const existingSnap = await adminDb.collection('individualStudents').limit(2000).get();
+      const existingUids = new Set<string>();
+      const existingUsernames = new Set<string>();
+      existingSnap.forEach(d => {
+        const data = d.data() || {};
+        if (data.firebaseUid) existingUids.add(String(data.firebaseUid));
+        if (data.userId) existingUids.add(String(data.userId));
+        if (data.username) existingUsernames.add(String(data.username).toLowerCase());
+      });
+
+      const listResult = await adminAuth.listUsers(1000);
+      let recoveredCount = 0;
+      const now = new Date();
+
+      for (const u of listResult.users) {
+        const email = String(u.email || '').toLowerCase();
+        const isSyntheticStudent =
+          email.endsWith('@jbs-portal.local') ||
+          email.endsWith('@jdh-portal.local') ||
+          email.endsWith('@jdh-student.local');
+        if (!isSyntheticStudent || existingUids.has(u.uid)) continue;
+
+        const fullName = String(u.displayName || 'Student').trim();
+        let baseUsername = fullName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `student_${u.uid.slice(0, 6).toLowerCase()}`;
+        if (email.startsWith('portal-') && email.includes('@')) {
+          const fromEmail = email.split('@')[0].replace(/^portal-/, '').replace(/-/g, '_');
+          if (fromEmail && fromEmail !== 'record') baseUsername = fromEmail;
+        }
+        let username = baseUsername;
+        let suffix = 1;
+        while (existingUsernames.has(username)) {
+          suffix++;
+          username = `${baseUsername}${suffix}`;
+        }
+        existingUsernames.add(username);
+        existingUids.add(u.uid);
+
+        const accessCode = `JBS-${randomBytes(4).toString('hex').toUpperCase()}`;
+        const accessCodeHash = createHash('sha256').update(accessCode).digest('hex');
+        const docId = `rec_${u.uid.slice(0, 12)}`;
+        const record = {
+          fullName,
+          studentName: fullName,
+          name: fullName,
+          username,
+          accessCode,
+          passcode: accessCode,
+          code: accessCode,
+          accessCodeHash,
+          firebaseUid: u.uid,
+          userId: u.uid,
+          portalAccessEnabled: true,
+          accountStatus: 'ACTIVE',
+          status: 'ACTIVE',
+          source: 'auth_recovery',
+          createdAt: now,
+          updatedAt: now
+        };
+        await adminDb.collection('individualStudents').doc(docId).set(record, { merge: true });
+        await adminDb.collection('students').doc(docId).set(record, { merge: true });
+        recoveredCount++;
+      }
+
+      return json(200, { success: true, recoveredCount });
+    }
 
     const [individualSnap, studentsSnap, usersSnap] = await Promise.all([
       adminDb.collection('individualStudents').limit(5000).get(),

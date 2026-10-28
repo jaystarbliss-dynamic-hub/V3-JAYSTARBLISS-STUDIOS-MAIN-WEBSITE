@@ -910,37 +910,41 @@ const AdminStudents: React.FC = () => {
     }
   };
 
-  // Action: Export Roster to CSV
+  // Action: Export Roster & Credentials to CSV
   const exportToCSV = () => {
     if (filteredStudents.length === 0) {
       toast.error('No student records to export.');
       return;
     }
 
-    const headers = ['Full Name', 'Username', 'Email', 'Category', 'Class/Grade', 'Learning Track', 'School', 'Parent Name', 'Parent Email', 'Assigned Mentor', 'Status'];
+    const headers = ['Full Name', 'Class', 'Programme', 'Username', 'Access Code', 'Email', 'Category', 'School', 'Parent Name', 'Parent Email', 'Assigned Mentor', 'Status', 'Portal URL'];
     const rows = filteredStudents.map(s => [
-      `"${s.fullName.replace(/"/g, '""')}"`,
-      `"${s.username}"`,
-      `"${s.email}"`,
-      `"${s.studentType.toUpperCase()}"`,
-      `"${s.class}"`,
-      `"${s.track}"`,
+      `"${(s.fullName || '').replace(/"/g, '""')}"`,
+      `"${(s.class || 'Grade 1').replace(/"/g, '""')}"`,
+      `"${(s.track || 'Digital Literacy').replace(/"/g, '""')}"`,
+      `"${(s.username || '').replace(/"/g, '""')}"`,
+      `"${((s as any).accessCode || (s as any).passcode || (s as any).code || '').replace(/"/g, '""')}"`,
+      `"${(s.email || '').replace(/"/g, '""')}"`,
+      `"${(s.studentType || '').toUpperCase()}"`,
       `"${(s.schoolName || s.schoolId || 'None').replace(/"/g, '""')}"`,
       `"${(s.parentName || 'None').replace(/"/g, '""')}"`,
-      `"${s.parentEmail || 'None'}"`,
+      `"${(s.parentEmail || 'None').replace(/"/g, '""')}"`,
       `"${(s.tutorName || 'Unassigned').replace(/"/g, '""')}"`,
-      `"${s.accountStatus}"`
+      `"${s.accountStatus || 'ACTIVE'}"`,
+      `"${window.location.origin}/portal"`
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvText = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `jaystarbliss_student_roster_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.href = url;
+    link.setAttribute('download', `jaystarbliss_student_credentials_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success('Student roster exported to CSV successfully.');
+    URL.revokeObjectURL(url);
+    toast.success('Student credentials & roster exported to CSV successfully.');
   };
 
   const copyToClipboard = async (text: string, label: string) => {

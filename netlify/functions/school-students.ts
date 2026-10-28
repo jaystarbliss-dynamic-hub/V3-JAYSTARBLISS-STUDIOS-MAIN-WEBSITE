@@ -33,8 +33,9 @@ const serialise = (id: string, d: any, source: string) => {
   schoolId: d.schoolId || null,
   schoolName: d.schoolName || d.school || '',
   parentId: d.parentId || null,
-  tutorId: d.tutorId || d.assignedTutorId || d.instructorId || null,
-  staffId: d.staffId || d.assignedStaffId || null,
+    tutorId: d.tutorId || d.assignedTutorId || d.instructorId || null,
+    staffId: d.staffId || d.assignedStaffId || null,
+    accessCode: d.accessCode || d.passcode || d.code || null,
     portalAccessEnabled: d.portalAccessEnabled !== false,
     accountStatus: d.accountStatus || d.status || 'ACTIVE'
   };

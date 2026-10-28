@@ -445,8 +445,13 @@ export const handler: Handler = async (event) => {
         updatedAt: new Date()
       };
       await activeDb.collection("users").doc(uid).set(userPayload, { merge: true });
-      if (activeDb !== dbs[0]) {
-        await dbs[0].collection("users").doc(uid).set(userPayload, { merge: true }).catch(() => undefined);
+      const collectionName = snap.ref.parent.id || "individualStudents";
+      const mergedStudentRecord = { ...profile, ...updates };
+      for (const otherDb of dbs) {
+        if (otherDb !== activeDb) {
+          await otherDb.collection("users").doc(uid).set(userPayload, { merge: true }).catch(() => undefined);
+          await otherDb.collection(collectionName).doc(recordId).set(mergedStudentRecord, { merge: true }).catch(() => undefined);
+        }
       }
 
       response = {

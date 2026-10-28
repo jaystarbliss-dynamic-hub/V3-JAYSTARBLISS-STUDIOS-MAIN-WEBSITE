@@ -123,6 +123,7 @@ export function getAdminAuth(): Auth | null {
 }
 
 let cachedDefaultDb: Firestore | null = null;
+let cachedLegacyNamedDb: Firestore | null = null;
 export const LEGACY_NAMED_DATABASE_ID = "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
 
 export function getAdminDb(): Firestore | null {
@@ -151,9 +152,27 @@ export function getDefaultAdminDb(): Firestore | null {
   return cachedDefaultDb;
 }
 
+export function getLegacyNamedAdminDb(): Firestore | null {
+  if (cachedLegacyNamedDb) return cachedLegacyNamedDb;
+  const app = getAdminApp();
+  if (!app) return null;
+  try {
+    cachedLegacyNamedDb = getFirestore(app, LEGACY_NAMED_DATABASE_ID);
+    return cachedLegacyNamedDb;
+  } catch {
+    return null;
+  }
+}
+
 export function getAdminDatabases(): Firestore[] {
   const primary = getAdminDb();
-  return primary ? [primary] : [];
+  const defaultDb = getDefaultAdminDb();
+  const legacyDb = getLegacyNamedAdminDb();
+  const list: Firestore[] = [];
+  if (primary) list.push(primary);
+  if (defaultDb && !list.includes(defaultDb)) list.push(defaultDb);
+  if (legacyDb && !list.includes(legacyDb)) list.push(legacyDb);
+  return list;
 }
 
 // Proxied exports preserve compatibility with existing API and Netlify function imports.

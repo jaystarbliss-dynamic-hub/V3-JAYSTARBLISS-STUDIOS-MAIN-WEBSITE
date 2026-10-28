@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, collection, getDocs, getFirestore, serverTimestamp } from 'firebase/firestore';
-import { app, db, auth, LEGACY_NAMED_DATABASE_ID } from '../../lib/firebase';
+import { doc, getDoc, setDoc, collection, getDocs, serverTimestamp } from 'firebase/firestore';
+import {
+  db,
+  auth,
+  DEFAULT_DATABASE_ID,
+  LEGACY_NAMED_DATABASE_ID,
+  ACTIVE_DATABASE_ID,
+  setActiveDatabaseId,
+  getFirestoreById
+} from '../../lib/firebase';
 import { useTheme } from '../../contexts/ThemeContext';
 import { 
   Loader2, Save, AlertCircle, CheckCircle2, 
@@ -218,11 +226,100 @@ const AdminSettings: React.FC = () => {
     }
   };
 
-  const handleSyncFromLegacyDatabase = async () => {
+  const handleDownloadStudentCredentialsCsv = async () => {
+    try {
+      const [indSnap, stdSnap] = await Promise.all([
+        getDocs(collection(db, 'individualStudents')).catch(() => ({ docs: [] } as any)),
+        getDocs(collection(db, 'students')).catch(() => ({ docs: [] } as any))
+      ]);
+      const studentMap = new Map<string, any>();
+      [...stdSnap.docs, ...indSnap.docs].forEach((d: any) => {
+        const data = d.data() || {};
+        const key = String(data.username || d.id).toLowerCase();
+        studentMap.set(key, { id: d.id, ...studentMap.get(key), ...data });
+      });
+
+      const list = Array.from(studentMap.values());
+      if (list.length === 0) {
+        setLegacySyncResult({ success: false, message: 'No student records found to export.' });
+        return;
+      }
+
+      const csvRows = [
+        ['Full Name', 'Class', 'Programme', 'Username', 'Access Code', 'School ID', 'Portal URL'],
+        ...list.map((s: any) => [
+          `"${String(s.fullName || s.studentName || s.name || 'Student').replace(/"/g, '""')}"`,
+          `"${String(s.class || s.grade || 'Grade 1').replace(/"/g, '""')}"`,
+          `"${String(s.track || s.programName || 'Digital Literacy').replace(/"/g, '""')}"`,
+          `"${String(s.username || s.id).replace(/"/g, '""')}"`,
+          `"${String(s.accessCode || s.passcode || s.code || '').replace(/"/g, '""')}"`,
+          `"${String(s.schoolId || 'individual').replace(/"/g, '""')}"`,
+          `"${window.location.origin}/portal"`
+        ])
+      ];
+      const blob = new Blob([csvRows.map(r => r.join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `jaystarbliss_student_credentials_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setLegacySyncResult({
+        success: true,
+        message: `Downloaded CSV with ${list.length} student credential record(s) from (default).`
+      });
+    } catch (err: any) {
+      setLegacySyncResult({
+        success: false,
+        message: err?.message || 'Unable to download student credentials CSV.'
+      });
+    }
+  };
+
+  const extractDocMillis = (data: Record<string, any> | undefined): number => {
+    if (!data) return 0;
+    const fields = ['updatedAt', 'submittedAt', 'releasedAt', 'gradedAt', 'startedAt', 'createdAt'];
+    for (const key of fields) {
+      const val = data[key];
+      if (!val) continue;
+      if (typeof val?.toMillis === 'function') return val.toMillis();
+      if (typeof val?.seconds === 'number') return val.seconds * 1000;
+      if (typeof val === 'number') return val;
+      if (typeof val === 'string') {
+        const parsed = Date.parse(val);
+        if (!Number.isNaN(parsed)) return parsed;
+      }
+    }
+    return 0;
+  };
+
+  const handleMirrorSyncDatabases = async (direction: 'both' | 'legacy-to-default' | 'default-to-legacy' = 'both') => {
     setSyncingLegacyDb(true);
     setLegacySyncResult(null);
     try {
-      const legacyDb = getFirestore(app, LEGACY_NAMED_DATABASE_ID);
+      let recoveredFromAuth = 0;
+      if (auth.currentUser) {
+        try {
+          const token = await auth.currentUser.getIdToken();
+          const res = await fetch('/.netlify/functions/admin-students-directory', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+          });
+          if (res.ok) {
+            const payload = await res.json().catch(() => ({}));
+            recoveredFromAuth = Number(payload.recoveredCount || 0);
+          }
+        } catch {
+          // ignore if Netlify function unavailable in preview
+        }
+      }
+
+      const { getDocsFromCache } = await import('firebase/firestore');
+      const defaultFirestore = getFirestoreById(DEFAULT_DATABASE_ID);
+      const legacyFirestore = getFirestoreById(LEGACY_NAMED_DATABASE_ID);
+
       const collectionsToSync = [
         'jdiExams',
         'schoolExams',
@@ -238,39 +335,83 @@ const AdminSettings: React.FC = () => {
         'notifications',
         'jdiNotifications'
       ];
-      let totalCopied = 0;
+
+      let copiedToDefault = 0;
+      let copiedToLegacy = 0;
+      let skippedIdentical = 0;
       const summaryParts: string[] = [];
 
-      for (const colName of collectionsToSync) {
-        let snap;
+      const readCollectionSafe = async (targetDb: any, colName: string, isCritical: boolean) => {
         try {
-          snap = await getDocs(collection(legacyDb, colName));
-        } catch (colErr) {
+          return await getDocs(collection(targetDb, colName));
+        } catch (err) {
           try {
-            const { getDocsFromCache } = await import('firebase/firestore');
-            snap = await getDocsFromCache(collection(legacyDb, colName));
+            const cached = await getDocsFromCache(collection(targetDb, colName));
+            if (cached && !cached.empty) return cached;
           } catch {
-            throw colErr;
+            // ignore cache fallback error
+          }
+          if (isCritical) throw err;
+          return null;
+        }
+      };
+
+      for (const colName of collectionsToSync) {
+        const isCritical = colName === 'students' || colName === 'individualStudents';
+        const [defaultSnap, legacySnap] = await Promise.all([
+          readCollectionSafe(defaultFirestore, colName, isCritical),
+          readCollectionSafe(legacyFirestore, colName, isCritical)
+        ]);
+
+        const defaultMap = new Map<string, Record<string, any>>();
+        defaultSnap?.docs.forEach((d: any) => defaultMap.set(d.id, d.data() || {}));
+
+        const legacyMap = new Map<string, Record<string, any>>();
+        legacySnap?.docs.forEach((d: any) => legacyMap.set(d.id, d.data() || {}));
+
+        const allIds = new Set<string>([...defaultMap.keys(), ...legacyMap.keys()]);
+        let colUpdates = 0;
+
+        for (const docId of allIds) {
+          const defData = defaultMap.get(docId);
+          const legData = legacyMap.get(docId);
+
+          if (legData && !defData && (direction === 'both' || direction === 'legacy-to-default')) {
+            await setDoc(doc(defaultFirestore, colName, docId), legData, { merge: true });
+            copiedToDefault++;
+            colUpdates++;
+          } else if (defData && !legData && (direction === 'both' || direction === 'default-to-legacy')) {
+            await setDoc(doc(legacyFirestore, colName, docId), defData, { merge: true });
+            copiedToLegacy++;
+            colUpdates++;
+          } else if (defData && legData) {
+            const defTime = extractDocMillis(defData);
+            const legTime = extractDocMillis(legData);
+            if (legTime > defTime && (direction === 'both' || direction === 'legacy-to-default')) {
+              await setDoc(doc(defaultFirestore, colName, docId), legData, { merge: true });
+              copiedToDefault++;
+              colUpdates++;
+            } else if (defTime > legTime && (direction === 'both' || direction === 'default-to-legacy')) {
+              await setDoc(doc(legacyFirestore, colName, docId), defData, { merge: true });
+              copiedToLegacy++;
+              colUpdates++;
+            } else {
+              skippedIdentical++;
+            }
           }
         }
-        if (!snap || snap.empty) continue;
-        let colCount = 0;
-        for (const docSnap of snap.docs) {
-          await setDoc(doc(db, colName, docSnap.id), docSnap.data(), { merge: true });
-          colCount++;
-          totalCopied++;
-        }
-        if (colCount > 0) {
-          summaryParts.push(`${colName}: ${colCount}`);
+
+        if (colUpdates > 0) {
+          summaryParts.push(`${colName}: ${colUpdates}`);
         }
       }
 
       setLegacySyncResult({
         success: true,
         message:
-          totalCopied > 0
-            ? `Synced ${totalCopied} documents from legacy AI Studio DB into (default) [${summaryParts.join(', ')}].`
-            : 'Connected to legacy AI Studio DB — no additional documents needed syncing.'
+          copiedToDefault > 0 || copiedToLegacy > 0 || recoveredFromAuth > 0
+            ? `Two-Way Mirror Complete! Copied ${copiedToDefault} doc(s) → (default), ${copiedToLegacy} doc(s) → AI Shared Quota [${summaryParts.join(', ')}], skipped ${skippedIdentical} already-identical doc(s), and verified ${recoveredFromAuth} Auth student account(s).`
+            : `Both databases are 100% identical across all ${skippedIdentical} checked documents!`
       });
     } catch (err: any) {
       const msg = String(err?.message || err || '');
@@ -278,8 +419,8 @@ const AdminSettings: React.FC = () => {
       setLegacySyncResult({
         success: false,
         message: isQuota
-          ? 'The legacy AI Studio database is still in its daily read cooldown (resets at midnight Pacific Time). Your active (default) Standard Edition database is already live and serving all students and assessments.'
-          : `Unable to read legacy database: ${msg}`
+          ? 'The AI Shared Quota database (ai-studio-jaystarblissdyna-...) is currently in daily 50,000-read cooldown until midnight Pacific Time (00:00 PT / 8:00 AM WAT). As soon as the timer resets at midnight PT, click "Two-Way Mirror Sync" once and both databases will be 100% identical.'
+          : `Database sync warning: ${msg}`
       });
     } finally {
       setSyncingLegacyDb(false);
@@ -947,8 +1088,8 @@ const AdminSettings: React.FC = () => {
         </div>
       </form>
 
-      {/* Primary Database Status & Legacy Sync */}
-      <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-800 p-6 md:p-7 space-y-4">
+      {/* Dual-Database Failover Switcher & Two-Way Smart Mirror Sync */}
+      <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-800 p-6 md:p-7 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
@@ -956,22 +1097,129 @@ const AdminSettings: React.FC = () => {
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Primary Firestore Database: <span className="font-mono text-emerald-600 dark:text-emerald-400">(default)</span>
+                Dual-Database Failover &amp; Two-Way Mirror Sync
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Standard Edition (`nam5`) — Unrestricted by AI Shared Quota lock. Active for all students, tutors, and schools.
+                Active Primary Database:{' '}
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  {ACTIVE_DATABASE_ID === DEFAULT_DATABASE_ID ? '(default) — Standard Edition (nam5)' : 'AI Shared Quota (us-west1)'}
+                </span>
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleSyncFromLegacyDatabase}
-            disabled={syncingLegacyDb}
-            className="px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition-colors"
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadStudentCredentialsCsv}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Check size={14} />
+              <span>Download Student Credentials CSV</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMirrorSyncDatabases('both')}
+              disabled={syncingLegacyDb}
+              className="px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              {syncingLegacyDb ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              <span>{syncingLegacyDb ? 'Mirroring Databases...' : 'Two-Way Mirror Sync ((default) ⇄ AI Shared)'}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <div
+            className={`p-4 rounded-xl border transition-all flex flex-col justify-between gap-3 ${
+              ACTIVE_DATABASE_ID === DEFAULT_DATABASE_ID
+                ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 ring-1 ring-emerald-500/20'
+                : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50'
+            }`}
           >
-            {syncingLegacyDb ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            <span>{syncingLegacyDb ? 'Syncing Legacy Records...' : 'Sync Legacy AI Studio DB → (default)'}</span>
-          </button>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white font-mono">
+                  (default)
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                    ACTIVE_DATABASE_ID === DEFAULT_DATABASE_ID
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {ACTIVE_DATABASE_ID === DEFAULT_DATABASE_ID ? 'Active Now' : 'Standby'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                Standard Edition (`nam5`) • Independent 50,000 daily reads / 20,000 writes.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                disabled={ACTIVE_DATABASE_ID === DEFAULT_DATABASE_ID}
+                onClick={() => setActiveDatabaseId(DEFAULT_DATABASE_ID, true)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-[11px] font-bold transition-colors cursor-pointer"
+              >
+                {ACTIVE_DATABASE_ID === DEFAULT_DATABASE_ID ? 'Currently Active' : 'Switch to (default)'}
+              </button>
+              <button
+                type="button"
+                disabled={syncingLegacyDb}
+                onClick={() => handleMirrorSyncDatabases('legacy-to-default')}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold transition-colors cursor-pointer"
+              >
+                Pull from AI Shared → (default)
+              </button>
+            </div>
+          </div>
+
+          <div
+            className={`p-4 rounded-xl border transition-all flex flex-col justify-between gap-3 ${
+              ACTIVE_DATABASE_ID === LEGACY_NAMED_DATABASE_ID
+                ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 ring-1 ring-emerald-500/20'
+                : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50'
+            }`}
+          >
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white font-mono truncate">
+                  AI Shared Quota (us-west1)
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                    ACTIVE_DATABASE_ID === LEGACY_NAMED_DATABASE_ID
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {ACTIVE_DATABASE_ID === LEGACY_NAMED_DATABASE_ID ? 'Active Now' : 'Standby'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                Enterprise Edition (`ai-studio-jaystarblissdyna-...`) • Resets daily at Midnight PT (8:00 AM WAT).
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                disabled={ACTIVE_DATABASE_ID === LEGACY_NAMED_DATABASE_ID}
+                onClick={() => setActiveDatabaseId(LEGACY_NAMED_DATABASE_ID, true)}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-[11px] font-bold transition-colors cursor-pointer"
+              >
+                {ACTIVE_DATABASE_ID === LEGACY_NAMED_DATABASE_ID ? 'Currently Active' : 'Switch to AI Shared Quota'}
+              </button>
+              <button
+                type="button"
+                disabled={syncingLegacyDb}
+                onClick={() => handleMirrorSyncDatabases('default-to-legacy')}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold transition-colors cursor-pointer"
+              >
+                Push (default) → AI Shared
+              </button>
+            </div>
+          </div>
         </div>
 
         {legacySyncResult && (

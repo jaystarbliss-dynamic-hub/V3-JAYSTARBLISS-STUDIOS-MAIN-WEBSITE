@@ -18,11 +18,54 @@ import {
 import { getStorage } from "firebase/storage";
 
 const envDbId = typeof import.meta !== "undefined" ? (import.meta as any).env?.VITE_FIREBASE_DATABASE_ID : "";
+export const DEFAULT_DATABASE_ID = "(default)";
 export const LEGACY_NAMED_DATABASE_ID = "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
-const PRIMARY_DATABASE_ID =
-  envDbId && String(envDbId).trim()
-    ? String(envDbId).trim()
-    : "(default)";
+export const ACTIVE_DB_STORAGE_KEY = "jaystar_active_database_id";
+
+function resolveInitialDatabaseId(): string {
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      const saved = window.localStorage.getItem(ACTIVE_DB_STORAGE_KEY)?.trim();
+      if (saved === DEFAULT_DATABASE_ID || saved === LEGACY_NAMED_DATABASE_ID) {
+        return saved;
+      }
+    }
+  } catch {
+    // ignore storage access errors
+  }
+  if (envDbId && String(envDbId).trim()) {
+    return String(envDbId).trim();
+  }
+  return DEFAULT_DATABASE_ID;
+}
+
+export const ACTIVE_DATABASE_ID = resolveInitialDatabaseId();
+export const STANDBY_DATABASE_ID =
+  ACTIVE_DATABASE_ID === DEFAULT_DATABASE_ID ? LEGACY_NAMED_DATABASE_ID : DEFAULT_DATABASE_ID;
+const PRIMARY_DATABASE_ID = ACTIVE_DATABASE_ID;
+
+export function getActiveDatabaseId(): string {
+  return ACTIVE_DATABASE_ID;
+}
+
+export function setActiveDatabaseId(nextDbId: string, reload = true): void {
+  const normalized =
+    nextDbId === LEGACY_NAMED_DATABASE_ID ? LEGACY_NAMED_DATABASE_ID : DEFAULT_DATABASE_ID;
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem(ACTIVE_DB_STORAGE_KEY, normalized);
+      // Clear cached banner/CMS session keys so the switched database loads fresh state
+      if (window.sessionStorage) {
+        window.sessionStorage.removeItem("jaystar_marquee_banner_v1");
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+  if (reload && typeof window !== "undefined") {
+    window.location.reload();
+  }
+}
 
 const firebaseConfig = {
   apiKey: "AIzaSyD_lq2Z4qBrZZkzYmEMPPMtCKQmfSx2rkY",
@@ -37,37 +80,51 @@ const firebaseConfig = {
 // Initialize Firebase App
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize primary Firestore with persistent IndexedDB cache (fallback to memory cache in restricted contexts)
-let db: ReturnType<typeof getFirestore>;
-try {
-  db = initializeFirestore(
-    app,
-    {
-      experimentalAutoDetectLongPolling: true,
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-    },
-    PRIMARY_DATABASE_ID === "(default)" ? undefined : PRIMARY_DATABASE_ID
-  );
-} catch {
+function createFirestoreInstance(databaseId: string): ReturnType<typeof getFirestore> {
+  const targetId = databaseId === DEFAULT_DATABASE_ID ? undefined : databaseId;
   try {
-    db = initializeFirestore(
+    return initializeFirestore(
       app,
       {
         experimentalAutoDetectLongPolling: true,
-        localCache: memoryLocalCache(),
+        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
       },
-      PRIMARY_DATABASE_ID === "(default)" ? undefined : PRIMARY_DATABASE_ID
+      targetId
     );
   } catch {
-    db =
-      PRIMARY_DATABASE_ID === "(default)"
-        ? getFirestore(app)
-        : getFirestore(app, PRIMARY_DATABASE_ID);
+    try {
+      return initializeFirestore(
+        app,
+        {
+          experimentalAutoDetectLongPolling: true,
+          localCache: memoryLocalCache(),
+        },
+        targetId
+      );
+    } catch {
+      return targetId ? getFirestore(app, targetId) : getFirestore(app);
+    }
   }
 }
 
-// Keep defaultDb aliased to the primary named database so all reads/writes target the provisioned database
+// Initialize primary Firestore with persistent IndexedDB cache (fallback to memory cache in restricted contexts)
+const db: ReturnType<typeof getFirestore> = createFirestoreInstance(PRIMARY_DATABASE_ID);
+
+// Keep defaultDb aliased to the active primary database so all reads/writes target the selected database
 const defaultDb = db;
+
+let standbyDbInstance: ReturnType<typeof getFirestore> | null = null;
+export function getStandbyFirestore(): ReturnType<typeof getFirestore> {
+  if (!standbyDbInstance) {
+    standbyDbInstance = createFirestoreInstance(STANDBY_DATABASE_ID);
+  }
+  return standbyDbInstance;
+}
+
+export function getFirestoreById(databaseId: string): ReturnType<typeof getFirestore> {
+  if (databaseId === ACTIVE_DATABASE_ID) return db;
+  return getStandbyFirestore();
+}
 
 export const getClientDatabases = () => [db];
 
