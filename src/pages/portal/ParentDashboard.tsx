@@ -116,7 +116,16 @@ const ParentDashboard: React.FC = () => {
           getDocs(query(collection(db, 'payments'), where('parentId', '==', userUid), limit(50))),
           getDocs(query(collection(db, 'enrollment_requests'), where('parentId', '==', userUid), limit(25))),
           getDocs(query(collection(db, 'programs'), where('status', '==', 'PUBLISHED'), limit(100))),
-          Promise.all([\n            ...Array.from(new Set(childList.map((child: any) => String(child.schoolId || '')).filter(Boolean))).map((schoolId) => getDocs(query(collection(db, 'classSchedules'), where('schoolId', '==', schoolId), limit(50))).catch(() => ({ docs: [] } as any))),\n            ...childList.filter((child: any) => !child.schoolId).slice(0, 20).map((child: any) => getDocs(query(collection(db, 'classSchedules'), where('studentId', '==', child.id), limit(50))).catch(() => ({ docs: [] } as any))),\n          ]).then((snaps) => ({ docs: Array.from(new Map(snaps.flatMap((snap: any) => snap.docs).map((item: any) => [item.id, item])).values()) }))
+          Promise.all([
+            ...Array.from(new Set(childList.map((child: any) => String(child.schoolId || '')).filter(Boolean))).map((schoolId) =>
+              getDocs(query(collection(db, 'classSchedules'), where('schoolId', '==', schoolId), limit(50))).catch(() => ({ docs: [] } as any))
+            ),
+            ...childList.filter((child: any) => !child.schoolId).slice(0, 20).map((child: any) =>
+              getDocs(query(collection(db, 'classSchedules'), where('studentId', '==', child.id), limit(50))).catch(() => ({ docs: [] } as any))
+            ),
+          ]).then((snaps) => ({
+            docs: Array.from(new Map(snaps.flatMap((snap: any) => snap.docs).map((item: any) => [item.id, item])).values()),
+          }))
         ]);
         if (programsSnap.status === 'fulfilled') {
           const progs = programsSnap.value.docs.map(d => ({ id: d.id, title: (d.data().title || d.data().name || 'Technology Programme') as string }));
