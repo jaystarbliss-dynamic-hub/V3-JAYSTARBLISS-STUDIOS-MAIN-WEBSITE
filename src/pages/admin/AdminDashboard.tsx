@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { 
-  collection, getDocs, query, orderBy, limit,
+  collection, getDocs, getCountFromServer, query, orderBy, limit,
   doc, getDoc, setDoc, updateDoc, serverTimestamp, where 
 } from 'firebase/firestore';
 import { auth, db, ACTIVE_DATABASE_ID, DEFAULT_DATABASE_ID, LEGACY_NAMED_DATABASE_ID, setActiveDatabaseId } from '../../lib/firebase';
@@ -115,23 +115,45 @@ const AdminDashboard: React.FC = () => {
         activitySnap,
         edclubSnap,
         pendingEnrollmentsSnap,
-        pendingStudentReqsSnap
+        pendingStudentReqsSnap,
+        usersCountSnap,
+        studentsCountSnap,
+        individualStudentsCountSnap,
+        schoolsCountSnap,
+        programsCountSnap,
+        inquiriesCountSnap,
+        servicesCountSnap,
+        resourcesCountSnap,
+        schoolResourcesCountSnap,
+        examsCountSnap,
+        schoolExamsCountSnap
       ] = await Promise.all([
-        getDocs(collection(db, 'users')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'students')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'individualStudents')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'schools')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'programs')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'inquiries')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'services')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'resources')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'schoolResources')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'exams')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'schoolExams')).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'users'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'students'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'individualStudents'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'schools'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'programs'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'inquiries'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'services'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'resources'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'schoolResources'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'exams'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'schoolExams'), limit(100))).catch(() => ({ size: 0, docs: [] })),
         getDocs(query(collection(db, 'activityLogs'), orderBy('timestamp', 'desc'), limit(100))).catch(() => ({ size: 0, docs: [] })),
         getDoc(doc(db, 'settings', 'edclub')).catch(() => null),
-        getDocs(query(collection(db, 'enrollment_requests'), where('status', '==', 'pending'))).catch(() => ({ size: 0, docs: [] })),
-        getDocs(query(collection(db, 'student_requests'), where('status', '==', 'pending'))).catch(() => ({ size: 0, docs: [] }))
+        getDocs(query(collection(db, 'enrollment_requests'), where('status', '==', 'pending'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'student_requests'), where('status', '==', 'pending'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getCountFromServer(collection(db, 'users')).catch(() => null),
+        getCountFromServer(collection(db, 'students')).catch(() => null),
+        getCountFromServer(collection(db, 'individualStudents')).catch(() => null),
+        getCountFromServer(collection(db, 'schools')).catch(() => null),
+        getCountFromServer(collection(db, 'programs')).catch(() => null),
+        getCountFromServer(collection(db, 'inquiries')).catch(() => null),
+        getCountFromServer(collection(db, 'services')).catch(() => null),
+        getCountFromServer(collection(db, 'resources')).catch(() => null),
+        getCountFromServer(collection(db, 'schoolResources')).catch(() => null),
+        getCountFromServer(collection(db, 'exams')).catch(() => null),
+        getCountFromServer(collection(db, 'schoolExams')).catch(() => null)
       ]);
 
       if (edclubSnap && edclubSnap.exists()) {
