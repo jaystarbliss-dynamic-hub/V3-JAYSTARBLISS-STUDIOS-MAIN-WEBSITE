@@ -11,7 +11,7 @@ import {
   collection, getDocs, query, orderBy, limit,
   doc, getDoc, setDoc, updateDoc, serverTimestamp, where 
 } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { auth, db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import AdminAnalyticsWidget from '../../components/admin/AdminAnalyticsWidget';
 import PhotoUpload from '../../components/admin/PhotoUpload';
@@ -27,6 +27,38 @@ const AdminDashboard: React.FC = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [firestoreUsage, setFirestoreUsage] = useState<any>(null);
+  const [firestoreUsageLoading, setFirestoreUsageLoading] = useState(false);
+  const [firestoreUsageError, setFirestoreUsageError] = useState('');
+
+  const fetchFirestoreUsage = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      setFirestoreUsageError('Sign in again to view usage metrics.');
+      return;
+    }
+    setFirestoreUsageLoading(true);
+    setFirestoreUsageError('');
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch('/.netlify/functions/firestore-usage', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Usage metrics request failed.');
+      setFirestoreUsage(payload);
+      if (!payload.available) setFirestoreUsageError(payload.reason || 'Cloud Monitoring metrics are not configured.');
+    } catch (error) {
+      setFirestoreUsageError(error instanceof Error ? error.message : 'Could not load Firestore usage.');
+    } finally {
+      setFirestoreUsageLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchFirestoreUsage();
+  }, [fetchFirestoreUsage]);
 
   const [metrics, setMetrics] = useState({
     users: 0,
@@ -348,6 +380,43 @@ const AdminDashboard: React.FC = () => {
         </button>
       </div>
       
+      {/* Daily Firestore read usage: sourced from Cloud Monitoring, never guessed from browser activity. */}
+      <section className="pro-surface rounded-2xl p-5 space-y-4" aria-label="Daily Firestore read usage">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">Firestore daily read usage</h2>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Google Cloud Monitoring · Free-tier reference: 50,000 reads/day per eligible database
+            </p>
+          </div>
+          <button type="button" onClick={() => void fetchFirestoreUsage()} disabled={firestoreUsageLoading}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-white/10 px-3 py-2 text-xs font-semibold disabled:opacity-50">
+            <RefreshCw size={13} className={firestoreUsageLoading ? 'animate-spin' : ''} />
+            Refresh usage
+          </button>
+        </div>
+        {firestoreUsageLoading && !firestoreUsage && <p className="text-sm text-slate-500">Loading authoritative usage metrics…</p>}
+        {firestoreUsageError && <p role="status" className="rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-200">{firestoreUsageError}</p>}
+        {firestoreUsage?.available && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {(firestoreUsage.databases || []).map((item: any) => (
+                <div key={item.databaseId} className="rounded-xl border border-slate-200 dark:border-white/10 p-4">
+                  <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 break-all">{item.databaseId}</div>
+                  <div className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{Number(item.reads || 0).toLocaleString()} <span className="text-xs font-medium text-slate-500">reads</span></div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div className={`h-full rounded-full ${item.percentOfFreeAllowance >= 90 ? 'bg-red-500' : item.percentOfFreeAllowance >= 70 ? 'bg-amber-500' : 'bg-sky-500'}`}
+                      style={{ width: `${Math.min(100, Math.max(0, Number(item.percentOfFreeAllowance || 0)))}%` }} />
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">{item.percentOfFreeAllowance}% of the 50,000-read reference allowance</div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{firestoreUsage.note}</p>
+          </>
+        )}
+      </section>
+
       {/* Key Metric Overview Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((item) => {
