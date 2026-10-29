@@ -11,7 +11,7 @@ import {
   collection, getDocs, getCountFromServer, query, orderBy, limit,
   doc, getDoc, setDoc, updateDoc, serverTimestamp, where 
 } from 'firebase/firestore';
-import { auth, db, ACTIVE_DATABASE_ID, DEFAULT_DATABASE_ID, LEGACY_NAMED_DATABASE_ID, setActiveDatabaseId } from '../../lib/firebase';
+import { auth, db, ACTIVE_DATABASE_ID, DEFAULT_DATABASE_ID } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import AdminAnalyticsWidget from '../../components/admin/AdminAnalyticsWidget';
 import PhotoUpload from '../../components/admin/PhotoUpload';
@@ -416,16 +416,6 @@ const AdminDashboard: React.FC = () => {
             <RefreshCw size={13} className={firestoreUsageLoading ? 'animate-spin' : ''} />
             Refresh usage
           </button>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 dark:border-white/10 p-3">
-          <span className="mr-1 text-xs font-semibold text-slate-600 dark:text-slate-300">Switch active database:</span>
-          <button type="button" disabled={ACTIVE_DATABASE_ID === DEFAULT_DATABASE_ID}
-            onClick={() => { if (window.confirm('Switch the portal to the (default) database? Make sure its records are synchronised first. The page will reload.')) setActiveDatabaseId(DEFAULT_DATABASE_ID); }}
-            className="rounded-lg border border-slate-200 dark:border-white/10 px-3 py-2 text-xs font-semibold disabled:opacity-40">(default)</button>
-          <button type="button" disabled={ACTIVE_DATABASE_ID === LEGACY_NAMED_DATABASE_ID}
-            onClick={() => { if (window.confirm('Switch the portal to the AI Studio database? Make sure its records are synchronised first. The page will reload.')) setActiveDatabaseId(LEGACY_NAMED_DATABASE_ID); }}
-            className="rounded-lg border border-slate-200 dark:border-white/10 px-3 py-2 text-xs font-semibold disabled:opacity-40">AI Studio database</button>
-          <p className="basis-full text-xs text-amber-700 dark:text-amber-300">Switching changes the database used by this browser; it does not copy records or guarantee failover. Confirm data sync before switching.</p>
         </div>
         {firestoreUsageLoading && !firestoreUsage && <p className="text-sm text-slate-500">Loading authoritative usage metrics…</p>}
         {firestoreUsageError && <p role="status" className="rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-200">{firestoreUsageError}</p>}
