@@ -115,8 +115,8 @@ const ParentDashboard: React.FC = () => {
         const [paymentResult, enrollmentResult, programsSnap, schedSnap] = await Promise.allSettled([
           getDocs(query(collection(db, 'payments'), where('parentId', '==', userUid), limit(50))),
           getDocs(query(collection(db, 'enrollment_requests'), where('parentId', '==', userUid), limit(25))),
-          getDocs(query(collection(db, 'programs'), where('status', '==', 'PUBLISHED'))).catch(() => getDocs(collection(db, 'programs'))),
-          getDocs(collection(db, 'classSchedules'))
+          getDocs(query(collection(db, 'programs'), where('status', '==', 'PUBLISHED'), limit(100))),
+          Promise.all(childList.slice(0, 20).map((child) => getDocs(query(collection(db, 'classSchedules'), where('studentId', '==', child.id), limit(50))).catch(() => ({ docs: [] } as any)))).then((snaps) => ({ docs: snaps.flatMap((snap: any) => snap.docs) }))
         ]);
         if (programsSnap.status === 'fulfilled') {
           const progs = programsSnap.value.docs.map(d => ({ id: d.id, title: (d.data().title || d.data().name || 'Technology Programme') as string }));
