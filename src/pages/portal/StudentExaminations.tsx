@@ -17,6 +17,7 @@ import {
 import { auth, db } from "../../lib/firebase";
 import {
   collection,
+  limit,
   query,
   where,
   getDocs,
@@ -292,6 +293,7 @@ export default function StudentExaminations() {
     try {
       const ctx = await resolveStudentContext();
       const examMap = new Map<string, ExamCard>();
+      let serverLoaded = false;
 
       // 1. Try server endpoint (ignore fallback: true responses)
       try {
@@ -303,6 +305,7 @@ export default function StudentExaminations() {
           if (response.ok) {
             const data = await response.json().catch(() => ({}));
             if (!data.fallback && Array.isArray(data.exams)) {
+              serverLoaded = true;
               data.exams.forEach((exam: any) => {
                 examMap.set(String(exam.id), {
                   ...exam,
@@ -319,7 +322,9 @@ export default function StudentExaminations() {
         console.warn("Server student-examinations notice, engaging direct Firestore fallback:", apiErr);
       }
 
-      // 2. Direct Firestore merge across jdiExams, schoolExams, and legacy exams
+      // Direct Firestore compatibility reads are only needed if the authenticated server endpoint fails.
+      if (!serverLoaded) {
+      // Legacy fallback: merge exams from older collections.
       const studentClass = ctx.class || sessionStorage.getItem("studentClass") || "";
       const currentSchId = ctx.schoolId || sessionStorage.getItem("schoolId") || "";
       const currentUid = auth.currentUser?.uid || ctx.uid || "";
@@ -352,12 +357,14 @@ export default function StudentExaminations() {
         )
       );
 
-      const attemptsSnap = await getDocs(collection(db, "jdiExamAttempts")).catch(
-        () => ({ docs: [] } as any)
-      );
+      const attemptQueries = [
+        ...(currentStudentId ? [getDocs(query(collection(db, "jdiExamAttempts"), where("studentId", "==", currentStudentId), limit(100))).catch(() => ({ docs: [] } as any))] : []),
+        ...(currentUid ? [getDocs(query(collection(db, "jdiExamAttempts"), where("studentUid", "==", currentUid), limit(100))).catch(() => ({ docs: [] } as any))] : []),
+      ];
+      const attemptsSnaps = await Promise.all(attemptQueries);
       const attemptsByExam: Record<string, any> = {};
 
-      attemptsSnap.docs?.forEach((ad: any) => {
+      attemptsSnaps.forEach((attemptsSnap: any) => attemptsSnap.docs?.forEach((ad: any) => {
         const a = ad.data();
         if (
           (currentUid && a.studentUid === currentUid) ||
@@ -375,7 +382,7 @@ export default function StudentExaminations() {
             resultReleased: isReleased,
           };
         }
-      });
+      }));
 
       const now = Date.now();
       classEligibleExams.forEach((exam: any) => {
@@ -438,12 +445,14 @@ export default function StudentExaminations() {
         });
       });
 
+      }
+
       const loadedExams = Array.from(examMap.values());
 
       // Load student's examination notifications
       if (auth.currentUser) {
         const notifSnap = await getDocs(
-          query(collection(db, "jdiNotifications"), where("userId", "==", auth.currentUser.uid))
+          query(collection(db, "jdiNotifications"), where("userId", "==", auth.currentUser.uid), limit(10))
         ).catch(() => ({ docs: [] } as any));
         const notifs = (notifSnap.docs || [])
           .map((d: any) => ({ id: d.id, ...d.data() }))

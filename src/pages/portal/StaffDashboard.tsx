@@ -4,6 +4,7 @@ import { db, auth } from '../../lib/firebase';
 import {
   collection,
   getDocs,
+  limit,
   addDoc,
   serverTimestamp,
   query,
@@ -67,9 +68,9 @@ const StaffDashboard: React.FC = () => {
       // 1. Fetch Curriculum Resources Count
       try {
         const [staffResSnap, generalResSnap, schoolResSnap] = await Promise.all([
-          getDocs(collection(db, 'staffGeneralResources')).catch(() => ({ docs: [] })),
-          getDocs(collection(db, 'resources')).catch(() => ({ docs: [] })),
-          getDocs(collection(db, 'schoolResources')).catch(() => ({ docs: [] })),
+          getDocs(query(collection(db, 'staffGeneralResources'), limit(100))).catch(() => ({ docs: [] })),
+          getDocs(query(collection(db, 'resources'), limit(100))).catch(() => ({ docs: [] })),
+          getDocs(query(collection(db, 'schoolResources'), limit(100))).catch(() => ({ docs: [] })),
         ]);
         const combined = [
           ...staffResSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
@@ -96,7 +97,7 @@ const StaffDashboard: React.FC = () => {
           for (const collectionName of ['individualStudents', 'students']) {
             try {
               const snap = await getDocs(
-                query(collection(db, collectionName), where(field, '==', staffUid))
+                query(collection(db, collectionName), where(field, '==', staffUid), limit(100))
               );
               snap.forEach((d) => studentMap.set(d.id, { id: d.id, ...d.data() }));
             } catch (e) {
@@ -109,7 +110,7 @@ const StaffDashboard: React.FC = () => {
       // 3. Fetch assigned schools (including staffSchoolAccess + user profile + school records)
       try {
         const [schoolsSnap, accessSnap, userSnap] = await Promise.all([
-          getDocs(collection(db, 'schools')).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'schools'), limit(100))).catch(() => ({ docs: [] } as any)),
           staffUid
             ? getDoc(doc(db, 'staffSchoolAccess', staffUid)).catch(() => null)
             : Promise.resolve(null),
@@ -174,7 +175,7 @@ const StaffDashboard: React.FC = () => {
           for (const collectionName of ['students', 'individualStudents']) {
             try {
               const snap = await getDocs(
-                query(collection(db, collectionName), where('schoolId', '==', schoolId))
+                query(collection(db, collectionName), where('schoolId', '==', schoolId), limit(100))
               );
               snap.forEach((d) => scopedStudents.set(d.id, { id: d.id, ...d.data() }));
             } catch (e) {

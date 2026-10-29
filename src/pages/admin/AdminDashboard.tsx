@@ -8,10 +8,10 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { 
-  collection, getDocs, query, orderBy, limit,
+  collection, getDocs, getCountFromServer, query, orderBy, limit,
   doc, getDoc, setDoc, updateDoc, serverTimestamp, where 
 } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { auth, db, ACTIVE_DATABASE_ID, DEFAULT_DATABASE_ID } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import AdminAnalyticsWidget from '../../components/admin/AdminAnalyticsWidget';
 import PhotoUpload from '../../components/admin/PhotoUpload';
@@ -27,6 +27,38 @@ const AdminDashboard: React.FC = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [firestoreUsage, setFirestoreUsage] = useState<any>(null);
+  const [firestoreUsageLoading, setFirestoreUsageLoading] = useState(false);
+  const [firestoreUsageError, setFirestoreUsageError] = useState('');
+
+  const fetchFirestoreUsage = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      setFirestoreUsageError('Sign in again to view usage metrics.');
+      return;
+    }
+    setFirestoreUsageLoading(true);
+    setFirestoreUsageError('');
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch('/.netlify/functions/firestore-usage', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Usage metrics request failed.');
+      setFirestoreUsage(payload);
+      if (!payload.available) setFirestoreUsageError(payload.reason || 'Cloud Monitoring metrics are not configured.');
+    } catch (error) {
+      setFirestoreUsageError(error instanceof Error ? error.message : 'Could not load Firestore usage.');
+    } finally {
+      setFirestoreUsageLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchFirestoreUsage();
+  }, [fetchFirestoreUsage]);
 
   const [metrics, setMetrics] = useState({
     users: 0,
@@ -83,23 +115,45 @@ const AdminDashboard: React.FC = () => {
         activitySnap,
         edclubSnap,
         pendingEnrollmentsSnap,
-        pendingStudentReqsSnap
+        pendingStudentReqsSnap,
+        usersCountSnap,
+        studentsCountSnap,
+        individualStudentsCountSnap,
+        schoolsCountSnap,
+        programsCountSnap,
+        inquiriesCountSnap,
+        servicesCountSnap,
+        resourcesCountSnap,
+        schoolResourcesCountSnap,
+        examsCountSnap,
+        schoolExamsCountSnap
       ] = await Promise.all([
-        getDocs(collection(db, 'users')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'students')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'individualStudents')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'schools')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'programs')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'inquiries')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'services')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'resources')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'schoolResources')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'exams')).catch(() => ({ size: 0, docs: [] })),
-        getDocs(collection(db, 'schoolExams')).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'users'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'students'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'individualStudents'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'schools'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'programs'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'inquiries'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'services'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'resources'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'schoolResources'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'exams'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'schoolExams'), limit(100))).catch(() => ({ size: 0, docs: [] })),
         getDocs(query(collection(db, 'activityLogs'), orderBy('timestamp', 'desc'), limit(100))).catch(() => ({ size: 0, docs: [] })),
         getDoc(doc(db, 'settings', 'edclub')).catch(() => null),
-        getDocs(query(collection(db, 'enrollment_requests'), where('status', '==', 'pending'))).catch(() => ({ size: 0, docs: [] })),
-        getDocs(query(collection(db, 'student_requests'), where('status', '==', 'pending'))).catch(() => ({ size: 0, docs: [] }))
+        getDocs(query(collection(db, 'enrollment_requests'), where('status', '==', 'pending'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'student_requests'), where('status', '==', 'pending'), limit(100))).catch(() => ({ size: 0, docs: [] })),
+        getCountFromServer(collection(db, 'users')).catch(() => null),
+        getCountFromServer(collection(db, 'students')).catch(() => null),
+        getCountFromServer(collection(db, 'individualStudents')).catch(() => null),
+        getCountFromServer(collection(db, 'schools')).catch(() => null),
+        getCountFromServer(collection(db, 'programs')).catch(() => null),
+        getCountFromServer(collection(db, 'inquiries')).catch(() => null),
+        getCountFromServer(collection(db, 'services')).catch(() => null),
+        getCountFromServer(collection(db, 'resources')).catch(() => null),
+        getCountFromServer(collection(db, 'schoolResources')).catch(() => null),
+        getCountFromServer(collection(db, 'exams')).catch(() => null),
+        getCountFromServer(collection(db, 'schoolExams')).catch(() => null)
       ]);
 
       if (edclubSnap && edclubSnap.exists()) {
@@ -169,14 +223,14 @@ const AdminDashboard: React.FC = () => {
       setPendingEnrollmentList(pendingList);
 
       setMetrics({
-        users: usersSnap.size,
-        students: studentsList.length,
-        schools: schoolsSnap.size,
-        programs: programsSnap.size,
-        inquiries: inquiriesSnap.size,
-        services: servicesSnap.size,
-        resources: resourcesList.length,
-        exams: examsList.length,
+        users: usersCountSnap?.data().count ?? usersSnap.size,
+        students: (studentsCountSnap?.data().count ?? studentsSnap.size) + (individualStudentsCountSnap?.data().count ?? indStudentsSnap.size),
+        schools: schoolsCountSnap?.data().count ?? schoolsSnap.size,
+        programs: programsCountSnap?.data().count ?? programsSnap.size,
+        inquiries: inquiriesCountSnap?.data().count ?? inquiriesSnap.size,
+        services: servicesCountSnap?.data().count ?? servicesSnap.size,
+        resources: (resourcesCountSnap?.data().count ?? resourcesSnap.size) + (schoolResourcesCountSnap?.data().count ?? schoolResourcesSnap.size),
+        exams: (examsCountSnap?.data().count ?? examsSnap.size) + (schoolExamsCountSnap?.data().count ?? schoolExamsSnap.size),
         pendingEnrollments: pendingList.length
       });
 
@@ -267,7 +321,7 @@ const AdminDashboard: React.FC = () => {
 
   const stats = [
     { 
-      name: 'Enrolled Students', 
+      name: 'Student Records', 
       value: metrics.students, 
       icon: Users, 
       color: 'from-sky-500 to-blue-600', 
@@ -287,7 +341,7 @@ const AdminDashboard: React.FC = () => {
       trend: '100% operational'
     },
     { 
-      name: 'Curriculum Guides', 
+      name: 'Resource Records', 
       value: metrics.resources, 
       icon: BookOpen, 
       color: 'from-cyan-500 to-sky-600', 
@@ -297,7 +351,7 @@ const AdminDashboard: React.FC = () => {
       trend: 'Updated recently'
     },
     { 
-      name: 'CBT Assessments', 
+      name: 'Assessment Records', 
       value: metrics.exams, 
       icon: Award, 
       color: 'from-emerald-500 to-teal-600', 
@@ -348,6 +402,43 @@ const AdminDashboard: React.FC = () => {
         </button>
       </div>
       
+      {/* Daily Firestore read usage: sourced from Cloud Monitoring, never guessed from browser activity. */}
+      <section className="pro-surface rounded-2xl p-5 space-y-4" aria-label="Daily Firestore read usage">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">Firestore daily read usage</h2>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Google Cloud Monitoring · Free-tier reference: 50,000 reads/day per eligible database
+            </p>
+          </div>
+          <button type="button" onClick={() => void fetchFirestoreUsage()} disabled={firestoreUsageLoading}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-white/10 px-3 py-2 text-xs font-semibold disabled:opacity-50">
+            <RefreshCw size={13} className={firestoreUsageLoading ? 'animate-spin' : ''} />
+            Refresh usage
+          </button>
+        </div>
+        {firestoreUsageLoading && !firestoreUsage && <p className="text-sm text-slate-500">Loading authoritative usage metrics…</p>}
+        {firestoreUsageError && <p role="status" className="rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-200">{firestoreUsageError}</p>}
+        {firestoreUsage?.available && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {(firestoreUsage.databases || []).map((item: any) => (
+                <div key={item.databaseId} className="rounded-xl border border-slate-200 dark:border-white/10 p-4">
+                  <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 break-all">{item.databaseId}</div>
+                  <div className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{Number(item.reads || 0).toLocaleString()} <span className="text-xs font-medium text-slate-500">reads</span></div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div className={`h-full rounded-full ${item.percentOfFreeAllowance >= 90 ? 'bg-red-500' : item.percentOfFreeAllowance >= 70 ? 'bg-amber-500' : 'bg-sky-500'}`}
+                      style={{ width: `${Math.min(100, Math.max(0, Number(item.percentOfFreeAllowance || 0)))}%` }} />
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">{item.percentOfFreeAllowance}% of the 50,000-read reference allowance</div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{firestoreUsage.note}</p>
+          </>
+        )}
+      </section>
+
       {/* Key Metric Overview Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((item) => {

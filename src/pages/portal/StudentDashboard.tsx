@@ -424,7 +424,7 @@ export const StudentDashboard: React.FC = () => {
       // Query programs collection to determine if program is multi-stage or standalone
       let matchedProgramDoc: any = null;
       try {
-        const progsSnap = await getDocs(collection(db, 'programs')).catch(() => ({ docs: [] } as any));
+        const progsSnap = await getDocs(query(collection(db, 'programs'), limit(100))).catch(() => ({ docs: [] } as any));
         progsSnap.docs.forEach((d: any) => {
           const p = d.data();
           const pTitle = String(p.title || p.name || '').trim().toLowerCase();
@@ -490,9 +490,9 @@ export const StudentDashboard: React.FC = () => {
       const milestoneList: DynamicMilestone[] = [];
       try {
         const milestoneQueries = [
-          getDocs(query(collection(db, 'milestones'), where('targetType', '==', 'STUDENT'), where('targetId', '==', currentStudentId))),
-          ...(currentUid ? [getDocs(query(collection(db, 'milestones'), where('studentUserId', '==', currentUid)))] : []),
-          ...(studentRecord.schoolId ? [getDocs(query(collection(db, 'milestones'), where('targetType', '==', 'SCHOOL'), where('targetId', '==', studentRecord.schoolId)))] : [])
+          getDocs(query(collection(db, 'milestones'), where('targetType', '==', 'STUDENT'), where('targetId', '==', currentStudentId), limit(50))),
+          ...(currentUid ? [getDocs(query(collection(db, 'milestones'), where('studentUserId', '==', currentUid), limit(50)))] : []),
+          ...(studentRecord.schoolId ? [getDocs(query(collection(db, 'milestones'), where('targetType', '==', 'SCHOOL'), where('targetId', '==', studentRecord.schoolId), limit(50)))] : [])
         ];
         const milestoneSnaps = await Promise.all(milestoneQueries.map(q => q.catch(() => ({ docs: [] } as any))));
         const seenMilestones = new Set<string>();
@@ -542,9 +542,9 @@ export const StudentDashboard: React.FC = () => {
         }
 
         const directAssignmentSnaps = await Promise.all([
-          getDocs(query(collection(db, 'assignments'), where('studentId', '==', currentStudentId))).catch(() => ({ docs: [] } as any)),
-          ...(currentUid ? [getDocs(query(collection(db, 'assignments'), where('studentUserId', '==', currentUid))).catch(() => ({ docs: [] } as any))] : []),
-          ...(currentUid ? [getDocs(query(collection(db, 'assignments'), where('userId', '==', currentUid))).catch(() => ({ docs: [] } as any))] : [])
+          getDocs(query(collection(db, 'assignments'), where('studentId', '==', currentStudentId), limit(50))).catch(() => ({ docs: [] } as any)),
+          ...(currentUid ? [getDocs(query(collection(db, 'assignments'), where('studentUserId', '==', currentUid), limit(50))).catch(() => ({ docs: [] } as any))] : []),
+          ...(currentUid ? [getDocs(query(collection(db, 'assignments'), where('userId', '==', currentUid), limit(50))).catch(() => ({ docs: [] } as any))] : [])
         ]);
 
         directAssignmentSnaps.forEach(snap => {
@@ -587,21 +587,21 @@ export const StudentDashboard: React.FC = () => {
       try {
         const pResQueries = currentStudentId || currentUid
           ? [
-              getDocs(query(collection(db, 'personalResources'), where('studentId', '==', currentStudentId))).catch(() => ({ docs: [] } as any)),
+              getDocs(query(collection(db, 'personalResources'), where('studentId', '==', currentStudentId), limit(50))).catch(() => ({ docs: [] } as any)),
               ...(currentUid
-                ? [getDocs(query(collection(db, 'personalResources'), where('userId', '==', currentUid))).catch(() => ({ docs: [] } as any))]
+                ? [getDocs(query(collection(db, 'personalResources'), where('userId', '==', currentUid), limit(50))).catch(() => ({ docs: [] } as any))]
                 : []),
             ]
           : [];
 
         const pLinkQueries = currentStudentId || currentUid
           ? [
-              getDocs(query(collection(db, 'personalLinks'), where('studentId', '==', currentStudentId))).catch(() => ({ docs: [] } as any)),
+              getDocs(query(collection(db, 'personalLinks'), where('studentId', '==', currentStudentId), limit(50))).catch(() => ({ docs: [] } as any)),
               ...(currentUid
-                ? [getDocs(query(collection(db, 'personalLinks'), where('userId', '==', currentUid))).catch(() => ({ docs: [] } as any))]
+                ? [getDocs(query(collection(db, 'personalLinks'), where('userId', '==', currentUid), limit(50))).catch(() => ({ docs: [] } as any))]
                 : []),
               ...(studentRecord.schoolId
-                ? [getDocs(query(collection(db, 'personalLinks'), where('schoolId', '==', studentRecord.schoolId))).catch(() => ({ docs: [] } as any))]
+                ? [getDocs(query(collection(db, 'personalLinks'), where('schoolId', '==', studentRecord.schoolId), limit(50))).catch(() => ({ docs: [] } as any))]
                 : []),
             ]
           : [];
@@ -611,8 +611,8 @@ export const StudentDashboard: React.FC = () => {
           Promise.all(pLinkQueries),
           getDocs(query(collection(db, 'resources'), limit(25))).catch(() => ({ docs: [] } as any)),
           getDocs(query(collection(db, 'exams'), limit(50))).catch(() => ({ docs: [] } as any)),
-          getDocs(collection(db, 'jdiExams')).catch(() => ({ docs: [] } as any)),
-          getDocs(collection(db, 'schoolExams')).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'jdiExams'), limit(50))).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'schoolExams'), limit(50))).catch(() => ({ docs: [] } as any)),
         ]);
 
         personalResourceResults = pRes;
@@ -761,9 +761,9 @@ export const StudentDashboard: React.FC = () => {
       // Student verified modules (for certificates)
       try {
         const moduleQueries = [
-          getDocs(query(collection(db, 'studentModules'), where('studentId', '==', currentStudentId))).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'studentModules'), where('studentId', '==', currentStudentId), limit(50))).catch(() => ({ docs: [] } as any)),
           ...(currentUid
-            ? [getDocs(query(collection(db, 'studentModules'), where('studentId', '==', currentUid))).catch(() => ({ docs: [] } as any))]
+            ? [getDocs(query(collection(db, 'studentModules'), where('studentId', '==', currentUid), limit(50))).catch(() => ({ docs: [] } as any))]
             : []),
         ];
         const moduleMap = new Map<string, ProgramModule>();
@@ -809,7 +809,10 @@ export const StudentDashboard: React.FC = () => {
         const currentProg = resolvedProgramTitle.toLowerCase().trim();
 
         const [schSnap, netlifySchedules] = await Promise.all([
-          getDocs(collection(db, 'classSchedules')).catch(() => ({ docs: [] } as any)),
+          getDocs(schId
+            ? query(collection(db, 'classSchedules'), where('schoolId', '==', schId), limit(100))
+            : query(collection(db, 'classSchedules'), where('studentId', '==', currentStudentId), limit(100))
+          ).catch(() => ({ docs: [] } as any)),
           authUser?.getIdToken().then((token: string | null | undefined) => 
             token ? fetch(`/.netlify/functions/class-schedules?schoolId=${encodeURIComponent(schId)}&studentId=${encodeURIComponent(currentStudentId)}`, {
               headers: { Authorization: `Bearer ${token}` }

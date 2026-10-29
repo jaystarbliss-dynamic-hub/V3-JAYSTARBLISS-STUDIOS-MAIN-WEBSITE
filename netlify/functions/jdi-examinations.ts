@@ -19,6 +19,8 @@ import {
   isAttemptResultReleased,
 } from "../../api/_lib/jdi-assessment.js";
 
+let cachedStudentExamSnapshots: { expiresAt: number; docs: any[] } | null = null;
+
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
   headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
@@ -398,14 +400,24 @@ export const handler: Handler = async event => {
       ).trim();
       const studentClassNormalized = normalizeClassName(studentClassRaw);
 
-      const [jdiSnap, schoolExamsSnap] = await Promise.all([
-        adminDb.collection("jdiExams").limit(250).get().catch(() => null),
-        adminDb.collection("schoolExams").limit(250).get().catch(() => null),
-      ]);
+      // Reuse the bounded exam catalogue briefly across warm function invocations.
+      // Without this cache, every student opening the exam page re-reads up to 300 exam docs.
+      let examSnapshots = cachedStudentExamSnapshots && cachedStudentExamSnapshots.expiresAt > Date.now()
+        ? cachedStudentExamSnapshots.docs
+        : null;
+      if (!examSnapshots) {
+        const [jdiSnap, schoolExamsSnap, legacyExamsSnap] = await Promise.all([
+          adminDb.collection("jdiExams").limit(100).get().catch(() => null),
+          adminDb.collection("schoolExams").limit(100).get().catch(() => null),
+          adminDb.collection("exams").limit(100).get().catch(() => null),
+        ]);
+        examSnapshots = [jdiSnap, schoolExamsSnap, legacyExamsSnap].flatMap((snap: any) => snap?.docs || []);
+        cachedStudentExamSnapshots = { expiresAt: Date.now() + 60_000, docs: examSnapshots };
+      }
 
       const examDocs = new Map<string, any>();
-      for (const snap of [jdiSnap, schoolExamsSnap]) {
-        snap?.docs.forEach(d => examDocs.set(d.id, d));
+      for (const d of examSnapshots) {
+        examDocs.set(d.id, d);
       }
 
       const resolvedSchoolName = schoolId
@@ -471,9 +483,9 @@ export const handler: Handler = async event => {
         });
 
       const [attemptsByStudentId, attemptsByUid] = await Promise.all([
-        adminDb.collection("jdiExamAttempts").where("studentId", "==", student.id).limit(200).get(),
+        adminDb.collection("jdiExamAttempts").where("studentId", "==", student.id).limit(100).get(),
         c.uid !== student.id
-          ? adminDb.collection("jdiExamAttempts").where("studentUid", "==", c.uid).limit(200).get()
+          ? adminDb.collection("jdiExamAttempts").where("studentUid", "==", c.uid).limit(100).get()
           : Promise.resolve({ docs: [] as any[] }),
       ]);
 
@@ -776,11 +788,21 @@ export const handler: Handler = async event => {
         if (!(await permittedSchool(c, schoolId))) {
           return json(403, { error: "You do not have access to this school." });
         }
-        const schoolExams = await adminDb.collection("jdiExams").where("schoolId", "==", schoolId).limit(150).get();
-        schoolExams.docs.forEach((d: any) => docs.set(d.id, d));
+        const [schoolExams, schoolSpecificExams] = await Promise.all([
+          adminDb.collection("jdiExams").where("schoolId", "==", schoolId).limit(150).get(),
+          adminDb.collection("schoolExams").where("schoolId", "==", schoolId).limit(150).get(),
+        ]);
+        for (const snap of [schoolExams, schoolSpecificExams]) {
+          snap.docs.forEach((d: any) => docs.set(d.id, d));
+        }
       } else if (adminRoles.includes(c.role)) {
-        const allExams = await adminDb.collection("jdiExams").limit(250).get();
-        allExams.docs.forEach((d: any) => docs.set(d.id, d));
+        const [allExams, allSchoolExams] = await Promise.all([
+          adminDb.collection("jdiExams").limit(250).get(),
+          adminDb.collection("schoolExams").limit(250).get(),
+        ]);
+        for (const snap of [allExams, allSchoolExams]) {
+          snap.docs.forEach((d: any) => docs.set(d.id, d));
+        }
       } else if (staffRoles.includes(c.role)) {
         const tutorSchoolIds = await resolveTutorSchoolIds(c);
         const [byCreatedBy, byTutorId, ...schoolSnaps] = await Promise.all([
@@ -790,7 +812,14 @@ export const handler: Handler = async event => {
             adminDb.collection("jdiExams").where("schoolId", "==", sid).limit(100).get()
           ),
         ]);
-        for (const snap of [byCreatedBy, byTutorId, ...schoolSnaps]) {
+        const [schoolByCreatedBy, schoolByTutorId, ...schoolScopedSnaps] = await Promise.all([
+          adminDb.collection("schoolExams").where("createdBy", "==", c.uid).limit(100).get(),
+          adminDb.collection("schoolExams").where("tutorId", "==", c.uid).limit(100).get(),
+          ...tutorSchoolIds.slice(0, 10).map(sid =>
+            adminDb.collection("schoolExams").where("schoolId", "==", sid).limit(100).get()
+          ),
+        ]);
+        for (const snap of [byCreatedBy, byTutorId, ...schoolSnaps, schoolByCreatedBy, schoolByTutorId, ...schoolScopedSnaps]) {
           snap.docs.forEach((d: any) => docs.set(d.id, d));
         }
       }
