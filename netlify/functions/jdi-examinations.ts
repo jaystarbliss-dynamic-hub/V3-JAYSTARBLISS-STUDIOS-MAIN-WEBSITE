@@ -398,9 +398,11 @@ export const handler: Handler = async event => {
       ).trim();
       const studentClassNormalized = normalizeClassName(studentClassRaw);
 
+      // Keep the legacy-compatible exam discovery bounded. The client no longer
+      // performs a second full-collection merge after this endpoint succeeds.
       const [jdiSnap, schoolExamsSnap] = await Promise.all([
-        adminDb.collection("jdiExams").limit(250).get().catch(() => null),
-        adminDb.collection("schoolExams").limit(250).get().catch(() => null),
+        adminDb.collection("jdiExams").limit(100).get().catch(() => null),
+        adminDb.collection("schoolExams").limit(100).get().catch(() => null),
       ]);
 
       const examDocs = new Map<string, any>();
@@ -471,9 +473,9 @@ export const handler: Handler = async event => {
         });
 
       const [attemptsByStudentId, attemptsByUid] = await Promise.all([
-        adminDb.collection("jdiExamAttempts").where("studentId", "==", student.id).limit(200).get(),
+        adminDb.collection("jdiExamAttempts").where("studentId", "==", student.id).limit(100).get(),
         c.uid !== student.id
-          ? adminDb.collection("jdiExamAttempts").where("studentUid", "==", c.uid).limit(200).get()
+          ? adminDb.collection("jdiExamAttempts").where("studentUid", "==", c.uid).limit(100).get()
           : Promise.resolve({ docs: [] as any[] }),
       ]);
 
