@@ -356,12 +356,14 @@ export default function StudentExaminations() {
         )
       );
 
-      const attemptsSnap = await getDocs(collection(db, "jdiExamAttempts")).catch(
-        () => ({ docs: [] } as any)
-      );
+      const attemptQueries = [
+        ...(currentStudentId ? [getDocs(query(collection(db, "jdiExamAttempts"), where("studentId", "==", currentStudentId), limit(100))).catch(() => ({ docs: [] } as any))] : []),
+        ...(currentUid ? [getDocs(query(collection(db, "jdiExamAttempts"), where("studentUid", "==", currentUid), limit(100))).catch(() => ({ docs: [] } as any))] : []),
+      ];
+      const attemptsSnaps = await Promise.all(attemptQueries);
       const attemptsByExam: Record<string, any> = {};
 
-      attemptsSnap.docs?.forEach((ad: any) => {
+      attemptsSnaps.forEach((attemptsSnap: any) => attemptsSnap.docs?.forEach((ad: any) => {
         const a = ad.data();
         if (
           (currentUid && a.studentUid === currentUid) ||
@@ -379,7 +381,7 @@ export default function StudentExaminations() {
             resultReleased: isReleased,
           };
         }
-      });
+      }));
 
       const now = Date.now();
       classEligibleExams.forEach((exam: any) => {
