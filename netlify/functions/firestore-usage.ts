@@ -62,7 +62,7 @@ export const handler: Handler = async (event) => {
     const pacificDate = new Intl.DateTimeFormat("en-CA", {
       timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit",
     }).format(end);
-    const filter = 'metric.type = "firestore.googleapis.com/document/read_count" AND resource.type = "firestore_instance"';
+    const filter = 'metric.type = "firestore.googleapis.com/document/read_ops_count" AND resource.type = "firestore.googleapis.com/Database"';
     const url = new URL("https://monitoring.googleapis.com/v3/projects/jaystarbliss-studios/timeSeries");
     url.searchParams.set("filter", filter);
     url.searchParams.set("interval.startTime", start.toISOString());
@@ -104,7 +104,7 @@ export const handler: Handler = async (event) => {
         reads: Math.round(reads),
         percentOfFreeAllowance: Math.round((reads / 50000) * 1000) / 10,
       })),
-      note: "Monitoring read counts are usage metrics; the AI Studio shared-quota counter may group databases differently.",
+      note: "Cloud Monitoring samples every minute and may lag by up to four minutes. These are per-database document read metrics; AI Studio shared-quota grouping can differ.",
     });
   } catch (error) {
     console.error("[firestore-usage] Unable to load Firestore usage metrics:", error);
