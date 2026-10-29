@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { Award, Building2, BookOpen, Calendar, ChevronRight, Copy, CreditCard, ExternalLink, Eye, Key, Link2, Loader2, Search, Users, X, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
 import DashboardGreeting from '../../components/portal/DashboardGreeting';
@@ -208,6 +208,7 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
       if (cachedSchoolId) validSchoolIds.add(cachedSchoolId);
 
       let fetchedStudentCount = 0;
+      let serverStudentCountLoaded = false;
 
       // Try server-side scoped endpoint first
       try {
@@ -215,7 +216,8 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
           const studentsResult = await jsonFetch<{ count: number; schoolName?: string; students?: any[] }>(
             '/.netlify/functions/school-students' + (activeSchoolId ? `?schoolId=${encodeURIComponent(activeSchoolId)}` : '')
           );
-          fetchedStudentCount = Number(studentsResult.count || studentsResult.students?.length || 0);
+          fetchedStudentCount = Number(studentsResult.count ?? studentsResult.students?.length ?? 0);
+          serverStudentCountLoaded = true;
           if (studentsResult.schoolName && studentsResult.schoolName !== 'School Portal') {
             sessionStorage.setItem('schoolName', studentsResult.schoolName);
             setSchool(prev => prev ? { ...prev, name: studentsResult.schoolName } : prev);
@@ -225,7 +227,8 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
         console.warn('Backend student count fetch notice:', backendErr);
       }
 
-      // Always verify with direct Firestore query across multi-alias matching so count matches SchoolRoster
+      // Use expensive multi-alias Firestore scans only when the scoped server endpoint fails.
+      if (!serverStudentCountLoaded) {
       try {
         const targetIdsList = Array.from(validSchoolIds).filter(Boolean);
         const queries: Promise<{ collName: string; docs: any[] }>[] = [];
@@ -293,6 +296,7 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
       } catch (fsErr) {
         console.warn('Firestore fallback student count error:', fsErr);
       }
+      }
 
       try {
         const scheduleResult = await jsonFetch<{ schedules: ClassSchedule[] }>('/.netlify/functions/class-schedules');
@@ -303,8 +307,8 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
         }
       } catch {
         const [schedSnap, nameSnap] = await Promise.all([
-          getDocs(query(collection(db, 'classSchedules'), where('schoolId', '==', activeSchoolId))).catch(() => ({ docs: [] })),
-          schoolRecordData.name ? getDocs(query(collection(db, 'classSchedules'), where('schoolName', '==', schoolRecordData.name))).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] })
+          getDocs(query(collection(db, 'classSchedules'), where('schoolId', '==', activeSchoolId), limit(100))).catch(() => ({ docs: [] })),
+          schoolRecordData.name ? getDocs(query(collection(db, 'classSchedules'), where('schoolName', '==', schoolRecordData.name), limit(100))).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] })
         ]);
         const schedMap = new Map<string, ClassSchedule>();
         schedSnap.docs.forEach(d => schedMap.set(d.id, { id: d.id, ...d.data() } as ClassSchedule));
@@ -315,7 +319,7 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
       }
 
       const [examSnap, linkSnap, passSnap] = await Promise.all([
-        getDocs(query(collection(db, 'schoolExams'), where('schoolId', '==', activeSchoolId))).catch(() => ({ docs: [] })),
+        getDocs(query(collection(db, 'schoolExams'), where('schoolId', '==', activeSchoolId), limit(100))).catch(() => ({ docs: [] })),
         getDocs(query(collection(db, 'schoolLinks'), where('schoolId', '==', activeSchoolId))).catch(() => ({ docs: [] })),
         getDocs(query(collection(db, 'schoolPasscodes'), where('schoolId', '==', activeSchoolId))).catch(() => ({ docs: [] })),
       ]);
