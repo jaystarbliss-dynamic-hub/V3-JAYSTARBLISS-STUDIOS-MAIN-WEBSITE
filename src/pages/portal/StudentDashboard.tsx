@@ -424,7 +424,7 @@ export const StudentDashboard: React.FC = () => {
       // Query programs collection to determine if program is multi-stage or standalone
       let matchedProgramDoc: any = null;
       try {
-        const progsSnap = await getDocs(collection(db, 'programs')).catch(() => ({ docs: [] } as any));
+        const progsSnap = await getDocs(query(collection(db, 'programs'), limit(100))).catch(() => ({ docs: [] } as any));
         progsSnap.docs.forEach((d: any) => {
           const p = d.data();
           const pTitle = String(p.title || p.name || '').trim().toLowerCase();
@@ -611,8 +611,8 @@ export const StudentDashboard: React.FC = () => {
           Promise.all(pLinkQueries),
           getDocs(query(collection(db, 'resources'), limit(25))).catch(() => ({ docs: [] } as any)),
           getDocs(query(collection(db, 'exams'), limit(50))).catch(() => ({ docs: [] } as any)),
-          getDocs(collection(db, 'jdiExams')).catch(() => ({ docs: [] } as any)),
-          getDocs(collection(db, 'schoolExams')).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'jdiExams'), limit(50))).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'schoolExams'), limit(50))).catch(() => ({ docs: [] } as any)),
         ]);
 
         personalResourceResults = pRes;
@@ -809,7 +809,10 @@ export const StudentDashboard: React.FC = () => {
         const currentProg = resolvedProgramTitle.toLowerCase().trim();
 
         const [schSnap, netlifySchedules] = await Promise.all([
-          getDocs(collection(db, 'classSchedules')).catch(() => ({ docs: [] } as any)),
+          getDocs(schId
+            ? query(collection(db, 'classSchedules'), where('schoolId', '==', schId), limit(100))
+            : query(collection(db, 'classSchedules'), where('studentId', '==', currentStudentId), limit(100))
+          ).catch(() => ({ docs: [] } as any)),
           authUser?.getIdToken().then((token: string | null | undefined) => 
             token ? fetch(`/.netlify/functions/class-schedules?schoolId=${encodeURIComponent(schId)}&studentId=${encodeURIComponent(currentStudentId)}`, {
               headers: { Authorization: `Bearer ${token}` }
