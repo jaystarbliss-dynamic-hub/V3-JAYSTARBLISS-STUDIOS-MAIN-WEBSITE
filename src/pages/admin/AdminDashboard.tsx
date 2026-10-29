@@ -223,14 +223,14 @@ const AdminDashboard: React.FC = () => {
       setPendingEnrollmentList(pendingList);
 
       setMetrics({
-        users: usersSnap.size,
-        students: studentsList.length,
-        schools: schoolsSnap.size,
-        programs: programsSnap.size,
-        inquiries: inquiriesSnap.size,
-        services: servicesSnap.size,
-        resources: resourcesList.length,
-        exams: examsList.length,
+        users: usersCountSnap?.data().count ?? usersSnap.size,
+        students: (studentsCountSnap?.data().count ?? studentsSnap.size) + (individualStudentsCountSnap?.data().count ?? indStudentsSnap.size),
+        schools: schoolsCountSnap?.data().count ?? schoolsSnap.size,
+        programs: programsCountSnap?.data().count ?? programsSnap.size,
+        inquiries: inquiriesCountSnap?.data().count ?? inquiriesSnap.size,
+        services: servicesCountSnap?.data().count ?? servicesSnap.size,
+        resources: (resourcesCountSnap?.data().count ?? resourcesSnap.size) + (schoolResourcesCountSnap?.data().count ?? schoolResourcesSnap.size),
+        exams: (examsCountSnap?.data().count ?? examsSnap.size) + (schoolExamsCountSnap?.data().count ?? schoolExamsSnap.size),
         pendingEnrollments: pendingList.length
       });
 
@@ -321,7 +321,7 @@ const AdminDashboard: React.FC = () => {
 
   const stats = [
     { 
-      name: 'Enrolled Students', 
+      name: 'Student Records', 
       value: metrics.students, 
       icon: Users, 
       color: 'from-sky-500 to-blue-600', 
@@ -341,7 +341,7 @@ const AdminDashboard: React.FC = () => {
       trend: '100% operational'
     },
     { 
-      name: 'Curriculum Guides', 
+      name: 'Resource Records', 
       value: metrics.resources, 
       icon: BookOpen, 
       color: 'from-cyan-500 to-sky-600', 
@@ -351,7 +351,7 @@ const AdminDashboard: React.FC = () => {
       trend: 'Updated recently'
     },
     { 
-      name: 'CBT Assessments', 
+      name: 'Assessment Records', 
       value: metrics.exams, 
       icon: Award, 
       color: 'from-emerald-500 to-teal-600', 
