@@ -1,5 +1,5 @@
 import type { Handler } from '@netlify/functions';
-import { adminAuth, adminDb, hasAdminAuth, hasAdminDb } from '../../api/_lib/firebase-admin';
+import { adminAuth, adminDb, hasAdminAuth, hasAdminDb, applyRequestDatabaseHeader } from '../../api/_lib/firebase-admin';
 import { normalizeClassName } from '../../api/_lib/jdi-assessment.js';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -42,6 +42,7 @@ const serialise = (id: string, d: any, source: string) => {
 };
 
 export const handler: Handler = async event => {
+  applyRequestDatabaseHeader(event.headers as any);
   if (event.httpMethod !== 'GET') return json(405, { error: 'Method Not Allowed' });
 
   try {

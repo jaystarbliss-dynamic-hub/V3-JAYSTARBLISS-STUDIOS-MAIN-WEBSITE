@@ -1,5 +1,5 @@
 import type { Handler } from "@netlify/functions";
-import { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
+import { adminAuth, adminDb, applyRequestDatabaseHeader } from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
@@ -60,6 +60,7 @@ const adminRoles = [
 ];
 
 async function caller(event: any) {
+  applyRequestDatabaseHeader(event.headers as any);
   const token = bearer(event);
   if (!token) throw new Error("AUTH");
   const decoded = await adminAuth.verifyIdToken(token);

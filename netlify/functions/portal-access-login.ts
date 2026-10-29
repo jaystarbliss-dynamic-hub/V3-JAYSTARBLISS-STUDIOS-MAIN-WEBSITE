@@ -1,6 +1,6 @@
 import type { Handler } from "@netlify/functions";
 import { createHash } from "node:crypto";
-import { adminAuth, adminDb, getAdminDatabases } from "../../api/_lib/firebase-admin";
+import { adminAuth, adminDb, getAdminDatabases, applyRequestDatabaseHeader } from "../../api/_lib/firebase-admin";
 import { hashStudentAccessCode, matchesStudentCredentials, normalizeStudentUsername } from "../../api/_lib/student-login-compat.mjs";
 
 const normalizeUsername = (value: string) => normalizeStudentUsername(value);
@@ -339,6 +339,7 @@ const isAuthDisabled = (user: { disabled?: boolean }) => user.disabled === true;
 const normaliseRole = (value: unknown) => String(value || "").trim().toLowerCase();
 
 export const handler: Handler = async (event) => {
+  applyRequestDatabaseHeader(event.headers as any);
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
   try {
     const body = JSON.parse(event.body || "{}");

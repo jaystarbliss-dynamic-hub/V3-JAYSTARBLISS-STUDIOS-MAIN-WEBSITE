@@ -1,6 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import { createHash, randomBytes } from 'node:crypto';
-import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
+import { adminAuth, adminDb, applyRequestDatabaseHeader } from '../../api/_lib/firebase-admin';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -18,6 +18,7 @@ const roleOf = (value: unknown) => String(value || '').trim().toUpperCase();
 const nameOf = (data: any) => String(data?.fullName || data?.studentName || data?.name || data?.displayName || data?.username || data?.email || 'Student').trim();
 
 export const handler: Handler = async event => {
+  applyRequestDatabaseHeader(event.headers as any);
   if (event.httpMethod !== 'GET' && event.httpMethod !== 'POST') return json(405, { error: 'Method Not Allowed' });
 
   try {
@@ -104,19 +105,28 @@ export const handler: Handler = async event => {
     const records = new Map<string, any>();
     const aliases = new Map<string, string>();
 
-    const keysFor = (id: string, data: any) => [
-      id,
-      data?.firebaseUid,
-      data?.userId,
-      data?.studentDocId,
-      data?.email ? String(data.email).toLowerCase() : '',
-      data?.username ? String(data.username).toLowerCase() : ''
-    ].filter(Boolean).map(String);
+    const keysFor = (id: string, data: any) => {
+      const cleanName = String(data?.fullName || data?.studentName || data?.name || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+      const cleanSchool = String(data?.schoolId || 'individual').trim().toLowerCase();
+      return [
+        id,
+        data?.firebaseUid ? `uid:${data.firebaseUid}` : '',
+        data?.userId ? `uid:${data.userId}` : '',
+        data?.studentDocId,
+        data?.email ? `email:${String(data.email).toLowerCase()}` : '',
+        data?.username ? `uname:${String(data.username).toLowerCase()}` : '',
+        cleanName ? `name:${cleanName}|${cleanSchool}` : ''
+      ].filter(Boolean).map(String);
+    };
 
     const merge = (id: string, incoming: any, source: string) => {
+      if (!incoming || (!incoming.fullName && !incoming.studentName && !incoming.name && !incoming.username)) return;
       const keys = keysFor(id, incoming);
       let existingKey = keys.map(k => aliases.get(k)).find(Boolean) || '';
-      if (!existingKey) existingKey = id;
+      if (!existingKey) existingKey = incoming.studentDocId || id;
 
       const current = records.get(existingKey) || { id: existingKey };
       const merged = { ...current, ...incoming };

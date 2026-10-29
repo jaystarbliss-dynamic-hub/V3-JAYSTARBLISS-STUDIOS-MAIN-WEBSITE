@@ -1,5 +1,5 @@
 import type { Handler } from "@netlify/functions";
-import { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
+import { adminAuth, adminDb, applyRequestDatabaseHeader } from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import {
   answersForFinalization,
@@ -122,6 +122,7 @@ async function notifyStaff(a: any, exam: any, attemptId: string) {
 
 export const handler: Handler = async event => {
   try {
+    applyRequestDatabaseHeader(event.headers as any);
     const c = await user(event);
     if (!isAssessmentStudentRole(c.role)) return json(403, { error: "Student access required." });
     const path = String(event.path || "");
@@ -317,7 +318,6 @@ export const handler: Handler = async event => {
       if (String(event.body || "").length > 1000000) {
         return json(413, { error: "Answer payload is too large. Save shorter answers and try again." });
       }
-      const student = await studentFor(c.uid, c.data);
       const body = JSON.parse(event.body || "{}");
       const id = String(body.attemptId || "");
       const action = String(body.action || "");
@@ -326,6 +326,9 @@ export const handler: Handler = async event => {
       const snap = await ref.get();
       if (!snap.exists) return json(404, { error: "Attempt not found." });
       const a = snap.data() || {};
+
+      // Only resolve the student document when attempt.studentUid does not already match the authenticated user
+      const student = a.studentUid === c.uid ? null : await studentFor(c.uid, c.data);
       if (a.studentUid !== c.uid && (!student || a.studentId !== student.id)) {
         return json(403, { error: "Not authorised." });
       }
@@ -333,12 +336,66 @@ export const handler: Handler = async event => {
         return json(409, { error: "This assessment attempt is no longer editable." });
       }
       const deadline = new Date(a.deadlineAt).getTime();
+      const isExpired = !Number.isFinite(deadline) || Date.now() >= deadline;
+
+      // Fast-path for ordinary non-expired answer autosaves: avoid fetching the exam document if question IDs are already known on the attempt
+      if (action === "save" && !isExpired) {
+        const answers = body.answers;
+        if (!answers || typeof answers !== "object" || Array.isArray(answers) || Object.keys(answers).length > 200) {
+          return json(400, { error: "Invalid answers." });
+        }
+        let allowedQuestionIds: Set<string> | null = null;
+        if (Array.isArray(a.questionOrder) && a.questionOrder.length > 0) {
+          allowedQuestionIds = new Set(a.questionOrder.map((qid: any) => String(qid)));
+        } else if (Array.isArray(a.questionsSnapshot) && a.questionsSnapshot.length > 0) {
+          allowedQuestionIds = new Set(a.questionsSnapshot.map((q: any) => String(q.id)));
+        } else {
+          const examSnapForSave = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
+          if (!examSnapForSave.exists) return json(404, { error: "Assessment not found." });
+          const examForSave = examSnapForSave.data() || {};
+          const qs = resolveAttemptQuestions(examForSave, a);
+          allowedQuestionIds = new Set(qs.map((q: any) => String(q.id)));
+        }
+
+        if (Object.keys(answers).some(key => !allowedQuestionIds!.has(key))) {
+          return json(400, { error: "Answers contain an unknown question ID." });
+        }
+        const clean: Record<string, string | string[]> = {};
+        for (const [key, value] of Object.entries(answers)) {
+          if (typeof value === "string") clean[key] = value.slice(0, 10000);
+          else if (Array.isArray(value) && value.length <= 20 && value.every(v => typeof v === "string")) {
+            clean[key] = value.map(v => v.slice(0, 500));
+          } else return json(400, { error: "Invalid answer format." });
+        }
+        const saveResult = await adminDb.runTransaction(async tx => {
+          const currentSnap = await tx.get(ref);
+          if (!currentSnap.exists) return "missing";
+          const current = currentSnap.data() || {};
+          if (current.studentUid !== c.uid && (!student || current.studentId !== student.id)) return "owner";
+          if (current.status !== "in_progress") return "closed";
+          const currentDeadline = new Date(current.deadlineAt).getTime();
+          if (!Number.isFinite(currentDeadline) || Date.now() >= currentDeadline) return "expired";
+          tx.update(ref, { answers: clean, updatedAt: FieldValue.serverTimestamp() });
+          return "ok";
+        });
+        if (saveResult === "missing") return json(404, { error: "Attempt not found." });
+        if (saveResult === "owner") return json(403, { error: "Not authorised." });
+        if (saveResult === "closed") return json(409, { error: "This assessment attempt is no longer editable." });
+        if (saveResult === "expired") {
+          return json(409, {
+            error: "The assessment time has expired. Submit is no longer available.",
+            status: "expired",
+          });
+        }
+        return json(200, { ok: true });
+      }
+
       const examSnap = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
       if (!examSnap.exists) return json(404, { error: "Assessment not found." });
       const exam = examSnap.data() || {};
       const effectiveQuestions = resolveAttemptQuestions(exam, a);
 
-      if (!Number.isFinite(deadline) || Date.now() >= deadline) {
+      if (isExpired) {
         const expiry = await adminDb.runTransaction(async tx => {
           const currentSnap = await tx.get(ref);
           if (!currentSnap.exists) return { kind: "missing" as const };
@@ -377,45 +434,6 @@ export const handler: Handler = async event => {
           status: expiry.kind === "expired" ? "expired" : expiry.status,
           autoGraded: expiry.kind === "expired" ? expiry.grading.autoGraded : undefined,
         });
-      }
-
-      if (action === "save") {
-        const answers = body.answers;
-        if (!answers || typeof answers !== "object" || Array.isArray(answers) || Object.keys(answers).length > 200) {
-          return json(400, { error: "Invalid answers." });
-        }
-        const allowedQuestionIds = new Set(effectiveQuestions.map((q: any) => String(q.id)));
-        if (Object.keys(answers).some(key => !allowedQuestionIds.has(key))) {
-          return json(400, { error: "Answers contain an unknown question ID." });
-        }
-        const clean: Record<string, string | string[]> = {};
-        for (const [key, value] of Object.entries(answers)) {
-          if (typeof value === "string") clean[key] = value.slice(0, 10000);
-          else if (Array.isArray(value) && value.length <= 20 && value.every(v => typeof v === "string")) {
-            clean[key] = value.map(v => v.slice(0, 500));
-          } else return json(400, { error: "Invalid answer format." });
-        }
-        const saveResult = await adminDb.runTransaction(async tx => {
-          const currentSnap = await tx.get(ref);
-          if (!currentSnap.exists) return "missing";
-          const current = currentSnap.data() || {};
-          if (current.studentUid !== c.uid && (!student || current.studentId !== student.id)) return "owner";
-          if (current.status !== "in_progress") return "closed";
-          const currentDeadline = new Date(current.deadlineAt).getTime();
-          if (!Number.isFinite(currentDeadline) || Date.now() >= currentDeadline) return "expired";
-          tx.update(ref, { answers: clean, updatedAt: FieldValue.serverTimestamp() });
-          return "ok";
-        });
-        if (saveResult === "missing") return json(404, { error: "Attempt not found." });
-        if (saveResult === "owner") return json(403, { error: "Not authorised." });
-        if (saveResult === "closed") return json(409, { error: "This assessment attempt is no longer editable." });
-        if (saveResult === "expired") {
-          return json(409, {
-            error: "The assessment time has expired. Submit is no longer available.",
-            status: "expired",
-          });
-        }
-        return json(200, { ok: true });
       }
 
       if (action === "expire" && Date.now() < deadline) {

@@ -327,21 +327,70 @@ const AdminStudents: React.FC = () => {
         };
       };
 
+      const normStr = (v: unknown) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const findMatchingStudentKey = (candidate: UnifiedStudent, rawDocId: string, rawData: any): string | null => {
+        if (studentMap.has(rawDocId)) return rawDocId;
+        const sDocId = String(rawData?.studentDocId || rawData?.studentId || '').trim();
+        if (sDocId && studentMap.has(sDocId)) return sDocId;
+
+        const cUid = String(candidate.firebaseUid || rawData?.firebaseUid || rawData?.userId || '').trim();
+        const cUname = normStr(rawData?.username || rawData?.studentUsername || '');
+        const cEmail = normStr(candidate.email);
+        const cName = normStr(rawData?.fullName || rawData?.studentName || rawData?.name || rawData?.displayName || '');
+        const cSchool = normStr(candidate.schoolId);
+
+        for (const [key, s] of studentMap.entries()) {
+          if (cUid && (s.firebaseUid === cUid || key === cUid)) return key;
+          if (sDocId && s.id === sDocId) return key;
+          if (cUname && normStr(s.username) === cUname) return key;
+          if (cEmail && normStr(s.email) === cEmail) return key;
+          if (cName && cName !== 'student' && normStr(s.fullName) === cName) {
+            if (!cSchool || !normStr(s.schoolId) || normStr(s.schoolId) === cSchool) {
+              return key;
+            }
+          }
+        }
+        return null;
+      };
+
       // 1. Process `students` collection
       studentsSnap.docs.forEach((d: any) => {
+        const raw = d.data() || {};
+        const hasIdentity = Boolean(raw.fullName || raw.studentName || raw.name || raw.username);
+        if (!hasIdentity) return;
         const student = normalizeStudent(d, 'students');
-        studentMap.set(d.id, student);
+        const existingKey = findMatchingStudentKey(student, d.id, raw);
+        if (existingKey) {
+          const prev = studentMap.get(existingKey)!;
+          studentMap.set(existingKey, {
+            ...student,
+            ...prev,
+            id: existingKey,
+            firebaseUid: prev.firebaseUid || student.firebaseUid,
+            accessCode: prev.accessCode || student.accessCode,
+          });
+        } else {
+          studentMap.set(d.id, student);
+        }
       });
 
       // 2. Process `individualStudents` collection
       individualStudentsSnap.docs.forEach((d: any) => {
+        const raw = d.data() || {};
+        const hasIdentity = Boolean(raw.fullName || raw.studentName || raw.name || raw.username);
+        if (!hasIdentity) return;
         const student = normalizeStudent(d, 'individualStudents');
-        const existingKey = Array.from(studentMap.entries()).find(([_, s]) => 
-          (student.username && s.username.toLowerCase() === student.username.toLowerCase()) ||
-          (student.email && s.email.toLowerCase() === student.email.toLowerCase())
-        );
+        const existingKey = findMatchingStudentKey(student, d.id, raw);
         if (existingKey) {
-          studentMap.set(existingKey[0], { ...existingKey[1], ...student, id: existingKey[0] });
+          const prev = studentMap.get(existingKey)!;
+          studentMap.set(existingKey, {
+            ...prev,
+            ...student,
+            id: existingKey,
+            firebaseUid: student.firebaseUid || prev.firebaseUid,
+            accessCode: student.accessCode || prev.accessCode,
+            email: student.email || prev.email,
+          });
         } else {
           studentMap.set(d.id, student);
         }
@@ -349,55 +398,71 @@ const AdminStudents: React.FC = () => {
 
       // 3. Process `users` collection for student roles
       usersSnap.docs.forEach((d: any) => {
-        const u = d.data();
+        const u = d.data() || {};
         const role = String(u.role || '').toUpperCase();
         if (role === 'STUDENT' || role === 'CADET' || u.isStudent || u.studentProfile) {
           const student = normalizeStudent(d, 'users');
-          const existingKey = Array.from(studentMap.entries()).find(([_, s]) => 
-            s.firebaseUid === d.id ||
-            (student.username && s.username.toLowerCase() === student.username.toLowerCase()) ||
-            (student.email && s.email.toLowerCase() === student.email.toLowerCase())
-          );
+          const existingKey = findMatchingStudentKey(student, d.id, u);
           if (existingKey) {
-            studentMap.set(existingKey[0], { ...existingKey[1], firebaseUid: d.id, email: student.email || existingKey[1].email });
-          } else {
+            const prev = studentMap.get(existingKey)!;
+            studentMap.set(existingKey, {
+              ...prev,
+              firebaseUid: d.id,
+              email: prev.email || student.email,
+              schoolId: prev.schoolId || student.schoolId,
+              schoolName: prev.schoolName || student.schoolName,
+            });
+          } else if (u.fullName || u.studentName || u.name || u.username) {
             studentMap.set(d.id, student);
           }
         }
       });
 
-      // 4. Process parent enrolled children if present
+      // 4. Process parent enrolled children if present (only when not already represented in studentMap)
       parentsSnap.docs.forEach((d: any) => {
-        const p = d.data();
+        const p = d.data() || {};
         if (Array.isArray(p.children)) {
           p.children.forEach((child: any, idx: number) => {
+            const childName = String(child.name || child.fullName || '').trim();
+            if (!childName) return;
             const childId = child.id || `${d.id}_child_${idx}`;
-            if (!studentMap.has(childId)) {
-              studentMap.set(childId, {
-                id: childId,
-                docSource: 'students',
-                fullName: child.name || child.fullName || `Child ${idx + 1}`,
-                username: child.username || (child.email ? child.email.split('@')[0] : `child_${idx + 1}`),
-                email: child.email || '',
-                class: formatNormalizedClassDisplay(child.class || child.grade, 'Grade 1'),
-                grade: formatNormalizedClassDisplay(child.grade || child.class, 'Grade 1'),
-                track: child.track || child.program || '',
-                subjects: Array.isArray(child.subjects) ? child.subjects.join(', ') : (child.subjects || 'Coding, Mathematics'),
-                schoolId: child.schoolId || '',
-                schoolName: child.schoolName || '',
-                parentId: d.id,
-                parentName: p.name || p.fullName || '',
-                parentEmail: p.email || '',
-                parentPhone: p.phone || '',
-                tutorId: child.tutorId || '',
-                tutorName: child.tutorName || '',
-                tutorEmail: child.tutorEmail || '',
-                accountStatus: 'ACTIVE',
-                accessCode: child.accessCode || '',
-                portalAccessEnabled: true,
-                studentType: 'parent',
-                createdAt: child.createdAt || p.createdAt || null
+            const draftChild: UnifiedStudent = {
+              id: childId,
+              docSource: 'students',
+              fullName: childName,
+              username: child.username || (child.email ? child.email.split('@')[0] : `child_${idx + 1}`),
+              email: child.email || '',
+              class: formatNormalizedClassDisplay(child.class || child.grade, 'Grade 1'),
+              grade: formatNormalizedClassDisplay(child.grade || child.class, 'Grade 1'),
+              track: child.track || child.program || '',
+              subjects: Array.isArray(child.subjects) ? child.subjects.join(', ') : (child.subjects || 'Coding, Mathematics'),
+              schoolId: child.schoolId || '',
+              schoolName: child.schoolName || '',
+              parentId: d.id,
+              parentName: p.name || p.fullName || '',
+              parentEmail: p.email || '',
+              parentPhone: p.phone || '',
+              tutorId: child.tutorId || '',
+              tutorName: child.tutorName || '',
+              tutorEmail: child.tutorEmail || '',
+              accountStatus: 'ACTIVE',
+              accessCode: child.accessCode || '',
+              portalAccessEnabled: true,
+              studentType: 'parent',
+              createdAt: child.createdAt || p.createdAt || null
+            };
+            const existingKey = findMatchingStudentKey(draftChild, childId, child);
+            if (existingKey) {
+              const prev = studentMap.get(existingKey)!;
+              studentMap.set(existingKey, {
+                ...prev,
+                parentId: prev.parentId || d.id,
+                parentName: prev.parentName || p.name || p.fullName || '',
+                parentEmail: prev.parentEmail || p.email || '',
+                parentPhone: prev.parentPhone || p.phone || '',
               });
+            } else {
+              studentMap.set(childId, draftChild);
             }
           });
         }

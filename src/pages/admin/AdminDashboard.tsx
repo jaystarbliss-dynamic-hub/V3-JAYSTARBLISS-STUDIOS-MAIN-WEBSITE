@@ -119,17 +119,40 @@ const AdminDashboard: React.FC = () => {
 
       const usersList = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // Merge and deduplicate student records
+      // Merge and deduplicate student records across students, individualStudents, and users
       const studentMap = new Map<string, any>();
-      studentsSnap.docs.forEach(doc => studentMap.set(doc.id, { id: doc.id, ...doc.data() }));
-      indStudentsSnap.docs.forEach(doc => {
-        if (!studentMap.has(doc.id)) studentMap.set(doc.id, { id: doc.id, ...doc.data() });
-      });
+      const uidOrUnameToKey = new Map<string, string>();
+      const registerStudentDoc = (docId: string, data: any) => {
+        if (!data || (!data.fullName && !data.studentName && !data.name && !data.username)) return;
+        const sDocId = String(data.studentDocId || '').trim();
+        const uid = String(data.firebaseUid || data.userId || '').trim();
+        const uname = String(data.username || '').trim().toLowerCase();
+        const nameKey = String(data.fullName || data.studentName || data.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+        const existingKey =
+          (studentMap.has(docId) ? docId : '') ||
+          (sDocId && studentMap.has(sDocId) ? sDocId : '') ||
+          (uid && uidOrUnameToKey.get(`uid:${uid}`)) ||
+          (uname && uidOrUnameToKey.get(`uname:${uname}`)) ||
+          (nameKey && uidOrUnameToKey.get(`name:${nameKey}`)) ||
+          '';
+
+        const targetKey = existingKey || sDocId || docId;
+        const prev = studentMap.get(targetKey) || { id: targetKey };
+        studentMap.set(targetKey, { ...prev, ...data, id: targetKey });
+
+        if (uid) uidOrUnameToKey.set(`uid:${uid}`, targetKey);
+        if (uname) uidOrUnameToKey.set(`uname:${uname}`, targetKey);
+        if (nameKey) uidOrUnameToKey.set(`name:${nameKey}`, targetKey);
+      };
+
+      studentsSnap.docs.forEach(doc => registerStudentDoc(doc.id, doc.data()));
+      indStudentsSnap.docs.forEach(doc => registerStudentDoc(doc.id, doc.data()));
       usersSnap.docs.forEach(doc => {
         const data = doc.data();
         const role = String(data.role || '').toUpperCase();
         if (role === 'STUDENT' || role === 'CADET' || data.isStudent) {
-          if (!studentMap.has(doc.id)) studentMap.set(doc.id, { id: doc.id, ...data });
+          registerStudentDoc(doc.id, { ...data, firebaseUid: doc.id });
         }
       });
       const studentsList = Array.from(studentMap.values());

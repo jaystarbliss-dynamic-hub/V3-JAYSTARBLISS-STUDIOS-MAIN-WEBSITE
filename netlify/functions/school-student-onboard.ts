@@ -1,6 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import { createHash, randomBytes } from 'node:crypto';
-import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
+import { adminAuth, adminDb, applyRequestDatabaseHeader } from '../../api/_lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import {
   normalizeClassName,
@@ -26,6 +26,7 @@ const blocked = (value: unknown) =>
   ['SUSPENDED', 'BANNED', 'DISABLED'].includes(String(value || 'ACTIVE').toUpperCase());
 
 export const handler: Handler = async (event) => {
+  applyRequestDatabaseHeader(event.headers as any);
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method Not Allowed' });
   let createdUid = '';
   try {

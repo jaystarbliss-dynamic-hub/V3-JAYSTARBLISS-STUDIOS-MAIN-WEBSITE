@@ -124,24 +124,32 @@ export function getAdminAuth(): Auth | null {
 
 let cachedDefaultDb: Firestore | null = null;
 let cachedLegacyNamedDb: Firestore | null = null;
+export const DEFAULT_DATABASE_ID = "(default)";
 export const LEGACY_NAMED_DATABASE_ID = "ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c";
 
-export function getAdminDb(): Firestore | null {
-  if (cachedDb) return cachedDb;
-  const app = getAdminApp();
-  if (!app) return null;
-  const configuredDbId = process.env.FIREBASE_DATABASE_ID?.trim();
-  if (configuredDbId && configuredDbId !== "(default)") {
-    try {
-      cachedDb = getFirestore(app, configuredDbId);
-      return cachedDb;
-    } catch {
-      cachedDb = getFirestore(app);
-      return cachedDb;
-    }
+let activeRequestDatabaseId: string | null = null;
+
+export function normalizeDatabaseId(raw?: string | null): string {
+  const trimmed = String(raw || "").trim();
+  if (trimmed === LEGACY_NAMED_DATABASE_ID) return LEGACY_NAMED_DATABASE_ID;
+  return DEFAULT_DATABASE_ID;
+}
+
+export function applyRequestDatabaseHeader(headers?: Record<string, string | undefined> | null): string {
+  if (!headers) {
+    activeRequestDatabaseId = null;
+    return DEFAULT_DATABASE_ID;
   }
-  cachedDb = getFirestore(app);
-  return cachedDb;
+  const headerVal =
+    headers["x-jaystar-database-id"] ||
+    headers["X-Jaystar-Database-Id"] ||
+    headers["x-firestore-database-id"];
+  if (headerVal) {
+    activeRequestDatabaseId = normalizeDatabaseId(headerVal);
+    return activeRequestDatabaseId;
+  }
+  activeRequestDatabaseId = null;
+  return normalizeDatabaseId(process.env.FIREBASE_DATABASE_ID);
 }
 
 export function getDefaultAdminDb(): Firestore | null {
@@ -162,6 +170,19 @@ export function getLegacyNamedAdminDb(): Firestore | null {
   } catch {
     return null;
   }
+}
+
+export function getAdminDb(preferredDbId?: string | null): Firestore | null {
+  const targetId = preferredDbId
+    ? normalizeDatabaseId(preferredDbId)
+    : activeRequestDatabaseId || normalizeDatabaseId(process.env.FIREBASE_DATABASE_ID);
+
+  if (targetId === LEGACY_NAMED_DATABASE_ID) {
+    return getLegacyNamedAdminDb() || getDefaultAdminDb();
+  }
+  if (cachedDb) return cachedDb;
+  cachedDb = getDefaultAdminDb();
+  return cachedDb;
 }
 
 export function getAdminDatabases(): Firestore[] {

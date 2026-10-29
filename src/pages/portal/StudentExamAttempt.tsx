@@ -276,9 +276,16 @@ export default function StudentExamAttempt() {
     return () => window.clearInterval(interval);
   }, [data?.attempt.deadlineAt, data?.attempt.status]);
 
-  // Autosave answers every 1000ms
+  // Autosave answers with 2000ms debounce after answer changes
   useEffect(() => {
     if (!data || data.attempt.status !== "in_progress" || busy) return;
+    const initialSerialized = JSON.stringify(data.attempt.answers || {});
+    const currentSerialized = JSON.stringify(answers || {});
+    if (currentSerialized === initialSerialized) {
+      setSaveStatus("saved");
+      return;
+    }
+
     let live = true;
     const answersToSave = answers;
     setSaveStatus("pending");
@@ -323,7 +330,7 @@ export default function StudentExamAttempt() {
             setError("Auto-saving was delayed. Please use 'Save Answers' button.");
           }
         });
-    }, 1000);
+    }, 2000);
 
     return () => {
       live = false;
@@ -331,7 +338,7 @@ export default function StudentExamAttempt() {
     };
   }, [answers, data?.attempt.status, busy]);
 
-  // Live Proctor Heartbeat: writes isOnline: true and lastHeartbeat every 20 seconds while taking exam
+  // Live Proctor Heartbeat: writes isOnline: true and lastHeartbeat every 60 seconds while taking exam
   useEffect(() => {
     if (!data || data.attempt.status !== "in_progress" || busy || !attemptId) return;
 
@@ -344,7 +351,7 @@ export default function StudentExamAttempt() {
     };
 
     ping();
-    const interval = window.setInterval(ping, 20000);
+    const interval = window.setInterval(ping, 60000);
 
     const handleBeforeUnload = () => {
       const attemptRef = doc(db, "jdiExamAttempts", attemptId);

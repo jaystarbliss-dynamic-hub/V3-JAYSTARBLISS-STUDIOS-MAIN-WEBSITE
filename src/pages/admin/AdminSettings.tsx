@@ -233,13 +233,27 @@ const AdminSettings: React.FC = () => {
         getDocs(collection(db, 'students')).catch(() => ({ docs: [] } as any))
       ]);
       const studentMap = new Map<string, any>();
+      const aliasMap = new Map<string, string>();
       [...stdSnap.docs, ...indSnap.docs].forEach((d: any) => {
         const data = d.data() || {};
-        const key = String(data.username || d.id).toLowerCase();
-        studentMap.set(key, { id: d.id, ...studentMap.get(key), ...data });
+        const fullName = String(data.fullName || data.studentName || data.name || '').trim().replace(/\s+/g, ' ');
+        const uname = String(data.username || '').trim().toLowerCase();
+        if (!fullName && !uname) return;
+        const schoolKey = String(data.schoolId || 'individual').trim().toLowerCase();
+        const nameKey = fullName ? `${fullName.toLowerCase()}|${schoolKey}` : '';
+        const existingId =
+          (studentMap.has(d.id) ? d.id : '') ||
+          (uname && aliasMap.get(`u:${uname}`)) ||
+          (nameKey && aliasMap.get(`n:${nameKey}`)) ||
+          d.id;
+        studentMap.set(existingId, { id: existingId, ...studentMap.get(existingId), ...data, fullName: fullName || uname });
+        if (uname) aliasMap.set(`u:${uname}`, existingId);
+        if (nameKey) aliasMap.set(`n:${nameKey}`, existingId);
       });
 
-      const list = Array.from(studentMap.values());
+      const list = Array.from(studentMap.values()).sort((a, b) =>
+        String(a.fullName || '').localeCompare(String(b.fullName || ''))
+      );
       if (list.length === 0) {
         setLegacySyncResult({ success: false, message: 'No student records found to export.' });
         return;

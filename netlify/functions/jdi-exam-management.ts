@@ -1,5 +1,5 @@
 import type { Handler } from "@netlify/functions";
-import { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
+import { adminAuth, adminDb, applyRequestDatabaseHeader } from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -30,6 +30,7 @@ const json = (statusCode: number, body: Record<string, unknown>) => ({
 const norm = (v: unknown) => String(v || "").trim().toUpperCase();
 
 async function authUser(event: any) {
+  applyRequestDatabaseHeader(event.headers as any);
   const h = event.headers?.authorization || event.headers?.Authorization || "";
   if (!h.startsWith("Bearer ")) throw new Error("AUTH");
   const d = await adminAuth.verifyIdToken(h.slice(7));
