@@ -17,6 +17,7 @@ import {
 import { auth, db } from "../../lib/firebase";
 import {
   collection,
+  limit,
   query,
   where,
   getDocs,
