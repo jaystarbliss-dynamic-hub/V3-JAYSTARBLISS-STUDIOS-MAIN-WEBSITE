@@ -4,6 +4,7 @@ import { db, auth } from '../../lib/firebase';
 import {
   collection,
   getDocs,
+  limit,
   addDoc,
   serverTimestamp,
   query,
