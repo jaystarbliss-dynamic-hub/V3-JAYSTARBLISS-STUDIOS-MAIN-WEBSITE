@@ -52,14 +52,25 @@ export const handler: Handler = async (event) => {
     // The daily Firestore usage chart is sourced from Cloud Monitoring, not estimated
     // from client-side SDK calls. Its API and Monitoring Viewer permission must be enabled.
     const end = new Date();
-    const start = new Date(end);
-    start.setHours(0, 0, 0, 0);
+    const pacificParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles", hour: "2-digit", minute: "2-digit",
+      second: "2-digit", hourCycle: "h23",
+    }).formatToParts(end);
+    const part = (type: string) => Number(pacificParts.find((item) => item.type === type)?.value || 0);
+    const secondsSincePacificMidnight = part("hour") * 3600 + part("minute") * 60 + part("second");
+    const start = new Date(end.getTime() - secondsSincePacificMidnight * 1000);
+    const pacificDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(end);
     const filter = 'metric.type = "firestore.googleapis.com/document/read_count" AND resource.type = "firestore_instance"';
     const url = new URL("https://monitoring.googleapis.com/v3/projects/jaystarbliss-studios/timeSeries");
     url.searchParams.set("filter", filter);
     url.searchParams.set("interval.startTime", start.toISOString());
     url.searchParams.set("interval.endTime", end.toISOString());
     url.searchParams.set("view", "FULL");
+    url.searchParams.set("aggregation.alignmentPeriod", "3600s");
+    url.searchParams.set("aggregation.perSeriesAligner", "ALIGN_SUM");
+    url.searchParams.set("pageSize", "1000");
     const response = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -85,8 +96,8 @@ export const handler: Handler = async (event) => {
     return json(200, {
       available: true,
       source: "Google Cloud Monitoring",
-      date: start.toISOString().slice(0, 10),
-      timezone: "server-local-day",
+      date: pacificDate,
+      timezone: "America/Los_Angeles",
       freeReadAllowance: 50000,
       databases: Object.entries(databases).map(([databaseId, reads]) => ({
         databaseId,
