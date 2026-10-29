@@ -317,7 +317,6 @@ export const handler: Handler = async event => {
       if (String(event.body || "").length > 1000000) {
         return json(413, { error: "Answer payload is too large. Save shorter answers and try again." });
       }
-      const student = await studentFor(c.uid, c.data);
       const body = JSON.parse(event.body || "{}");
       const id = String(body.attemptId || "");
       const action = String(body.action || "");
@@ -326,6 +325,9 @@ export const handler: Handler = async event => {
       const snap = await ref.get();
       if (!snap.exists) return json(404, { error: "Attempt not found." });
       const a = snap.data() || {};
+      // Most current attempts carry studentUid. Avoid extra student collection
+      // lookups on every autosave; preserve legacy identity resolution otherwise.
+      const student = a.studentUid === c.uid ? null : await studentFor(c.uid, c.data);
       if (a.studentUid !== c.uid && (!student || a.studentId !== student.id)) {
         return json(403, { error: "Not authorised." });
       }
@@ -333,10 +335,16 @@ export const handler: Handler = async event => {
         return json(409, { error: "This assessment attempt is no longer editable." });
       }
       const deadline = new Date(a.deadlineAt).getTime();
-      const examSnap = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
-      if (!examSnap.exists) return json(404, { error: "Assessment not found." });
-      const exam = examSnap.data() || {};
-      const effectiveQuestions = resolveAttemptQuestions(exam, a);
+      let exam: Record<string, any> = {};
+      let effectiveQuestions: any[] = [];
+      // Normal answer saves need only the attempt document. Fetch exam content
+      // only for submission/expiry grading, or when the attempt has expired.
+      if (action !== "save" || !Number.isFinite(deadline) || Date.now() >= deadline) {
+        const examSnap = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
+        if (!examSnap.exists) return json(404, { error: "Assessment not found." });
+        exam = examSnap.data() || {};
+        effectiveQuestions = resolveAttemptQuestions(exam, a);
+      }
 
       if (!Number.isFinite(deadline) || Date.now() >= deadline) {
         const expiry = await adminDb.runTransaction(async tx => {
