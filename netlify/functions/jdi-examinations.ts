@@ -400,13 +400,14 @@ export const handler: Handler = async event => {
 
       // Keep the legacy-compatible exam discovery bounded. The client no longer
       // performs a second full-collection merge after this endpoint succeeds.
-      const [jdiSnap, schoolExamsSnap] = await Promise.all([
+      const [jdiSnap, schoolExamsSnap, legacyExamsSnap] = await Promise.all([
         adminDb.collection("jdiExams").limit(100).get().catch(() => null),
         adminDb.collection("schoolExams").limit(100).get().catch(() => null),
+        adminDb.collection("exams").limit(100).get().catch(() => null),
       ]);
 
       const examDocs = new Map<string, any>();
-      for (const snap of [jdiSnap, schoolExamsSnap]) {
+      for (const snap of [jdiSnap, schoolExamsSnap, legacyExamsSnap]) {
         snap?.docs.forEach(d => examDocs.set(d.id, d));
       }
 
