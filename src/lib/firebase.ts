@@ -165,6 +165,11 @@ export function getFirestoreById(databaseId: string): ReturnType<typeof getFires
 
 export const getClientDatabases = () => [db];
 
+export const getAllClientDatabases = () => {
+  const standby = getStandbyFirestore();
+  return standby && standby !== db ? [db, standby] : [db];
+};
+
 // Initialize Auth with multi-tier persistence (localStorage -> indexedDB -> sessionStorage -> memory)
 // Note: browserPopupRedirectResolver is passed on-demand to signInWithPopup to avoid eager COOP window.closed checks
 let auth: ReturnType<typeof getAuth>;

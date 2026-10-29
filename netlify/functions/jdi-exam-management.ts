@@ -1,6 +1,17 @@
 import type { Handler } from "@netlify/functions";
-import { adminAuth, adminDb, applyRequestDatabaseHeader } from "../../api/_lib/firebase-admin";
+import {
+  adminAuth,
+  adminDb,
+  applyRequestDatabaseHeader,
+  getDefaultAdminDb,
+  getLegacyNamedAdminDb,
+} from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
+
+function getAllAdminDbs() {
+  const dbs = [getDefaultAdminDb(), getLegacyNamedAdminDb()].filter(Boolean);
+  return dbs.length ? dbs : [adminDb];
+}
 import { createHash, randomBytes } from "node:crypto";
 import {
   schoolSafeQuestion,
@@ -122,64 +133,76 @@ async function resolveCallerSchoolAliases(c: any): Promise<{ primaryId: string; 
 
 async function resolveTutorSchoolIds(c: any): Promise<string[]> {
   const ids = new Set<string>();
-  const direct = String(c.user?.schoolId || c.user?.school_id || "").trim();
-  if (direct) ids.add(direct);
-  if (Array.isArray(c.user?.schoolIds)) {
-    c.user.schoolIds.forEach((s: any) => {
-      if (s) ids.add(String(s).trim());
-    });
-  }
-  try {
-    const s = await adminDb.collection("staffSchoolAccess").doc(c.uid).get();
-    if (s.exists) {
-      const d = s.data() || {};
-      if (d.schoolId) ids.add(String(d.schoolId).trim());
-      if (Array.isArray(d.schoolIds)) {
-        d.schoolIds.forEach((sid: any) => {
-          if (sid) ids.add(String(sid).trim());
-        });
-      }
+  const addCandidate = (val: any) => {
+    if (!val) return;
+    if (typeof val === "string" && val.trim()) ids.add(val.trim());
+    else if (typeof val === "object") {
+      const id = val.id || val.schoolId || val.code;
+      if (id) ids.add(String(id).trim());
     }
-  } catch {
-    // ignore
-  }
-  try {
-    const schoolsSnap = await adminDb.collection("schools").limit(200).get();
-    schoolsSnap.docs.forEach(doc => {
-      const sd = doc.data() || {};
-      const matchDirect =
-        sd.tutorId === c.uid ||
-        sd.assignedTutorId === c.uid ||
-        sd.assignedStaffId === c.uid ||
-        sd.staffId === c.uid;
-      const matchAssignedTutors =
-        Array.isArray(sd.assignedTutors) &&
-        sd.assignedTutors.some((t: any) =>
-          typeof t === "string"
-            ? t === c.uid
-            : [t?.id, t?.uid, t?.tutorId].map((x: any) => String(x || "")).includes(c.uid)
-        );
-      const matchAssignedStaff =
-        Array.isArray(sd.assignedStaff) &&
-        sd.assignedStaff.some((t: any) =>
-          typeof t === "string"
-            ? t === c.uid
-            : [t?.id, t?.uid, t?.staffId].map((x: any) => String(x || "")).includes(c.uid)
-        );
-      const matchTutors =
-        Array.isArray(sd.tutors) &&
-        sd.tutors.some((t: any) =>
-          typeof t === "string"
-            ? t === c.uid
-            : [t?.id, t?.uid, t?.tutorId].map((x: any) => String(x || "")).includes(c.uid) ||
-              (c.email && String(t?.email || "").toLowerCase() === c.email)
-        );
-      if (matchDirect || matchAssignedTutors || matchAssignedStaff || matchTutors) {
-        ids.add(doc.id);
+  };
+  addCandidate(c.user?.schoolId || c.user?.school_id);
+  if (Array.isArray(c.user?.schoolIds)) c.user.schoolIds.forEach(addCandidate);
+  if (Array.isArray(c.user?.assignedSchools)) c.user.assignedSchools.forEach(addCandidate);
+  if (Array.isArray(c.user?.assignedSchoolIds)) c.user.assignedSchoolIds.forEach(addCandidate);
+
+  for (const dbInst of getAllAdminDbs()) {
+    try {
+      const s = await dbInst.collection("staffSchoolAccess").doc(c.uid).get();
+      if (s.exists) {
+        const d = s.data() || {};
+        addCandidate(d.schoolId);
+        if (Array.isArray(d.schoolIds)) d.schoolIds.forEach(addCandidate);
+        if (Array.isArray(d.assignedSchools)) d.assignedSchools.forEach(addCandidate);
       }
-    });
-  } catch {
-    // ignore
+    } catch {
+      // ignore
+    }
+    try {
+      const schoolsSnap = await dbInst.collection("schools").limit(200).get();
+      schoolsSnap.docs.forEach(doc => {
+        const sd = doc.data() || {};
+        const matchDirect =
+          sd.tutorId === c.uid ||
+          sd.assignedTutorId === c.uid ||
+          sd.assignedStaffId === c.uid ||
+          sd.staffId === c.uid;
+        const matchesTutorEntry = (t: any) => {
+          if (!t) return false;
+          if (typeof t === "string") return t === c.uid;
+          const entryIds = [t.tutorId, t.id, t.uid, t.staffId, t.userId].map((x: any) =>
+            String(x || "").trim()
+          );
+          if (entryIds.includes(c.uid)) return true;
+          const entryEmail = String(t.tutorEmail || t.email || "").trim().toLowerCase();
+          return Boolean(c.email && entryEmail && entryEmail === c.email);
+        };
+        const matchAssignedTutors =
+          Array.isArray(sd.assignedTutors) && sd.assignedTutors.some(matchesTutorEntry);
+        const matchAssignedStaff =
+          Array.isArray(sd.assignedStaff) && sd.assignedStaff.some(matchesTutorEntry);
+        const matchTutors = Array.isArray(sd.tutors) && sd.tutors.some(matchesTutorEntry);
+        const matchPrograms =
+          Array.isArray(sd.programs) &&
+          sd.programs.some(
+            (prog: any) =>
+              (Array.isArray(prog?.assignedTutors) &&
+                prog.assignedTutors.some(matchesTutorEntry)) ||
+              (Array.isArray(prog?.tutors) && prog.tutors.some(matchesTutorEntry))
+          );
+        if (
+          matchDirect ||
+          matchAssignedTutors ||
+          matchAssignedStaff ||
+          matchTutors ||
+          matchPrograms
+        ) {
+          ids.add(doc.id);
+        }
+      });
+    } catch {
+      // ignore
+    }
   }
   return Array.from(ids).filter(Boolean);
 }
@@ -313,24 +336,55 @@ export const handler: Handler = async event => {
       let targetSchoolIds: string[] = [];
       const examDocMap = new Map<string, any>();
 
+      const allDbs = getAllAdminDbs();
+      const addExamDoc = (d: any) => {
+        if (!d?.exists) return;
+        const prev = examDocMap.get(d.id);
+        if (!prev) {
+          examDocMap.set(d.id, d);
+          return;
+        }
+        const prevQuestions = Array.isArray(prev.data()?.questions) ? prev.data().questions.length : 0;
+        const nextQuestions = Array.isArray(d.data()?.questions) ? d.data().questions.length : 0;
+        if (nextQuestions >= prevQuestions) examDocMap.set(d.id, d);
+      };
+
       if (schoolRoles.includes(c.role)) {
         const resolvedSchool = await resolveCallerSchoolAliases(c);
         if (requestedSchoolId && !resolvedSchool.aliases.includes(requestedSchoolId)) {
           return json(403, { error: "Not authorised for this school." });
         }
         targetSchoolIds = resolvedSchool.aliases.length ? resolvedSchool.aliases : [resolvedSchool.primaryId];
-        for (const sid of targetSchoolIds.slice(0, 10)) {
-          const snap = await adminDb.collection("jdiExams").where("schoolId", "==", sid).limit(150).get();
-          snap.docs.forEach((d: any) => examDocMap.set(d.id, d));
+        for (const dbInst of allDbs) {
+          for (const sid of targetSchoolIds.slice(0, 10)) {
+            const [jdiSnap, schSnap] = await Promise.all([
+              dbInst.collection("jdiExams").where("schoolId", "==", sid).limit(150).get().catch(() => ({ docs: [] as any[] })),
+              dbInst.collection("schoolExams").where("schoolId", "==", sid).limit(150).get().catch(() => ({ docs: [] as any[] })),
+            ]);
+            schSnap.docs.forEach(addExamDoc);
+            jdiSnap.docs.forEach(addExamDoc);
+          }
         }
       } else if (admins.includes(c.role)) {
         if (requestedSchoolId) {
           targetSchoolIds = [requestedSchoolId];
-          const snap = await adminDb.collection("jdiExams").where("schoolId", "==", requestedSchoolId).limit(200).get();
-          snap.docs.forEach((d: any) => examDocMap.set(d.id, d));
+          for (const dbInst of allDbs) {
+            const [jdiSnap, schSnap] = await Promise.all([
+              dbInst.collection("jdiExams").where("schoolId", "==", requestedSchoolId).limit(200).get().catch(() => ({ docs: [] as any[] })),
+              dbInst.collection("schoolExams").where("schoolId", "==", requestedSchoolId).limit(200).get().catch(() => ({ docs: [] as any[] })),
+            ]);
+            schSnap.docs.forEach(addExamDoc);
+            jdiSnap.docs.forEach(addExamDoc);
+          }
         } else {
-          const snap = await adminDb.collection("jdiExams").limit(250).get();
-          snap.docs.forEach((d: any) => examDocMap.set(d.id, d));
+          for (const dbInst of allDbs) {
+            const [jdiSnap, schSnap] = await Promise.all([
+              dbInst.collection("jdiExams").limit(250).get().catch(() => ({ docs: [] as any[] })),
+              dbInst.collection("schoolExams").limit(250).get().catch(() => ({ docs: [] as any[] })),
+            ]);
+            schSnap.docs.forEach(addExamDoc);
+            jdiSnap.docs.forEach(addExamDoc);
+          }
         }
       } else if (tutors.includes(c.role)) {
         const tutorSchools = await resolveTutorSchoolIds(c);
@@ -342,20 +396,28 @@ export const handler: Handler = async event => {
         } else {
           targetSchoolIds = tutorSchools;
         }
-        for (const sid of targetSchoolIds.slice(0, 10)) {
-          const snap = await adminDb.collection("jdiExams").where("schoolId", "==", sid).limit(150).get();
-          snap.docs.forEach((d: any) => examDocMap.set(d.id, d));
-        }
-        const [ownCreated, ownTutor] = await Promise.all([
-          adminDb.collection("jdiExams").where("createdBy", "==", c.uid).limit(150).get(),
-          adminDb.collection("jdiExams").where("tutorId", "==", c.uid).limit(150).get(),
-        ]);
-        for (const snap of [ownCreated, ownTutor]) {
-          snap.docs.forEach((d: any) => {
-            if (!requestedSchoolId || String(d.data()?.schoolId || "") === requestedSchoolId) {
-              examDocMap.set(d.id, d);
-            }
-          });
+        for (const dbInst of allDbs) {
+          for (const sid of targetSchoolIds.slice(0, 10)) {
+            const [jdiSnap, schSnap] = await Promise.all([
+              dbInst.collection("jdiExams").where("schoolId", "==", sid).limit(150).get().catch(() => ({ docs: [] as any[] })),
+              dbInst.collection("schoolExams").where("schoolId", "==", sid).limit(150).get().catch(() => ({ docs: [] as any[] })),
+            ]);
+            schSnap.docs.forEach(addExamDoc);
+            jdiSnap.docs.forEach(addExamDoc);
+          }
+          const [ownCreated, ownTutor, ownSchCreated, ownSchTutor] = await Promise.all([
+            dbInst.collection("jdiExams").where("createdBy", "==", c.uid).limit(150).get().catch(() => ({ docs: [] as any[] })),
+            dbInst.collection("jdiExams").where("tutorId", "==", c.uid).limit(150).get().catch(() => ({ docs: [] as any[] })),
+            dbInst.collection("schoolExams").where("createdBy", "==", c.uid).limit(150).get().catch(() => ({ docs: [] as any[] })),
+            dbInst.collection("schoolExams").where("tutorId", "==", c.uid).limit(150).get().catch(() => ({ docs: [] as any[] })),
+          ]);
+          for (const snap of [ownSchCreated, ownSchTutor, ownCreated, ownTutor]) {
+            snap.docs.forEach((d: any) => {
+              if (!requestedSchoolId || String(d.data()?.schoolId || "") === requestedSchoolId) {
+                addExamDoc(d);
+              }
+            });
+          }
         }
       } else {
         return json(403, { error: "Not authorised to view examination history." });
@@ -388,19 +450,52 @@ export const handler: Handler = async event => {
       );
 
       const attemptMap = new Map<string, any>();
-      for (const sid of targetSchoolIds.slice(0, 10)) {
-        const attempts = await adminDb.collection("jdiExamAttempts").where("schoolId", "==", sid).limit(500).get();
-        attempts.docs.forEach((d: any) => attemptMap.set(d.id, d));
-      }
-      if (examDocs.length > 0 && examDocs.length <= 30) {
-        const examAttempts = await Promise.all(
-          examDocs.map((d: any) =>
-            adminDb.collection("jdiExamAttempts").where("examId", "==", d.id).limit(300).get()
-          )
-        );
-        examAttempts.forEach(s => s.docs.forEach((d: any) => attemptMap.set(d.id, d)));
+      const rankStatus = (st?: string) => {
+        if (st === "graded" || st === "released") return 4;
+        if (st === "submitted" || st === "completed" || st === "expired") return 3;
+        if (st === "in_progress") return 2;
+        return 1;
+      };
+      const addAttemptDoc = (d: any) => {
+        if (!d?.exists) return;
+        const prev = attemptMap.get(d.id);
+        if (!prev) {
+          attemptMap.set(d.id, d);
+          return;
+        }
+        const prevData = prev.data() || {};
+        const nextData = d.data() || {};
+        const prevRel = isAttemptResultReleased(prevData);
+        const nextRel = isAttemptResultReleased(nextData);
+        if ((nextRel && !prevRel) || (nextRel === prevRel && rankStatus(nextData.status) >= rankStatus(prevData.status))) {
+          attemptMap.set(d.id, d);
+        }
+      };
+
+      for (const dbInst of allDbs) {
+        if (admins.includes(c.role) && !requestedSchoolId) {
+          const allAttempts = await dbInst.collection("jdiExamAttempts").limit(500).get().catch(() => ({ docs: [] as any[] }));
+          allAttempts.docs.forEach(addAttemptDoc);
+        } else {
+          for (const sid of targetSchoolIds.slice(0, 10)) {
+            const attempts = await dbInst.collection("jdiExamAttempts").where("schoolId", "==", sid).limit(500).get().catch(() => ({ docs: [] as any[] }));
+            attempts.docs.forEach(addAttemptDoc);
+          }
+        }
+        if (examDocs.length > 0 && examDocs.length <= 40) {
+          const examAttempts = await Promise.all(
+            examDocs.map((d: any) =>
+              dbInst.collection("jdiExamAttempts").where("examId", "==", d.id).limit(300).get().catch(() => ({ docs: [] as any[] }))
+            )
+          );
+          examAttempts.forEach(s => s.docs.forEach(addAttemptDoc));
+        }
       }
       const attemptDocs = Array.from(attemptMap.values());
+      for (const ad of attemptDocs) {
+        const aData = ad.data() || {};
+        if (aData.schoolId) schoolIdsToResolve.add(String(aData.schoolId).trim());
+      }
 
       // Resolve student names & canonical classes from both individualStudents and students
       const studentMap: Record<string, { name: string; className: string; schoolId: string; schoolName: string }> = {};
@@ -644,7 +739,21 @@ export const handler: Handler = async event => {
       const examId = String(body.examId || "").trim();
       if (!examId) return json(400, { error: "Assessment ID is required." });
       const ref = adminDb.collection("jdiExams").doc(examId);
-      const snap = await ref.get();
+      let snap = await ref.get();
+      if (!snap.exists) {
+        for (const dbInst of getAllAdminDbs()) {
+          const candidateJdi = await dbInst.collection("jdiExams").doc(examId).get().catch(() => null);
+          if (candidateJdi?.exists) {
+            snap = candidateJdi;
+            break;
+          }
+          const candidateSch = await dbInst.collection("schoolExams").doc(examId).get().catch(() => null);
+          if (candidateSch?.exists) {
+            snap = candidateSch;
+            break;
+          }
+        }
+      }
       if (!snap.exists) return json(404, { error: "Assessment not found." });
       const exam = snap.data() || {};
       if (!(await canManageExam(c, exam))) {
@@ -1130,10 +1239,19 @@ export const handler: Handler = async event => {
         const attemptId = String(body.attemptId || "");
         const customFeedback = String(body.feedback ?? body.tutorFeedback ?? "").trim().slice(0, 4000);
         const aRef = adminDb.collection("jdiExamAttempts").doc(attemptId);
-        const aSnap = await aRef.get();
+        let aSnap = await aRef.get();
+        if (!aSnap.exists) {
+          for (const dbInst of getAllAdminDbs()) {
+            const candidate = await dbInst.collection("jdiExamAttempts").doc(attemptId).get().catch(() => null);
+            if (candidate?.exists) {
+              aSnap = candidate;
+              break;
+            }
+          }
+        }
         if (!aSnap.exists || aSnap.data()?.examId !== examId) return json(404, { error: "Attempt not found." });
         const a = aSnap.data() || {};
-        if (!["submitted", "expired", "graded"].includes(String(a.status))) {
+        if (!["submitted", "expired", "graded", "completed"].includes(String(a.status))) {
           return json(409, { error: "Attempt must be submitted before releasing results." });
         }
         if (a.autoGraded === false && a.status !== "graded") {
@@ -1167,56 +1285,50 @@ export const handler: Handler = async event => {
           attemptId,
         };
         const releaseAudit = ref.collection("events").doc();
-        const releaseResult = await adminDb.runTransaction(async tx => {
-          const currentSnap = await tx.get(aRef);
-          if (!currentSnap.exists || currentSnap.data()?.examId !== examId) return { kind: "missing" as const };
-          const current = currentSnap.data() || {};
-          if (current.releasedAt) {
-            if (customFeedback) {
-              tx.update(aRef, {
-                feedback: customFeedback,
-                tutorFeedback: customFeedback,
-                updatedAt: FieldValue.serverTimestamp(),
-              });
-            }
-            return { kind: "unchanged" as const, auditId: String(current.releaseAuditId || "") };
-          }
-          if (
-            !["submitted", "expired", "graded"].includes(String(current.status)) ||
-            (current.autoGraded === false && current.status !== "graded")
-          ) {
-            return { kind: "not-ready" as const };
-          }
-          const maxScore = computeExamMaxScore(exam, current);
-          tx.set(releaseAudit, {
-            type: "result_released",
-            attemptId,
-            actorUid: c.uid,
-            score: current.score ?? null,
-            maxScore,
-            ...(customFeedback ? { feedback: customFeedback } : {}),
-            createdAt: FieldValue.serverTimestamp(),
-          });
-          tx.update(aRef, {
-            maxScore,
-            resultReleased: true,
-            releasedAt: FieldValue.serverTimestamp(),
-            releasedBy: c.uid,
-            releaseAuditId: releaseAudit.id,
-            ...(customFeedback ? { feedback: customFeedback, tutorFeedback: customFeedback } : {}),
-            updatedAt: FieldValue.serverTimestamp(),
-          });
-          return { kind: "released" as const, auditId: releaseAudit.id };
-        });
-        if (releaseResult.kind === "missing") return json(404, { error: "Attempt not found." });
-        if (releaseResult.kind === "not-ready") {
-          return json(409, { error: "Manually graded questions must be marked before releasing this result." });
+        const maxScore = computeExamMaxScore(exam, a);
+        const alreadyReleased = Boolean(a.releasedAt || a.resultReleased);
+
+        const releasePayload: Record<string, any> = {
+          ...a,
+          maxScore,
+          status: "graded",
+          resultReleased: true,
+          releasedAt: a.releasedAt || FieldValue.serverTimestamp(),
+          releasedBy: c.uid,
+          releaseAuditId: a.releaseAuditId || releaseAudit.id,
+          ...(customFeedback ? { feedback: customFeedback, tutorFeedback: customFeedback } : {}),
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+
+        await Promise.all(
+          getAllAdminDbs().map(dbInst =>
+            dbInst
+              .collection("jdiExamAttempts")
+              .doc(attemptId)
+              .set(releasePayload, { merge: true })
+              .catch(() => undefined)
+          )
+        );
+
+        if (!alreadyReleased) {
+          await releaseAudit
+            .set({
+              type: "result_released",
+              attemptId,
+              actorUid: c.uid,
+              score: a.score ?? null,
+              maxScore,
+              ...(customFeedback ? { feedback: customFeedback } : {}),
+              createdAt: FieldValue.serverTimestamp(),
+            })
+            .catch(() => undefined);
+          await notify(resultRecipients, notificationPayload, "result-release:" + examId + ":" + attemptId);
         }
-        await notify(resultRecipients, notificationPayload, "result-release:" + examId + ":" + attemptId);
+
         return json(200, {
           ok: true,
-          unchanged: releaseResult.kind === "unchanged",
-          auditId: releaseResult.auditId || undefined,
+          unchanged: alreadyReleased,
+          auditId: String(a.releaseAuditId || releaseAudit.id),
         });
       }
 

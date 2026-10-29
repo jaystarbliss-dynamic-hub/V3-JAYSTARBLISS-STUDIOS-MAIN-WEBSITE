@@ -1,6 +1,17 @@
 import type { Handler } from "@netlify/functions";
-import { adminAuth, adminDb, applyRequestDatabaseHeader } from "../../api/_lib/firebase-admin";
+import {
+  adminAuth,
+  adminDb,
+  applyRequestDatabaseHeader,
+  getDefaultAdminDb,
+  getLegacyNamedAdminDb,
+} from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
+
+function getAllAdminDbs() {
+  const dbs = [getDefaultAdminDb(), getLegacyNamedAdminDb()].filter(Boolean);
+  return dbs.length ? dbs : [adminDb];
+}
 import {
   answersForFinalization,
   gradeAnswers,
@@ -134,13 +145,36 @@ export const handler: Handler = async event => {
       const id = String(event.queryStringParameters?.attemptId || "");
       if (!id) return json(400, { error: "Attempt ID required." });
       const ref = adminDb.collection("jdiExamAttempts").doc(id);
-      const snap = await ref.get();
+      let snap = await ref.get();
+      if (!snap.exists) {
+        for (const dbInst of getAllAdminDbs()) {
+          const candidate = await dbInst.collection("jdiExamAttempts").doc(id).get().catch(() => null);
+          if (candidate?.exists) {
+            snap = candidate;
+            break;
+          }
+        }
+      }
       if (!snap.exists) return json(404, { error: "Attempt not found." });
       const a = snap.data() || {};
       if (a.studentUid !== c.uid && a.studentId !== student.id) {
         return json(403, { error: "Not authorised." });
       }
-      const examSnap = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
+      let examSnap = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
+      if (!examSnap.exists) {
+        for (const dbInst of getAllAdminDbs()) {
+          const jdiCand = await dbInst.collection("jdiExams").doc(String(a.examId)).get().catch(() => null);
+          if (jdiCand?.exists) {
+            examSnap = jdiCand;
+            break;
+          }
+          const schCand = await dbInst.collection("schoolExams").doc(String(a.examId)).get().catch(() => null);
+          if (schCand?.exists) {
+            examSnap = schCand;
+            break;
+          }
+        }
+      }
       if (!examSnap.exists) return json(404, { error: "Assessment not found." });
       const exam = examSnap.data() || {};
 
@@ -323,7 +357,17 @@ export const handler: Handler = async event => {
       const action = String(body.action || "");
       if (!id) return json(400, { error: "Attempt ID required." });
       const ref = adminDb.collection("jdiExamAttempts").doc(id);
-      const snap = await ref.get();
+      let snap = await ref.get();
+      if (!snap.exists) {
+        for (const dbInst of getAllAdminDbs()) {
+          const candidate = await dbInst.collection("jdiExamAttempts").doc(id).get().catch(() => null);
+          if (candidate?.exists) {
+            snap = candidate;
+            await ref.set(candidate.data() || {}, { merge: true }).catch(() => undefined);
+            break;
+          }
+        }
+      }
       if (!snap.exists) return json(404, { error: "Attempt not found." });
       const a = snap.data() || {};
 
@@ -506,10 +550,34 @@ export const handler: Handler = async event => {
           return json(403, { error: "The assessment timer has not expired yet." });
         }
         if (submission.kind === "expired") {
+          const latestSnap = await ref.get().catch(() => null);
+          if (latestSnap?.exists) {
+            await Promise.all(
+              getAllAdminDbs().map(dbInst =>
+                dbInst
+                  .collection("jdiExamAttempts")
+                  .doc(id)
+                  .set(latestSnap.data() || {}, { merge: true })
+                  .catch(() => undefined)
+              )
+            );
+          }
           await notifyStaff(submission.attempt, exam, id).catch(err =>
             console.warn("JDI staff notification failed", err)
           );
           return json(200, { ok: true, status: "expired", autoGraded: submission.grading.autoGraded });
+        }
+        const latestSnap = await ref.get().catch(() => null);
+        if (latestSnap?.exists) {
+          await Promise.all(
+            getAllAdminDbs().map(dbInst =>
+              dbInst
+                .collection("jdiExamAttempts")
+                .doc(id)
+                .set(latestSnap.data() || {}, { merge: true })
+                .catch(() => undefined)
+            )
+          );
         }
         const examRef = adminDb.collection("jdiExams").doc(String(a.examId));
         await examRef.collection("events").add({

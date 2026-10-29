@@ -1,6 +1,12 @@
 import type { Handler } from '@netlify/functions';
 import { createHash, randomBytes } from 'node:crypto';
-import { adminAuth, adminDb, applyRequestDatabaseHeader } from '../../api/_lib/firebase-admin';
+import {
+  adminAuth,
+  adminDb,
+  applyRequestDatabaseHeader,
+  getDefaultAdminDb,
+  getLegacyNamedAdminDb,
+} from '../../api/_lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import {
   normalizeClassName,
@@ -113,7 +119,7 @@ export const handler: Handler = async (event) => {
           const syntheticEmail = `student-${randomBytes(10).toString('hex')}@jbs-portal.local`;
           const authUser = await adminAuth.createUser({
             email: row.email || syntheticEmail,
-            password: makePassword(),
+            password: accessCode.length >= 6 ? accessCode : makePassword(),
             displayName: row.fullName,
             disabled: false,
           });
@@ -146,26 +152,32 @@ export const handler: Handler = async (event) => {
             updatedAt: now,
           };
 
-          await studentRef.set(studentRecord);
-          await adminDb.collection('students').doc(studentRef.id).set(studentRecord, { merge: true });
-          await adminDb
-            .collection('users')
-            .doc(authUser.uid)
-            .set(
-              {
-                email: authUser.email || null,
-                name: row.fullName,
-                role: 'student',
-                studentDocId: studentRef.id,
-                schoolId,
-                schoolName: school.name || school.schoolName || '',
-                portalAccessEnabled: true,
-                accountStatus: 'ACTIVE',
-                createdAt: now,
-                updatedAt: now,
-              },
-              { merge: true }
-            );
+          const userRecord = {
+            email: authUser.email || null,
+            name: row.fullName,
+            username: row.username,
+            accessCode,
+            passcode: accessCode,
+            code: accessCode,
+            accessCodeHash,
+            role: 'student',
+            studentDocId: studentRef.id,
+            schoolId,
+            schoolName: school.name || school.schoolName || '',
+            portalAccessEnabled: true,
+            accountStatus: 'ACTIVE',
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          const targetDbs = [getDefaultAdminDb(), getLegacyNamedAdminDb()];
+          await Promise.all(
+            targetDbs.flatMap((dbInstance) => [
+              dbInstance.collection('individualStudents').doc(studentRef.id).set(studentRecord, { merge: true }).catch(() => undefined),
+              dbInstance.collection('students').doc(studentRef.id).set(studentRecord, { merge: true }).catch(() => undefined),
+              dbInstance.collection('users').doc(authUser.uid).set(userRecord, { merge: true }).catch(() => undefined),
+            ])
+          );
 
           existingUsernames.add(row.username);
           results.push({
@@ -309,17 +321,21 @@ export const handler: Handler = async (event) => {
     const syntheticEmail = `student-${randomBytes(10).toString('hex')}@jbs-portal.local`;
     const authUser = await adminAuth.createUser({
       email: email || syntheticEmail,
-      password: makePassword(),
+      password: accessCode.length >= 6 ? accessCode : makePassword(),
       displayName: fullName,
       disabled: false,
     });
     createdUid = authUser.uid;
     const studentRef = adminDb.collection('individualStudents').doc();
     const now = new Date();
-    await studentRef.set({
+    const studentRecord = {
       fullName,
       studentName: fullName,
+      name: fullName,
       username,
+      accessCode,
+      passcode: accessCode,
+      code: accessCode,
       accessCodeHash,
       schoolId,
       schoolName: school.name || school.schoolName || '',
@@ -334,29 +350,37 @@ export const handler: Handler = async (event) => {
       userId: authUser.uid,
       portalAccessEnabled: true,
       accountStatus: 'ACTIVE',
+      status: 'ACTIVE',
       source: 'school_onboarding',
       createdAt: now,
       updatedAt: now,
-    });
-    await adminDb
-      .collection('users')
-      .doc(authUser.uid)
-      .set(
-        {
-          email: authUser.email || null,
-          name: fullName,
-          role: 'student',
-          studentDocId: studentRef.id,
-          schoolId,
-          schoolName: school.name || school.schoolName || '',
-          parentId: parentId || null,
-          portalAccessEnabled: true,
-          accountStatus: 'ACTIVE',
-          createdAt: now,
-          updatedAt: now,
-        },
-        { merge: true }
-      );
+    };
+    const userRecord = {
+      email: authUser.email || null,
+      name: fullName,
+      username,
+      accessCode,
+      passcode: accessCode,
+      code: accessCode,
+      accessCodeHash,
+      role: 'student',
+      studentDocId: studentRef.id,
+      schoolId,
+      schoolName: school.name || school.schoolName || '',
+      parentId: parentId || null,
+      portalAccessEnabled: true,
+      accountStatus: 'ACTIVE',
+      createdAt: now,
+      updatedAt: now,
+    };
+    const targetDbs = [getDefaultAdminDb(), getLegacyNamedAdminDb()];
+    await Promise.all(
+      targetDbs.flatMap((dbInstance) => [
+        dbInstance.collection('individualStudents').doc(studentRef.id).set(studentRecord, { merge: true }).catch(() => undefined),
+        dbInstance.collection('students').doc(studentRef.id).set(studentRecord, { merge: true }).catch(() => undefined),
+        dbInstance.collection('users').doc(authUser.uid).set(userRecord, { merge: true }).catch(() => undefined),
+      ])
+    );
     if (finalProgramId || finalProgramName) {
       await adminDb.collection('enrollments').add({
         studentId: studentRef.id,

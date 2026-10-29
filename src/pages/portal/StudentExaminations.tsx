@@ -14,7 +14,7 @@ import {
   CheckCircle2,
   Lock,
 } from "lucide-react";
-import { auth, db } from "../../lib/firebase";
+import { auth, db, getAllClientDatabases } from "../../lib/firebase";
 import {
   collection,
   query,
@@ -325,16 +325,35 @@ export default function StudentExaminations() {
       const currentUid = auth.currentUser?.uid || ctx.uid || "";
       const currentStudentId = ctx.id || sessionStorage.getItem("studentDocId") || "";
 
+      const allDbs = getAllClientDatabases();
       const rawDocsMap = new Map<string, any>();
-      const [jdiSnap, schoolExamsSnap, legacyExamsSnap] = await Promise.all([
-        getDocs(collection(db, "jdiExams")).catch(() => ({ docs: [] } as any)),
-        getDocs(collection(db, "schoolExams")).catch(() => ({ docs: [] } as any)),
-        getDocs(collection(db, "exams")).catch(() => ({ docs: [] } as any)),
+      const [jdiSnaps, schoolExamsSnaps, legacyExamsSnaps] = await Promise.all([
+        Promise.all(
+          allDbs.map((dbInst) =>
+            getDocs(collection(dbInst, "jdiExams")).catch(() => ({ docs: [] } as any))
+          )
+        ),
+        Promise.all(
+          allDbs.map((dbInst) =>
+            getDocs(collection(dbInst, "schoolExams")).catch(() => ({ docs: [] } as any))
+          )
+        ),
+        Promise.all(
+          allDbs.map((dbInst) =>
+            getDocs(collection(dbInst, "exams")).catch(() => ({ docs: [] } as any))
+          )
+        ),
       ]);
 
-      [...jdiSnap.docs, ...schoolExamsSnap.docs, ...legacyExamsSnap.docs].forEach((d: any) => {
-        rawDocsMap.set(d.id, { id: d.id, ...d.data() });
-      });
+      legacyExamsSnaps.forEach((s) =>
+        s.docs?.forEach((d: any) => rawDocsMap.set(d.id, { id: d.id, ...d.data() }))
+      );
+      schoolExamsSnaps.forEach((s) =>
+        s.docs?.forEach((d: any) => rawDocsMap.set(d.id, { id: d.id, ...d.data() }))
+      );
+      jdiSnaps.forEach((s) =>
+        s.docs?.forEach((d: any) => rawDocsMap.set(d.id, { id: d.id, ...d.data() }))
+      );
 
       const allRawExams = Array.from(rawDocsMap.values());
 
@@ -352,29 +371,37 @@ export default function StudentExaminations() {
         )
       );
 
-      const attemptsSnap = await getDocs(collection(db, "jdiExamAttempts")).catch(
-        () => ({ docs: [] } as any)
+      const attemptsSnaps = await Promise.all(
+        allDbs.map((dbInst) =>
+          getDocs(collection(dbInst, "jdiExamAttempts")).catch(() => ({ docs: [] } as any))
+        )
       );
       const attemptsByExam: Record<string, any> = {};
 
-      attemptsSnap.docs?.forEach((ad: any) => {
-        const a = ad.data();
-        if (
-          (currentUid && a.studentUid === currentUid) ||
-          (currentStudentId && a.studentId === currentStudentId)
-        ) {
-          const isReleased = isAttemptResultReleased(a);
-          attemptsByExam[String(a.examId)] = {
-            attemptId: ad.id,
-            attemptStatus: a.status,
-            score: isReleased ? a.score : undefined,
-            maxScore: a.maxScore,
-            releasedAt: isReleased
-              ? a.releasedAt || a.updatedAt || a.submittedAt || new Date().toISOString()
-              : undefined,
-            resultReleased: isReleased,
-          };
-        }
+      attemptsSnaps.forEach((attemptsSnap) => {
+        attemptsSnap.docs?.forEach((ad: any) => {
+          const a = ad.data();
+          if (
+            (currentUid && a.studentUid === currentUid) ||
+            (currentStudentId && a.studentId === currentStudentId)
+          ) {
+            const isReleased = isAttemptResultReleased(a);
+            const examKey = String(a.examId);
+            const prev = attemptsByExam[examKey];
+            if (!prev || isReleased || !prev.resultReleased) {
+              attemptsByExam[examKey] = {
+                attemptId: ad.id,
+                attemptStatus: a.status,
+                score: isReleased ? a.score : prev?.score,
+                maxScore: a.maxScore ?? prev?.maxScore,
+                releasedAt: isReleased
+                  ? a.releasedAt || a.updatedAt || a.submittedAt || new Date().toISOString()
+                  : prev?.releasedAt,
+                resultReleased: Boolean(isReleased || prev?.resultReleased),
+              };
+            }
+          }
+        });
       });
 
       const now = Date.now();
@@ -579,7 +606,7 @@ export default function StudentExaminations() {
             sessionStorage.getItem("schoolName") || ""
           );
 
-          await setDoc(doc(db, "jdiExamAttempts", newAttemptId), {
+          const attemptPayload = {
             id: newAttemptId,
             examId,
             examTitle: targetExam.title,
@@ -597,7 +624,14 @@ export default function StudentExaminations() {
             deadlineAt,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-          });
+          };
+          await Promise.all(
+            getAllClientDatabases().map((dbInst) =>
+              setDoc(doc(dbInst, "jdiExamAttempts", newAttemptId), attemptPayload).catch(
+                () => undefined
+              )
+            )
+          );
 
           attemptId = newAttemptId;
         }

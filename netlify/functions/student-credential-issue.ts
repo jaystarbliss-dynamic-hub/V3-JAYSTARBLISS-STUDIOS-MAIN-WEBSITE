@@ -1,6 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import { createHash, randomBytes } from 'node:crypto';
-import { adminAuth, adminDb, hasAdminAuth, hasAdminDb } from '../../api/_lib/firebase-admin';
+import { adminAuth, adminDb, hasAdminAuth, hasAdminDb, applyRequestDatabaseHeader, getDefaultAdminDb, getLegacyNamedAdminDb } from '../../api/_lib/firebase-admin';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({ statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(body) });
 const bearer = (event: any) => { const value = event.headers?.authorization || event.headers?.Authorization || ''; return value.startsWith('Bearer ') ? value.slice(7) : ''; };
@@ -12,6 +12,7 @@ const isAssigned = (student: any, uid: string) => [student.tutorId, student.staf
 const hasSchoolAccess = async (uid:string, schoolId:string) => { if(!schoolId) return false; const snap=await adminDb.collection('staffSchoolAccess').doc(uid).get(); if(!snap.exists) return false; const d=snap.data()||{}; const ids=Array.isArray(d.schoolIds)?d.schoolIds.map(String):[]; if(d.schoolId) ids.push(String(d.schoolId)); return ids.includes(String(schoolId)); };
 
 export const handler: Handler = async event => {
+  applyRequestDatabaseHeader(event.headers as any);
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method Not Allowed' });
   try {
     if (!hasAdminAuth() || !hasAdminDb()) {
@@ -96,28 +97,38 @@ export const handler: Handler = async event => {
       portalAccessEnabled: true, 
       accountStatus: 'ACTIVE', 
       status: 'ACTIVE',
-      credentialIssuedAt: now, 
+      credentialIssuedAt: now.toISOString(), 
       credentialIssuedBy: decoded.uid, 
       updatedAt: now 
     };
-    await studentRef.set(credentialPayload, { merge: true });
-    for (const mirrorColl of ['individualStudents', 'students']) {
-      await adminDb.collection(mirrorColl).doc(studentRef.id).set(credentialPayload, { merge: true }).catch(() => null);
+    const allDbs = [getDefaultAdminDb(), getLegacyNamedAdminDb()].filter(Boolean) as FirebaseFirestore.Firestore[];
+    for (const dbInst of allDbs) {
+      for (const mirrorColl of ['individualStudents', 'students']) {
+        await dbInst.collection(mirrorColl).doc(studentRef.id).set(credentialPayload, { merge: true }).catch(() => null);
+      }
     }
     if (student.firebaseUid || student.userId) {
       const uid = String(student.firebaseUid || student.userId);
       const authUser = await adminAuth.getUser(uid).catch(() => null);
-      if (authUser && authUser.disabled) await adminAuth.updateUser(uid, { disabled: false }).catch(() => null);
-      await adminDb.collection('users').doc(uid).set({ 
-        username,
-        accessCode,
-        passcode: accessCode,
-        code: accessCode,
-        accessCodeHash,
-        portalAccessEnabled: true, 
-        accountStatus: 'ACTIVE', 
-        updatedAt: now 
-      }, { merge: true }).catch(() => null);
+      if (authUser) {
+        await adminAuth.updateUser(uid, {
+          disabled: false,
+          ...(accessCode.length >= 6 ? { password: accessCode } : {})
+        }).catch(() => null);
+      }
+      for (const dbInst of allDbs) {
+        await dbInst.collection('users').doc(uid).set({ 
+          username,
+          accessCode,
+          passcode: accessCode,
+          code: accessCode,
+          accessCodeHash,
+          portalAccessEnabled: true, 
+          accountStatus: 'ACTIVE', 
+          status: 'ACTIVE',
+          updatedAt: now 
+        }, { merge: true }).catch(() => null);
+      }
     }
     await adminDb.collection('activityLogs').add({ actorId: decoded.uid, action: 'STUDENT_CREDENTIAL_ISSUED', targetId: studentRef.id, targetType: 'student', schoolId: student.schoolId || null, timestamp: now, metadata: { username, issuedRole: callerRole } }).catch(() => null);
     return json(200, { student: { id: studentRef.id, fullName: student.fullName || student.studentName || 'Student', username, portal: '/portal' }, credentials: { username, accessCode, portal: '/portal' } });

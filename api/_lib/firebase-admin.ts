@@ -187,13 +187,7 @@ export function getAdminDb(preferredDbId?: string | null): Firestore | null {
 
 export function getAdminDatabases(): Firestore[] {
   const primary = getAdminDb();
-  const defaultDb = getDefaultAdminDb();
-  const legacyDb = getLegacyNamedAdminDb();
-  const list: Firestore[] = [];
-  if (primary) list.push(primary);
-  if (defaultDb && !list.includes(defaultDb)) list.push(defaultDb);
-  if (legacyDb && !list.includes(legacyDb)) list.push(legacyDb);
-  return list;
+  return primary ? [primary] : [];
 }
 
 // Proxied exports preserve compatibility with existing API and Netlify function imports.

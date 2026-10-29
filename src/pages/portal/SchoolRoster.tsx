@@ -25,7 +25,7 @@ import {
 import { collection, doc, getDoc, getDocs, updateDoc, setDoc, query as fsQuery, where } from 'firebase/firestore';
 import jsPDF from 'jspdf';
 import SEO from '../../components/ui/SEO';
-import { auth, db, getClientDatabases } from '../../lib/firebase';
+import { auth, db, getClientDatabases, getStandbyFirestore } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
 import { CANONICAL_CLASSES, normalizeClassName, formatNormalizedClassDisplay } from '../../lib/classes';
@@ -559,20 +559,23 @@ const SchoolRoster: React.FC = () => {
         updatedAt: now
       };
 
-      // Write to both individualStudents and students to keep sync
+      const standbyDb = getStandbyFirestore();
+      // Write to both individualStudents and students across active and standby databases
       await Promise.all([
         updateDoc(doc(db, 'individualStudents', student.id), payload).catch(async () => {
           await setDoc(doc(db, 'individualStudents', student.id), payload, { merge: true });
         }),
         updateDoc(doc(db, 'students', student.id), payload).catch(async () => {
           await setDoc(doc(db, 'students', student.id), payload, { merge: true });
-        })
+        }),
+        setDoc(doc(standbyDb, 'individualStudents', student.id), payload, { merge: true }).catch(() => null),
+        setDoc(doc(standbyDb, 'students', student.id), payload, { merge: true }).catch(() => null),
       ]);
 
-      // If student has a linked firebaseUid, update users collection
+      // If student has a linked firebaseUid, update users collection across both databases
       const linkedUid = String(student.firebaseUid || student.userId || '');
       if (linkedUid) {
-        await setDoc(doc(db, 'users', linkedUid), {
+        const userCredPayload = {
           username,
           accessCode: generatedAccessCode,
           passcode: generatedAccessCode,
@@ -582,7 +585,11 @@ const SchoolRoster: React.FC = () => {
           accountStatus: 'ACTIVE',
           status: 'ACTIVE',
           updatedAt: now
-        }, { merge: true }).catch(() => null);
+        };
+        await Promise.all([
+          setDoc(doc(db, 'users', linkedUid), userCredPayload, { merge: true }).catch(() => null),
+          setDoc(doc(standbyDb, 'users', linkedUid), userCredPayload, { merge: true }).catch(() => null),
+        ]);
       }
 
       const cred: IssuedCredential = {

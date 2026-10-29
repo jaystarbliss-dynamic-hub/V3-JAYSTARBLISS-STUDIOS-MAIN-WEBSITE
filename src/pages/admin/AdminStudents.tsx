@@ -4,7 +4,7 @@ import {
   collection, deleteDoc, doc, getDocs, setDoc, addDoc, updateDoc, 
   serverTimestamp 
 } from 'firebase/firestore';
-import { db, auth } from '../../lib/firebase';
+import { db, auth, getStandbyFirestore } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { startImpersonation } from '../../utils/impersonation';
 import { 
@@ -665,28 +665,33 @@ const AdminStudents: React.FC = () => {
         updatedAt: now
       };
 
+      const standbyDb = getStandbyFirestore();
+      const userDocPayload = {
+        uid: studentDocRef.id,
+        studentDocId: studentDocRef.id,
+        name: form.fullName.trim(),
+        fullName: form.fullName.trim(),
+        username: cleanUsername,
+        role: 'STUDENT',
+        schoolId: form.studentType === 'school' ? form.schoolId : null,
+        schoolName: form.studentType === 'school' ? (schoolObj?.name || form.schoolId) : null,
+        class: canonicalStudentClass,
+        grade: canonicalStudentClass,
+        accessCode: generatedCode,
+        accessCodeHash,
+        portalAccessEnabled: true,
+        accountStatus: 'ACTIVE',
+        status: 'ACTIVE',
+        createdAt: now,
+        updatedAt: now
+      };
       await Promise.all([
         setDoc(studentDocRef, payload, { merge: true }),
         setDoc(doc(db, 'students', studentDocRef.id), payload, { merge: true }),
-        setDoc(doc(db, 'users', studentDocRef.id), {
-          uid: studentDocRef.id,
-          studentDocId: studentDocRef.id,
-          name: form.fullName.trim(),
-          fullName: form.fullName.trim(),
-          username: cleanUsername,
-          role: 'STUDENT',
-          schoolId: form.studentType === 'school' ? form.schoolId : null,
-          schoolName: form.studentType === 'school' ? (schoolObj?.name || form.schoolId) : null,
-          class: canonicalStudentClass,
-          grade: canonicalStudentClass,
-          accessCode: generatedCode,
-          accessCodeHash,
-          portalAccessEnabled: true,
-          accountStatus: 'ACTIVE',
-          status: 'ACTIVE',
-          createdAt: now,
-          updatedAt: now
-        }, { merge: true })
+        setDoc(doc(db, 'users', studentDocRef.id), userDocPayload, { merge: true }),
+        setDoc(doc(standbyDb, 'individualStudents', studentDocRef.id), payload, { merge: true }).catch(() => null),
+        setDoc(doc(standbyDb, 'students', studentDocRef.id), payload, { merge: true }).catch(() => null),
+        setDoc(doc(standbyDb, 'users', studentDocRef.id), userDocPayload, { merge: true }).catch(() => null),
       ]);
 
       setCredentials({
@@ -752,15 +757,20 @@ const AdminStudents: React.FC = () => {
         updatedAt: serverTimestamp()
       };
 
-      // Update in both students and individualStudents
+      const standbyDb = getStandbyFirestore();
+      // Update in both students and individualStudents across active and standby databases
       await Promise.all([
         setDoc(doc(db, 'individualStudents', student.id), updatePayload, { merge: true }).catch(() => null),
-        setDoc(doc(db, 'students', student.id), updatePayload, { merge: true }).catch(() => null)
+        setDoc(doc(db, 'students', student.id), updatePayload, { merge: true }).catch(() => null),
+        setDoc(doc(standbyDb, 'individualStudents', student.id), updatePayload, { merge: true }).catch(() => null),
+        setDoc(doc(standbyDb, 'students', student.id), updatePayload, { merge: true }).catch(() => null),
+        ...(student.firebaseUid
+          ? [
+              setDoc(doc(db, 'users', student.firebaseUid), updatePayload, { merge: true }).catch(() => null),
+              setDoc(doc(standbyDb, 'users', student.firebaseUid), updatePayload, { merge: true }).catch(() => null),
+            ]
+          : []),
       ]);
-
-      if (student.firebaseUid) {
-        await setDoc(doc(db, 'users', student.firebaseUid), updatePayload, { merge: true }).catch(() => null);
-      }
 
       setCredentials({
         fullName: student.fullName,

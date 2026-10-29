@@ -28,7 +28,7 @@ import {
   Users,
 } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
-import { auth, db } from '../../lib/firebase';
+import { auth, db, getStandbyFirestore } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
 import { getFriendlyErrorMessage, logInternalDiagnostic } from '../../utils/friendlyErrors';
@@ -275,10 +275,38 @@ const SchoolStudentOnboardingV2: React.FC = () => {
           updatedAt: serverTimestamp(),
         };
 
-        await Promise.all([
-          setDoc(doc(db, 'individualStudents', studentId), studentRecord, { merge: true }),
-          setDoc(doc(db, 'students', studentId), studentRecord, { merge: true }),
-        ]);
+        const standbyDb = getStandbyFirestore();
+        // Also check if an older record with the same username already exists in this school so its code is updated too
+        const existingSameUserIds = new Set<string>([studentId]);
+        try {
+          const [existingIndSnap, existingStdSnap] = await Promise.all([
+            getDocs(query(collection(db, 'individualStudents'), where('username', '==', cleanUsername), limit(5))),
+            getDocs(query(collection(db, 'students'), where('username', '==', cleanUsername), limit(5))),
+          ]);
+          for (const d of [...existingIndSnap.docs, ...existingStdSnap.docs]) {
+            const dData = d.data() || {};
+            if (!targetSchoolId || !dData.schoolId || dData.schoolId === targetSchoolId) {
+              existingSameUserIds.add(d.id);
+            }
+          }
+        } catch {
+          // Non-fatal lookup
+        }
+
+        const writeOps: Promise<any>[] = [];
+        for (const targetDocId of existingSameUserIds) {
+          writeOps.push(
+            setDoc(doc(db, 'individualStudents', targetDocId), studentRecord, { merge: true }),
+            setDoc(doc(db, 'students', targetDocId), studentRecord, { merge: true })
+          );
+          if (standbyDb) {
+            writeOps.push(
+              setDoc(doc(standbyDb, 'individualStudents', targetDocId), studentRecord, { merge: true }).catch(() => undefined),
+              setDoc(doc(standbyDb, 'students', targetDocId), studentRecord, { merge: true }).catch(() => undefined)
+            );
+          }
+        }
+        await Promise.all(writeOps);
 
         await addDoc(collection(db, 'enrollments'), {
           studentId,
@@ -476,10 +504,18 @@ const SchoolStudentOnboardingV2: React.FC = () => {
               updatedAt: serverTimestamp(),
             };
 
-            await Promise.all([
+            const standbyDb = getStandbyFirestore();
+            const rowWrites: Promise<any>[] = [
               setDoc(doc(db, 'individualStudents', studentId), studentRecord, { merge: true }),
               setDoc(doc(db, 'students', studentId), studentRecord, { merge: true }),
-            ]);
+            ];
+            if (standbyDb) {
+              rowWrites.push(
+                setDoc(doc(standbyDb, 'individualStudents', studentId), studentRecord, { merge: true }).catch(() => undefined),
+                setDoc(doc(standbyDb, 'students', studentId), studentRecord, { merge: true }).catch(() => undefined)
+              );
+            }
+            await Promise.all(rowWrites);
 
             seenU.add(row.username.toLowerCase());
             localOutcomes.push({

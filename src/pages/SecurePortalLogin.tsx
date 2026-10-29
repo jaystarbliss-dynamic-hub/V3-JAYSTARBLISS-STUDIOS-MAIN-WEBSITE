@@ -12,7 +12,7 @@ import {
   sendPasswordResetEmail 
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, query, where, limit, getDocs } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { auth, db, getStandbyFirestore } from '../lib/firebase';
 import { useTheme } from '../hooks/useTheme';
 import SEO from '../components/ui/SEO';
 import { useToast } from '../contexts/ToastContext';
@@ -165,145 +165,296 @@ const SecurePortalLogin: React.FC = () => {
     const inputCodeLower = inputCodeClean.toLowerCase().replace(/^@/, '').replace(/\s+/g, '');
     const isRealEmail = rawInput.includes('@') && !rawInput.endsWith('.local');
 
-    let studentDocId = '';
-    let studentData: any = null;
+    const inputStripped = inputCodeClean.replace(/[\s-]/g, '').toUpperCase();
+    const inputJbsHyphenated = inputStripped.startsWith('JBS') && inputStripped.length > 3 ? `JBS-${inputStripped.slice(3)}` : '';
+    const rawInputUpper = rawInput.toUpperCase();
+    const rawInputStripped = rawInput.replace(/[\s-]/g, '').toUpperCase();
 
-    try {
+    const [inputHashExact, inputHashUpper, inputHashStripped, inputHashJbs, rawInputHashExact, rawInputHashUpper] = await Promise.all([
+      computeSha256(inputCodeClean),
+      computeSha256(inputCodeUpper),
+      computeSha256(inputStripped),
+      inputJbsHyphenated ? computeSha256(inputJbsHyphenated) : Promise.resolve(''),
+      computeSha256(rawInput),
+      computeSha256(rawInputUpper)
+    ]);
+
+    const matchesCandidateCredential = (candidateData: Record<string, any>): boolean => {
+      if (!candidateData || typeof candidateData !== 'object') return false;
+      const candidateCodes = new Set<string>(
+        [
+          candidateData.accessCode,
+          candidateData.passcode,
+          candidateData.code,
+          ...(Array.isArray(candidateData._allCodes) ? candidateData._allCodes : [])
+        ]
+          .map(v => String(v || '').trim())
+          .filter(Boolean)
+      );
+      const candidateHashes = new Set<string>(
+        [
+          candidateData.accessCodeHash,
+          candidateData.passwordHash,
+          candidateData.customPasswordHash,
+          candidateData.passcodeHash,
+          candidateData.codeHash,
+          ...(Array.isArray(candidateData._allHashes) ? candidateData._allHashes : [])
+        ]
+          .map(v => String(v || '').trim().toLowerCase())
+          .filter(Boolean)
+      );
+      const storedPassword = String(candidateData.password || candidateData.customPassword || '').trim();
+      const storedUsername = String(candidateData.username || candidateData.studentUsername || '').toLowerCase().replace(/^@/, '').replace(/\s+/g, '');
+
+      for (const storedAccess of candidateCodes) {
+        const storedStripped = storedAccess.replace(/[\s-]/g, '').toUpperCase();
+        if (
+          storedAccess.toUpperCase() === inputCodeUpper ||
+          storedAccess === inputCodeClean ||
+          (storedStripped && storedStripped === inputStripped)
+        ) {
+          return true;
+        }
+        if (
+          (storedAccess.toUpperCase() === rawInputUpper ||
+            storedAccess === rawInput ||
+            (storedStripped && storedStripped === rawInputStripped)) &&
+          inputCodeLower === storedUsername
+        ) {
+          return true;
+        }
+      }
+
+      for (const storedHash of candidateHashes) {
+        if (
+          storedHash === inputHashExact ||
+          storedHash === inputHashUpper ||
+          storedHash === inputHashStripped ||
+          (!!inputHashJbs && storedHash === inputHashJbs)
+        ) {
+          return true;
+        }
+        if ((storedHash === rawInputHashExact || storedHash === rawInputHashUpper) && inputCodeLower === storedUsername) {
+          return true;
+        }
+      }
+
+      if (storedPassword && (storedPassword === inputCodeClean || storedPassword === inputCodeUpper)) {
+        return true;
+      }
+
+      return false;
+    };
+
+    const resolveStudentInDatabase = async (targetDb: typeof db): Promise<{ docId: string; data: any; matchedCode: boolean } | null> => {
+      const candidateMap = new Map<string, any>();
+
+      const addCandidateRecord = (rawDocId: string, rawData: any, fromUsers = false) => {
+        if (!rawDocId || !rawData || typeof rawData !== 'object') return;
+        if (fromUsers) {
+          const role = String(rawData.role || '').toUpperCase();
+          if (role && !['STUDENT', 'SCHOLAR', 'CADET', 'INDIVIDUAL_STUDENT'].includes(role)) return;
+        }
+        const canonicalId = String((fromUsers && rawData.studentDocId) ? rawData.studentDocId : rawDocId).trim();
+        if (!canonicalId) return;
+        const existing = candidateMap.get(canonicalId) || { _allCodes: [], _allHashes: [] };
+        const allCodes = [
+          ...(existing._allCodes || []),
+          rawData.accessCode,
+          rawData.passcode,
+          rawData.code
+        ].filter(Boolean);
+        const allHashes = [
+          ...(existing._allHashes || []),
+          rawData.accessCodeHash,
+          rawData.passwordHash,
+          rawData.customPasswordHash,
+          rawData.passcodeHash,
+          rawData.codeHash
+        ].filter(Boolean);
+
+        // Prefer student/individualStudent fields over stale users fields
+        const merged = fromUsers
+          ? { ...rawData, ...existing, _allCodes: allCodes, _allHashes: allHashes }
+          : { ...existing, ...rawData, _allCodes: allCodes, _allHashes: allHashes };
+        candidateMap.set(canonicalId, merged);
+      };
+
       const queries = [
-        query(collection(db, 'individualStudents'), where('username', '==', cleanUsername), limit(1)),
-        query(collection(db, 'individualStudents'), where('username', '==', cleanUsername.toUpperCase()), limit(1)),
-        query(collection(db, 'individualStudents'), where('username', '==', rawInput), limit(1)),
-        query(collection(db, 'individualStudents'), where('username', '==', `@${cleanUsername}`), limit(1)),
-        query(collection(db, 'individualStudents'), where('username', '==', `@${cleanUsername.toUpperCase()}`), limit(1)),
-        query(collection(db, 'students'), where('username', '==', cleanUsername), limit(1)),
-        query(collection(db, 'students'), where('username', '==', cleanUsername.toUpperCase()), limit(1)),
-        query(collection(db, 'students'), where('username', '==', rawInput), limit(1)),
-        query(collection(db, 'students'), where('username', '==', `@${cleanUsername}`), limit(1)),
-        query(collection(db, 'students'), where('username', '==', `@${cleanUsername.toUpperCase()}`), limit(1)),
+        query(collection(targetDb, 'individualStudents'), where('username', '==', cleanUsername), limit(5)),
+        query(collection(targetDb, 'individualStudents'), where('username', '==', cleanUsername.toUpperCase()), limit(5)),
+        query(collection(targetDb, 'individualStudents'), where('username', '==', rawInput), limit(5)),
+        query(collection(targetDb, 'individualStudents'), where('username', '==', `@${cleanUsername}`), limit(5)),
+        query(collection(targetDb, 'individualStudents'), where('username', '==', `@${cleanUsername.toUpperCase()}`), limit(5)),
+        query(collection(targetDb, 'students'), where('username', '==', cleanUsername), limit(5)),
+        query(collection(targetDb, 'students'), where('username', '==', cleanUsername.toUpperCase()), limit(5)),
+        query(collection(targetDb, 'students'), where('username', '==', rawInput), limit(5)),
+        query(collection(targetDb, 'students'), where('username', '==', `@${cleanUsername}`), limit(5)),
+        query(collection(targetDb, 'students'), where('username', '==', `@${cleanUsername.toUpperCase()}`), limit(5)),
 
-        query(collection(db, 'individualStudents'), where('accessCode', '==', cleanCode), limit(1)),
-        query(collection(db, 'individualStudents'), where('accessCode', '==', inputCodeUpper), limit(1)),
-        query(collection(db, 'individualStudents'), where('accessCode', '==', inputCodeClean), limit(1)),
-        query(collection(db, 'students'), where('accessCode', '==', cleanCode), limit(1)),
-        query(collection(db, 'students'), where('accessCode', '==', inputCodeUpper), limit(1)),
-        query(collection(db, 'students'), where('accessCode', '==', inputCodeClean), limit(1)),
-        query(collection(db, 'individualStudents'), where('passcode', '==', cleanCode), limit(1)),
-        query(collection(db, 'individualStudents'), where('passcode', '==', inputCodeUpper), limit(1)),
-        query(collection(db, 'students'), where('passcode', '==', cleanCode), limit(1)),
-        query(collection(db, 'students'), where('passcode', '==', inputCodeUpper), limit(1)),
-        query(collection(db, 'individualStudents'), where('code', '==', cleanCode), limit(1)),
-        query(collection(db, 'individualStudents'), where('code', '==', inputCodeUpper), limit(1)),
+        query(collection(targetDb, 'individualStudents'), where('accessCode', '==', cleanCode), limit(5)),
+        query(collection(targetDb, 'individualStudents'), where('accessCode', '==', inputCodeUpper), limit(5)),
+        query(collection(targetDb, 'individualStudents'), where('accessCode', '==', inputCodeClean), limit(5)),
+        query(collection(targetDb, 'students'), where('accessCode', '==', cleanCode), limit(5)),
+        query(collection(targetDb, 'students'), where('accessCode', '==', inputCodeUpper), limit(5)),
+        query(collection(targetDb, 'students'), where('accessCode', '==', inputCodeClean), limit(5)),
+        query(collection(targetDb, 'individualStudents'), where('passcode', '==', cleanCode), limit(5)),
+        query(collection(targetDb, 'individualStudents'), where('passcode', '==', inputCodeUpper), limit(5)),
+        query(collection(targetDb, 'students'), where('passcode', '==', cleanCode), limit(5)),
+        query(collection(targetDb, 'students'), where('passcode', '==', inputCodeUpper), limit(5)),
+        query(collection(targetDb, 'individualStudents'), where('code', '==', cleanCode), limit(5)),
+        query(collection(targetDb, 'individualStudents'), where('code', '==', inputCodeUpper), limit(5)),
 
-        query(collection(db, 'users'), where('username', '==', cleanUsername), limit(1)),
-        query(collection(db, 'users'), where('username', '==', cleanUsername.toUpperCase()), limit(1)),
-        query(collection(db, 'users'), where('accessCode', '==', cleanCode), limit(1)),
-        query(collection(db, 'users'), where('accessCode', '==', inputCodeUpper), limit(1))
+        query(collection(targetDb, 'users'), where('username', '==', cleanUsername), limit(5)),
+        query(collection(targetDb, 'users'), where('username', '==', cleanUsername.toUpperCase()), limit(5)),
+        query(collection(targetDb, 'users'), where('accessCode', '==', cleanCode), limit(5)),
+        query(collection(targetDb, 'users'), where('accessCode', '==', inputCodeUpper), limit(5))
       ];
 
       if (isRealEmail) {
         queries.push(
-          query(collection(db, 'individualStudents'), where('email', '==', cleanEmail), limit(1)),
-          query(collection(db, 'students'), where('email', '==', cleanEmail), limit(1)),
-          query(collection(db, 'users'), where('email', '==', cleanEmail), limit(1))
+          query(collection(targetDb, 'individualStudents'), where('email', '==', cleanEmail), limit(5)),
+          query(collection(targetDb, 'students'), where('email', '==', cleanEmail), limit(5)),
+          query(collection(targetDb, 'users'), where('email', '==', cleanEmail), limit(5))
         );
       }
 
       const results = await Promise.all(queries.map(q => getDocs(q).catch(() => null)));
       for (const snap of results) {
         if (snap && !snap.empty) {
-          studentDocId = snap.docs[0].id;
-          studentData = snap.docs[0].data();
-          break;
-        }
-      }
-
-      if (!studentData) {
-        const [d1, d2] = await Promise.all([
-          getDoc(doc(db, 'individualStudents', rawInput)).catch(() => null),
-          getDoc(doc(db, 'students', rawInput)).catch(() => null)
-        ]);
-        if (d1 && d1.exists()) {
-          studentDocId = d1.id;
-          studentData = d1.data();
-        } else if (d2 && d2.exists()) {
-          studentDocId = d2.id;
-          studentData = d2.data();
-        }
-      }
-
-      // Broad scan fallback (in case username had unusual formatting, case differences, or hyphen variations)
-      if (!studentData) {
-        const [indSnap, stdSnap] = await Promise.all([
-          getDocs(query(collection(db, 'individualStudents'), limit(300))).catch(() => ({ docs: [] } as any)),
-          getDocs(query(collection(db, 'students'), limit(300))).catch(() => ({ docs: [] } as any))
-        ]);
-
-        const allDocs = [...indSnap.docs, ...stdSnap.docs];
-        for (const d of allDocs) {
-          const sd = d.data();
-          const u = String(sd.username || sd.studentUsername || sd.loginUsername || '').toLowerCase().replace(/^@/, '').replace(/\s+/g, '');
-          const e = String(sd.email || sd.studentEmail || '').toLowerCase().trim();
-          const c = String(sd.accessCode || sd.passcode || sd.code || '').toUpperCase().trim();
-          const cStripped = c.replace(/[\s-]/g, '');
-          const n = String(sd.fullName || sd.studentName || sd.name || '').toLowerCase().trim();
-          const cleanCodeStripped = cleanCode.replace(/[\s-]/g, '');
-          const inputCodeStripped = inputCodeUpper.replace(/[\s-]/g, '');
-
-          const identifierMatches =
-            (cleanUsername && (u === cleanUsername || u === `@${cleanUsername}`)) ||
-            (isRealEmail && e === cleanEmail) ||
-            (cleanCode && (c === cleanCode || (cStripped && cStripped === cleanCodeStripped))) ||
-            (cleanUsername.length > 2 && (n === cleanUsername || n.replace(/\s+/g, '') === cleanUsername)) ||
-            (d.id.toLowerCase() === cleanUsername);
-
-          const swappedMatches =
-            (cleanCode && (c === cleanCode || (cStripped && cStripped === cleanCodeStripped))) &&
-            (u === inputCodeLower || u === `@${inputCodeLower}`);
-
-          const directPairMatches =
-            (c && (c === inputCodeUpper || (cStripped && cStripped === inputCodeStripped))) &&
-            (u === cleanUsername || cleanUsername === '');
-
-          if (identifierMatches || swappedMatches || directPairMatches) {
-            studentDocId = d.id;
-            studentData = sd;
-            break;
+          for (const d of snap.docs) {
+            const isUsersCol = d.ref?.parent?.id === 'users';
+            addCandidateRecord(d.id, d.data(), isUsersCol);
           }
         }
       }
 
-      // Enrich studentData across both collections if studentDocId was resolved from a partial stub or users doc
-      if (studentDocId) {
-        const [stdCheck, indCheck] = await Promise.all([
-          getDoc(doc(db, 'students', studentDocId)).catch(() => null),
-          getDoc(doc(db, 'individualStudents', studentDocId)).catch(() => null),
-        ]);
-        const stdFields = stdCheck?.exists() ? stdCheck.data() : {};
-        const indFields = indCheck?.exists() ? indCheck.data() : {};
-        studentData = {
-          ...indFields,
-          ...stdFields,
-          ...studentData,
-          schoolId: studentData?.schoolId || stdFields?.schoolId || indFields?.schoolId || '',
-          schoolName: studentData?.schoolName || stdFields?.schoolName || indFields?.schoolName || '',
-          class:
-            studentData?.class ||
-            studentData?.grade ||
-            stdFields?.class ||
-            stdFields?.grade ||
-            indFields?.class ||
-            indFields?.grade ||
-            '',
-          fullName:
-            studentData?.fullName ||
-            studentData?.studentName ||
-            studentData?.name ||
-            stdFields?.fullName ||
-            stdFields?.name ||
-            indFields?.fullName ||
-            indFields?.name ||
-            '',
-        };
+      const [d1, d2] = await Promise.all([
+        getDoc(doc(targetDb, 'individualStudents', rawInput)).catch(() => null),
+        getDoc(doc(targetDb, 'students', rawInput)).catch(() => null)
+      ]);
+      if (d1 && d1.exists()) addCandidateRecord(d1.id, d1.data(), false);
+      if (d2 && d2.exists()) addCandidateRecord(d2.id, d2.data(), false);
+
+      // Enrich all discovered candidates from students & individualStudents
+      const candidateIds = Array.from(candidateMap.keys());
+      await Promise.all(
+        candidateIds.map(async cid => {
+          const [stdCheck, indCheck] = await Promise.all([
+            getDoc(doc(targetDb, 'students', cid)).catch(() => null),
+            getDoc(doc(targetDb, 'individualStudents', cid)).catch(() => null)
+          ]);
+          if (indCheck?.exists()) addCandidateRecord(cid, indCheck.data(), false);
+          if (stdCheck?.exists()) addCandidateRecord(cid, stdCheck.data(), false);
+          const cur = candidateMap.get(cid);
+          const stdFields = stdCheck?.exists() ? stdCheck.data() : {};
+          const indFields = indCheck?.exists() ? indCheck.data() : {};
+          if (cur) {
+            candidateMap.set(cid, {
+              ...cur,
+              ...indFields,
+              ...stdFields,
+              accessCode: stdFields?.accessCode || indFields?.accessCode || cur.accessCode || '',
+              accessCodeHash: stdFields?.accessCodeHash || indFields?.accessCodeHash || cur.accessCodeHash || '',
+              schoolId: cur.schoolId || stdFields?.schoolId || indFields?.schoolId || '',
+              schoolName: cur.schoolName || stdFields?.schoolName || indFields?.schoolName || '',
+              class: cur.class || cur.grade || stdFields?.class || stdFields?.grade || indFields?.class || indFields?.grade || '',
+              fullName: cur.fullName || cur.studentName || cur.name || stdFields?.fullName || stdFields?.name || indFields?.fullName || indFields?.name || '',
+              _allCodes: [
+                ...(cur._allCodes || []),
+                stdFields?.accessCode,
+                stdFields?.passcode,
+                stdFields?.code,
+                indFields?.accessCode,
+                indFields?.passcode,
+                indFields?.code
+              ].filter(Boolean),
+              _allHashes: [
+                ...(cur._allHashes || []),
+                stdFields?.accessCodeHash,
+                indFields?.accessCodeHash
+              ].filter(Boolean)
+            });
+          }
+        })
+      );
+
+      // Check if any discovered candidate already matches the submitted access code
+      for (const [cid, cData] of candidateMap.entries()) {
+        if (matchesCandidateCredential(cData)) {
+          return { docId: cid, data: cData, matchedCode: true };
+        }
+      }
+
+      // Broad scan fallback (in case username had unusual formatting, case differences, or duplicate name records)
+      const [indSnap, stdSnap] = await Promise.all([
+        getDocs(query(collection(targetDb, 'individualStudents'), limit(300))).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(targetDb, 'students'), limit(300))).catch(() => ({ docs: [] } as any))
+      ]);
+
+      const allDocs = [...indSnap.docs, ...stdSnap.docs];
+      for (const d of allDocs) {
+        const sd = d.data();
+        const u = String(sd.username || sd.studentUsername || sd.loginUsername || '').toLowerCase().replace(/^@/, '').replace(/\s+/g, '');
+        const e = String(sd.email || sd.studentEmail || '').toLowerCase().trim();
+        const c = String(sd.accessCode || sd.passcode || sd.code || '').toUpperCase().trim();
+        const cStripped = c.replace(/[\s-]/g, '');
+        const n = String(sd.fullName || sd.studentName || sd.name || '').toLowerCase().trim();
+        const cleanCodeStripped = cleanCode.replace(/[\s-]/g, '');
+        const inputCodeStripped = inputCodeUpper.replace(/[\s-]/g, '');
+
+        const identifierMatches =
+          (cleanUsername && (u === cleanUsername || u === `@${cleanUsername}`)) ||
+          (isRealEmail && e === cleanEmail) ||
+          (cleanCode && (c === cleanCode || (cStripped && cStripped === cleanCodeStripped))) ||
+          (cleanUsername.length > 2 && (n === cleanUsername || n.replace(/\s+/g, '') === cleanUsername)) ||
+          (d.id.toLowerCase() === cleanUsername);
+
+        const swappedMatches =
+          (cleanCode && (c === cleanCode || (cStripped && cStripped === cleanCodeStripped))) &&
+          (u === inputCodeLower || u === `@${inputCodeLower}`);
+
+        const directPairMatches =
+          (c && (c === inputCodeUpper || (cStripped && cStripped === inputCodeStripped))) &&
+          (u === cleanUsername || cleanUsername === '');
+
+        if (identifierMatches || swappedMatches || directPairMatches) {
+          addCandidateRecord(d.id, sd, false);
+          const mergedCandidate = candidateMap.get(d.id) || sd;
+          if (matchesCandidateCredential(mergedCandidate)) {
+            return { docId: d.id, data: mergedCandidate, matchedCode: true };
+          }
+        }
+      }
+
+      const firstEntry = candidateMap.entries().next().value;
+      if (firstEntry) {
+        return { docId: firstEntry[0], data: firstEntry[1], matchedCode: matchesCandidateCredential(firstEntry[1]) };
+      }
+      return null;
+    };
+
+    let studentDocId = '';
+    let studentData: any = null;
+    let isMatch = false;
+
+    try {
+      let resolved = await resolveStudentInDatabase(db);
+      if (!resolved || !resolved.matchedCode) {
+        // Check standby database in case credentials were just rotated or created on the other database
+        try {
+          const standbyResolved = await resolveStudentInDatabase(getStandbyFirestore());
+          if (standbyResolved && (standbyResolved.matchedCode || !resolved)) {
+            resolved = standbyResolved;
+          }
+        } catch {
+          // ignore standby lookup error
+        }
+      }
+      if (resolved) {
+        studentDocId = resolved.docId;
+        studentData = resolved.data;
+        isMatch = resolved.matchedCode;
       }
     } catch (lookupErr) {
       console.warn('Student lookup info:', lookupErr);
@@ -317,54 +468,9 @@ const SecurePortalLogin: React.FC = () => {
       throw new Error('This student account is currently suspended or disabled. Please contact your instructor.');
     }
 
-    // Verify Access Code (or check if user inverted username/access code)
-    const storedAccess = String(studentData.accessCode || studentData.passcode || studentData.code || '').trim();
-    const storedHash = String(
-      studentData.accessCodeHash ||
-      studentData.passwordHash ||
-      studentData.customPasswordHash ||
-      studentData.passcodeHash ||
-      studentData.codeHash ||
-      ''
-    ).trim().toLowerCase();
-    const storedPassword = String(studentData.password || studentData.customPassword || '').trim();
-    const storedUsername = String(studentData.username || studentData.studentUsername || '').toLowerCase().replace(/^@/, '').replace(/\s+/g, '');
-
-    const inputStripped = inputCodeClean.replace(/[\s-]/g, '').toUpperCase();
-    const inputJbsHyphenated = inputStripped.startsWith('JBS') && inputStripped.length > 3 ? `JBS-${inputStripped.slice(3)}` : '';
-    const storedStripped = storedAccess.replace(/[\s-]/g, '').toUpperCase();
-    const rawInputUpper = rawInput.toUpperCase();
-    const rawInputStripped = rawInput.replace(/[\s-]/g, '').toUpperCase();
-
-    const [inputHashExact, inputHashUpper, inputHashStripped, inputHashJbs, rawInputHashExact, rawInputHashUpper] = await Promise.all([
-      computeSha256(inputCodeClean),
-      computeSha256(inputCodeUpper),
-      computeSha256(inputStripped),
-      inputJbsHyphenated ? computeSha256(inputJbsHyphenated) : Promise.resolve(''),
-      computeSha256(rawInput),
-      computeSha256(rawInputUpper)
-    ]);
-
-    const isMatch =
-      (storedAccess && (
-        storedAccess.toUpperCase() === inputCodeUpper ||
-        storedAccess === inputCodeClean ||
-        (storedStripped && storedStripped === inputStripped)
-      )) ||
-      (storedHash && (
-        storedHash === inputHashExact ||
-        storedHash === inputHashUpper ||
-        storedHash === inputHashStripped ||
-        (!!inputHashJbs && storedHash === inputHashJbs)
-      )) ||
-      (storedPassword && (storedPassword === inputCodeClean || storedPassword === inputCodeUpper)) ||
-      // Inverted input check: identifier was access code and password was username
-      (storedAccess && (
-        storedAccess.toUpperCase() === rawInputUpper ||
-        storedAccess === rawInput ||
-        (storedStripped && storedStripped === rawInputStripped)
-      ) && inputCodeLower === storedUsername) ||
-      (storedHash && (storedHash === rawInputHashExact || storedHash === rawInputHashUpper) && inputCodeLower === storedUsername);
+    if (!isMatch) {
+      isMatch = matchesCandidateCredential(studentData);
+    }
 
     if (!isMatch) {
       throw new Error('Invalid access code for this student account. Please verify your access code with your school or administrator.');
@@ -376,16 +482,25 @@ const SecurePortalLogin: React.FC = () => {
     const syntheticEmail = `student_${resolvedUsername}_${cleanDocSuffix}@jaystarbliss-studios.firebaseapp.com`;
     const effectiveAuthEmail = isRealEmail ? cleanEmail : syntheticEmail;
     const effectivePassword = inputCodeClean.length >= 6 ? inputCodeClean : `${inputCodeClean}123456`;
+    const codeTag = (inputHashUpper || inputCodeUpper).replace(/[^a-z0-9]/gi, '').slice(0, 6).toLowerCase() || 'rot';
+    const rotatedAuthEmail = `std_${resolvedUsername}_${cleanDocSuffix}_${codeTag}@jaystarbliss-studios.firebaseapp.com`;
 
     let activeUser: any = null;
     const hasExistingAuthLink = Boolean(studentData.firebaseUid || studentData.userId || isRealEmail);
     const resolveFallbackStudentAuthUser = () => {
       const current = auth.currentUser;
+      const currentEmail = String(current?.email || '').toLowerCase();
+      const isCurrentStudentSynthetic =
+        currentEmail.startsWith('student_') ||
+        currentEmail.startsWith('std_') ||
+        currentEmail.endsWith('.local');
       if (
         current &&
+        isCurrentStudentSynthetic &&
         (current.uid === studentData.firebaseUid ||
           current.uid === studentData.userId ||
-          (current.email && current.email.toLowerCase() === effectiveAuthEmail.toLowerCase()))
+          currentEmail === effectiveAuthEmail.toLowerCase() ||
+          currentEmail === rotatedAuthEmail.toLowerCase())
       ) {
         return current;
       }
@@ -394,6 +509,26 @@ const SecurePortalLogin: React.FC = () => {
         email: effectiveAuthEmail,
         displayName: resolvedUsername,
       };
+    };
+
+    const signInOrCreateRotatedSession = async () => {
+      try {
+        const rotSignIn = await signInWithEmailAndPassword(auth, rotatedAuthEmail, effectivePassword);
+        return rotSignIn.user;
+      } catch {
+        try {
+          const rotCreated = await createUserWithEmailAndPassword(auth, rotatedAuthEmail, effectivePassword);
+          return rotCreated.user;
+        } catch {
+          try {
+            const uniqueEmail = `std_${resolvedUsername}_${Date.now().toString(36)}@jaystarbliss-studios.firebaseapp.com`;
+            const cred4 = await createUserWithEmailAndPassword(auth, uniqueEmail, effectivePassword);
+            return cred4.user;
+          } catch {
+            return resolveFallbackStudentAuthUser();
+          }
+        }
+      }
     };
 
     try {
@@ -410,13 +545,7 @@ const SecurePortalLogin: React.FC = () => {
           const cred = await signInWithEmailAndPassword(auth, effectiveAuthEmail, effectivePassword);
           activeUser = cred.user;
         } catch {
-          try {
-            const uniqueEmail = `std_${resolvedUsername}_${Date.now().toString(36)}@jaystarbliss-studios.firebaseapp.com`;
-            const cred4 = await createUserWithEmailAndPassword(auth, uniqueEmail, effectivePassword);
-            activeUser = cred4.user;
-          } catch {
-            activeUser = resolveFallbackStudentAuthUser();
-          }
+          activeUser = await signInOrCreateRotatedSession();
         }
       } else if (err1.code === 'auth/user-not-found' || err1.code === 'auth/invalid-credential' || err1.code === 'auth/invalid-login-credentials') {
         try {
@@ -424,25 +553,13 @@ const SecurePortalLogin: React.FC = () => {
           activeUser = cred2.user;
         } catch (err2: any) {
           if (err2.code === 'auth/email-already-in-use') {
-            try {
-              const uniqueEmail = `std_${resolvedUsername}_${Date.now().toString(36)}@jaystarbliss-studios.firebaseapp.com`;
-              const cred4 = await createUserWithEmailAndPassword(auth, uniqueEmail, effectivePassword);
-              activeUser = cred4.user;
-            } catch {
-              activeUser = resolveFallbackStudentAuthUser();
-            }
+            activeUser = await signInOrCreateRotatedSession();
           } else {
             activeUser = resolveFallbackStudentAuthUser();
           }
         }
       } else if (err1.code === 'auth/wrong-password') {
-        try {
-          const uniqueEmail = `std_${resolvedUsername}_${Date.now().toString(36)}@jaystarbliss-studios.firebaseapp.com`;
-          const cred4 = await createUserWithEmailAndPassword(auth, uniqueEmail, effectivePassword);
-          activeUser = cred4.user;
-        } catch {
-          activeUser = resolveFallbackStudentAuthUser();
-        }
+        activeUser = await signInOrCreateRotatedSession();
       } else {
         activeUser = resolveFallbackStudentAuthUser();
       }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { auth, db } from "../../lib/firebase";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db, getAllClientDatabases } from "../../lib/firebase";
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import {
   gradeAnswers,
   resolveAttemptQuestions,
@@ -131,21 +131,40 @@ export default function StudentExamAttempt() {
         console.warn("Server exam attempt notice, engaging Firestore resolver:", err);
       }
 
-      // 2. Direct Firestore Fallback
+      // 2. Direct Firestore Fallback across both client databases
       if (!loadedData) {
-        const attemptRef = doc(db, "jdiExamAttempts", attemptId);
-        const attemptSnap = await getDoc(attemptRef);
-        if (!attemptSnap.exists()) throw new Error("Assessment attempt record could not be found.");
+        const allDbs = getAllClientDatabases();
+        let attemptSnap: any = null;
+        for (const dbInst of allDbs) {
+          const snap = await getDoc(doc(dbInst, "jdiExamAttempts", attemptId)).catch(() => null);
+          if (snap?.exists()) {
+            if (!attemptSnap || isAttemptResultReleased(snap.data())) {
+              attemptSnap = snap;
+            }
+          }
+        }
+        if (!attemptSnap?.exists()) throw new Error("Assessment attempt record could not be found.");
         const attemptData: any = { id: attemptSnap.id, ...attemptSnap.data() };
 
-        // Load exam document
-        const examRef = doc(db, "jdiExams", attemptData.examId);
-        let examSnap = await getDoc(examRef);
-        if (!examSnap.exists()) {
-          const fallbackRef = doc(db, "schoolExams", attemptData.examId);
-          examSnap = await getDoc(fallbackRef);
+        // Load exam document across both client databases
+        let examSnap: any = null;
+        for (const dbInst of allDbs) {
+          const jdiCandidate = await getDoc(doc(dbInst, "jdiExams", attemptData.examId)).catch(
+            () => null
+          );
+          if (jdiCandidate?.exists()) {
+            examSnap = jdiCandidate;
+            break;
+          }
+          const schCandidate = await getDoc(doc(dbInst, "schoolExams", attemptData.examId)).catch(
+            () => null
+          );
+          if (schCandidate?.exists()) {
+            examSnap = schCandidate;
+            break;
+          }
         }
-        const examData: any = examSnap.exists()
+        const examData: any = examSnap?.exists()
           ? examSnap.data()
           : { title: "Assessment", subject: "General" };
 
@@ -309,13 +328,20 @@ export default function StudentExamAttempt() {
           } catch {}
 
           if (!serverOk) {
-            const attemptRef = doc(db, "jdiExamAttempts", attemptId);
-            await updateDoc(attemptRef, {
-              answers: answersToSave,
-              updatedAt: serverTimestamp(),
-              lastHeartbeat: serverTimestamp(),
-              isOnline: true,
-            });
+            await Promise.all(
+              getAllClientDatabases().map((dbInst) =>
+                setDoc(
+                  doc(dbInst, "jdiExamAttempts", attemptId),
+                  {
+                    answers: answersToSave,
+                    updatedAt: serverTimestamp(),
+                    lastHeartbeat: serverTimestamp(),
+                    isOnline: true,
+                  },
+                  { merge: true }
+                ).catch(() => undefined)
+              )
+            );
           }
         });
 
@@ -398,30 +424,54 @@ export default function StudentExamAttempt() {
       }
 
       if (!serverOk) {
-        const attemptRef = doc(db, "jdiExamAttempts", attemptId);
+        const allDbs = getAllClientDatabases();
         if (action === "save") {
-          await updateDoc(attemptRef, { answers, updatedAt: serverTimestamp() });
+          await Promise.all(
+            allDbs.map((dbInst) =>
+              setDoc(
+                doc(dbInst, "jdiExamAttempts", attemptId),
+                { answers, updatedAt: serverTimestamp() },
+                { merge: true }
+              ).catch(() => undefined)
+            )
+          );
           setNotice("Answers saved successfully.");
         } else {
           // Compute grade locally using assessment domain logic
-          const examDocSnap = await getDoc(doc(db, "jdiExams", data.attempt.examId)).catch(() => null);
-          const fullExam = examDocSnap?.exists() ? examDocSnap.data() : data.exam;
+          let fullExam: any = data.exam;
+          for (const dbInst of allDbs) {
+            const examDocSnap = await getDoc(doc(dbInst, "jdiExams", data.attempt.examId)).catch(
+              () => null
+            );
+            if (examDocSnap?.exists()) {
+              fullExam = examDocSnap.data();
+              break;
+            }
+          }
           const attemptQuestions = resolveAttemptQuestions(fullExam, data.attempt);
           const grading = gradeAnswers({ ...fullExam, questions: attemptQuestions }, answers);
 
           const finalStatus = action === "expire" ? "expired" : "submitted";
-          await updateDoc(attemptRef, {
-            answers,
-            status: finalStatus,
-            score: grading.score,
-            maxScore: grading.maxScore,
-            percentage: grading.percentage,
-            autoGraded: grading.autoGraded,
-            questionResults: grading.questionResults,
-            isOnline: false,
-            submittedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
+          await Promise.all(
+            allDbs.map((dbInst) =>
+              setDoc(
+                doc(dbInst, "jdiExamAttempts", attemptId),
+                {
+                  answers,
+                  status: finalStatus,
+                  score: grading.score,
+                  maxScore: grading.maxScore,
+                  percentage: grading.percentage,
+                  autoGraded: grading.autoGraded,
+                  questionResults: grading.questionResults,
+                  isOnline: false,
+                  submittedAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                },
+                { merge: true }
+              ).catch(() => undefined)
+            )
+          );
 
           setData((prev) => {
             if (!prev) return null;

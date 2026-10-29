@@ -8,7 +8,7 @@ import jsPDF from 'jspdf';
 import { billingPost } from '../../lib/billing';
 import { useToast } from '../../contexts/ToastContext';
 import SEO from '../../components/ui/SEO';
-import { auth, db } from '../../lib/firebase';
+import { auth, db, getStandbyFirestore } from '../../lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { CANONICAL_CLASSES, formatNormalizedClassDisplay } from '../../lib/classes';
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
@@ -296,9 +296,15 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
         };
 
         const { setDoc, doc, addDoc, collection } = await import('firebase/firestore');
+        const standbyDb = getStandbyFirestore();
+        const linkedUid = String((student as any).firebaseUid || (student as any).userId || '').trim();
         await Promise.all([
           setDoc(doc(db, 'individualStudents', student.id), updatePayload, { merge: true }),
-          setDoc(doc(db, 'students', student.id), updatePayload, { merge: true })
+          setDoc(doc(db, 'students', student.id), updatePayload, { merge: true }),
+          ...(linkedUid ? [setDoc(doc(db, 'users', linkedUid), updatePayload, { merge: true }).catch(() => null)] : []),
+          setDoc(doc(standbyDb, 'individualStudents', student.id), updatePayload, { merge: true }).catch(() => null),
+          setDoc(doc(standbyDb, 'students', student.id), updatePayload, { merge: true }).catch(() => null),
+          ...(linkedUid ? [setDoc(doc(standbyDb, 'users', linkedUid), updatePayload, { merge: true }).catch(() => null)] : []),
         ]);
 
         await addDoc(collection(db, 'activityLogs'), {

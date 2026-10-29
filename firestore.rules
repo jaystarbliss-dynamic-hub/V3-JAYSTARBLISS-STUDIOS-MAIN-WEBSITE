@@ -136,23 +136,26 @@ service cloud.firestore {
       allow read: if isAuth() || true;
       allow create: if isSuperAdmin() ||
         (isAnyAdmin() && !isPrivilegedRole(request.resource.data.get('role', ''))) ||
-        (isSchoolUser() && !isPrivilegedRole(request.resource.data.get('role', '')) && isSameSchool(request.resource.data.get('schoolId', null))) ||
-        (isAuth() && request.auth.uid == userId && !isPrivilegedRole(request.resource.data.get('role', '')) &&
+        ((isSchoolUser() || isStaffOrTutor() || isAuth()) &&
+          !isPrivilegedRole(request.resource.data.get('role', '')) &&
           !request.resource.data.keys().hasAny(['isAdmin', 'admin', 'permissions']));
       allow update: if isSuperAdmin() ||
         (isAnyAdmin() &&
           !isPrivilegedRole(request.resource.data.get('role', '')) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin','admin','permissions'])) ||
-        (isSchoolUser() &&
-          isSameSchool(resource.data.get('schoolId', request.resource.data.get('schoolId', null))) &&
-          isSameSchool(request.resource.data.get('schoolId', null)) &&
+        ((isSchoolUser() || isStaffOrTutor()) &&
+          !isPrivilegedRole(resource.data.get('role', '')) &&
           !isPrivilegedRole(request.resource.data.get('role', '')) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin','admin','permissions'])) ||
         (isAuth() && request.auth.uid == userId &&
           !isPrivilegedRole(request.resource.data.get('role', '')) &&
           !(resource.data.get('accountStatus', 'ACTIVE') in ['DISABLED', 'SUSPENDED', 'BANNED']) &&
           !(resource.data.get('status', 'ACTIVE') in ['DISABLED', 'SUSPENDED', 'BANNED']) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin','admin','permissions']));
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin','admin','permissions'])) ||
+        (isAuth() &&
+          !isPrivilegedRole(resource.data.get('role', '')) &&
+          !isPrivilegedRole(request.resource.data.get('role', '')) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin','admin','permissions','role']));
       allow delete: if isSuperAdmin();
     }
     match /admins/{userId} {
@@ -164,12 +167,8 @@ service cloud.firestore {
 
     match /individualStudents/{studentId} {
       allow read: if true;
-      allow create: if isAnyAdmin() ||
-        (isSchoolUser() && isSameSchool(request.resource.data.get('schoolId', null))) ||
-        (isStaffOrTutor() && (isAssignedStaffToStudent(studentId) || hasStaffSchoolAccess(request.resource.data.get('schoolId', null))));
-      allow update: if isAnyAdmin() ||
-        (isSchoolUser() && isSameSchool(resource.data.get('schoolId', request.resource.data.get('schoolId', null)))) ||
-        (isStaffOrTutor() && (isAssignedStaffToStudent(studentId) || hasStaffSchoolAccess(resource.data.get('schoolId', null)))) ||
+      allow create: if isAnyAdmin() || isSchoolUser() || isStaffOrTutor() || isAuth();
+      allow update: if isAnyAdmin() || isSchoolUser() || isStaffOrTutor() ||
         (isAuth() && (
           resource.data.get('firebaseUid', '') == request.auth.uid ||
           resource.data.get('userId', '') == request.auth.uid ||
@@ -181,18 +180,16 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'firebaseUid', 'userId', 'authEmail', 'portalAccessEnabled', 'lastLoginAt', 'updatedAt',
             'passwordHash', 'customPasswordHash', 'accessCodeHash', 'customPassword', 'accessCode', 'passcode', 'code',
-            'forcePasswordReset', 'mustResetPassword', 'passwordUpdatedAt'
+            'forcePasswordReset', 'mustResetPassword', 'passwordUpdatedAt',
+            'username', 'credentialIssuedAt', 'credentialIssuedBy', 'accountStatus', 'status',
+            'schoolId', 'schoolName', 'class', 'grade', 'fullName', 'studentName', 'name'
           ]));
       allow delete: if isAnyAdmin() || (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null)));
     }
     match /students/{studentId} {
       allow read: if true;
-      allow create: if isAnyAdmin() ||
-        (isSchoolUser() && isSameSchool(request.resource.data.get('schoolId', null))) ||
-        (isStaffOrTutor() && (isAssignedStaffToStudent(studentId) || hasStaffSchoolAccess(request.resource.data.get('schoolId', null))));
-      allow update: if isAnyAdmin() ||
-        (isSchoolUser() && isSameSchool(resource.data.get('schoolId', request.resource.data.get('schoolId', null)))) ||
-        (isStaffOrTutor() && (isAssignedStaffToStudent(studentId) || hasStaffSchoolAccess(resource.data.get('schoolId', null)))) ||
+      allow create: if isAnyAdmin() || isSchoolUser() || isStaffOrTutor() || isAuth();
+      allow update: if isAnyAdmin() || isSchoolUser() || isStaffOrTutor() ||
         (isAuth() && (
           resource.data.get('firebaseUid', '') == request.auth.uid ||
           resource.data.get('userId', '') == request.auth.uid ||
@@ -204,7 +201,9 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'firebaseUid', 'userId', 'authEmail', 'portalAccessEnabled', 'lastLoginAt', 'updatedAt',
             'passwordHash', 'customPasswordHash', 'accessCodeHash', 'customPassword', 'accessCode', 'passcode', 'code',
-            'forcePasswordReset', 'mustResetPassword', 'passwordUpdatedAt'
+            'forcePasswordReset', 'mustResetPassword', 'passwordUpdatedAt',
+            'username', 'credentialIssuedAt', 'credentialIssuedBy', 'accountStatus', 'status',
+            'schoolId', 'schoolName', 'class', 'grade', 'fullName', 'studentName', 'name'
           ]));
       allow delete: if isAnyAdmin() || (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null)));
     }

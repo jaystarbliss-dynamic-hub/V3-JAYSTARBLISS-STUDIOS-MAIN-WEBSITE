@@ -1,6 +1,6 @@
 import type { Handler } from "@netlify/functions";
 import { createHash } from "node:crypto";
-import { adminAuth, adminDb, getAdminDatabases, applyRequestDatabaseHeader } from "../../api/_lib/firebase-admin";
+import { adminAuth, adminDb, getAdminDatabases, getDefaultAdminDb, getLegacyNamedAdminDb, applyRequestDatabaseHeader } from "../../api/_lib/firebase-admin";
 import { hashStudentAccessCode, matchesStudentCredentials, normalizeStudentUsername } from "../../api/_lib/student-login-compat.mjs";
 
 const normalizeUsername = (value: string) => normalizeStudentUsername(value);
@@ -355,8 +355,14 @@ export const handler: Handler = async (event) => {
     let response: Record<string, any> = {};
 
     if (role === "student") {
-      const dbs = getAdminDatabases();
-      if (dbs.length === 0) {
+      const primaryDbs = getAdminDatabases();
+      const allDbs = [
+        ...primaryDbs,
+        ...[getDefaultAdminDb(), getLegacyNamedAdminDb()].filter(
+          (d): d is FirebaseFirestore.Firestore => Boolean(d) && !primaryDbs.includes(d as FirebaseFirestore.Firestore)
+        ),
+      ];
+      if (allDbs.length === 0) {
         return {
           statusCode: 200,
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
@@ -365,9 +371,9 @@ export const handler: Handler = async (event) => {
       }
 
       let candidate: StudentLoginCandidate | null = null;
-      let activeDb: FirebaseFirestore.Firestore = dbs[0];
+      let activeDb: FirebaseFirestore.Firestore = allDbs[0];
 
-      for (const dbInstance of dbs) {
+      for (const dbInstance of allDbs) {
         try {
           const found = await findStudent(identifier, code, dbInstance);
           if (found) {
@@ -421,6 +427,9 @@ export const handler: Handler = async (event) => {
       if (isAuthDisabled(authUser)) {
         return { statusCode: 401, body: JSON.stringify({ error: "This student account is disabled in authentication." }) };
       }
+      if (code.length >= 6) {
+        await adminAuth.updateUser(uid, { password: code }).catch(() => null);
+      }
 
       const updates: Record<string, unknown> = { firebaseUid: uid, userId: uid, authEmail: authUser.email || null, portalAccessEnabled: true, updatedAt: new Date() };
       const storedAccessHash = String(profile.accessCodeHash || "").trim();
@@ -448,7 +457,7 @@ export const handler: Handler = async (event) => {
       await activeDb.collection("users").doc(uid).set(userPayload, { merge: true });
       const collectionName = snap.ref.parent.id || "individualStudents";
       const mergedStudentRecord = { ...profile, ...updates };
-      for (const otherDb of dbs) {
+      for (const otherDb of allDbs) {
         if (otherDb !== activeDb) {
           await otherDb.collection("users").doc(uid).set(userPayload, { merge: true }).catch(() => undefined);
           await otherDb.collection(collectionName).doc(recordId).set(mergedStudentRecord, { merge: true }).catch(() => undefined);

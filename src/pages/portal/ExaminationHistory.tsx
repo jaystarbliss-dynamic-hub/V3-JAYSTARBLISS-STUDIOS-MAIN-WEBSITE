@@ -1,10 +1,11 @@
 import { useEffect, useState, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { auth, db } from "../../lib/firebase";
+import { auth, db, getAllClientDatabases } from "../../lib/firebase";
 import {
   collection,
   getDocs,
   doc,
+  setDoc,
   updateDoc,
   serverTimestamp,
   getDoc,
@@ -59,6 +60,74 @@ import {
   X,
 } from "lucide-react";
 import { TableSkeleton, MetricGridSkeleton } from "../../components/ui/Skeleton";
+
+function attemptStatusRank(status?: string): number {
+  const s = String(status || "").toLowerCase();
+  if (s === "graded") return 4;
+  if (s === "submitted" || s === "completed") return 3;
+  if (s === "expired") return 2;
+  if (s === "in_progress") return 1;
+  return 0;
+}
+
+function isTutorAssignedToSchoolData(
+  s: Record<string, any>,
+  uid: string,
+  emailLower: string
+): boolean {
+  const matchesEntry = (entry: any): boolean => {
+    if (!entry) return false;
+    if (typeof entry === "string") {
+      const trimmed = entry.trim();
+      return trimmed === uid || (Boolean(emailLower) && trimmed.toLowerCase() === emailLower);
+    }
+    if (typeof entry === "object") {
+      const ids = [entry.id, entry.uid, entry.tutorId, entry.staffId, entry.userId]
+        .map((x) => String(x || "").trim())
+        .filter(Boolean);
+      if (ids.includes(uid)) return true;
+      if (emailLower) {
+        const emails = [entry.email, entry.tutorEmail, entry.staffEmail]
+          .map((x) => String(x || "").trim().toLowerCase())
+          .filter(Boolean);
+        if (emails.includes(emailLower)) return true;
+      }
+    }
+    return false;
+  };
+
+  if (
+    [s.tutorId, s.staffId, s.assignedTutorId, s.assignedStaffId]
+      .map((x) => String(x || "").trim())
+      .includes(uid)
+  ) {
+    return true;
+  }
+
+  const topArrays = [
+    s.tutors,
+    s.assignedTutors,
+    s.assignedTutorIds,
+    s.assignedStaff,
+    s.staffIds,
+    s.tutorIds,
+  ];
+  for (const arr of topArrays) {
+    if (Array.isArray(arr) && arr.some(matchesEntry)) return true;
+  }
+
+  if (Array.isArray(s.programs)) {
+    for (const p of s.programs) {
+      if (!p || typeof p !== "object") continue;
+      if (matchesEntry(p.tutorId) || matchesEntry(p.staffId)) return true;
+      if (Array.isArray(p.assignedTutors) && p.assignedTutors.some(matchesEntry)) return true;
+      if (Array.isArray(p.tutors) && p.tutors.some(matchesEntry)) return true;
+      if (Array.isArray(p.assignedStaff) && p.assignedStaff.some(matchesEntry)) return true;
+    }
+  }
+
+  return false;
+}
 
 type Question = {
   id: string;
@@ -146,8 +215,10 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   }, [mode, location.pathname]);
 
   const [userRole, setUserRole] = useState<string>(isSchoolPortal ? "SCHOOL" : "");
-  const [schoolId, setSchoolId] = useState<string>(
-    () => sessionStorage.getItem("schoolId") || sessionStorage.getItem("schoolDocId") || ""
+  const [schoolId, setSchoolId] = useState<string>(() =>
+    isSchoolPortal
+      ? sessionStorage.getItem("schoolId") || sessionStorage.getItem("schoolDocId") || ""
+      : ""
   );
   const [schoolAliases, setSchoolAliases] = useState<string[]>([]);
   const [availableSchools, setAvailableSchools] = useState<{ id: string; name: string }[]>([]);
@@ -172,6 +243,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   const [zipProgress, setZipProgress] = useState("");
   const [copiedExamId, setCopiedExamId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [bulkReleaseBusy, setBulkReleaseBusy] = useState(false);
   const [showHeaderDesigner, setShowHeaderDesigner] = useState(false);
   const [headerConfig, setHeaderConfig] = useState<DocumentHeaderConfig | null>(null);
   const [releaseModalAttempt, setReleaseModalAttempt] = useState<Attempt | null>(null);
@@ -289,13 +361,28 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         addId(staffAccessData.schoolId);
         if (Array.isArray(staffAccessData.schoolIds)) staffAccessData.schoolIds.forEach(addId);
 
-        const snap = await getDocs(collection(db, "schools")).catch(() => ({ docs: [] } as any));
+        const emailLower = String(
+          currentUser.email || userData.email || sessionStorage.getItem("userEmail") || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const schoolDocMap = new Map<string, any>();
+        for (const dbInstance of getAllClientDatabases()) {
+          const snap = await getDocs(collection(dbInstance, "schools")).catch(
+            () => ({ docs: [] } as any)
+          );
+          snap.docs?.forEach((d: any) => {
+            if (!schoolDocMap.has(d.id)) {
+              schoolDocMap.set(d.id, d.data());
+            }
+          });
+        }
+
         const list: { id: string; name: string }[] = [];
         const nameMap: Record<string, string> = {};
 
-        snap.docs?.forEach((d: any) => {
-          const s = d.data();
-          const sId = d.id;
+        schoolDocMap.forEach((s: any, sId: string) => {
           const sCode = String(s.schoolId || s.code || s.schoolCode || "").trim();
           const sName =
             resolvePartnerSchoolName(s.name, s.schoolName) || `Partner School (${sId})`;
@@ -310,40 +397,22 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             isAdminWorkspace || ["ADMIN", "SUPER_ADMIN", "SUPERADMIN"].includes(detectedRole);
           if (isAdmin) {
             list.push({ id: sId, name: sName });
-          } else {
-            const extractIds = (arr: any) =>
-              Array.isArray(arr)
-                ? arr
-                    .map((x: any) =>
-                      typeof x === "string" ? x : x?.id || x?.uid || x?.staffId || x?.userId
-                    )
-                    .filter(Boolean)
-                : [];
-            const assigned = [
-              ...extractIds(s.tutors),
-              ...extractIds(s.assignedTutors),
-              ...extractIds(s.assignedTutorIds),
-              ...extractIds(s.assignedStaff),
-              ...extractIds(s.staffIds),
-              ...extractIds(s.tutorIds),
-            ];
-            if (
-              directSchoolIds.has(sId) ||
-              (sCode && directSchoolIds.has(sCode)) ||
-              assigned.includes(currentUser.uid) ||
-              s.tutorId === currentUser.uid ||
-              s.staffId === currentUser.uid
-            ) {
-              list.push({ id: sId, name: sName });
-            }
+          } else if (
+            directSchoolIds.has(sId) ||
+            (sCode && directSchoolIds.has(sCode)) ||
+            isTutorAssignedToSchoolData(s, currentUser.uid, emailLower)
+          ) {
+            list.push({ id: sId, name: sName });
           }
         });
 
         if (isMounted) {
           setSchoolNameMap(nameMap);
           setAvailableSchools(list);
-          if (!schoolId && list.length > 0) {
-            setSchoolId(list[0].id);
+          // For Platform Admins & Tutors, default to "" (All Partner/Assigned Schools)
+          // so all completed assessments across their authorised schools are immediately visible
+          if (schoolId && !list.some((item) => item.id === schoolId)) {
+            setSchoolId("");
           }
           setScopeReady(true);
         }
@@ -365,15 +434,14 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     return resolvePartnerSchoolName(mapped, fallbackName, "Assigned Partner School");
   };
 
-  // 2. Load Examinations & Attempts within Authorised Scope
+  // 2. Load Examinations & Attempts within Authorised Scope (Merging across both DBs + Server)
   const load = async () => {
     if (!scopeReady) return;
     setLoading(true);
     setMessage("");
     try {
-      let loadedExams: Exam[] = [];
-      let loadedAttempts: Attempt[] = [];
-      let serverResponded = false;
+      const serverExams: Exam[] = [];
+      const serverAttempts: Attempt[] = [];
 
       // 1. Try server function
       try {
@@ -386,156 +454,166 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           if (r.ok) {
             const d = await r.json().catch(() => ({}));
             if (!d.fallback && Array.isArray(d.exams)) {
-              loadedExams = d.exams;
-              if (Array.isArray(d.attempts)) loadedAttempts = d.attempts;
-              serverResponded = true;
+              serverExams.push(...d.exams);
+              if (Array.isArray(d.attempts)) serverAttempts.push(...d.attempts);
             }
           }
         }
       } catch (err) {
-        console.warn("Server exam history notice, falling back to Firestore:", err);
+        console.warn("Server exam history notice, merging with Firestore:", err);
       }
 
-      // 2. Direct Firestore fallback (enforcing strict school/tutor isolation)
-      if (!serverResponded) {
-        const currentUid = auth.currentUser?.uid || "";
-        const allowedSchoolKeys = new Set<string>();
+      // 2. Direct Firestore merge across all client databases (Default + AI Shared Quota)
+      const currentUid = auth.currentUser?.uid || "";
+      const allowedSchoolKeys = new Set<string>();
+      if (isSchoolUser) {
+        schoolAliases.forEach((a) => allowedSchoolKeys.add(a.toLowerCase()));
+        if (schoolId) allowedSchoolKeys.add(schoolId.toLowerCase());
+      } else if (schoolId) {
+        allowedSchoolKeys.add(schoolId.toLowerCase());
+      } else {
+        availableSchools.forEach((s) => allowedSchoolKeys.add(s.id.toLowerCase()));
+      }
+
+      const matchesScope = (recordSchoolId: any) => {
+        const sKey = String(recordSchoolId || "").trim().toLowerCase();
         if (isSchoolUser) {
-          schoolAliases.forEach((a) => allowedSchoolKeys.add(a.toLowerCase()));
-          if (schoolId) allowedSchoolKeys.add(schoolId.toLowerCase());
-        } else if (schoolId) {
-          allowedSchoolKeys.add(schoolId.toLowerCase());
-        } else {
-          availableSchools.forEach((s) => allowedSchoolKeys.add(s.id.toLowerCase()));
+          return Boolean(sKey && allowedSchoolKeys.has(sKey));
+        }
+        if (schoolId) {
+          return Boolean(sKey && allowedSchoolKeys.has(sKey));
+        }
+        if (isPlatformAdmin) return true;
+        return Boolean(sKey && allowedSchoolKeys.has(sKey));
+      };
+
+      const examMap = new Map<string, Exam>();
+      // Seed from server exams first
+      serverExams.forEach((ex) => {
+        const sLabel = resolveSchoolLabel(ex.schoolId, ex.schoolName);
+        const maxScore = computeExamMaxScore(ex);
+        examMap.set(ex.id, {
+          ...ex,
+          deliveryMode: normalizeDeliveryMode(ex),
+          schoolName: sLabel,
+          maxScore,
+        });
+      });
+
+      const dbInstances = getAllClientDatabases();
+      const examSnaps = await Promise.all(
+        dbInstances.flatMap((dbInst) => [
+          getDocs(collection(dbInst, "jdiExams")).catch(() => ({ docs: [] } as any)),
+          getDocs(collection(dbInst, "schoolExams")).catch(() => ({ docs: [] } as any)),
+        ])
+      );
+
+      examSnaps.flatMap((s) => s.docs || []).forEach((d: any) => {
+        const data = d.data();
+        if (data.status === "archived" && isSchoolUser) return;
+        if (!isSchoolUser && !isPlatformAdmin) {
+          const canSee =
+            matchesScope(data.schoolId) ||
+            canManageExamRecord({
+              uid: currentUid,
+              role: userRole || "TUTOR",
+              exam: data,
+              assignedSchoolIds: Array.from(allowedSchoolKeys),
+            });
+          if (!canSee) return;
+        } else if (!matchesScope(data.schoolId)) {
+          return;
+        }
+        if (isSchoolUser && data.status === "draft") return;
+
+        const sLabel = resolveSchoolLabel(data.schoolId, data.schoolName);
+        const maxScore = computeExamMaxScore(data);
+        const existing = examMap.get(d.id);
+        examMap.set(d.id, {
+          ...(existing || {}),
+          id: d.id,
+          ...data,
+          deliveryMode: normalizeDeliveryMode(data),
+          schoolName: sLabel,
+          maxScore,
+          questionCount: Array.isArray(data.questions)
+            ? data.questions.length
+            : existing?.questionCount || 0,
+        });
+      });
+
+      const loadedExams = Array.from(examMap.values());
+
+      // Merge attempts from server + all client databases
+      const rawAttemptMap = new Map<string, any>();
+      serverAttempts.forEach((att) => {
+        if (att && att.id) rawAttemptMap.set(att.id, att);
+      });
+
+      const attemptSnaps = await Promise.all(
+        dbInstances.map((dbInst) =>
+          getDocs(collection(dbInst, "jdiExamAttempts")).catch(() => ({ docs: [] } as any))
+        )
+      );
+
+      attemptSnaps.flatMap((s) => s.docs || []).forEach((d: any) => {
+        const incoming = { id: d.id, ...d.data() };
+        const existing = rawAttemptMap.get(d.id);
+        if (!existing) {
+          rawAttemptMap.set(d.id, incoming);
+          return;
+        }
+        const exRel = isAttemptResultReleased(existing);
+        const inRel = isAttemptResultReleased(incoming);
+        if (inRel && !exRel) {
+          rawAttemptMap.set(d.id, { ...existing, ...incoming });
+        } else if (exRel && !inRel) {
+          rawAttemptMap.set(d.id, { ...incoming, ...existing });
+        } else if (attemptStatusRank(incoming.status) >= attemptStatusRank(existing.status)) {
+          rawAttemptMap.set(d.id, { ...existing, ...incoming });
+        }
+      });
+
+      const attList: Attempt[] = [];
+      rawAttemptMap.forEach((data: any) => {
+        const parentExam = examMap.get(data.examId);
+        if (!matchesScope(data.schoolId) && !matchesScope(parentExam?.schoolId) && !parentExam) {
+          return;
         }
 
-        const matchesScope = (recordSchoolId: any) => {
-          const sKey = String(recordSchoolId || "").trim().toLowerCase();
-          if (isSchoolUser) {
-            return Boolean(sKey && allowedSchoolKeys.has(sKey));
-          }
-          if (schoolId) {
-            return Boolean(sKey && allowedSchoolKeys.has(sKey));
-          }
-          if (isPlatformAdmin) return true;
-          return Boolean(sKey && allowedSchoolKeys.has(sKey));
-        };
-
-        const [jdiSnap, schSnap] = await Promise.all([
-          getDocs(collection(db, "jdiExams")).catch(() => ({ docs: [] } as any)),
-          getDocs(collection(db, "schoolExams")).catch(() => ({ docs: [] } as any)),
-        ]);
-
-        const examMap = new Map<string, Exam>();
-        [...jdiSnap.docs, ...schSnap.docs].forEach((d: any) => {
-          const data = d.data();
-          if (data.status === "archived" && isSchoolUser) return;
-          if (!isSchoolUser && !isPlatformAdmin) {
-            const canSee =
-              matchesScope(data.schoolId) ||
-              canManageExamRecord({
-                uid: currentUid,
-                role: userRole || "TUTOR",
-                exam: data,
-                assignedSchoolIds: Array.from(allowedSchoolKeys),
-              });
-            if (!canSee) return;
-          } else if (!matchesScope(data.schoolId)) {
-            return;
-          }
-          if (isSchoolUser && data.status === "draft") return;
-
-          const sLabel = resolveSchoolLabel(data.schoolId, data.schoolName);
-          const maxScore = computeExamMaxScore(data);
-          examMap.set(d.id, {
-            id: d.id,
-            ...data,
-            deliveryMode: normalizeDeliveryMode(data),
-            schoolName: sLabel,
-            maxScore,
-            questionCount: Array.isArray(data.questions) ? data.questions.length : 0,
-          });
-        });
-
-        loadedExams = Array.from(examMap.values());
-
-        const attemptSnap = await getDocs(collection(db, "jdiExamAttempts")).catch(
-          () => ({ docs: [] } as any)
+        const isReleased = isAttemptResultReleased(data);
+        const canSeeScore = isReleased || !isSchoolUser;
+        const maxScore = computeExamMaxScore(parentExam, data);
+        const score = canSeeScore && typeof data.score === "number" ? data.score : undefined;
+        const percentage =
+          score !== undefined ? calculateScorePercentage(score, maxScore) : undefined;
+        const sLabel = resolveSchoolLabel(
+          data.schoolId || parentExam?.schoolId,
+          data.schoolName || parentExam?.schoolName
         );
-        const attList: Attempt[] = [];
-        attemptSnap.docs?.forEach((d: any) => {
-          const data = d.data();
-          const parentExam = examMap.get(data.examId);
-          if (!matchesScope(data.schoolId) && !parentExam) return;
 
-          const isReleased = isAttemptResultReleased(data);
-          const canSeeScore = isReleased || !isSchoolUser;
-          const maxScore = computeExamMaxScore(parentExam, data);
-          const score = canSeeScore && typeof data.score === "number" ? data.score : undefined;
-          const percentage =
-            score !== undefined ? calculateScorePercentage(score, maxScore) : undefined;
-          const sLabel = resolveSchoolLabel(
-            data.schoolId || parentExam?.schoolId,
-            data.schoolName || parentExam?.schoolName
-          );
-
-          attList.push({
-            id: d.id,
-            ...data,
-            score,
-            percentage,
-            feedback: canSeeScore ? data.feedback : undefined,
-            questionResults: canSeeScore ? data.questionResults : undefined,
-            manualMarks: canSeeScore ? data.manualMarks : undefined,
-            answers: canSeeScore ? data.answers : undefined,
-            className: normalizeClassName(data.className || "") || data.className || "—",
-            schoolName: sLabel,
-            maxScore,
-          });
+        attList.push({
+          ...data,
+          id: data.id,
+          score,
+          percentage,
+          resultReleased: isReleased,
+          releasedAt: isReleased
+            ? data.releasedAt || data.updatedAt || data.submittedAt || new Date().toISOString()
+            : undefined,
+          feedback: canSeeScore ? data.feedback || data.tutorFeedback : undefined,
+          tutorFeedback: canSeeScore ? data.tutorFeedback || data.feedback : undefined,
+          questionResults: canSeeScore ? data.questionResults : undefined,
+          manualMarks: canSeeScore ? data.manualMarks : undefined,
+          answers: canSeeScore ? data.answers : undefined,
+          className: normalizeClassName(data.className || "") || data.className || "—",
+          schoolName: sLabel,
+          maxScore,
         });
-        loadedAttempts = attList;
-      } else {
-        const examLookup = new Map<string, Exam>();
-        loadedExams = loadedExams.map((ex) => {
-          const sLabel = resolveSchoolLabel(ex.schoolId, ex.schoolName);
-          const maxScore = computeExamMaxScore(ex);
-          const enriched = {
-            ...ex,
-            deliveryMode: normalizeDeliveryMode(ex),
-            schoolName: sLabel,
-            maxScore,
-          };
-          examLookup.set(ex.id, enriched);
-          return enriched;
-        });
-        loadedAttempts = loadedAttempts.map((att) => {
-          const ex = examLookup.get(att.examId);
-          const isReleased = isAttemptResultReleased(att);
-          const canSeeScore = isReleased || !isSchoolUser;
-          const maxScore = computeExamMaxScore(ex, att);
-          const score = canSeeScore && typeof att.score === "number" ? att.score : undefined;
-          const percentage =
-            score !== undefined ? calculateScorePercentage(score, maxScore) : undefined;
-          const sLabel = resolveSchoolLabel(
-            att.schoolId || ex?.schoolId,
-            att.schoolName || ex?.schoolName
-          );
-          return {
-            ...att,
-            score,
-            percentage,
-            feedback: canSeeScore ? att.feedback : undefined,
-            questionResults: canSeeScore ? att.questionResults : undefined,
-            manualMarks: canSeeScore ? att.manualMarks : undefined,
-            className: normalizeClassName(att.className || "") || att.className || "—",
-            schoolName: sLabel,
-            maxScore,
-          };
-        });
-      }
+      });
 
       setExams(loadedExams);
-      setAttempts(loadedAttempts);
+      setAttempts(attList);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Unable to load assessment records.");
     } finally {
@@ -561,7 +639,15 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   const openReleaseRemarkModal = (attempt: Attempt) => {
     if (isSchoolUser) return;
     const existingRemark = String(attempt.feedback || attempt.tutorFeedback || "").trim();
-    setReleaseRemarkInput(existingRemark);
+    if (existingRemark) {
+      setReleaseRemarkInput(existingRemark);
+    } else {
+      const ex = exams.find((e) => e.id === attempt.examId);
+      const max = computeExamMaxScore(ex, attempt);
+      const pct =
+        typeof attempt.score === "number" ? calculateScorePercentage(attempt.score, max) : 0;
+      setReleaseRemarkInput(getSuggestedTutorRemark(pct));
+    }
     setReleaseModalAttempt(attempt);
   };
 
@@ -575,11 +661,10 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     setActionBusy(attempt.id + action);
     setMessage("");
     try {
-      let serverSuccess = false;
       try {
         if (auth.currentUser) {
           const token = await auth.currentUser.getIdToken();
-          const response = await fetch("/.netlify/functions/jdi-exam-management", {
+          await fetch("/.netlify/functions/jdi-exam-management", {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
             body: JSON.stringify({
@@ -590,42 +675,108 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               tutorFeedback: trimmedRemark,
             }),
           });
-          if (response.ok) serverSuccess = true;
         }
       } catch (netErr) {
-        console.warn("Server action failed, using direct Firestore:", netErr);
+        console.warn("Server action notice, mirroring to Firestore:", netErr);
       }
 
-      if (!serverSuccess) {
-        const attemptRef = doc(db, "jdiExamAttempts", attempt.id);
-        await updateDoc(attemptRef, {
-          resultReleased: true,
-          releasedAt: serverTimestamp(),
-          status: "graded",
-          ...(trimmedRemark
-            ? { feedback: trimmedRemark, tutorFeedback: trimmedRemark }
-            : {}),
-          updatedAt: serverTimestamp(),
-        });
-      } else if (trimmedRemark) {
-        await updateDoc(doc(db, "jdiExamAttempts", attempt.id), {
-          feedback: trimmedRemark,
-          tutorFeedback: trimmedRemark,
-          updatedAt: serverTimestamp(),
-        }).catch(() => undefined);
+      const releasePatch: Record<string, any> = {
+        resultReleased: true,
+        releasedAt: serverTimestamp(),
+        status: "graded",
+        ...(trimmedRemark
+          ? { feedback: trimmedRemark, tutorFeedback: trimmedRemark }
+          : {}),
+        updatedAt: serverTimestamp(),
+      };
+
+      for (const dbInstance of getAllClientDatabases()) {
+        await setDoc(doc(dbInstance, "jdiExamAttempts", attempt.id), releasePatch, {
+          merge: true,
+        }).catch(() =>
+          updateDoc(doc(dbInstance, "jdiExamAttempts", attempt.id), releasePatch).catch(
+            () => undefined
+          )
+        );
       }
 
       setReleaseModalAttempt(null);
       await load();
       setMessage(
         trimmedRemark
-          ? "Result and official tutor remark released to student and school portals!"
-          : "Result released to student and school portals!"
+          ? `Result and official tutor remark released for ${attempt.studentName}!`
+          : `Result released for ${attempt.studentName}!`
       );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Could not complete action.");
     } finally {
       setActionBusy(null);
+    }
+  };
+
+  const releaseAllPendingInView = async (pendingList: Attempt[]) => {
+    if (isSchoolUser || !pendingList.length || bulkReleaseBusy) return;
+    setBulkReleaseBusy(true);
+    setMessage("");
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+      const dbInstances = getAllClientDatabases();
+      let releasedCount = 0;
+
+      for (const attempt of pendingList) {
+        const ex = exams.find((e) => e.id === attempt.examId);
+        const max = computeExamMaxScore(ex, attempt);
+        const pct =
+          typeof attempt.score === "number" ? calculateScorePercentage(attempt.score, max) : 0;
+        const remark =
+          String(attempt.feedback || attempt.tutorFeedback || "").trim() ||
+          getSuggestedTutorRemark(pct);
+
+        if (token) {
+          fetch("/.netlify/functions/jdi-exam-management", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify({
+              examId: attempt.examId,
+              attemptId: attempt.id,
+              action: "release",
+              feedback: remark,
+              tutorFeedback: remark,
+            }),
+          }).catch(() => undefined);
+        }
+
+        const releasePatch: Record<string, any> = {
+          resultReleased: true,
+          releasedAt: serverTimestamp(),
+          status: "graded",
+          feedback: remark,
+          tutorFeedback: remark,
+          updatedAt: serverTimestamp(),
+        };
+
+        await Promise.all(
+          dbInstances.map((dbInstance) =>
+            setDoc(doc(dbInstance, "jdiExamAttempts", attempt.id), releasePatch, {
+              merge: true,
+            }).catch(() =>
+              updateDoc(doc(dbInstance, "jdiExamAttempts", attempt.id), releasePatch).catch(
+                () => undefined
+              )
+            )
+          )
+        );
+        releasedCount++;
+      }
+
+      await load();
+      setMessage(
+        `Successfully released ${releasedCount} assessment result(s) with official tutor remarks to Student and School portals!`
+      );
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not complete bulk release.");
+    } finally {
+      setBulkReleaseBusy(false);
     }
   };
 
@@ -766,6 +917,16 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
 
   const releasedFiltered = useMemo(
     () => filtered.filter((a) => isAttemptResultReleased(a)),
+    [filtered]
+  );
+
+  const unreleasedSubmittedFiltered = useMemo(
+    () =>
+      filtered.filter(
+        (a) =>
+          !isAttemptResultReleased(a) &&
+          ["submitted", "expired", "graded", "completed"].includes(a.status)
+      ),
     [filtered]
   );
 
@@ -1055,15 +1216,35 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         {/* FILTER & ACTION CONTROLS */}
         <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Partner School
-              <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 p-3 text-sm font-bold text-slate-900 dark:text-white normal-case tracking-normal">
-                <School size={16} className="text-blue-600 shrink-0" />
-                <span className="truncate">
-                  {availableSchools[0]?.name || resolveSchoolLabel(schoolId)}
-                </span>
+            {isSchoolUser ? (
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Partner School
+                <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 p-3 text-sm font-bold text-slate-900 dark:text-white normal-case tracking-normal">
+                  <School size={16} className="text-blue-600 shrink-0" />
+                  <span className="truncate">
+                    {availableSchools[0]?.name || resolveSchoolLabel(schoolId)}
+                  </span>
+                </div>
               </div>
-            </div>
+            ) : (
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Partner School
+                <select
+                  className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm font-medium text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+                  value={schoolId}
+                  onChange={(e) => setSchoolId(e.target.value)}
+                >
+                  <option value="">
+                    {isPlatformAdmin ? "All Partner Schools" : "All Assigned Schools"}
+                  </option>
+                  {availableSchools.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Filter by Class
@@ -1408,7 +1589,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 value={schoolId}
                 onChange={(e) => setSchoolId(e.target.value)}
               >
-                {isPlatformAdmin && <option value="">All Partner Schools</option>}
+                <option value="">
+                  {isPlatformAdmin ? "All Partner Schools" : "All Assigned Schools"}
+                </option>
                 {availableSchools.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -1488,6 +1671,19 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             </button>
           </div>
           <div className="flex flex-wrap gap-2">
+            {!isSchoolUser && unreleasedSubmittedFiltered.length > 0 && (
+              <button
+                type="button"
+                disabled={bulkReleaseBusy}
+                onClick={() => void releaseAllPendingInView(unreleasedSubmittedFiltered)}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer shadow-xs"
+              >
+                <CheckCircle2 size={15} />
+                {bulkReleaseBusy
+                  ? "Releasing Results…"
+                  : `Release All Pending Results (${unreleasedSubmittedFiltered.length})`}
+              </button>
+            )}
             <button
               disabled={isSchoolUser ? !releasedFiltered.length : !filtered.length}
               title={

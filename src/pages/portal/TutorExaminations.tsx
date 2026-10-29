@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { auth, db, getClientDatabases } from "../../lib/firebase";
+import { auth, db, getClientDatabases, getAllClientDatabases } from "../../lib/firebase";
 import {
   collection,
   doc,
@@ -250,6 +250,7 @@ export default function TutorExaminations() {
   const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(null);
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState(0);
   const [releasingResultId, setReleasingResultId] = useState<string | null>(null);
+  const [bulkReleasingResults, setBulkReleasingResults] = useState(false);
   const [savingRemarkId, setSavingRemarkId] = useState<string | null>(null);
   const [tutorRemarksByAttempt, setTutorRemarksByAttempt] = useState<Record<string, string>>({});
   const [showHeaderCustomizer, setShowHeaderCustomizer] = useState(false);
@@ -416,12 +417,25 @@ export default function TutorExaminations() {
         if (Array.isArray(staffAccessData.assignedSchools))
           staffAccessData.assignedSchools.forEach(addId);
 
-        const allSchoolsSnap = await getDocs(collection(db, "schools")).catch(
-          () => ({ docs: [] } as any)
+        const schoolSnaps = await Promise.all(
+          getAllClientDatabases().map((dbInstance) =>
+            getDocs(collection(dbInstance, "schools")).catch(() => ({ docs: [] } as any))
+          )
         );
+        const schoolDocsMap = new Map<string, any>();
+        schoolSnaps.forEach((snap) => {
+          snap.docs?.forEach((d: any) => {
+            if (!schoolDocsMap.has(d.id)) schoolDocsMap.set(d.id, d);
+          });
+        });
         const schoolsList: { id: string; name: string }[] = [];
+        const currentEmailLower = String(
+          currentUser.email || userData.email || sessionStorage.getItem("userEmail") || ""
+        )
+          .trim()
+          .toLowerCase();
 
-        allSchoolsSnap.docs?.forEach((d: any) => {
+        Array.from(schoolDocsMap.values()).forEach((d: any) => {
           const s = d.data();
           const sId = d.id;
           const sCode = String(s.schoolId || s.code || s.schoolCode || "").trim();
@@ -435,7 +449,19 @@ export default function TutorExaminations() {
               Array.isArray(arr)
                 ? arr
                     .map((x: any) =>
-                      typeof x === "string" ? x : x?.id || x?.uid || x?.staffId || x?.userId
+                      typeof x === "string"
+                        ? x
+                        : x?.tutorId || x?.id || x?.uid || x?.staffId || x?.userId
+                    )
+                    .filter(Boolean)
+                : [];
+            const extractEmails = (arr: any) =>
+              Array.isArray(arr)
+                ? arr
+                    .map((x: any) =>
+                      typeof x === "object" && x !== null
+                        ? String(x?.tutorEmail || x?.email || "").trim().toLowerCase()
+                        : ""
                     )
                     .filter(Boolean)
                 : [];
@@ -447,6 +473,24 @@ export default function TutorExaminations() {
             const staffIds = extractIds(s.staffIds);
             const tutorIds = extractIds(s.tutorIds);
 
+            const programTutorIds: string[] = [];
+            const programTutorEmails: string[] = [];
+            if (Array.isArray(s.programs)) {
+              s.programs.forEach((prog: any) => {
+                programTutorIds.push(...extractIds(prog?.assignedTutors));
+                programTutorIds.push(...extractIds(prog?.tutors));
+                programTutorEmails.push(...extractEmails(prog?.assignedTutors));
+                programTutorEmails.push(...extractEmails(prog?.tutors));
+              });
+            }
+
+            const topEmails = [
+              ...extractEmails(s.tutors),
+              ...extractEmails(s.assignedTutors),
+              ...extractEmails(s.assignedStaff),
+              ...programTutorEmails,
+            ];
+
             if (
               directSchoolIds.has(sId) ||
               (sCode && directSchoolIds.has(sCode)) ||
@@ -456,6 +500,8 @@ export default function TutorExaminations() {
               assignedStaff.includes(currentUser.uid) ||
               staffIds.includes(currentUser.uid) ||
               tutorIds.includes(currentUser.uid) ||
+              programTutorIds.includes(currentUser.uid) ||
+              (currentEmailLower && topEmails.includes(currentEmailLower)) ||
               s.tutorId === currentUser.uid ||
               s.staffId === currentUser.uid
             ) {
@@ -463,6 +509,7 @@ export default function TutorExaminations() {
             }
           }
         });
+        schoolsList.sort((a, b) => a.name.localeCompare(b.name));
 
         // Load assigned private learners for Private Learner / Multi-target recipient modes
         const [indStudentsSnap, stdStudentsSnap] = await Promise.all([
@@ -527,13 +574,26 @@ export default function TutorExaminations() {
       const assignedIds = new Set(assignedSchools.map((s) => s.id));
       const schoolNameById = new Map(assignedSchools.map((s) => [s.id, s.name]));
 
-      const [jdiSnap, schSnap] = await Promise.all([
-        getDocs(collection(db, "jdiExams")).catch(() => ({ docs: [] } as any)),
-        getDocs(collection(db, "schoolExams")).catch(() => ({ docs: [] } as any)),
+      const allDbs = getAllClientDatabases();
+      const [jdiSnaps, schSnaps] = await Promise.all([
+        Promise.all(
+          allDbs.map((dbInstance) =>
+            getDocs(collection(dbInstance, "jdiExams")).catch(() => ({ docs: [] } as any))
+          )
+        ),
+        Promise.all(
+          allDbs.map((dbInstance) =>
+            getDocs(collection(dbInstance, "schoolExams")).catch(() => ({ docs: [] } as any))
+          )
+        ),
       ]);
 
+      const allExamDocs: any[] = [];
+      schSnaps.forEach((s) => allExamDocs.push(...(s.docs || [])));
+      jdiSnaps.forEach((s) => allExamDocs.push(...(s.docs || [])));
+
       const map = new Map<string, ExistingExamItem>();
-      [...jdiSnap.docs, ...schSnap.docs].forEach((d: any) => {
+      allExamDocs.forEach((d: any) => {
         const data = d.data();
         const canManage = canManageExamRecord({
           uid: currentUser.uid,
@@ -640,55 +700,111 @@ export default function TutorExaminations() {
     }
 
     setLoadingAttempts(true);
-    const qAttempts = query(collection(db, "jdiExamAttempts"), where("examId", "==", activeId));
-    const unsubscribe = onSnapshot(
-      qAttempts,
-      (snapshot) => {
-        const records: ExamAttemptRecord[] = snapshot.docs.map((d) => {
-          const at = d.data();
-          return {
-            id: d.id,
-            examId: at.examId,
-            studentId: at.studentId || at.studentUid || d.id,
-            studentName: at.studentName || "Student",
-            studentUid: at.studentUid,
-            className: at.className || "Grade 1",
-            schoolId: at.schoolId,
-            schoolName: at.schoolName,
-            status: at.status || "in_progress",
-            score: at.score,
-            maxScore: at.maxScore,
-            percentage: at.percentage,
-            answers: at.answers || {},
-            questionResults: at.questionResults || [],
-            isOnline: at.isOnline === true,
-            lastHeartbeat: at.lastHeartbeat,
-            startedAt: at.startedAt,
-            submittedAt: at.submittedAt,
-            deadlineAt: at.deadlineAt,
-            releasedAt: at.releasedAt,
-            resultReleased: Boolean(at.resultReleased || at.releasedAt),
-            feedback: String(at.feedback || at.tutorFeedback || ""),
-            tutorFeedback: String(at.tutorFeedback || at.feedback || ""),
-          };
+    const allDbs = getAllClientDatabases();
+    const perDbAttempts = new Map<number, ExamAttemptRecord[]>();
+
+    const rankAttemptStatus = (st?: string) => {
+      if (st === "graded") return 4;
+      if (st === "submitted" || st === "completed" || st === "expired") return 3;
+      if (st === "in_progress") return 2;
+      return 1;
+    };
+
+    const recomputeMergedAttempts = () => {
+      const mergedMap = new Map<string, ExamAttemptRecord>();
+      perDbAttempts.forEach((list) => {
+        list.forEach((rec) => {
+          const prev = mergedMap.get(rec.id);
+          if (!prev) {
+            mergedMap.set(rec.id, rec);
+            return;
+          }
+          const pickNew =
+            (rec.resultReleased && !prev.resultReleased) ||
+            (rec.resultReleased === prev.resultReleased &&
+              rankAttemptStatus(rec.status) >= rankAttemptStatus(prev.status));
+          mergedMap.set(
+            rec.id,
+            pickNew
+              ? {
+                  ...prev,
+                  ...rec,
+                  resultReleased: Boolean(prev.resultReleased || rec.resultReleased),
+                  releasedAt: rec.releasedAt || prev.releasedAt,
+                  feedback: rec.feedback || prev.feedback || "",
+                  tutorFeedback: rec.tutorFeedback || prev.tutorFeedback || "",
+                }
+              : {
+                  ...rec,
+                  ...prev,
+                  resultReleased: Boolean(prev.resultReleased || rec.resultReleased),
+                  releasedAt: prev.releasedAt || rec.releasedAt,
+                  feedback: prev.feedback || rec.feedback || "",
+                  tutorFeedback: prev.tutorFeedback || rec.tutorFeedback || "",
+                }
+          );
         });
-        setExamAttempts(records);
-        setTutorRemarksByAttempt((prev) => {
-          const next = { ...prev };
-          records.forEach((rec) => {
-            if (next[rec.id] === undefined && (rec.feedback || rec.tutorFeedback)) {
-              next[rec.id] = rec.feedback || rec.tutorFeedback || "";
-            }
+      });
+
+      const records = Array.from(mergedMap.values());
+      setExamAttempts(records);
+      setTutorRemarksByAttempt((prev) => {
+        const next = { ...prev };
+        records.forEach((rec) => {
+          if (next[rec.id] === undefined && (rec.feedback || rec.tutorFeedback)) {
+            next[rec.id] = rec.feedback || rec.tutorFeedback || "";
+          }
+        });
+        return next;
+      });
+      setLoadingAttempts(false);
+    };
+
+    const unsubscribes = allDbs.map((dbInstance, dbIdx) => {
+      const qAttempts = query(
+        collection(dbInstance, "jdiExamAttempts"),
+        where("examId", "==", activeId)
+      );
+      return onSnapshot(
+        qAttempts,
+        (snapshot) => {
+          const records: ExamAttemptRecord[] = snapshot.docs.map((d) => {
+            const at = d.data();
+            return {
+              id: d.id,
+              examId: at.examId,
+              studentId: at.studentId || at.studentUid || d.id,
+              studentName: at.studentName || "Student",
+              studentUid: at.studentUid,
+              className: at.className || "Grade 1",
+              schoolId: at.schoolId,
+              schoolName: at.schoolName,
+              status: at.status || "in_progress",
+              score: at.score,
+              maxScore: at.maxScore,
+              percentage: at.percentage,
+              answers: at.answers || {},
+              questionResults: at.questionResults || [],
+              isOnline: at.isOnline === true,
+              lastHeartbeat: at.lastHeartbeat,
+              startedAt: at.startedAt,
+              submittedAt: at.submittedAt,
+              deadlineAt: at.deadlineAt,
+              releasedAt: at.releasedAt,
+              resultReleased: Boolean(at.resultReleased || at.releasedAt || at.status === "released"),
+              feedback: String(at.feedback || at.tutorFeedback || ""),
+              tutorFeedback: String(at.tutorFeedback || at.feedback || ""),
+            };
           });
-          return next;
-        });
-        setLoadingAttempts(false);
-      },
-      (err) => {
-        console.warn("Attempt listener notice:", err);
-        setLoadingAttempts(false);
-      }
-    );
+          perDbAttempts.set(dbIdx, records);
+          recomputeMergedAttempts();
+        },
+        (err) => {
+          console.warn("Attempt listener notice:", err);
+          setLoadingAttempts(false);
+        }
+      );
+    });
 
     const fetchRoster = async () => {
       try {
@@ -717,7 +833,7 @@ export default function TutorExaminations() {
     };
     void fetchRoster();
 
-    return () => unsubscribe();
+    return () => unsubscribes.forEach((u) => u());
   }, [editingExamId, schoolId, selectedClass, deliveryMode]);
 
   // Proctor Metrics Computation
@@ -1206,7 +1322,7 @@ ANSWER KEY
         // Direct client write below ensures persistence
       }
 
-      for (const dbInstance of getClientDatabases()) {
+      for (const dbInstance of getAllClientDatabases()) {
         await setDoc(doc(dbInstance, "jdiExams", targetExamId), examPayload, { merge: true });
         await setDoc(doc(dbInstance, "schoolExams", targetExamId), examPayload, { merge: true });
       }
@@ -1236,7 +1352,7 @@ ANSWER KEY
   };
 
   // Edit / Republish Assessment — populates exact saved fields without injecting demo questions
-  const handleEditExam = (exam: ExistingExamItem) => {
+  const handleEditExam = (exam: ExistingExamItem, initialTab: EditorTab = "questions") => {
     const resolvedMode = normalizeDeliveryMode(exam.deliveryMode, exam);
     const resolvedWorkType = normalizeWorkType(exam.workType, exam);
     setEditingExamId(exam.id);
@@ -1277,9 +1393,13 @@ ANSWER KEY
     setDefaultPointValue(Number(exam.defaultPointValue || 2));
     setGradingMode(exam.gradingMode || "automatic");
 
-    setEditorTab("questions");
+    setEditorTab(initialTab);
     setErrorMessage("");
-    setMessage(`Editing "${exam.title}". Changes will update this assessment directly.`);
+    setMessage(
+      initialTab === "responses"
+        ? `Monitoring responses & results for "${exam.title}".`
+        : `Editing "${exam.title}". Changes will update this assessment directly.`
+    );
     scrollToCreatorTop();
   };
 
@@ -1392,11 +1512,19 @@ ANSWER KEY
     ).trim();
     setSavingRemarkId(attempt.id);
     try {
-      await updateDoc(doc(db, "jdiExamAttempts", attempt.id), {
-        feedback: trimmedRemark,
-        tutorFeedback: trimmedRemark,
-        updatedAt: serverTimestamp(),
-      });
+      await Promise.all(
+        getAllClientDatabases().map((dbInstance) =>
+          setDoc(
+            doc(dbInstance, "jdiExamAttempts", attempt.id),
+            {
+              feedback: trimmedRemark,
+              tutorFeedback: trimmedRemark,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          ).catch(() => undefined)
+        )
+      );
       setTutorRemarksByAttempt((prev) => ({ ...prev, [attempt.id]: trimmedRemark }));
       setExamAttempts((prev) =>
         prev.map((at) =>
@@ -1421,20 +1549,56 @@ ANSWER KEY
       const currentRemark = String(
         tutorRemarksByAttempt[attempt.id] ?? attempt.feedback ?? attempt.tutorFeedback ?? ""
       ).trim();
-      await updateDoc(doc(db, "jdiExamAttempts", attempt.id), {
-        resultReleased: nextState,
-        releasedAt: nextState ? serverTimestamp() : null,
-        ...(currentRemark
-          ? { feedback: currentRemark, tutorFeedback: currentRemark }
-          : {}),
-        updatedAt: serverTimestamp(),
-      });
+
+      if (nextState && auth.currentUser) {
+        try {
+          const token = await auth.currentUser.getIdToken();
+          await fetch("/.netlify/functions/jdi-exam-management", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              action: "release",
+              examId: attempt.examId || editingExamId,
+              attemptId: attempt.id,
+              feedback: currentRemark,
+              tutorFeedback: currentRemark,
+            }),
+          });
+        } catch {
+          // Direct dual-DB sync below guarantees release
+        }
+      }
+
+      const nextStatus = nextState ? "graded" : "submitted";
+      await Promise.all(
+        getAllClientDatabases().map((dbInstance) =>
+          setDoc(
+            doc(dbInstance, "jdiExamAttempts", attempt.id),
+            {
+              resultReleased: nextState,
+              releasedAt: nextState ? serverTimestamp() : null,
+              releasedBy: nextState ? auth.currentUser?.uid || "tutor" : null,
+              status: nextStatus,
+              ...(currentRemark
+                ? { feedback: currentRemark, tutorFeedback: currentRemark }
+                : {}),
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          ).catch(() => undefined)
+        )
+      );
       setExamAttempts((prev) =>
         prev.map((at) =>
           at.id === attempt.id
             ? {
                 ...at,
+                status: nextStatus,
                 resultReleased: nextState,
+                releasedAt: nextState ? new Date().toISOString() : null,
                 ...(currentRemark
                   ? { feedback: currentRemark, tutorFeedback: currentRemark }
                   : {}),
@@ -1451,6 +1615,79 @@ ANSWER KEY
       setErrorMessage(e instanceof Error ? e.message : "Failed to toggle result release.");
     } finally {
       setReleasingResultId(null);
+    }
+  };
+
+  // Bulk release all submitted / completed / expired attempts for this assessment
+  const handleReleaseAllSubmitted = async () => {
+    const pendingList = examAttempts.filter(
+      (at) =>
+        !at.resultReleased &&
+        ["submitted", "completed", "graded", "expired"].includes(at.status)
+    );
+    if (!pendingList.length) return;
+    setBulkReleasingResults(true);
+    setErrorMessage("");
+    try {
+      const allDbs = getAllClientDatabases();
+      const token = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+      for (const attempt of pendingList) {
+        const currentRemark = String(
+          tutorRemarksByAttempt[attempt.id] ?? attempt.feedback ?? attempt.tutorFeedback ?? ""
+        ).trim();
+        await Promise.all(
+          allDbs.map((dbInstance) =>
+            setDoc(
+              doc(dbInstance, "jdiExamAttempts", attempt.id),
+              {
+                resultReleased: true,
+                releasedAt: serverTimestamp(),
+                releasedBy: auth.currentUser?.uid || "tutor",
+                status: "graded",
+                ...(currentRemark
+                  ? { feedback: currentRemark, tutorFeedback: currentRemark }
+                  : {}),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            ).catch(() => undefined)
+          )
+        );
+        if (token) {
+          fetch("/.netlify/functions/jdi-exam-management", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              action: "release",
+              examId: attempt.examId || editingExamId,
+              attemptId: attempt.id,
+              feedback: currentRemark,
+              tutorFeedback: currentRemark,
+            }),
+          }).catch(() => undefined);
+        }
+      }
+      const releasedIds = new Set(pendingList.map((p) => p.id));
+      setExamAttempts((prev) =>
+        prev.map((at) =>
+          releasedIds.has(at.id)
+            ? {
+                ...at,
+                status: "graded",
+                resultReleased: true,
+                releasedAt: new Date().toISOString(),
+              }
+            : at
+        )
+      );
+      setMessage(`Successfully released ${pendingList.length} student result(s).`);
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Failed to release all results.");
+    } finally {
+      setBulkReleasingResults(false);
     }
   };
 
@@ -2654,6 +2891,30 @@ ANSWER KEY
                     />
                   </label>
 
+                  {examAttempts.some(
+                    (at) =>
+                      !at.resultReleased &&
+                      ["submitted", "completed", "graded", "expired"].includes(at.status)
+                  ) && (
+                    <button
+                      type="button"
+                      disabled={bulkReleasingResults}
+                      onClick={() => void handleReleaseAllSubmitted()}
+                      className="min-h-[40px] rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
+                    >
+                      <CheckCircle2 size={14} />
+                      {bulkReleasingResults
+                        ? "Releasing Results…"
+                        : `Release All Pending (${
+                            examAttempts.filter(
+                              (at) =>
+                                !at.resultReleased &&
+                                ["submitted", "completed", "graded", "expired"].includes(at.status)
+                            ).length
+                          })`}
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={exportResponsesCsv}
@@ -2811,7 +3072,8 @@ ANSWER KEY
                             const isSubmitted =
                               at.status === "submitted" ||
                               at.status === "completed" ||
-                              at.status === "graded";
+                              at.status === "graded" ||
+                              at.status === "expired";
                             const answeredCount = Object.keys(at.answers || {}).length;
 
                             return (
@@ -2834,8 +3096,14 @@ ANSWER KEY
                                     </span>
                                   )}
                                   {isSubmitted && (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
-                                      Submitted
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                        at.resultReleased
+                                          ? "bg-emerald-100 text-emerald-800"
+                                          : "bg-blue-100 text-blue-800"
+                                      }`}
+                                    >
+                                      {at.resultReleased ? "Released" : "Submitted"}
                                     </span>
                                   )}
                                 </div>
@@ -2851,16 +3119,36 @@ ANSWER KEY
                                       : "In Progress"}
                                   </span>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedAttemptId(at.id);
-                                    setResponsesSubTab("individual");
-                                  }}
-                                  className="w-full py-2 rounded-lg border border-slate-200 dark:border-slate-700 font-semibold text-center hover:bg-slate-50 dark:hover:bg-slate-800"
-                                >
-                                  View Candidate Responses
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  {isSubmitted && (
+                                    <button
+                                      type="button"
+                                      disabled={releasingResultId === at.id}
+                                      onClick={() => void handleReleaseResult(at)}
+                                      className={`flex-1 py-2 rounded-lg font-bold text-center transition-colors cursor-pointer ${
+                                        at.resultReleased
+                                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                          : "bg-blue-600 text-white hover:bg-blue-700"
+                                      }`}
+                                    >
+                                      {releasingResultId === at.id
+                                        ? "Updating…"
+                                        : at.resultReleased
+                                        ? "Result Released"
+                                        : "Release Result"}
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedAttemptId(at.id);
+                                      setResponsesSubTab("individual");
+                                    }}
+                                    className="flex-1 py-2 rounded-lg border border-slate-200 dark:border-slate-700 font-semibold text-center hover:bg-slate-50 dark:hover:bg-slate-800"
+                                  >
+                                    View Details
+                                  </button>
+                                </div>
                               </div>
                             );
                           })}
@@ -2900,7 +3188,8 @@ ANSWER KEY
                                 const isSubmitted =
                                   at.status === "submitted" ||
                                   at.status === "completed" ||
-                                  at.status === "graded";
+                                  at.status === "graded" ||
+                                  at.status === "expired";
                                 const answeredCount = Object.keys(at.answers || {}).length;
 
                                 return (
@@ -2926,9 +3215,15 @@ ANSWER KEY
                                         </span>
                                       )}
                                       {isSubmitted && (
-                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                                        <span
+                                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                                            at.resultReleased
+                                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                              : "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
+                                          }`}
+                                        >
                                           <CheckCircle2 size={13} />
-                                          Submitted
+                                          {at.resultReleased ? "Released" : "Submitted"}
                                         </span>
                                       )}
                                     </td>
@@ -2943,16 +3238,36 @@ ANSWER KEY
                                         : "—"}
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setSelectedAttemptId(at.id);
-                                          setResponsesSubTab("individual");
-                                        }}
-                                        className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                                      >
-                                        View Details
-                                      </button>
+                                      <div className="inline-flex items-center justify-end gap-2">
+                                        {isSubmitted && (
+                                          <button
+                                            type="button"
+                                            disabled={releasingResultId === at.id}
+                                            onClick={() => void handleReleaseResult(at)}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                                              at.resultReleased
+                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200"
+                                                : "bg-blue-600 text-white hover:bg-blue-700"
+                                            }`}
+                                          >
+                                            {releasingResultId === at.id
+                                              ? "Updating…"
+                                              : at.resultReleased
+                                              ? "Released"
+                                              : "Release Result"}
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedAttemptId(at.id);
+                                            setResponsesSubTab("individual");
+                                          }}
+                                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                        >
+                                          View Details
+                                        </button>
+                                      </div>
                                     </td>
                                   </tr>
                                 );
@@ -3952,10 +4267,7 @@ ANSWER KEY
                     ) : (
                       <button
                         type="button"
-                        onClick={() => {
-                          handleEditExam(ex);
-                          setEditorTab("responses");
-                        }}
+                        onClick={() => handleEditExam(ex, "responses")}
                         className="min-h-[38px] inline-flex items-center justify-center gap-1.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 px-3 py-2 text-xs font-bold hover:bg-blue-100 transition-colors cursor-pointer"
                       >
                         <Activity size={14} /> Monitor Responses
