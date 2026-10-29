@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -416,12 +417,29 @@ export default function TutorExaminations() {
         if (Array.isArray(staffAccessData.assignedSchools))
           staffAccessData.assignedSchools.forEach(addId);
 
-        const allSchoolsSnap = await getDocs(collection(db, "schools")).catch(
-          () => ({ docs: [] } as any)
-        );
+        let allSchoolsDocs: any[] = [];
+        if (isAdmin) {
+          const allSchoolsSnap = await getDocs(query(collection(db, "schools"), limit(100))).catch(() => ({ docs: [] } as any));
+          allSchoolsDocs = allSchoolsSnap.docs || [];
+        } else if (directSchoolIds.size > 0) {
+          const directSchoolDocs = await Promise.all(
+            Array.from(directSchoolIds).slice(0, 20).map((id) =>
+              getDoc(doc(db, "schools", id)).catch(() => null)
+            )
+          );
+          allSchoolsDocs = directSchoolDocs.filter((snap: any) => snap?.exists());
+          // Legacy accounts sometimes store school codes instead of document IDs.
+          if (allSchoolsDocs.length === 0) {
+            const fallbackSchools = await getDocs(query(collection(db, "schools"), limit(100))).catch(() => ({ docs: [] } as any));
+            allSchoolsDocs = fallbackSchools.docs || [];
+          }
+        } else {
+          const fallbackSchools = await getDocs(query(collection(db, "schools"), limit(100))).catch(() => ({ docs: [] } as any));
+          allSchoolsDocs = fallbackSchools.docs || [];
+        }
         const schoolsList: { id: string; name: string }[] = [];
 
-        allSchoolsSnap.docs?.forEach((d: any) => {
+        allSchoolsDocs.forEach((d: any) => {
           const s = d.data();
           const sId = d.id;
           const sCode = String(s.schoolId || s.code || s.schoolCode || "").trim();
@@ -464,13 +482,26 @@ export default function TutorExaminations() {
           }
         });
 
-        // Load assigned private learners for Private Learner / Multi-target recipient modes
-        const [indStudentsSnap, stdStudentsSnap] = await Promise.all([
-          getDocs(collection(db, "individualStudents")).catch(() => ({ docs: [] } as any)),
-          getDocs(collection(db, "students")).catch(() => ({ docs: [] } as any)),
-        ]);
+        // Load only this tutor's assigned private learners. Platform admins get a bounded
+        // preview instead of downloading both complete student collections on every visit.
+        const studentCollections = ["individualStudents", "students"];
+        const studentSnapshots: any[] = [];
+        if (isAdmin) {
+          const adminStudentSnapshots = await Promise.all(studentCollections.map((name) =>
+            getDocs(query(collection(db, name), limit(100))).catch(() => ({ docs: [] } as any))
+          ));
+          studentSnapshots.push(...adminStudentSnapshots);
+        } else {
+          const assignmentFields = ["tutorId", "staffId", "assignedTutorId", "assignedStaffId", "instructorId"];
+          const assignedQueries = studentCollections.flatMap((name) =>
+            assignmentFields.map((field) =>
+              getDocs(query(collection(db, name), where(field, "==", currentUser.uid), limit(100))).catch(() => ({ docs: [] } as any))
+            )
+          );
+          studentSnapshots.push(...await Promise.all(assignedQueries));
+        }
         const privateMap = new Map<string, EnrolledStudent>();
-        [...(indStudentsSnap.docs || []), ...(stdStudentsSnap.docs || [])].forEach((d: any) => {
+        studentSnapshots.flatMap((snap: any) => snap.docs || []).forEach((d: any) => {
           const st = d.data();
           const tutorMatch =
             isAdmin ||
@@ -527,13 +558,19 @@ export default function TutorExaminations() {
       const assignedIds = new Set(assignedSchools.map((s) => s.id));
       const schoolNameById = new Map(assignedSchools.map((s) => [s.id, s.name]));
 
-      const [jdiSnap, schSnap] = await Promise.all([
-        getDocs(collection(db, "jdiExams")).catch(() => ({ docs: [] } as any)),
-        getDocs(collection(db, "schoolExams")).catch(() => ({ docs: [] } as any)),
-      ]);
+      const token = await currentUser.getIdToken();
+      const response = await fetch("/.netlify/functions/tutor-examinations", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Could not load authorised assessments.");
+      const payload = await response.json().catch(() => ({}));
+      const serverExamDocs = (Array.isArray(payload.exams) ? payload.exams : []).map((data: any) => ({
+        id: String(data.id || ""),
+        data: () => data,
+      }));
 
       const map = new Map<string, ExistingExamItem>();
-      [...jdiSnap.docs, ...schSnap.docs].forEach((d: any) => {
+      serverExamDocs.forEach((d: any) => {
         const data = d.data();
         const canManage = canManageExamRecord({
           uid: currentUser.uid,
