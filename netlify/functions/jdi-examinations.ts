@@ -788,11 +788,21 @@ export const handler: Handler = async event => {
         if (!(await permittedSchool(c, schoolId))) {
           return json(403, { error: "You do not have access to this school." });
         }
-        const schoolExams = await adminDb.collection("jdiExams").where("schoolId", "==", schoolId).limit(150).get();
-        schoolExams.docs.forEach((d: any) => docs.set(d.id, d));
+        const [schoolExams, schoolSpecificExams] = await Promise.all([
+          adminDb.collection("jdiExams").where("schoolId", "==", schoolId).limit(150).get(),
+          adminDb.collection("schoolExams").where("schoolId", "==", schoolId).limit(150).get(),
+        ]);
+        for (const snap of [schoolExams, schoolSpecificExams]) {
+          snap.docs.forEach((d: any) => docs.set(d.id, d));
+        }
       } else if (adminRoles.includes(c.role)) {
-        const allExams = await adminDb.collection("jdiExams").limit(250).get();
-        allExams.docs.forEach((d: any) => docs.set(d.id, d));
+        const [allExams, allSchoolExams] = await Promise.all([
+          adminDb.collection("jdiExams").limit(250).get(),
+          adminDb.collection("schoolExams").limit(250).get(),
+        ]);
+        for (const snap of [allExams, allSchoolExams]) {
+          snap.docs.forEach((d: any) => docs.set(d.id, d));
+        }
       } else if (staffRoles.includes(c.role)) {
         const tutorSchoolIds = await resolveTutorSchoolIds(c);
         const [byCreatedBy, byTutorId, ...schoolSnaps] = await Promise.all([
@@ -802,7 +812,14 @@ export const handler: Handler = async event => {
             adminDb.collection("jdiExams").where("schoolId", "==", sid).limit(100).get()
           ),
         ]);
-        for (const snap of [byCreatedBy, byTutorId, ...schoolSnaps]) {
+        const [schoolByCreatedBy, schoolByTutorId, ...schoolScopedSnaps] = await Promise.all([
+          adminDb.collection("schoolExams").where("createdBy", "==", c.uid).limit(100).get(),
+          adminDb.collection("schoolExams").where("tutorId", "==", c.uid).limit(100).get(),
+          ...tutorSchoolIds.slice(0, 10).map(sid =>
+            adminDb.collection("schoolExams").where("schoolId", "==", sid).limit(100).get()
+          ),
+        ]);
+        for (const snap of [byCreatedBy, byTutorId, ...schoolSnaps, schoolByCreatedBy, schoolByTutorId, ...schoolScopedSnaps]) {
           snap.docs.forEach((d: any) => docs.set(d.id, d));
         }
       }
