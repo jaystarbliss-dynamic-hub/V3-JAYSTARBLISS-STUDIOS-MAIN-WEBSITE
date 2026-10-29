@@ -19,6 +19,8 @@ import {
   isAttemptResultReleased,
 } from "../../api/_lib/jdi-assessment.js";
 
+let cachedStudentExamSnapshots: { expiresAt: number; docs: any[] } | null = null;
+
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
   headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
@@ -398,17 +400,24 @@ export const handler: Handler = async event => {
       ).trim();
       const studentClassNormalized = normalizeClassName(studentClassRaw);
 
-      // Keep the legacy-compatible exam discovery bounded. The client no longer
-      // performs a second full-collection merge after this endpoint succeeds.
-      const [jdiSnap, schoolExamsSnap, legacyExamsSnap] = await Promise.all([
-        adminDb.collection("jdiExams").limit(100).get().catch(() => null),
-        adminDb.collection("schoolExams").limit(100).get().catch(() => null),
-        adminDb.collection("exams").limit(100).get().catch(() => null),
-      ]);
+      // Reuse the bounded exam catalogue briefly across warm function invocations.
+      // Without this cache, every student opening the exam page re-reads up to 300 exam docs.
+      let examSnapshots = cachedStudentExamSnapshots && cachedStudentExamSnapshots.expiresAt > Date.now()
+        ? cachedStudentExamSnapshots.docs
+        : null;
+      if (!examSnapshots) {
+        const [jdiSnap, schoolExamsSnap, legacyExamsSnap] = await Promise.all([
+          adminDb.collection("jdiExams").limit(100).get().catch(() => null),
+          adminDb.collection("schoolExams").limit(100).get().catch(() => null),
+          adminDb.collection("exams").limit(100).get().catch(() => null),
+        ]);
+        examSnapshots = [jdiSnap, schoolExamsSnap, legacyExamsSnap].flatMap((snap: any) => snap?.docs || []);
+        cachedStudentExamSnapshots = { expiresAt: Date.now() + 60_000, docs: examSnapshots };
+      }
 
       const examDocs = new Map<string, any>();
-      for (const snap of [jdiSnap, schoolExamsSnap, legacyExamsSnap]) {
-        snap?.docs.forEach(d => examDocs.set(d.id, d));
+      for (const d of examSnapshots) {
+        examDocs.set(d.id, d);
       }
 
       const resolvedSchoolName = schoolId
