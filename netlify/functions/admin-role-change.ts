@@ -61,23 +61,26 @@ export const handler: Handler = async (event) => {
     let callerEmail = "";
     let isSuperAdminCaller = false;
 
-    if (hasAdminAuth()) {
-      try {
-        const decoded = await adminAuth.verifyIdToken(token);
-        callerUid = decoded.uid;
-        callerEmail = String(decoded.email || "").toLowerCase().trim();
-        isSuperAdminCaller = KNOWN_SUPER_ADMIN_EMAILS.has(callerEmail) || decoded.admin === true || decoded.role === "super_admin";
-      } catch (authErr: any) {
-        console.error("Token verification failed:", authErr);
-        return json(401, { error: "Invalid or expired administrator session." });
-      }
-    } else {
-      console.warn("Firebase Admin Auth unavailable, falling back to permissive admin check");
+    if (!hasAdminAuth()) {
+      return json(503, { error: "Admin SDK unavailable, falling back to client Firestore write.", fallback: true });
+    }
+
+    try {
+      const decoded = await adminAuth.verifyIdToken(token);
+      callerUid = decoded.uid;
+      callerEmail = String(decoded.email || "").toLowerCase().trim();
+      isSuperAdminCaller = KNOWN_SUPER_ADMIN_EMAILS.has(callerEmail) || decoded.admin === true || decoded.role === "super_admin";
+    } catch (authErr: any) {
+      console.error("Token verification failed:", authErr);
+      return json(401, { error: "Invalid or expired administrator session." });
     }
 
     // Resolve caller record across databases
     let callerData: Record<string, any> = {};
     const dbs = getAdminDatabases();
+    if (!dbs.length) {
+      return json(503, { error: "Admin Firestore unavailable, falling back to client Firestore write.", fallback: true });
+    }
 
     if (callerUid) {
       for (const database of dbs) {
@@ -227,6 +230,11 @@ export const handler: Handler = async (event) => {
             );
           }
 
+          await database.collection("parents").doc(targetDocId).delete().catch(() => {});
+          if (authUid && authUid !== targetDocId) {
+            await database.collection("parents").doc(authUid).delete().catch(() => {});
+          }
+
           // Approve any matching pending tutor application records
           if (targetEmail) {
             try {
@@ -236,48 +244,63 @@ export const handler: Handler = async (event) => {
               }
             } catch {}
           }
-        } else if (role === "parent") {
-          await database.collection("parents").doc(targetDocId).set(
-            {
-              role: "parent",
-              email: targetEmail || null,
-              name: targetData.name || targetData.fullName || "",
-              updatedAt: now
-            },
-            { merge: true }
-          );
-        } else if (role === "student") {
-          await database.collection("individualStudents").doc(targetDocId).set(
-            {
-              role: "student",
-              email: targetEmail || null,
-              fullName: targetData.name || targetData.fullName || "",
-              updatedAt: now
-            },
-            { merge: true }
-          );
-        } else if (role === "school") {
-          await database.collection("schools").doc(targetDocId).set(
-            { updatedAt: now },
-            { merge: true }
-          );
-        } else if (role.includes("admin")) {
-          await database.collection("admins").doc(targetDocId).set(
-            {
-              uid: targetDocId,
-              email: targetEmail || null,
-              name: targetData.name || targetData.fullName || "",
-              role,
-              status: targetStatus,
-              updatedAt: now
-            },
-            { merge: true }
-          );
         } else {
-          // If revoked from admin, remove from admins collection
-          try {
-            await database.collection("admins").doc(targetDocId).delete();
-          } catch {}
+          // If changing to any non-staff role (e.g. parent, student, school), clean up stale tutor/staff docs
+          await database.collection("tutors").doc(targetDocId).delete().catch(() => {});
+          await database.collection("staff").doc(targetDocId).delete().catch(() => {});
+          if (authUid && authUid !== targetDocId) {
+            await database.collection("tutors").doc(authUid).delete().catch(() => {});
+            await database.collection("staff").doc(authUid).delete().catch(() => {});
+          }
+
+          if (role === "parent") {
+            const parentRecord = {
+              uid: authUid || targetDocId,
+              role: "parent",
+              status: "ACTIVE",
+              accountStatus: "ACTIVE",
+              email: targetEmail || null,
+              name: targetData.name || targetData.fullName || "Parent",
+              fullName: targetData.fullName || targetData.name || "Parent",
+              updatedAt: now
+            };
+            await database.collection("parents").doc(targetDocId).set(parentRecord, { merge: true });
+            if (authUid && authUid !== targetDocId) {
+              await database.collection("parents").doc(authUid).set(parentRecord, { merge: true });
+            }
+          } else if (role === "student") {
+            await database.collection("individualStudents").doc(targetDocId).set(
+              {
+                role: "student",
+                email: targetEmail || null,
+                fullName: targetData.name || targetData.fullName || "",
+                updatedAt: now
+              },
+              { merge: true }
+            );
+          } else if (role === "school") {
+            await database.collection("schools").doc(targetDocId).set(
+              { updatedAt: now },
+              { merge: true }
+            );
+          } else if (role.includes("admin")) {
+            await database.collection("admins").doc(targetDocId).set(
+              {
+                uid: targetDocId,
+                email: targetEmail || null,
+                name: targetData.name || targetData.fullName || "",
+                role,
+                status: targetStatus,
+                updatedAt: now
+              },
+              { merge: true }
+            );
+          } else {
+            // If revoked from admin, remove from admins collection
+            try {
+              await database.collection("admins").doc(targetDocId).delete();
+            } catch {}
+          }
         }
 
         // Write audit log entry

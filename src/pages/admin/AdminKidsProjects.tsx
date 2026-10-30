@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, getDocs, setDoc, deleteDoc, doc } from 'firebase/firestore';
+import { db, getAllClientDatabases } from '../../lib/firebase';
 import { 
   Plus, 
   Trash2, 
@@ -55,9 +55,46 @@ const AdminKidsProjects: React.FC = () => {
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      const snap = await getDocs(collection(db, 'kidsProjects'));
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as KidsProjectRecord));
-      setProjects(list);
+      const dbs = getAllClientDatabases();
+      const merged = new Map<string, KidsProjectRecord>();
+
+      await Promise.all(
+        dbs.map(async (clientDb) => {
+          try {
+            const snap = await getDocs(collection(clientDb, 'kidsProjects'));
+            snap.docs.forEach((d) => {
+              if (!merged.has(d.id)) {
+                const raw = d.data();
+                const creatorStr =
+                  raw.creator ||
+                  (raw.creatorName
+                    ? raw.creatorAge
+                      ? `${raw.creatorName} (Age ${raw.creatorAge})`
+                      : raw.creatorName
+                    : raw.studentName || 'Student');
+                merged.set(d.id, {
+                  id: d.id,
+                  title: raw.title || '',
+                  creator: creatorStr,
+                  category: raw.category || 'Arcade Game',
+                  embedUrl: raw.embedUrl || '',
+                  imageUrl: raw.imageUrl || raw.featuredImage || '',
+                  liveUrl: raw.liveUrl || '',
+                  description: raw.description || '',
+                  status: (raw.status || 'PUBLISHED') as 'PUBLISHED' | 'DRAFT',
+                  isFeatured: Boolean(raw.isFeatured || raw.featured),
+                  createdAt: raw.createdAt,
+                  updatedAt: raw.updatedAt,
+                });
+              }
+            });
+          } catch {
+            // ignore secondary db error
+          }
+        })
+      );
+
+      setProjects(Array.from(merged.values()));
     } catch (err) {
       console.error('Error fetching kids projects:', err);
     } finally {
@@ -114,18 +151,26 @@ const AdminKidsProjects: React.FC = () => {
     setFormError(null);
 
     try {
+      const dbs = getAllClientDatabases();
       const now = new Date().toISOString();
+      const targetId = editingId || doc(collection(db, 'kidsProjects')).id;
       const payload = {
         ...formData,
-        updatedAt: now
+        creatorName: formData.creator,
+        featured: Boolean(formData.isFeatured),
+        updatedAt: now,
+        ...(editingId ? {} : { createdAt: now }),
       };
 
+      await Promise.all(
+        dbs.map((clientDb) =>
+          setDoc(doc(clientDb, 'kidsProjects', targetId), payload, { merge: true }).catch(() => null)
+        )
+      );
+
       if (!editingId) {
-        payload.createdAt = now;
-        const docRef = await addDoc(collection(db, 'kidsProjects'), payload);
-        setProjects(prev => [{ id: docRef.id, ...payload }, ...prev]);
+        setProjects(prev => [{ id: targetId, ...payload }, ...prev]);
       } else {
-        await updateDoc(doc(db, 'kidsProjects', editingId), payload);
         setProjects(prev => prev.map(p => p.id === editingId ? { ...p, ...payload } : p));
       }
 
@@ -140,7 +185,10 @@ const AdminKidsProjects: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'kidsProjects', id));
+      const dbs = getAllClientDatabases();
+      await Promise.all(
+        dbs.map((clientDb) => deleteDoc(doc(clientDb, 'kidsProjects', id)).catch(() => null))
+      );
       setProjects(prev => prev.filter(p => p.id !== id));
       setDeleteConfirmId(null);
     } catch (err) {

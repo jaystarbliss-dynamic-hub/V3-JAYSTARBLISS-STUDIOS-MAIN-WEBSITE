@@ -1,8 +1,8 @@
 import DOMPurify from 'dompurify';
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { getAllClientDatabases } from '../lib/firebase';
 import MainLayout from '../components/layout/MainLayout';
 import SEO from '../components/ui/SEO';
 import { Loader2, ArrowLeft, Layers, CheckCircle2 } from 'lucide-react';
@@ -17,10 +17,30 @@ const ServiceDetails: React.FC = () => {
   useEffect(() => {
     const fetchService = async () => {
       try {
-        const q = query(collection(db, 'services'), where('slug', '==', slug), where('status', '==', 'PUBLISHED'));
-        const snapshot = await getDocs(q);
-        if (!snapshot.empty) {
-          setService({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+        const dbs = getAllClientDatabases();
+        let found: any = null;
+        for (const clientDb of dbs) {
+          try {
+            const q = query(collection(clientDb, 'services'), where('slug', '==', slug), where('status', '==', 'PUBLISHED'));
+            const snapshot = await getDocs(q);
+            if (!snapshot.empty) {
+              found = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+              break;
+            }
+            if (slug) {
+              const byId = await getDoc(doc(clientDb, 'services', slug));
+              if (byId.exists()) {
+                found = { id: byId.id, ...byId.data() };
+                break;
+              }
+            }
+          } catch {
+            // ignore secondary db error
+          }
+        }
+        if (found) {
+          setService(found);
+          setError(false);
         } else {
           setError(true);
         }

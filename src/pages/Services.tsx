@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { getAllClientDatabases } from '../lib/firebase';
 import MainLayout from '../components/layout/MainLayout';
 import SEO from '../components/ui/SEO';
 import { Monitor, Paintbrush, Database, Globe, Briefcase, Cpu, ArrowUpRight, Workflow, CheckCircle2 } from 'lucide-react';
@@ -53,9 +53,24 @@ const Services: React.FC = () => {
   useEffect(() => {
     const fetchServices = async () => {
       try {
-        const q = query(collection(db, 'services'), where('status', '==', 'PUBLISHED'));
-        const snapshot = await getDocs(q);
-        setServices(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const dbs = getAllClientDatabases();
+        const merged = new Map<string, any>();
+        await Promise.all(
+          dbs.map(async (clientDb) => {
+            try {
+              const q = query(collection(clientDb, 'services'), where('status', '==', 'PUBLISHED'));
+              const snapshot = await getDocs(q);
+              snapshot.docs.forEach((docSnap) => {
+                if (!merged.has(docSnap.id)) {
+                  merged.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+                }
+              });
+            } catch {
+              // ignore secondary db error
+            }
+          })
+        );
+        setServices(Array.from(merged.values()));
       } catch (error) {
         console.error('Error fetching services:', error);
       } finally {

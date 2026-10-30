@@ -129,27 +129,13 @@ export const LEGACY_NAMED_DATABASE_ID = "ai-studio-jaystarblissdyna-085e16ac-52e
 
 let activeRequestDatabaseId: string | null = null;
 
-export function normalizeDatabaseId(raw?: string | null): string {
-  const trimmed = String(raw || "").trim();
-  if (trimmed === LEGACY_NAMED_DATABASE_ID) return LEGACY_NAMED_DATABASE_ID;
+export function normalizeDatabaseId(_raw?: string | null): string {
   return DEFAULT_DATABASE_ID;
 }
 
-export function applyRequestDatabaseHeader(headers?: Record<string, string | undefined> | null): string {
-  if (!headers) {
-    activeRequestDatabaseId = null;
-    return DEFAULT_DATABASE_ID;
-  }
-  const headerVal =
-    headers["x-jaystar-database-id"] ||
-    headers["X-Jaystar-Database-Id"] ||
-    headers["x-firestore-database-id"];
-  if (headerVal) {
-    activeRequestDatabaseId = normalizeDatabaseId(headerVal);
-    return activeRequestDatabaseId;
-  }
-  activeRequestDatabaseId = null;
-  return normalizeDatabaseId(process.env.FIREBASE_DATABASE_ID);
+export function applyRequestDatabaseHeader(_headers?: Record<string, string | undefined> | null): string {
+  activeRequestDatabaseId = DEFAULT_DATABASE_ID;
+  return DEFAULT_DATABASE_ID;
 }
 
 export function getDefaultAdminDb(): Firestore | null {
@@ -172,21 +158,14 @@ export function getLegacyNamedAdminDb(): Firestore | null {
   }
 }
 
-export function getAdminDb(preferredDbId?: string | null): Firestore | null {
-  const targetId = preferredDbId
-    ? normalizeDatabaseId(preferredDbId)
-    : activeRequestDatabaseId || normalizeDatabaseId(process.env.FIREBASE_DATABASE_ID);
-
-  if (targetId === LEGACY_NAMED_DATABASE_ID) {
-    return getLegacyNamedAdminDb() || getDefaultAdminDb();
-  }
+export function getAdminDb(_preferredDbId?: string | null): Firestore | null {
   if (cachedDb) return cachedDb;
   cachedDb = getDefaultAdminDb();
   return cachedDb;
 }
 
 export function getAdminDatabases(): Firestore[] {
-  const primary = getAdminDb();
+  const primary = getDefaultAdminDb();
   return primary ? [primary] : [];
 }
 

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Monitor, Paintbrush, Database, Globe, Briefcase, Cpu } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { getAllClientDatabases } from '../../lib/firebase';
 import { stockImages } from '../../lib/stockImages';
 import { StaggerGroup, Reveal } from '../ui/Reveal';
 import { staggerItem } from '../ui/animationVariants';
@@ -42,15 +42,27 @@ const FeaturedServices: React.FC = () => {
   useEffect(() => {
     const fetchFeaturedServices = async () => {
       try {
-        const q = query(
-          collection(db, 'services'),
-          where('status', '==', 'PUBLISHED'),
-          where('isFeatured', '==', true),
-          limit(3)
+        const dbs = getAllClientDatabases();
+        const snaps = await Promise.all(
+          dbs.map((clientDb) =>
+            getDocs(
+              query(collection(clientDb, 'services'), where('status', '==', 'PUBLISHED'))
+            ).catch(() => null)
+          )
         );
-        const snapshot = await getDocs(q);
-        const servicesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setServices(servicesData);
+        const byId = new Map<string, any>();
+        snaps.forEach((snap) => {
+          if (!snap) return;
+          snap.docs.forEach((docSnap) => {
+            if (!byId.has(docSnap.id)) {
+              byId.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+            }
+          });
+        });
+        const allServices = Array.from(byId.values());
+        allServices.sort((a, b) => Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured)));
+        const featured = allServices.filter((s) => s.isFeatured);
+        setServices((featured.length > 0 ? featured : allServices).slice(0, 3));
       } catch (error) {
         console.error('Error fetching featured services:', error);
       } finally {

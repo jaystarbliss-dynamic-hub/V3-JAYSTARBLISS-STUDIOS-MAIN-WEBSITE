@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { getAllClientDatabases } from '../../lib/firebase';
 import { Link } from 'react-router-dom';
 import { getProgramImage } from '../../lib/stockImages';
 import { StaggerGroup, Reveal } from '../ui/Reveal';
@@ -9,6 +9,14 @@ import { motion } from 'motion/react';
 import { usePageSection } from '../../lib/cms';
 import { GlassGridSkeleton } from '../ui/GlassCardSkeleton';
 import { ArrowRight, Compass } from 'lucide-react';
+
+function resolveProgramRouteSlug(program: any): string {
+  const rawSlug = typeof program?.slug === 'string' ? program.slug.trim() : '';
+  if (rawSlug && !rawSlug.includes('/') && !rawSlug.startsWith('http')) {
+    return rawSlug;
+  }
+  return program.id;
+}
 
 const FeaturedPrograms: React.FC = () => {
   const [programs, setPrograms] = useState<any[]>([]);
@@ -23,17 +31,26 @@ const FeaturedPrograms: React.FC = () => {
   useEffect(() => {
     const fetchFeaturedPrograms = async () => {
       try {
-        const q = query(
-          collection(db, 'programs'),
-          where('status', '==', 'PUBLISHED'),
-          limit(3)
+        const dbs = getAllClientDatabases();
+        const snaps = await Promise.all(
+          dbs.map((clientDb) =>
+            getDocs(
+              query(collection(clientDb, 'programs'), where('status', '==', 'PUBLISHED'))
+            ).catch(() => null)
+          )
         );
-        const snapshot = await getDocs(q);
-        const programsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setPrograms(programsData);
+        const byId = new Map<string, any>();
+        snaps.forEach((snap) => {
+          if (!snap) return;
+          snap.docs.forEach((docSnap) => {
+            if (!byId.has(docSnap.id)) {
+              byId.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+            }
+          });
+        });
+        const allPublished = Array.from(byId.values());
+        allPublished.sort((a, b) => Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured)));
+        setPrograms(allPublished.slice(0, 3));
       } catch (error) {
         console.error('Error fetching featured programs:', error);
       } finally {
@@ -88,7 +105,7 @@ const FeaturedPrograms: React.FC = () => {
               >
                 <div className="relative h-44 overflow-hidden">
                   <img
-                    src={getProgramImage(program.categoryId)}
+                    src={program.image || program.coverImage || program.bannerImage || getProgramImage(program.categoryId)}
                     alt=""
                     loading="lazy"
                     className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
@@ -126,7 +143,7 @@ const FeaturedPrograms: React.FC = () => {
                     Custom Learning Plan
                   </span>
                   <Link
-                    to={`/programs/${program.slug || program.id}`}
+                    to={`/programs/${resolveProgramRouteSlug(program)}`}
                     className="bg-brand-slate text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-bold hover:bg-gray-800 transition-colors uppercase tracking-wider"
                   >
                     VIEW PATHWAY

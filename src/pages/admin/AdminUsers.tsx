@@ -115,6 +115,9 @@ const AdminUsers: React.FC = () => {
   const handleRoleChange = async (userId: string, newRole: string) => {
     setUpdatingRoleUserId(userId);
     const mappedRole = ROLE_ALIASES[newRole.toUpperCase()] || newRole.toLowerCase();
+    const targetUser = users.find((u) => u.id === userId) || {};
+    const targetEmail = String(targetUser.email || '').toLowerCase().trim();
+    const targetName = resolveRealName(targetUser, targetEmail ? targetEmail.split('@')[0] : 'User');
 
     try {
       if (!auth.currentUser) throw new Error('Your admin session has expired. Please sign in again.');
@@ -133,55 +136,95 @@ const AdminUsers: React.FC = () => {
         if (response.ok) {
           roleChangeSucceeded = true;
           returnedRole = String(payload.role || mappedRole).toLowerCase();
-        } else if (response.status === 403 || response.status === 400) {
-          throw new Error(payload.error || 'Role change was rejected by security policy.');
+        } else if (response.status === 400 || (response.status === 403 && String(payload.error || '').includes('Super Admin'))) {
+          throw new Error(`SECURITY_POLICY:${payload.error || 'Role change was rejected by security policy.'}`);
         } else {
-          // 500 or network fallback to client Firestore write
-          throw new Error(payload.error || 'Server function error');
+          throw new Error(payload.error || 'Server function fallback');
         }
       } catch (fnErr: any) {
-        if (fnErr.message && fnErr.message.includes('security policy')) {
-          throw fnErr;
+        if (fnErr.message && fnErr.message.startsWith('SECURITY_POLICY:')) {
+          throw new Error(fnErr.message.replace('SECURITY_POLICY:', ''));
         }
         console.warn('admin-role-change function fallback, performing direct client write:', fnErr);
+      }
 
-        // 2. Direct client Firestore write fallback (verified by Firestore security rules)
-        const now = new Date().toISOString();
-        await setDoc(doc(db, 'users', userId), {
-          role: mappedRole,
+      // 2. Always synchronize client Firestore role collections so stale tutor/parent records never conflict
+      const now = new Date().toISOString();
+      await setDoc(doc(db, 'users', userId), {
+        role: mappedRole,
+        roles: [mappedRole],
+        updatedAt: now
+      }, { merge: true });
+
+      // Also update any duplicate legacy user docs sharing the same email address
+      if (targetEmail) {
+        const sameEmailDocs = users.filter(
+          (u) => u.id !== userId && String(u.email || '').toLowerCase().trim() === targetEmail
+        );
+        for (const dup of sameEmailDocs) {
+          await setDoc(doc(db, 'users', dup.id), {
+            role: mappedRole,
+            roles: [mappedRole],
+            updatedAt: now
+          }, { merge: true }).catch(() => {});
+        }
+      }
+
+      if (mappedRole === 'staff') {
+        await setDoc(doc(db, 'tutors', userId), {
+          role: 'staff',
+          status: 'ACTIVE',
+          name: targetName,
+          email: targetEmail || null,
           updatedAt: now
         }, { merge: true });
+        await deleteDoc(doc(db, 'parents', userId)).catch(() => {});
+      } else {
+        // Remove any stale tutor/staff docs so ProtectedRoute / login never reverts this user back to STAFF
+        await deleteDoc(doc(db, 'tutors', userId)).catch(() => {});
+        await deleteDoc(doc(db, 'staff', userId)).catch(() => {});
 
-        // Synchronize corresponding role collection
-        if (mappedRole === 'staff') {
-          await setDoc(doc(db, 'tutors', userId), {
-            role: 'staff',
-            status: 'ACTIVE',
-            updatedAt: now
-          }, { merge: true });
-        } else if (mappedRole === 'parent') {
+        if (mappedRole === 'parent') {
           await setDoc(doc(db, 'parents', userId), {
+            uid: userId,
             role: 'parent',
+            name: targetName,
+            fullName: targetName,
+            email: targetEmail || null,
+            status: 'ACTIVE',
+            accountStatus: 'ACTIVE',
             updatedAt: now
           }, { merge: true });
         } else if (mappedRole === 'student') {
           await setDoc(doc(db, 'individualStudents', userId), {
             role: 'student',
+            fullName: targetName,
+            email: targetEmail || null,
             updatedAt: now
           }, { merge: true });
         } else if (mappedRole.includes('admin')) {
           await setDoc(doc(db, 'admins', userId), {
+            uid: userId,
+            name: targetName,
+            email: targetEmail || null,
             role: mappedRole,
+            status: 'ACTIVE',
             updatedAt: now
           }, { merge: true });
         }
-
-        roleChangeSucceeded = true;
-        returnedRole = mappedRole;
       }
 
+      roleChangeSucceeded = true;
+      returnedRole = mappedRole;
+
       if (roleChangeSucceeded) {
-        setUsers((prev) => prev.map((user) => user.id === userId ? { ...user, role: returnedRole } : user));
+        setUsers((prev) =>
+          prev.map((user) =>
+            user.id === userId || (targetEmail && String(user.email || '').toLowerCase().trim() === targetEmail)
+              ? { ...user, role: returnedRole }
+              : user
+          )
+        );
         toast.success(`Role updated to ${returnedRole.toUpperCase()}.`);
       }
     } catch (error) {
@@ -197,14 +240,27 @@ const AdminUsers: React.FC = () => {
     try {
       if (!auth.currentUser) throw new Error('Your admin session has expired. Please sign in again.');
       const token = await auth.currentUser.getIdToken();
-      const response = await fetch('/.netlify/functions/admin-account-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ userId, status: nextStatus })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Unable to update account access securely.');
-      setUsers((prev) => prev.map((user) => user.id === userId ? { ...user, accountStatus: nextStatus } : user));
+      let updatedViaServer = false;
+      try {
+        const response = await fetch('/.netlify/functions/admin-account-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ userId, status: nextStatus })
+        });
+        if (response.ok) {
+          updatedViaServer = true;
+        }
+      } catch {
+        // Fall back to direct Firestore update
+      }
+      if (!updatedViaServer) {
+        await setDoc(doc(db, 'users', userId), {
+          accountStatus: nextStatus,
+          status: nextStatus,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
+      setUsers((prev) => prev.map((user) => user.id === userId ? { ...user, accountStatus: nextStatus, status: nextStatus } : user));
       toast.success(nextStatus === 'ACTIVE' ? 'Account restored.' : 'Account suspended.');
     } catch (error) {
       console.error('Error updating account status:', error);

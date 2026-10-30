@@ -457,8 +457,14 @@ export const handler: Handler = async event => {
           )
         )
         .map((exam: any) => {
-          const from = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
-          const until = exam.availableUntil ? new Date(exam.availableUntil).getTime() : Number.MAX_SAFE_INTEGER;
+          const rawFrom = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
+          const from = Number.isFinite(rawFrom) ? rawFrom : 0;
+          const rawUntil = exam.availableUntil ? new Date(exam.availableUntil).getTime() : Number.MAX_SAFE_INTEGER;
+          let until = Number.isFinite(rawUntil) ? rawUntil : Number.MAX_SAFE_INTEGER;
+          if (from > 0 && until < Number.MAX_SAFE_INTEGER && until <= from) {
+            const plus12h = until + 12 * 60 * 60 * 1000;
+            until = plus12h > from ? plus12h : Number.MAX_SAFE_INTEGER;
+          }
           const status =
             exam._rawStatus === "completed" || (Number.isFinite(until) && now >= until)
               ? "completed"
@@ -539,8 +545,14 @@ export const handler: Handler = async event => {
       if (!examSnap.exists) return json(403, { error: "The passcode could not be validated for this assessment." });
       const exam = examSnap.data() || {};
       const now = Date.now();
-      const from = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
-      const until = exam.availableUntil ? new Date(exam.availableUntil).getTime() : Number.MAX_SAFE_INTEGER;
+      const rawFrom = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
+      const from = Number.isFinite(rawFrom) ? rawFrom : 0;
+      const rawUntil = exam.availableUntil ? new Date(exam.availableUntil).getTime() : Number.MAX_SAFE_INTEGER;
+      let until = Number.isFinite(rawUntil) ? rawUntil : Number.MAX_SAFE_INTEGER;
+      if (from > 0 && until < Number.MAX_SAFE_INTEGER && until <= from) {
+        const plus12h = until + 12 * 60 * 60 * 1000;
+        until = plus12h > from ? plus12h : Number.MAX_SAFE_INTEGER;
+      }
       const schoolId = String(
         student.data.schoolId || student.data.school_id || student.data.schoolDocId || c.user.schoolId || ""
       ).trim();
@@ -713,10 +725,16 @@ export const handler: Handler = async event => {
       await adminDb.runTransaction(async tx => {
         const [lockSnap, existingExam] = await Promise.all([tx.get(lockRef), tx.get(ref)]);
         const currentExam = existingExam.data() || {};
-        const currentFrom = currentExam.availableFrom ? Date.parse(String(currentExam.availableFrom)) : 0;
-        const currentUntil = currentExam.availableUntil
+        const rawCurrentFrom = currentExam.availableFrom ? Date.parse(String(currentExam.availableFrom)) : 0;
+        const currentFrom = Number.isFinite(rawCurrentFrom) ? rawCurrentFrom : 0;
+        const rawCurrentUntil = currentExam.availableUntil
           ? Date.parse(String(currentExam.availableUntil))
           : Number.MAX_SAFE_INTEGER;
+        let currentUntil = Number.isFinite(rawCurrentUntil) ? rawCurrentUntil : Number.MAX_SAFE_INTEGER;
+        if (currentFrom > 0 && currentUntil < Number.MAX_SAFE_INTEGER && currentUntil <= currentFrom) {
+          const plus12h = currentUntil + 12 * 60 * 60 * 1000;
+          currentUntil = plus12h > currentFrom ? plus12h : Number.MAX_SAFE_INTEGER;
+        }
         if (
           !existingExam.exists ||
           currentExam.status !== "active" ||

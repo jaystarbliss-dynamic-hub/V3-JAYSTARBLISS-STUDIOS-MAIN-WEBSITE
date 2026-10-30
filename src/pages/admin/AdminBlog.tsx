@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { getAllClientDatabases } from '../../lib/firebase';
 import { Plus, Trash2, Edit3, Newspaper, BookOpen, ExternalLink, Eye } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -14,13 +14,33 @@ const AdminBlog: React.FC = () => {
   const fetchAll = async () => {
     try {
       setLoading(true);
-      // Fetch blog posts
-      const blogSnap = await getDocs(collection(db, 'blog'));
-      setPosts(blogSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const dbs = getAllClientDatabases();
+      const mergedPosts = new Map<string, any>();
+      const mergedNews = new Map<string, any>();
 
-      // Fetch news corner
-      const newsSnap = await getDocs(collection(db, 'newsCorner'));
-      setNews(newsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      await Promise.all(
+        dbs.map(async (clientDb) => {
+          try {
+            const blogSnap = await getDocs(collection(clientDb, 'blog'));
+            blogSnap.docs.forEach((d) => {
+              if (!mergedPosts.has(d.id)) mergedPosts.set(d.id, { id: d.id, ...d.data() });
+            });
+          } catch {
+            // ignore secondary db error
+          }
+          try {
+            const newsSnap = await getDocs(collection(clientDb, 'newsCorner'));
+            newsSnap.docs.forEach((d) => {
+              if (!mergedNews.has(d.id)) mergedNews.set(d.id, { id: d.id, ...d.data() });
+            });
+          } catch {
+            // ignore secondary db error
+          }
+        })
+      );
+
+      setPosts(Array.from(mergedPosts.values()));
+      setNews(Array.from(mergedNews.values()));
     } catch (error) {
       console.error('Error fetching blog & news:', error);
     } finally {
@@ -34,7 +54,10 @@ const AdminBlog: React.FC = () => {
 
   const handleDelete = async (id: string, type: 'blog' | 'newsCorner') => {
     try {
-      await deleteDoc(doc(db, type, id));
+      const dbs = getAllClientDatabases();
+      await Promise.all(
+        dbs.map((clientDb) => deleteDoc(doc(clientDb, type, id)).catch(() => null))
+      );
       if (type === 'blog') {
         setPosts(posts.filter(p => p.id !== id));
       } else {

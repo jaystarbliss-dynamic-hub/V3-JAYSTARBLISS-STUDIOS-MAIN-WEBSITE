@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { db } from './firebase';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db, getAllClientDatabases } from './firebase';
 
 export interface EditableSectionConfig {
   id: string;
@@ -373,12 +373,23 @@ export function usePageSection<T extends Record<string, any>>(
       // ignore storage errors
     }
 
-    const docRef = doc(db, 'page_sections', sectionKey);
-    getDoc(docRef)
-      .then((docSnap) => {
+    (async () => {
+      try {
+        const dbs = getAllClientDatabases();
+        let fetchedData: Record<string, any> | null = null;
+        for (const clientDb of dbs) {
+          try {
+            const snap = await getDoc(doc(clientDb, 'page_sections', sectionKey));
+            if (snap.exists()) {
+              fetchedData = snap.data();
+              break;
+            }
+          } catch {
+            // try next database
+          }
+        }
         if (!isMounted) return;
-        if (docSnap.exists()) {
-          const fetchedData = docSnap.data();
+        if (fetchedData) {
           setData({ ...defaultDataRef.current, ...fetchedData } as T);
           try {
             sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), exists: true, data: fetchedData }));
@@ -394,14 +405,14 @@ export function usePageSection<T extends Record<string, any>>(
           }
         }
         setLoading(false);
-      })
-      .catch((err) => {
+      } catch (err: any) {
         if (!isMounted) return;
-        console.warn(`CMS Section load note for ${sectionKey}:`, err.message);
-        setError(err.message);
+        console.warn(`CMS Section load note for ${sectionKey}:`, err?.message);
+        setError(err?.message || 'Error loading section');
         setData(defaultDataRef.current);
         setLoading(false);
-      });
+      }
+    })();
 
     return () => {
       isMounted = false;
@@ -420,16 +431,20 @@ export async function savePageSection(
   data: Record<string, any>
 ): Promise<void> {
   const sectionKey = `${pageId}_${sectionId}`;
-  const docRef = doc(db, 'page_sections', sectionKey);
-  await setDoc(
-    docRef,
-    {
-      ...data,
-      pageId,
-      sectionId,
-      updatedAt: serverTimestamp()
-    },
-    { merge: true }
+  const dbs = getAllClientDatabases();
+  await Promise.all(
+    dbs.map((clientDb) =>
+      setDoc(
+        doc(clientDb, 'page_sections', sectionKey),
+        {
+          ...data,
+          pageId,
+          sectionId,
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      ).catch(() => null)
+    )
   );
   try {
     sessionStorage.removeItem(`${CMS_CACHE_PREFIX}${sectionKey}`);
@@ -447,10 +462,16 @@ export async function fetchPageSectionOnce<T extends Record<string, any>>(
   defaultData: T
 ): Promise<T> {
   try {
-    const docRef = doc(db, 'page_sections', `${pageId}_${sectionId}`);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      return { ...defaultData, ...snap.data() } as T;
+    const dbs = getAllClientDatabases();
+    for (const clientDb of dbs) {
+      try {
+        const snap = await getDoc(doc(clientDb, 'page_sections', `${pageId}_${sectionId}`));
+        if (snap.exists()) {
+          return { ...defaultData, ...snap.data() } as T;
+        }
+      } catch {
+        // try next database
+      }
     }
   } catch (e) {
     console.warn(`Could not fetch section ${pageId}_${sectionId}`, e);

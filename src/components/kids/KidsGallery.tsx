@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { getAllClientDatabases } from '../../lib/firebase';
 import { Link } from 'react-router-dom';
 import { 
   Gamepad2, 
@@ -24,21 +24,44 @@ export interface KidsProjectItem {
   id: string;
   title: string;
   creator?: string;
+  creatorName?: string;
   studentName?: string;
   studentAge?: string | number;
+  creatorAge?: string | number;
   description?: string;
   category?: string;
   embedUrl?: string;
   imageUrl?: string;
+  featuredImage?: string;
   liveUrl?: string;
   icon?: string;
   status?: string;
   isFeatured?: boolean;
+  featured?: boolean;
   createdAt?: string;
 }
 
 interface KidsGalleryProps {
   showHeroBanner?: boolean;
+}
+
+function normalizeKidsProject(id: string, raw: Record<string, any>): KidsProjectItem {
+  const baseCreator = String(raw.creator || raw.creatorName || raw.studentName || '').trim();
+  const age = raw.studentAge || raw.creatorAge;
+  const formattedCreator =
+    baseCreator && age && !baseCreator.toLowerCase().includes('age')
+      ? `${baseCreator} (Age ${age})`
+      : baseCreator;
+
+  return {
+    id,
+    ...raw,
+    title: String(raw.title || 'Untitled Project'),
+    creator: formattedCreator || baseCreator,
+    studentName: baseCreator,
+    imageUrl: raw.imageUrl || raw.featuredImage || '',
+    isFeatured: Boolean(raw.isFeatured || raw.featured),
+  };
 }
 
 const KidsGallery: React.FC<KidsGalleryProps> = ({ showHeroBanner = true }) => {
@@ -58,10 +81,40 @@ const KidsGallery: React.FC<KidsGalleryProps> = ({ showHeroBanner = true }) => {
     const fetchKidsProjects = async () => {
       try {
         setLoading(true);
-        // Query kidsProjects collection
-        const q = query(collection(db, 'kidsProjects'));
-        const snap = await getDocs(q);
-        const fetched = snap.docs.map(d => ({ id: d.id, ...d.data() } as KidsProjectItem));
+        const dbs = getAllClientDatabases();
+        const [kidsSnaps, portfolioSnaps] = await Promise.all([
+          Promise.all(
+            dbs.map((clientDb) => getDocs(query(collection(clientDb, 'kidsProjects'))).catch(() => null))
+          ),
+          Promise.all(
+            dbs.map((clientDb) => getDocs(query(collection(clientDb, 'portfolio'))).catch(() => null))
+          ),
+        ]);
+
+        const byId = new Map<string, KidsProjectItem>();
+
+        kidsSnaps.forEach((snap) => {
+          if (!snap) return;
+          snap.docs.forEach((d) => {
+            if (!byId.has(d.id)) {
+              byId.set(d.id, normalizeKidsProject(d.id, d.data()));
+            }
+          });
+        });
+
+        portfolioSnaps.forEach((snap) => {
+          if (!snap) return;
+          snap.docs.forEach((d) => {
+            const data = d.data();
+            if (data.portfolioType === 'STUDENT_WORK' || data.portfolioType === 'KIDS_CORNER') {
+              if (!byId.has(d.id)) {
+                byId.set(d.id, normalizeKidsProject(d.id, data));
+              }
+            }
+          });
+        });
+
+        const fetched = Array.from(byId.values());
 
         if (fetched.length > 0) {
           setProjects(fetched);
@@ -90,7 +143,7 @@ const KidsGallery: React.FC<KidsGalleryProps> = ({ showHeroBanner = true }) => {
   const filteredProjects = projects.filter(p => {
     if (p.status === 'DRAFT') return false;
     const matchesCat = selectedCategory === 'ALL' || (p.category && p.category.toLowerCase().includes(selectedCategory.toLowerCase()));
-    const creatorName = p.creator || p.studentName || '';
+    const creatorName = p.creator || p.creatorName || p.studentName || '';
     const matchesSearch = !searchQuery ||
       p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       creatorName.toLowerCase().includes(searchQuery.toLowerCase()) ||

@@ -127,11 +127,12 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
       const billingResult = await billingGet<any>('billing-data').catch(() => null);
 
       // 2. Fetch directly from Firestore collections to ensure 100% test transfers and direct payments appear
-      const [schoolSnap, paymentsSnap, withdrawalsSnap, usersSnap, enrollSnap, indivSnap, studSnap] = await Promise.all([
+      const [schoolSnap, paymentsSnap, withdrawalsSnap, usersSnap, parentsSnap, enrollSnap, indivSnap, studSnap] = await Promise.all([
         getDocs(collection(db, 'schools')).catch(() => ({ docs: [] } as any)),
         getDocs(collection(db, 'payments')).catch(() => ({ docs: [] } as any)),
         getDocs(collection(db, 'walletWithdrawals')).catch(() => ({ docs: [] } as any)),
         getDocs(collection(db, 'users')).catch(() => ({ docs: [] } as any)),
+        getDocs(collection(db, 'parents')).catch(() => ({ docs: [] } as any)),
         getDocs(collection(db, 'enrollment_requests')).catch(() => ({ docs: [] } as any)),
         getDocs(collection(db, 'individualStudents')).catch(() => ({ docs: [] } as any)),
         getDocs(collection(db, 'students')).catch(() => ({ docs: [] } as any))
@@ -149,21 +150,141 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
       });
       setSchools(loadedSchools);
 
-      // Build Unified Parents & Students List from enrollment_requests, individualStudents, and students
+      // Build parent lookup maps by ID, email, and child ID
+      const parentById = new Map<string, { id: string; name: string; email: string; phone: string }>();
+      const parentByEmail = new Map<string, { id: string; name: string; email: string; phone: string }>();
+      const parentByChildId = new Map<string, { id: string; name: string; email: string; phone: string }>();
+
+      const registerParentRecord = (docId: string, raw: any) => {
+        const pId = String(raw.uid || raw.parentId || docId || '').trim();
+        const pName = String(raw.fullName || raw.name || raw.displayName || '').trim();
+        const pEmail = String(raw.email || raw.parentEmail || '').trim().toLowerCase();
+        const pPhone = String(raw.phone || raw.phoneNumber || raw.whatsapp || raw.parentPhone || '').trim();
+        if (!pName && !pEmail) return;
+        const entry = {
+          id: pId || docId,
+          name: pName || (pEmail ? pEmail.split('@')[0] : 'Parent'),
+          email: pEmail,
+          phone: pPhone,
+        };
+        if (docId) parentById.set(docId, entry);
+        if (pId) parentById.set(pId, entry);
+        if (pEmail) parentByEmail.set(pEmail, entry);
+        if (Array.isArray(raw.children)) {
+          raw.children.forEach((cid: any) => {
+            const cleanCid = String(cid || '').trim();
+            if (cleanCid) parentByChildId.set(cleanCid, entry);
+          });
+        }
+      };
+
+      parentsSnap.docs.forEach((d: any) => registerParentRecord(d.id, d.data()));
+      usersSnap.docs.forEach((d: any) => {
+        const u = d.data();
+        if (String(u.role || '').toLowerCase() === 'parent' || u.isParent) {
+          registerParentRecord(d.id, u);
+        }
+      });
+
+      const resolveParentForStudent = (docId: string, item: any) => {
+        const pId = String(item.parentId || item.parentUid || item.parent_id || '').trim();
+        const rawParentEmail = String(item.parentEmail || item.guardianEmail || '').trim().toLowerCase();
+        const matched =
+          (pId && parentById.get(pId)) ||
+          (rawParentEmail && parentByEmail.get(rawParentEmail)) ||
+          parentByChildId.get(docId) ||
+          null;
+        return {
+          parentId: pId || matched?.id || '',
+          parentName: item.parentName || item.guardianName || matched?.name || '',
+          parentEmail: item.parentEmail || item.guardianEmail || matched?.email || '',
+          parentPhone: item.parentPhone || item.guardianPhone || matched?.phone || item.phone || '',
+        };
+      };
+
+      // Build Unified Parents & Students List from individualStudents, students, and enrollment_requests
       // Strictly ignore school-registered students (students with schoolId or studentType === 'school')
       const parentStudentsMap = new Map<string, UnifiedParentStudent>();
 
-      // 1. From enrollment_requests
+      // 1. From individualStudents
+      indivSnap.docs.forEach((d: any) => {
+        const item = d.data();
+        if (item.schoolId || item.studentType === 'school') return;
+        const resolvedParent = resolveParentForStudent(d.id, item);
+        parentStudentsMap.set(d.id, {
+          id: d.id,
+          source: 'individualStudents',
+          studentName: item.fullName || item.studentName || item.username || 'Scholar',
+          parentName: resolvedParent.parentName,
+          parentEmail: resolvedParent.parentEmail,
+          parentPhone: resolvedParent.parentPhone,
+          plan: item.track || item.plan || item.subjects || '',
+          amount: Number(item.amount || item.tuitionFee || 0),
+          cycle: item.cycle || 'monthly',
+          teachingMode: item.teachingMode || item.mode || 'Online 1-on-1',
+          tutorId: item.tutorId || item.assignedTutorId,
+          tutorName: item.tutorName || item.assignedTutorName,
+          tutorPayoutRate: Number(item.tutorPayoutRate || 0),
+          status: String(item.accountStatus || item.status || 'ACTIVE').toUpperCase(),
+          age: item.age,
+          grade: item.grade || item.class,
+          createdAt: item.createdAt?.toDate ? item.createdAt.toDate().toISOString() : (item.createdAt || new Date().toISOString())
+        });
+      });
+
+      // 2. From students collection (personal/parent)
+      studSnap.docs.forEach((d: any) => {
+        const item = d.data();
+        if (!parentStudentsMap.has(d.id) && item.studentType !== 'school' && !item.schoolId) {
+          const resolvedParent = resolveParentForStudent(d.id, item);
+          parentStudentsMap.set(d.id, {
+            id: d.id,
+            source: 'students',
+            studentName: item.fullName || item.name || 'Scholar',
+            parentName: resolvedParent.parentName,
+            parentEmail: resolvedParent.parentEmail,
+            parentPhone: resolvedParent.parentPhone,
+            plan: item.track || item.plan || '',
+            amount: Number(item.amount || item.tuitionFee || 0),
+            cycle: item.cycle || 'monthly',
+            teachingMode: item.teachingMode || 'Online 1-on-1',
+            tutorId: item.tutorId || item.assignedTutorId,
+            tutorName: item.tutorName || item.assignedTutorName,
+            tutorPayoutRate: Number(item.tutorPayoutRate || 0),
+            status: String(item.accountStatus || item.status || 'ACTIVE').toUpperCase(),
+            grade: item.grade || item.class,
+            createdAt: item.createdAt?.toDate ? item.createdAt.toDate().toISOString() : (item.createdAt || new Date().toISOString())
+          });
+        }
+      });
+
+      // 3. From enrollment_requests (skip if linkedStudentId / studentDocId is already in parentStudentsMap)
       enrollSnap.docs.forEach((d: any) => {
         const item = d.data();
         if (item.schoolId || item.studentType === 'school') return;
+        const linkedId = String(item.linkedStudentId || item.studentDocId || '').trim();
+        if (linkedId && parentStudentsMap.has(linkedId)) {
+          const existing = parentStudentsMap.get(linkedId)!;
+          if (!existing.amount && (item.amount || item.tuitionFee)) {
+            existing.amount = Number(item.amount || item.tuitionFee || 0);
+          }
+          if (!existing.plan && (item.plan || item.courseName || item.program)) {
+            existing.plan = item.plan || item.courseName || item.program || '';
+          }
+          if (!existing.tutorId && item.tutorId) {
+            existing.tutorId = item.tutorId;
+            existing.tutorName = item.tutorName;
+          }
+          return;
+        }
+        const resolvedParent = resolveParentForStudent(d.id, item);
         parentStudentsMap.set(d.id, {
           id: d.id,
           source: 'enrollment_requests',
           studentName: item.studentName || item.childName || 'Scholar',
-          parentName: item.parentName || item.guardianName || '',
-          parentEmail: item.parentEmail || item.email || '',
-          parentPhone: item.parentPhone || item.phone || '',
+          parentName: resolvedParent.parentName,
+          parentEmail: resolvedParent.parentEmail,
+          parentPhone: resolvedParent.parentPhone,
           plan: item.plan || item.courseName || item.program || '',
           amount: Number(item.amount || item.tuitionFee || 0),
           cycle: item.cycle || 'monthly',
@@ -176,56 +297,6 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
           grade: item.grade,
           createdAt: item.createdAt?.toDate ? item.createdAt.toDate().toISOString() : (item.createdAt || new Date().toISOString())
         });
-      });
-
-      // 2. From individualStudents
-      indivSnap.docs.forEach((d: any) => {
-        const item = d.data();
-        if (item.schoolId || item.studentType === 'school') return;
-        parentStudentsMap.set(d.id, {
-          id: d.id,
-          source: 'individualStudents',
-          studentName: item.fullName || item.studentName || item.username || 'Scholar',
-          parentName: item.parentName || item.guardianName || '',
-          parentEmail: item.parentEmail || item.email || '',
-          parentPhone: item.parentPhone || item.phone || '',
-          plan: item.track || item.plan || item.subjects || '',
-          amount: Number(item.amount || item.tuitionFee || 0),
-          cycle: item.cycle || 'monthly',
-          teachingMode: item.teachingMode || item.mode || 'Online 1-on-1',
-          tutorId: item.tutorId,
-          tutorName: item.tutorName,
-          tutorPayoutRate: Number(item.tutorPayoutRate || 0),
-          status: String(item.accountStatus || item.status || 'ACTIVE').toUpperCase(),
-          age: item.age,
-          grade: item.grade || item.class,
-          createdAt: item.createdAt?.toDate ? item.createdAt.toDate().toISOString() : (item.createdAt || new Date().toISOString())
-        });
-      });
-
-      // 3. From students collection (personal/parent)
-      studSnap.docs.forEach((d: any) => {
-        const item = d.data();
-        if (!parentStudentsMap.has(d.id) && item.studentType !== 'school' && !item.schoolId) {
-          parentStudentsMap.set(d.id, {
-            id: d.id,
-            source: 'students',
-            studentName: item.fullName || item.name || 'Scholar',
-            parentName: item.parentName || '',
-            parentEmail: item.parentEmail || item.email || '',
-            parentPhone: item.parentPhone || item.phone || '',
-            plan: item.track || item.plan || '',
-            amount: Number(item.amount || item.tuitionFee || 0),
-            cycle: item.cycle || 'monthly',
-            teachingMode: item.teachingMode || 'Online 1-on-1',
-            tutorId: item.tutorId,
-            tutorName: item.tutorName,
-            tutorPayoutRate: Number(item.tutorPayoutRate || 0),
-            status: String(item.accountStatus || item.status || 'ACTIVE').toUpperCase(),
-            grade: item.grade || item.class,
-            createdAt: item.createdAt?.toDate ? item.createdAt.toDate().toISOString() : (item.createdAt || new Date().toISOString())
-          });
-        }
       });
 
       // Parent/student records are database-driven. Do not seed families, programmes or fees in the UI.

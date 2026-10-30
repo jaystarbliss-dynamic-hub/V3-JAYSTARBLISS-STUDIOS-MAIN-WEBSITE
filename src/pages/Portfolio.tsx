@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { getAllClientDatabases } from '../lib/firebase';
 import MainLayout from '../components/layout/MainLayout';
 import SEO from '../components/ui/SEO';
 import { motion } from 'motion/react';
@@ -59,9 +59,22 @@ const Portfolio: React.FC = () => {
   useEffect(() => {
     const fetchOrgProjects = async () => {
       try {
-        const q = query(collection(db, 'portfolio'), where('status', '==', 'PUBLISHED'));
-        const snapshot = await getDocs(q);
-        const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const dbs = getAllClientDatabases();
+        const snaps = await Promise.all(
+          dbs.map((clientDb) =>
+            getDocs(query(collection(clientDb, 'portfolio'), where('status', '==', 'PUBLISHED'))).catch(() => null)
+          )
+        );
+        const byId = new Map<string, any>();
+        snaps.forEach((snap) => {
+          if (!snap) return;
+          snap.docs.forEach((docSnap) => {
+            if (!byId.has(docSnap.id)) {
+              byId.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+            }
+          });
+        });
+        const docs = Array.from(byId.values());
 
         const orgList = docs.filter((p: any) => p.portfolioType === 'CLIENT_WORK' || p.portfolioType === 'ORGANISATION' || !p.portfolioType);
         setOrgProjects(orgList);

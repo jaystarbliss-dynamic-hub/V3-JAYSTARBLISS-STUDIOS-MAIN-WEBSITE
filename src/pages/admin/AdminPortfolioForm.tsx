@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { doc, getDoc, addDoc, updateDoc, collection } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { doc, getDoc, setDoc, collection } from 'firebase/firestore';
+import { db, getAllClientDatabases } from '../../lib/firebase';
 import { ArrowLeft, Loader2, Gamepad2, Briefcase } from 'lucide-react';
 import RichTextEditor from '../../components/admin/RichTextEditor';
 import PhotoUpload from '../../components/admin/PhotoUpload';
@@ -35,32 +35,55 @@ const AdminPortfolioForm: React.FC = () => {
 
   useEffect(() => {
     if (isEditing && id) {
-      getDoc(doc(db, 'portfolio', id)).then(snap => {
-        if (snap.exists()) {
-          const data = snap.data();
-          setFormData({
-            title: data.title || '',
-            slug: data.slug || '',
-            portfolioType: data.portfolioType || 'STUDENT_WORK',
-            client: data.client || '',
-            studentName: data.studentName || '',
-            studentAge: data.studentAge || '',
-            icon: data.icon || 'gamepad',
-            category: data.category || '',
-            description: data.description || '',
-            embedUrl: data.embedUrl || '',
-            liveUrl: data.liveUrl || '',
-            featuredImage: data.featuredImage || '',
-            status: data.status || 'PUBLISHED',
-            isFeatured: Boolean(data.isFeatured)
-          });
+      (async () => {
+        try {
+          const dbs = getAllClientDatabases();
+          let data: any = null;
+          for (const clientDb of dbs) {
+            const snap = await getDoc(doc(clientDb, 'portfolio', id));
+            if (snap.exists()) {
+              data = snap.data();
+              break;
+            }
+            const kidsSnap = await getDoc(doc(clientDb, 'kidsProjects', id));
+            if (kidsSnap.exists()) {
+              const kd = kidsSnap.data();
+              data = {
+                ...kd,
+                portfolioType: 'STUDENT_WORK',
+                studentName: kd.creator || kd.creatorName || kd.studentName || '',
+                studentAge: kd.creatorAge ? String(kd.creatorAge) : (kd.studentAge || ''),
+                featuredImage: kd.imageUrl || kd.featuredImage || '',
+                isFeatured: Boolean(kd.isFeatured || kd.featured),
+              };
+              break;
+            }
+          }
+          if (data) {
+            setFormData({
+              title: data.title || '',
+              slug: data.slug || '',
+              portfolioType: data.portfolioType || 'STUDENT_WORK',
+              client: data.client || '',
+              studentName: data.studentName || '',
+              studentAge: data.studentAge || '',
+              icon: data.icon || 'gamepad',
+              category: data.category || '',
+              description: data.description || '',
+              embedUrl: data.embedUrl || '',
+              liveUrl: data.liveUrl || '',
+              featuredImage: data.featuredImage || '',
+              status: data.status || 'PUBLISHED',
+              isFeatured: Boolean(data.isFeatured)
+            });
+          }
+        } catch (err) {
+          console.error(err);
+          setError('Failed to load project details.');
+        } finally {
+          setLoading(false);
         }
-        setLoading(false);
-      }).catch(err => {
-        console.error(err);
-        setError('Failed to load project details.');
-        setLoading(false);
-      });
+      })();
     }
   }, [id, isEditing]);
 
@@ -83,17 +106,20 @@ const AdminPortfolioForm: React.FC = () => {
     setError(null);
 
     try {
+      const dbs = getAllClientDatabases();
+      const targetId = isEditing && id ? id : doc(collection(db, 'portfolio')).id;
+      const now = new Date().toISOString();
       const data: any = {
         ...formData,
-        updatedAt: new Date().toISOString()
+        updatedAt: now,
+        ...(isEditing ? {} : { createdAt: now }),
       };
 
-      if (!isEditing) {
-        data.createdAt = new Date().toISOString();
-        await addDoc(collection(db, 'portfolio'), data);
-      } else {
-        await updateDoc(doc(db, 'portfolio', id!), data);
-      }
+      await Promise.all(
+        dbs.map((clientDb) =>
+          setDoc(doc(clientDb, 'portfolio', targetId), data, { merge: true }).catch(() => null)
+        )
+      );
 
       navigate('/admin/portfolio');
     } catch (err: any) {

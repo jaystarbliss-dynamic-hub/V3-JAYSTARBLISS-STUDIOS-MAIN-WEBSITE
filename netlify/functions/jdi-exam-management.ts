@@ -4,13 +4,14 @@ import {
   adminDb,
   applyRequestDatabaseHeader,
   getDefaultAdminDb,
-  getLegacyNamedAdminDb,
+  hasAdminAuth,
+  hasAdminDb,
 } from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 
 function getAllAdminDbs() {
-  const dbs = [getDefaultAdminDb(), getLegacyNamedAdminDb()].filter(Boolean);
-  return dbs.length ? dbs : [adminDb];
+  const defaultDb = getDefaultAdminDb();
+  return defaultDb ? [defaultDb] : [adminDb];
 }
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -40,18 +41,39 @@ const json = (statusCode: number, body: Record<string, unknown>) => ({
 
 const norm = (v: unknown) => String(v || "").trim().toUpperCase();
 
+const KNOWN_ADMIN_EMAILS = new Set([
+  "johnrufai242@gmail.com",
+  "admin@jaystarbliss.com",
+  "admin@jaystarbliss-studios.name.ng",
+  "admin@jaystar.com",
+]);
+
 async function authUser(event: any) {
   applyRequestDatabaseHeader(event.headers as any);
+  if (!hasAdminAuth() || !hasAdminDb()) throw new Error("UNCONFIGURED");
   const h = event.headers?.authorization || event.headers?.Authorization || "";
   if (!h.startsWith("Bearer ")) throw new Error("AUTH");
   const d = await adminAuth.verifyIdToken(h.slice(7));
-  const s = await adminDb.collection("users").doc(d.uid).get();
-  if (!s.exists) throw new Error("PROFILE");
-  const u = s.data() || {};
+  const emailLower = String(d.email || "").toLowerCase().trim();
+  const s = await adminDb.collection("users").doc(d.uid).get().catch(() => null);
+  let u: Record<string, any> = s?.exists ? s.data() || {} : {};
+  if (!s?.exists) {
+    if (KNOWN_ADMIN_EMAILS.has(emailLower) || d.admin === true) {
+      u = { uid: d.uid, email: emailLower, role: "SUPER_ADMIN", status: "ACTIVE" };
+    } else {
+      const tutorSnap = await adminDb.collection("tutors").doc(d.uid).get().catch(() => null);
+      if (tutorSnap?.exists) {
+        u = { uid: d.uid, email: emailLower, role: "STAFF", ...(tutorSnap.data() || {}) };
+      } else {
+        throw new Error("PROFILE");
+      }
+    }
+  }
   if (["DISABLED", "SUSPENDED", "BANNED"].includes(norm(u.status || u.accountStatus))) {
     throw new Error("INACTIVE");
   }
-  return { uid: d.uid, email: String(d.email || u.email || "").toLowerCase(), role: norm(u.role), user: u };
+  const resolvedRole = KNOWN_ADMIN_EMAILS.has(emailLower) ? "SUPER_ADMIN" : norm(u.role);
+  return { uid: d.uid, email: String(emailLower || u.email || "").toLowerCase(), role: resolvedRole, user: u };
 }
 
 const admins = [
@@ -1381,6 +1403,7 @@ export const handler: Handler = async event => {
     return json(405, { error: "Method not allowed." });
   } catch (e) {
     const m = e instanceof Error ? e.message : "";
+    if (m === "UNCONFIGURED") return json(503, { error: "Assessment server SDK unconfigured; using client Firestore.", fallback: true });
     if (m === "AUTH") return json(401, { error: "Authentication required." });
     if (m === "PROFILE") return json(403, { error: "Portal profile not found." });
     if (m === "INACTIVE") return json(403, { error: "Account is inactive." });

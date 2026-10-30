@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db, auth } from '../../lib/firebase';
-import { collection, getDocs, query, where, limit, setDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, getDoc, query, where, limit, setDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { 
   GraduationCap, PlusCircle, CreditCard, Bell, CheckCircle2, AlertCircle, 
   ArrowRight, ChevronRight, Download, Receipt, Calendar, ExternalLink,
@@ -80,28 +80,65 @@ const ParentDashboard: React.FC = () => {
         const userUid = effective.effectiveUid || user?.uid || '';
         const allStudentsMap = new Map<string, ChildRecord>();
         const studentIdentityKey = (studentDoc: any, data: any) => String(
-          data.firebaseUid || data.studentUid || data.username || data.accessCode || data.email || data.parentChildId || studentDoc.id
+          data.linkedStudentId || data.studentDocId || data.firebaseUid || data.studentUid || data.username || data.accessCode || data.email || data.parentChildId || studentDoc.id
         ).trim().toLowerCase();
+        const addStudentRecord = (docId: string, data: any) => {
+          const targetId = String(data.linkedStudentId || data.studentDocId || docId).trim();
+          const key = studentIdentityKey({ id: targetId }, data);
+          const existing = allStudentsMap.get(key);
+          if (!existing || (String(data.status || '').toLowerCase() === 'active' && String(existing.status || '').toLowerCase() !== 'active')) {
+            const normalizedClass = formatNormalizedClassDisplay(data.class || data.grade || data.studentAge, '');
+            allStudentsMap.set(key, {
+              ...(existing || {}),
+              id: targetId,
+              ...data,
+              ...(normalizedClass ? { class: normalizedClass, grade: normalizedClass } : {})
+            } as ChildRecord);
+          }
+        };
         const collectChildren = (snap: any) => {
           snap.forEach((studentDoc: any) => {
             const data = studentDoc.data();
-            const matchesParent = data.parentId === userUid || data.parentId === userEmail || data.parentEmail?.toLowerCase() === userEmail;
+            const matchesParent =
+              data.parentId === userUid ||
+              data.parentUid === userUid ||
+              data.parentId === userEmail ||
+              data.parentEmail?.toLowerCase() === userEmail;
             if (!matchesParent) return;
-            const key = studentIdentityKey(studentDoc, data);
-            const existing = allStudentsMap.get(key);
-            if (!existing || (String(data.status || '').toLowerCase() === 'active' && String(existing.status || '').toLowerCase() !== 'active')) {
-              const normalizedClass = formatNormalizedClassDisplay(data.class || data.grade || data.studentAge, '');
-              allStudentsMap.set(key, {
-                id: studentDoc.id,
-                ...data,
-                ...(normalizedClass ? { class: normalizedClass, grade: normalizedClass } : {})
-              } as ChildRecord);
-            }
+            addStudentRecord(studentDoc.id, data);
           });
         };
         if (userUid) {
           try { collectChildren(await getDocs(query(collection(db, 'individualStudents'), where('parentId', '==', userUid)))); } catch (error) { console.warn('individualStudents parent lookup failed:', error); }
           try { collectChildren(await getDocs(query(collection(db, 'students'), where('parentId', '==', userUid)))); } catch (error) { console.warn('students parent lookup failed:', error); }
+
+          // Also check parents/{userUid} and users/{userUid} for explicit children IDs
+          try {
+            const [pSnap, uSnap] = await Promise.all([
+              getDoc(doc(db, 'parents', userUid)).catch(() => null),
+              getDoc(doc(db, 'users', userUid)).catch(() => null),
+            ]);
+            const childIdSet = new Set<string>();
+            if (pSnap?.exists() && Array.isArray(pSnap.data()?.children)) {
+              pSnap.data()!.children.forEach((cid: any) => { if (cid) childIdSet.add(String(cid).trim()); });
+            }
+            if (uSnap?.exists() && Array.isArray(uSnap.data()?.children)) {
+              uSnap.data()!.children.forEach((cid: any) => { if (cid) childIdSet.add(String(cid).trim()); });
+            }
+            for (const cid of Array.from(childIdSet)) {
+              const indivDoc = await getDoc(doc(db, 'individualStudents', cid)).catch(() => null);
+              if (indivDoc?.exists()) {
+                addStudentRecord(indivDoc.id, indivDoc.data());
+              } else {
+                const studDoc = await getDoc(doc(db, 'students', cid)).catch(() => null);
+                if (studDoc?.exists()) {
+                  addStudentRecord(studDoc.id, studDoc.data());
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('Parent children array lookup notice:', err);
+          }
         }
         if (userEmail) {
           try { collectChildren(await getDocs(query(collection(db, 'individualStudents'), where('parentEmail', '==', userEmail)))); } catch (error) { console.warn('individualStudents parent email lookup failed:', error); }

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import MainLayout from '../components/layout/MainLayout';
 import SEO from '../components/ui/SEO';
 import { collection, query, where, getDocs, doc, updateDoc, increment } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, getAllClientDatabases } from '../lib/firebase';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { 
@@ -51,22 +51,42 @@ const Blog: React.FC = () => {
   useEffect(() => {
     const fetchContent = async () => {
       try {
-        // 1. Fetch Blog Posts
-        const blogQ = query(
-          collection(db, 'blog'),
-          where('status', '==', 'PUBLISHED')
-        );
-        const blogSnap = await getDocs(blogQ);
-        const fetchedPosts = blogSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setPosts(fetchedPosts);
+        const dbs = getAllClientDatabases();
+        const mergedPosts = new Map<string, any>();
+        const mergedNews = new Map<string, any>();
 
-        // 2. Fetch News Corner
-        const newsQ = query(
-          collection(db, 'newsCorner')
+        await Promise.all(
+          dbs.map(async (clientDb) => {
+            try {
+              const blogQ = query(
+                collection(clientDb, 'blog'),
+                where('status', '==', 'PUBLISHED')
+              );
+              const blogSnap = await getDocs(blogQ);
+              blogSnap.docs.forEach((docSnap) => {
+                if (!mergedPosts.has(docSnap.id)) {
+                  mergedPosts.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+                }
+              });
+            } catch {
+              // ignore secondary db error
+            }
+
+            try {
+              const newsSnap = await getDocs(collection(clientDb, 'newsCorner'));
+              newsSnap.docs.forEach((docSnap) => {
+                if (!mergedNews.has(docSnap.id)) {
+                  mergedNews.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+                }
+              });
+            } catch {
+              // ignore secondary db error
+            }
+          })
         );
-        const newsSnap = await getDocs(newsQ);
-        const fetchedNews = newsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setNews(fetchedNews);
+
+        setPosts(Array.from(mergedPosts.values()));
+        setNews(Array.from(mergedNews.values()));
       } catch (error) {
         console.error("Error fetching content:", error);
         setPosts([]);

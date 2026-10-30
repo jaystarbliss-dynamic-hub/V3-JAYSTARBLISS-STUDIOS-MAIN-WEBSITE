@@ -267,14 +267,14 @@ const AdminStudents: React.FC = () => {
         const data = d.data ? d.data() : d;
         const id = d.id || data.id || `student_${Math.random().toString(36).slice(2, 8)}`;
         const schoolId = data.schoolId || data.school_id || '';
-        const parentId = data.parentId || data.parent_id || '';
+        const parentId = data.parentId || data.parentUid || data.parent_id || '';
         const tutorId = data.tutorId || data.assignedTutorId || data.assignedStaffId || data.staffId || '';
 
         const sName = data.schoolName || (schoolId ? schoolMap.get(schoolId) : '') || '';
         const pObj = parentId ? parentMap.get(parentId) : undefined;
-        const pName = data.parentName || pObj?.name || '';
-        const pEmail = data.parentEmail || pObj?.email || '';
-        const pPhone = data.parentPhone || data.phone || pObj?.phone || '';
+        const pName = data.parentName || data.guardianName || pObj?.name || '';
+        const pEmail = data.parentEmail || data.guardianEmail || pObj?.email || '';
+        const pPhone = data.parentPhone || data.guardianPhone || data.phone || pObj?.phone || '';
         const tObj = tutorId ? tutorMap.get(tutorId) : undefined;
         const tName = data.tutorName || data.assignedTutorName || data.staffName || tObj?.name || '';
         const tEmail = data.tutorEmail || tObj?.email || '';
@@ -282,10 +282,10 @@ const AdminStudents: React.FC = () => {
         let studentType: 'personal' | 'parent' | 'school' = 'personal';
         if (data.studentType === 'school' || schoolId) {
           studentType = 'school';
-        } else if (data.studentType === 'parent' || parentId) {
+        } else if (data.studentType === 'parent' || parentId || pName || pEmail) {
           studentType = 'parent';
-        } else if (data.studentType) {
-          studentType = data.studentType;
+        } else if (data.studentType === 'personal') {
+          studentType = 'personal';
         }
 
         const subjectsStr = Array.isArray(data.subjects)

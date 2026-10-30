@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { getAllClientDatabases } from '../../lib/firebase';
 import { 
   Edit, ExternalLink, Layers, CheckCircle2, 
   Image as ImageIcon, BookOpen, Briefcase, FolderOpen, 
@@ -26,24 +26,45 @@ const AdminPages: React.FC = () => {
   useEffect(() => {
     const fetchPagesAndStats = async () => {
       try {
-        const [pagesSnap, progSnap, servSnap, portSnap, kidsSnap, blogSnap] = await Promise.all([
-          getDocs(collection(db, 'pages')),
-          getDocs(collection(db, 'programs')).catch(() => ({ size: 0 })),
-          getDocs(collection(db, 'services')).catch(() => ({ size: 0 })),
-          getDocs(collection(db, 'portfolio')).catch(() => ({ size: 0 })),
-          getDocs(collection(db, 'kidsProjects')).catch(() => ({ size: 0 })),
-          getDocs(collection(db, 'blog')).catch(() => ({ size: 0 })),
-        ]);
+        const dbs = getAllClientDatabases();
+        const pagesMap = new Map<string, Record<string, any>>();
+        const progIds = new Set<string>();
+        const servIds = new Set<string>();
+        const portIds = new Set<string>();
+        const kidsIds = new Set<string>();
+        const blogIds = new Set<string>();
+
+        await Promise.all(
+          dbs.map(async (clientDb) => {
+            const [pagesSnap, progSnap, servSnap, portSnap, kidsSnap, blogSnap] = await Promise.all([
+              getDocs(collection(clientDb, 'pages')).catch(() => null),
+              getDocs(collection(clientDb, 'programs')).catch(() => null),
+              getDocs(collection(clientDb, 'services')).catch(() => null),
+              getDocs(collection(clientDb, 'portfolio')).catch(() => null),
+              getDocs(collection(clientDb, 'kidsProjects')).catch(() => null),
+              getDocs(collection(clientDb, 'blog')).catch(() => null),
+            ]);
+
+            pagesSnap?.docs.forEach((d) => {
+              if (!pagesMap.has(d.id)) pagesMap.set(d.id, { id: d.id, ...(d.data() as Record<string, any>) });
+            });
+            progSnap?.docs.forEach((d) => progIds.add(d.id));
+            servSnap?.docs.forEach((d) => servIds.add(d.id));
+            portSnap?.docs.forEach((d) => portIds.add(d.id));
+            kidsSnap?.docs.forEach((d) => kidsIds.add(d.id));
+            blogSnap?.docs.forEach((d) => blogIds.add(d.id));
+          })
+        );
 
         setCmsStats({
-          programs: progSnap.size || 0,
-          services: servSnap.size || 0,
-          portfolio: portSnap.size || 0,
-          kidsProjects: kidsSnap.size || 0,
-          blog: blogSnap.size || 0
+          programs: progIds.size,
+          services: servIds.size,
+          portfolio: portIds.size,
+          kidsProjects: kidsIds.size,
+          blog: blogIds.size
         });
 
-        const dbPages = pagesSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as Record<string, any>) }));
+        const dbPages = Array.from(pagesMap.values());
         
         // Merge registered CMS pages with DB entries
         const merged = CMS_PAGES.map(cmsPage => {

@@ -684,11 +684,49 @@ const Portal: React.FC = () => {
 
       if (userData) {
         detectedRole = (userData.role || '').toUpperCase();
-        if (userData.name) detectedName = userData.name;
+        if (userData.name || userData.fullName) detectedName = userData.name || userData.fullName;
       }
 
-      // If user has an approved tutor profile or is logging in on the staff tab, prioritize STAFF over parent
-      if ((isVerifiedTutor || activeTab === 'staff') && !detectedRole.includes('ADMIN')) {
+      // Check if user is a registered parent before applying tutor fallback
+      let isVerifiedParent = detectedRole === 'PARENT';
+      try {
+        const pDoc = await getDoc(doc(db, 'parents', user.uid)).catch(() => null);
+        if (pDoc?.exists()) {
+          isVerifiedParent = true;
+          if (pDoc.data()?.name || pDoc.data()?.fullName) detectedName = pDoc.data()?.name || pDoc.data()?.fullName;
+        }
+        if (!isVerifiedParent && user.email) {
+          const childSnap = await getDocs(query(collection(db, 'individualStudents'), where('parentEmail', '==', user.email.toLowerCase()), limit(1))).catch(() => null);
+          if (childSnap && !childSnap.empty) {
+            isVerifiedParent = true;
+            if (childSnap.docs[0].data()?.parentName) detectedName = childSnap.docs[0].data().parentName;
+          }
+        }
+      } catch {}
+
+      if (isVerifiedParent && !detectedRole.includes('ADMIN')) {
+        detectedRole = 'PARENT';
+        await setDoc(doc(db, 'users', user.uid), {
+          role: 'PARENT',
+          name: detectedName,
+          fullName: detectedName,
+          email: user.email?.toLowerCase(),
+          accountStatus: 'ACTIVE',
+          status: 'ACTIVE',
+          updatedAt: serverTimestamp()
+        }, { merge: true }).catch(() => null);
+        await setDoc(doc(db, 'parents', user.uid), {
+          uid: user.uid,
+          role: 'parent',
+          name: detectedName,
+          fullName: detectedName,
+          email: user.email?.toLowerCase(),
+          status: 'ACTIVE',
+          accountStatus: 'ACTIVE',
+          updatedAt: serverTimestamp()
+        }, { merge: true }).catch(() => null);
+        await deleteDoc(doc(db, 'tutors', user.uid)).catch(() => null);
+      } else if (isVerifiedTutor && !['PARENT', 'STUDENT', 'SCHOOL', 'SCHOOL_ADMIN'].includes(detectedRole) && !detectedRole.includes('ADMIN')) {
         detectedRole = 'STAFF';
         if (verifiedTutorName) detectedName = verifiedTutorName;
         await setDoc(doc(db, 'users', user.uid), {
@@ -707,7 +745,6 @@ const Portal: React.FC = () => {
           email: user.email?.toLowerCase(),
           updatedAt: serverTimestamp()
         }, { merge: true }).catch(err => console.warn('Portal staff tutor sync warning:', err));
-        await deleteDoc(doc(db, 'parents', user.uid)).catch(() => null);
       } else if (!userData) {
         const tutorDoc = await getDoc(doc(db, 'tutors', user.uid)).catch(() => null);
         if (tutorDoc?.exists()) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { getAllClientDatabases } from '../lib/firebase';
 import MainLayout from '../components/layout/MainLayout';
 import SEO from '../components/ui/SEO';
 import { motion, AnimatePresence } from 'motion/react';
@@ -33,6 +33,14 @@ import PageHeader from '../components/ui/PageHeader';
 import { pageHeaderImages, getProgramImage } from '../lib/stockImages';
 import { usePageSection } from '../lib/cms';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+
+function resolveProgramRouteSlug(program: any): string {
+  const rawSlug = String(program?.slug || '').trim();
+  if (rawSlug && !rawSlug.startsWith('http://') && !rawSlug.startsWith('https://') && !rawSlug.includes('/')) {
+    return rawSlug;
+  }
+  return String(program?.id || '');
+}
 
 const SCHOOL_FILTER_MAP: Record<string, { label: string; icon: React.FC<{ size?: number; className?: string }> }> = {
   ALL: { label: 'All 8 Programs', icon: Layers },
@@ -154,9 +162,24 @@ const Programs: React.FC = () => {
   useEffect(() => {
     const fetchPrograms = async () => {
       try {
-        const q = query(collection(db, 'programs'), where('status', '==', 'PUBLISHED'));
-        const snapshot = await getDocs(q);
-        setPrograms(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const dbs = getAllClientDatabases();
+        const merged = new Map<string, any>();
+        await Promise.all(
+          dbs.map(async (clientDb) => {
+            try {
+              const q = query(collection(clientDb, 'programs'), where('status', '==', 'PUBLISHED'));
+              const snapshot = await getDocs(q);
+              snapshot.docs.forEach((docSnap) => {
+                if (!merged.has(docSnap.id)) {
+                  merged.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+                }
+              });
+            } catch {
+              // ignore secondary db error
+            }
+          })
+        );
+        setPrograms(Array.from(merged.values()));
       } catch (error) {
         console.error('Error fetching programs:', error);
       } finally {
@@ -494,7 +517,7 @@ const Programs: React.FC = () => {
                           Flexible Schedule
                         </div>
                         <Button
-                          to={`/programs/${program.slug || program.id}`}
+                          to={`/programs/${resolveProgramRouteSlug(program)}`}
                           size="sm"
                           className="font-bold text-xs bg-brand-red hover:bg-red-700 text-white"
                           rightIcon={<ArrowRight size={13} />}

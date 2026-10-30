@@ -406,10 +406,19 @@ export default function StudentExaminations() {
 
       const now = Date.now();
       classEligibleExams.forEach((exam: any) => {
-        const from = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
-        const until = exam.availableUntil
+        const rawFrom = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
+        const from = Number.isFinite(rawFrom) ? rawFrom : 0;
+        const rawUntil = exam.availableUntil
           ? new Date(exam.availableUntil).getTime()
           : Number.MAX_SAFE_INTEGER;
+        let until = Number.isFinite(rawUntil) ? rawUntil : Number.MAX_SAFE_INTEGER;
+
+        // Guard against accidental AM/PM inversion where Available Until was set earlier than Available From
+        if (from > 0 && until < Number.MAX_SAFE_INTEGER && until <= from) {
+          const plus12h = until + 12 * 60 * 60 * 1000;
+          until = plus12h > from ? plus12h : Number.MAX_SAFE_INTEGER;
+        }
+
         const computedStatus: "active" | "upcoming" | "completed" =
           exam.status === "completed" || now >= until
             ? "completed"
@@ -436,7 +445,7 @@ export default function StudentExaminations() {
           isUngradedActivity: Boolean(exam.isUngradedActivity),
           deliveryMode,
           externalUrl: String(exam.externalUrl || exam.url || exam.link || "").trim(),
-          status: existingServerItem?.status || computedStatus,
+          status: computedStatus,
           durationMinutes:
             deliveryMode === "EXTERNAL_LINK"
               ? Number(exam.durationMinutes) || 0

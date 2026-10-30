@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { getAllClientDatabases } from '../../lib/firebase';
 import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import DOMPurify from 'dompurify';
@@ -24,14 +24,65 @@ const FeaturedPortfolio: React.FC = () => {
   useEffect(() => {
     const fetchFeaturedProjects = async () => {
       try {
-        const q = query(
-          collection(db, 'portfolio'),
-          where('status', '==', 'PUBLISHED'),
-          where('isFeatured', '==', true),
-          limit(2)
+        const dbs = getAllClientDatabases();
+        const [portfolioSnaps, kidsSnaps] = await Promise.all([
+          Promise.all(
+            dbs.map((clientDb) =>
+              getDocs(query(collection(clientDb, 'portfolio'), where('status', '==', 'PUBLISHED'))).catch(() => null)
+            )
+          ),
+          Promise.all(
+            dbs.map((clientDb) =>
+              getDocs(query(collection(clientDb, 'kidsProjects'))).catch(() => null)
+            )
+          )
+        ]);
+
+        const byId = new Map<string, any>();
+        portfolioSnaps.forEach((snap) => {
+          if (!snap) return;
+          snap.docs.forEach((docSnap) => {
+            if (!byId.has(docSnap.id)) {
+              byId.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+            }
+          });
+        });
+
+        const kidsById = new Map<string, any>();
+        kidsSnaps.forEach((snap) => {
+          if (!snap) return;
+          snap.docs.forEach((docSnap) => {
+            const raw = docSnap.data();
+            if (raw.status === 'DRAFT') return;
+            if (!kidsById.has(docSnap.id)) {
+              kidsById.set(docSnap.id, {
+                id: docSnap.id,
+                ...raw,
+                portfolioType: 'STUDENT_WORK',
+                studentName: raw.creator || raw.creatorName || raw.studentName || 'Academy Student',
+                featuredImage: raw.imageUrl || raw.featuredImage || '',
+                isFeatured: Boolean(raw.isFeatured || raw.featured)
+              });
+            }
+          });
+        });
+
+        const orgList = Array.from(byId.values()).sort(
+          (a, b) => Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured))
         );
-        const snapshot = await getDocs(q);
-        setProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const kidsList = Array.from(kidsById.values()).sort(
+          (a, b) => Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured))
+        );
+
+        const combined: any[] = [];
+        if (orgList.length > 0) combined.push(orgList[0]);
+        if (kidsList.length > 0) combined.push(kidsList[0]);
+        for (const item of [...orgList.slice(1), ...kidsList.slice(1)]) {
+          if (combined.length >= 2) break;
+          combined.push(item);
+        }
+
+        setProjects(combined.slice(0, 2));
       } catch (error) {
         console.error('Error fetching featured portfolio:', error);
       } finally {
@@ -83,11 +134,21 @@ const FeaturedPortfolio: React.FC = () => {
                 className="group flex flex-col glass-card rounded-2xl sm:rounded-3xl overflow-hidden"
               >
                 <div className="h-56 sm:h-64 bg-gradient-to-br from-brand-slate to-slate-700 flex items-center justify-center relative overflow-hidden">
-                  <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff0d_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0d_1px,transparent_1px)] bg-[size:2.5rem_2.5rem]"></div>
-                  <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-brand-red/20 rounded-full blur-3xl"></div>
-                  <span className="font-bold text-white/25 text-5xl sm:text-6xl tracking-widest uppercase group-hover:scale-110 group-hover:text-white/35 transition-all duration-500 relative z-10">
-                    {project.title.substring(0, 2)}
-                  </span>
+                  {project.featuredImage || project.imageUrl ? (
+                    <img
+                      src={project.featuredImage || project.imageUrl}
+                      alt={project.title}
+                      className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  ) : (
+                    <>
+                      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff0d_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0d_1px,transparent_1px)] bg-[size:2.5rem_2.5rem]"></div>
+                      <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-brand-red/20 rounded-full blur-3xl"></div>
+                      <span className="font-bold text-white/25 text-5xl sm:text-6xl tracking-widest uppercase group-hover:scale-110 group-hover:text-white/35 transition-all duration-500 relative z-10">
+                        {(project.title || 'JB').substring(0, 2)}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div className="p-6 sm:p-10 flex flex-col flex-grow">
                   <div className="flex items-center gap-4 mb-6">
@@ -103,13 +164,13 @@ const FeaturedPortfolio: React.FC = () => {
                   
                   <div 
                     className="text-slate-600 dark:text-slate-400 mb-8 line-clamp-3 leading-relaxed quill-content"
-                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(project.description) }} 
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(project.description || '') }} 
                   />
                   
                   <div className="mt-auto pt-6 border-t border-slate-200 dark:border-slate-800">
                     <div className="text-sm font-bold text-brand-slate dark:text-white">
                       {project.portfolioType === 'STUDENT_WORK' ? (
-                        <>Student: <span className="text-slate-500">{project.studentName}</span></>
+                        <>Student: <span className="text-slate-500">{project.studentName || project.creator || project.creatorName}</span></>
                       ) : (
                         <>Client: <span className="text-slate-500">{project.client}</span></>
                       )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, deleteDoc, doc, writeBatch } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, getAllClientDatabases } from '../../lib/firebase';
 import { 
   Plus, Search, Trash2, Edit, Layers, ArrowUp, ArrowDown, 
   Check, X, Loader2, BookOpen, CheckCircle2, 
@@ -65,8 +65,23 @@ const AdminPrograms: React.FC = () => {
 
   const fetchPrograms = async () => {
     try {
-      const snapshot = await getDocs(collection(db, 'programs'));
-      const programsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProgramItem));
+      const dbs = getAllClientDatabases();
+      const merged = new Map<string, ProgramItem>();
+      await Promise.all(
+        dbs.map(async (clientDb) => {
+          try {
+            const snapshot = await getDocs(collection(clientDb, 'programs'));
+            snapshot.docs.forEach((docSnap) => {
+              if (!merged.has(docSnap.id)) {
+                merged.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as ProgramItem);
+              }
+            });
+          } catch {
+            // ignore secondary db error
+          }
+        })
+      );
+      const programsData = Array.from(merged.values());
       // Sort by series, stage number, then title
       programsData.sort((a, b) => {
         if (a.seriesName && b.seriesName && a.seriesName !== b.seriesName) {
@@ -93,7 +108,10 @@ const AdminPrograms: React.FC = () => {
   const handleDelete = async (id: string, title: string) => {
     if (window.confirm(`Are you sure you want to delete "${title}"? This cannot be undone.`)) {
       try {
-        await deleteDoc(doc(db, 'programs', id));
+        const dbs = getAllClientDatabases();
+        await Promise.all(
+          dbs.map((clientDb) => deleteDoc(doc(clientDb, 'programs', id)).catch(() => null))
+        );
         setPrograms(prev => prev.filter(p => p.id !== id));
         setSelectedIds(prev => prev.filter(item => item !== id));
         toast.success(`Deleted ${title}.`);

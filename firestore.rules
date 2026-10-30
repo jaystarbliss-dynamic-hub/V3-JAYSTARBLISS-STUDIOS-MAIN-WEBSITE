@@ -8,6 +8,7 @@ service cloud.firestore {
         request.auth.token.isAdmin == true || 
         request.auth.token.email == 'johnrufai242@gmail.com' || 
         request.auth.token.email == 'admin@jaystarbliss.com' || 
+        request.auth.token.email == 'admin@jaystarbliss-studios.name.ng' ||
         request.auth.token.email == 'admin@jaystar.com'
       ); 
     }
@@ -337,8 +338,8 @@ service cloud.firestore {
     match /staffSchoolAccess/{docId} { allow read: if true; allow write: if isAnyAdmin(); }
     match /staffRegistration/{docId} { allow read, write: if true; }
     match /pendingStaff/{docId} { allow read: if true; allow write, delete: if isAnyAdmin(); }
-    match /staff/{staffId} { allow read: if true; allow write: if isAnyAdmin() || (isAuth() && request.auth.uid == staffId); }
-    match /parents/{parentId} { allow read: if isAnyAdmin() || (isAuth() && request.auth.uid == parentId); allow create: if isAuth() && request.auth.uid == parentId; allow update: if isAnyAdmin() || (isAuth() && request.auth.uid == parentId); allow delete: if isSuperAdmin() || isAnyAdmin() || (isAuth() && request.auth.uid == parentId); }
+    match /staff/{staffId} { allow read: if true; allow write: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && request.auth.uid == staffId); }
+    match /parents/{parentId} { allow read: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && (request.auth.uid == parentId || resource.data.get('email', '') == request.auth.token.email || resource.data.get('uid', '') == request.auth.uid)); allow create: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && request.auth.uid == parentId); allow update: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && (request.auth.uid == parentId || resource.data.get('email', '') == request.auth.token.email)); allow delete: if isSuperAdmin() || isAnyAdmin() || isStaffOrTutor() || (isAuth() && request.auth.uid == parentId); }
     
     match /payments/{paymentId} {
       allow read: if isAnyAdmin() || (isAuth() && (resource.data.userId == request.auth.uid || resource.data.parentId == request.auth.uid || resource.data.tutorId == request.auth.uid || resource.data.staffId == request.auth.uid || isSameSchool(resource.data.schoolId)));
@@ -381,13 +382,13 @@ service cloud.firestore {
     
     match /enrollment_requests/{reqId} { 
       allow create: if isAuth(); 
-      allow read: if isAnyAdmin() || (isAuth() && (resource.data.parentId == request.auth.uid || resource.data.parentEmail == request.auth.token.email || resource.data.parentId == null)); 
-      allow update, delete: if isAnyAdmin() || (isAuth() && resource.data.parentId == request.auth.uid); 
+      allow read: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && (resource.data.parentId == request.auth.uid || resource.data.parentEmail == request.auth.token.email || resource.data.parentId == null)); 
+      allow update, delete: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && resource.data.parentId == request.auth.uid); 
     }
     match /enrollmentRequests/{reqId} { 
       allow create: if isAuth(); 
-      allow read: if isAnyAdmin() || (isAuth() && (resource.data.parentId == request.auth.uid || resource.data.parentEmail == request.auth.token.email || resource.data.parentId == null)); 
-      allow update, delete: if isAnyAdmin() || (isAuth() && resource.data.parentId == request.auth.uid); 
+      allow read: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && (resource.data.parentId == request.auth.uid || resource.data.parentEmail == request.auth.token.email || resource.data.parentId == null)); 
+      allow update, delete: if isAnyAdmin() || isStaffOrTutor() || (isAuth() && resource.data.parentId == request.auth.uid); 
     }
     match /enrollments/{enrollmentId} {
       allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || (isAuth() && (resource.data.studentUid == request.auth.uid || resource.data.studentId == request.auth.uid || resource.data.parentId == request.auth.uid));

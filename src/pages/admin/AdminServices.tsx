@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { getAllClientDatabases } from '../../lib/firebase';
 import { Plus, Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -11,9 +11,23 @@ const AdminServices: React.FC = () => {
   useEffect(() => {
     const fetchServices = async () => {
       try {
-        const snapshot = await getDocs(collection(db, 'services'));
-        const servicesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setServices(servicesData);
+        const dbs = getAllClientDatabases();
+        const merged = new Map<string, any>();
+        await Promise.all(
+          dbs.map(async (clientDb) => {
+            try {
+              const snapshot = await getDocs(collection(clientDb, 'services'));
+              snapshot.docs.forEach((docSnap) => {
+                if (!merged.has(docSnap.id)) {
+                  merged.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+                }
+              });
+            } catch {
+              // ignore secondary db error
+            }
+          })
+        );
+        setServices(Array.from(merged.values()));
       } catch (error) {
         console.error('Error fetching services:', error);
       } finally {

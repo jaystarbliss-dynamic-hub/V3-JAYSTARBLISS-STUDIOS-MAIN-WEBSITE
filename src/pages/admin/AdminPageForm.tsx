@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
 import { ArrowLeft, Loader2, Save, CheckCircle2, AlertCircle, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
-import { CMS_PAGES } from '../../lib/cms';
+import { CMS_PAGES, fetchPageSectionOnce, savePageSection } from '../../lib/cms';
 import type { EditablePageConfig } from '../../lib/cms';
 import CloudinaryImageUpload from '../../components/common/CloudinaryImageUpload';
 
@@ -92,13 +90,7 @@ const AdminPageForm: React.FC = () => {
     try {
       for (const section of config.sections) {
         initialOpen[section.id] = true;
-        const docRef = doc(db, 'page_sections', `${config.id}_${section.id}`);
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          initialData[section.id] = { ...section.defaultData, ...snap.data() };
-        } else {
-          initialData[section.id] = { ...section.defaultData };
-        }
+        initialData[section.id] = await fetchPageSectionOnce(config.id, section.id, section.defaultData);
       }
       setSectionData(initialData);
       setOpenSections(initialOpen);
@@ -131,16 +123,10 @@ const AdminPageForm: React.FC = () => {
     setMessage(null);
 
     try {
-      // Save each section to Firestore
+      // Save each section across all client databases
       for (const section of pageConfig.sections) {
         const currentData = sectionData[section.id] || section.defaultData;
-        const docRef = doc(db, 'page_sections', `${pageConfig.id}_${section.id}`);
-        await setDoc(docRef, {
-          ...currentData,
-          pageId: pageConfig.id,
-          sectionId: section.id,
-          updatedAt: serverTimestamp()
-        }, { merge: true });
+        await savePageSection(pageConfig.id, section.id, currentData);
       }
 
       setMessage({ type: 'success', text: `All ${pageConfig.sections.length} sections on ${pageConfig.title} updated successfully!` });

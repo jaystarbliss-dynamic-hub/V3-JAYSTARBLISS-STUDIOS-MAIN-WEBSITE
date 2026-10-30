@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import MainLayout from '../components/layout/MainLayout';
 import SEO from '../components/ui/SEO';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { getAllClientDatabases } from '../lib/firebase';
 import { Loader2, Calendar, ArrowLeft, User } from 'lucide-react';
 import DOMPurify from 'dompurify';
 
@@ -16,12 +16,32 @@ const BlogPostDetails: React.FC = () => {
   useEffect(() => {
     const fetchPost = async () => {
       try {
-        const q = query(collection(db, 'blog'), where('slug', '==', slug));
-        const snapshot = await getDocs(q);
+        const dbs = getAllClientDatabases();
+        let found: any = null;
+        for (const clientDb of dbs) {
+          try {
+            const q = query(collection(clientDb, 'blog'), where('slug', '==', slug));
+            const snapshot = await getDocs(q);
+            if (!snapshot.empty) {
+              const docSnap = snapshot.docs[0];
+              found = { id: docSnap.id, ...docSnap.data() };
+              break;
+            }
+            if (slug) {
+              const byId = await getDoc(doc(clientDb, 'blog', slug));
+              if (byId.exists()) {
+                found = { id: byId.id, ...byId.data() };
+                break;
+              }
+            }
+          } catch {
+            // ignore secondary db error
+          }
+        }
         
-        if (!snapshot.empty) {
-          const doc = snapshot.docs[0];
-          setPost({ id: doc.id, ...doc.data() });
+        if (found) {
+          setPost(found);
+          setError(false);
         } else {
           setError(true);
         }

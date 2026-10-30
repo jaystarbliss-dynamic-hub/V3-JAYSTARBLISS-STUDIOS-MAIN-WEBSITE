@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { getAllClientDatabases } from '../../lib/firebase';
 import { Plus, Trash2, Edit3, ExternalLink, Gamepad2, Briefcase } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -13,8 +13,46 @@ const AdminPortfolio: React.FC = () => {
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      const snapshot = await getDocs(collection(db, 'portfolio'));
-      setProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const dbs = getAllClientDatabases();
+      const merged = new Map<string, any>();
+
+      await Promise.all(
+        dbs.map(async (clientDb) => {
+          try {
+            const snapshot = await getDocs(collection(clientDb, 'portfolio'));
+            snapshot.docs.forEach((docSnap) => {
+              if (!merged.has(docSnap.id)) {
+                merged.set(docSnap.id, { id: docSnap.id, _collection: 'portfolio', ...docSnap.data() });
+              }
+            });
+          } catch {
+            // ignore secondary db error
+          }
+          try {
+            const kidsSnap = await getDocs(collection(clientDb, 'kidsProjects'));
+            kidsSnap.docs.forEach((docSnap) => {
+              if (!merged.has(docSnap.id)) {
+                const d = docSnap.data();
+                merged.set(docSnap.id, {
+                  id: docSnap.id,
+                  _collection: 'kidsProjects',
+                  portfolioType: 'STUDENT_WORK',
+                  studentName: d.creator || d.creatorName || d.studentName || 'Student',
+                  studentAge: d.creatorAge || d.studentAge || '',
+                  isFeatured: Boolean(d.isFeatured || d.featured),
+                  featuredImage: d.imageUrl || d.featuredImage || '',
+                  status: d.status || 'PUBLISHED',
+                  ...d,
+                });
+              }
+            });
+          } catch {
+            // ignore secondary db error
+          }
+        })
+      );
+
+      setProjects(Array.from(merged.values()));
     } catch (error) {
       console.error('Error fetching portfolio:', error);
     } finally {
@@ -28,7 +66,13 @@ const AdminPortfolio: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'portfolio', id));
+      const dbs = getAllClientDatabases();
+      await Promise.all(
+        dbs.flatMap((clientDb) => [
+          deleteDoc(doc(clientDb, 'portfolio', id)).catch(() => null),
+          deleteDoc(doc(clientDb, 'kidsProjects', id)).catch(() => null),
+        ])
+      );
       setProjects(projects.filter(p => p.id !== id));
       setDeleteConfirm(null);
     } catch (err) {

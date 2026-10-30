@@ -17,7 +17,7 @@ import {
   Users,
 } from 'lucide-react';
 import { collection, getDocs, addDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, getAllClientDatabases } from '../lib/firebase';
 import PageHeader from '../components/ui/PageHeader';
 import SEO from '../components/ui/SEO';
 
@@ -154,29 +154,9 @@ export default function FindTutor() {
     const fetchRegisteredPortalTutors = async () => {
       setLoading(true);
       try {
-        const [usersSnap, tutorsSnap, staffSnap, tutorSubjectsSnap] = await Promise.all([
-          getDocs(collection(db, 'users')).catch(() => null),
-          getDocs(collection(db, 'tutors')).catch(() => null),
-          getDocs(collection(db, 'staff')).catch(() => null),
-          getDocs(collection(db, 'tutorSubjects')).catch(() => null),
-        ]);
-
+        const dbs = getAllClientDatabases();
         // Map approved subjects by tutorId
         const approvedSubjectsByTutorId = new Map<string, Set<string>>();
-        if (tutorSubjectsSnap) {
-          tutorSubjectsSnap.docs.forEach((docSnap) => {
-            const data = docSnap.data();
-            const tutorId = String(data.tutorId || '').trim();
-            const subjectName = String(data.subjectName || data.subject || '').trim();
-            if (tutorId && subjectName) {
-              if (!approvedSubjectsByTutorId.has(tutorId)) {
-                approvedSubjectsByTutorId.set(tutorId, new Set());
-              }
-              approvedSubjectsByTutorId.get(tutorId)!.add(subjectName);
-            }
-          });
-        }
-
         // Accumulate merged records keyed by uid or lowercase email
         const mergedByKey = new Map<string, Record<string, any>>();
         const emailToKey = new Map<string, string>();
@@ -239,15 +219,40 @@ export default function FindTutor() {
           });
         };
 
-        if (usersSnap) {
-          usersSnap.docs.forEach((d) => upsertRecord(d.id, d.data(), 'users'));
-        }
-        if (tutorsSnap) {
-          tutorsSnap.docs.forEach((d) => upsertRecord(d.id, d.data(), 'tutors'));
-        }
-        if (staffSnap) {
-          staffSnap.docs.forEach((d) => upsertRecord(d.id, d.data(), 'staff'));
-        }
+        await Promise.all(
+          dbs.map(async (clientDb) => {
+            const [usersSnap, tutorsSnap, staffSnap, tutorSubjectsSnap] = await Promise.all([
+              getDocs(collection(clientDb, 'users')).catch(() => null),
+              getDocs(collection(clientDb, 'tutors')).catch(() => null),
+              getDocs(collection(clientDb, 'staff')).catch(() => null),
+              getDocs(collection(clientDb, 'tutorSubjects')).catch(() => null),
+            ]);
+
+            if (tutorSubjectsSnap) {
+              tutorSubjectsSnap.docs.forEach((docSnap) => {
+                const data = docSnap.data();
+                const tutorId = String(data.tutorId || '').trim();
+                const subjectName = String(data.subjectName || data.subject || '').trim();
+                if (tutorId && subjectName) {
+                  if (!approvedSubjectsByTutorId.has(tutorId)) {
+                    approvedSubjectsByTutorId.set(tutorId, new Set());
+                  }
+                  approvedSubjectsByTutorId.get(tutorId)!.add(subjectName);
+                }
+              });
+            }
+
+            if (usersSnap) {
+              usersSnap.docs.forEach((d) => upsertRecord(d.id, d.data(), 'users'));
+            }
+            if (tutorsSnap) {
+              tutorsSnap.docs.forEach((d) => upsertRecord(d.id, d.data(), 'tutors'));
+            }
+            if (staffSnap) {
+              staffSnap.docs.forEach((d) => upsertRecord(d.id, d.data(), 'staff'));
+            }
+          })
+        );
 
         const results: PortalTutorProfile[] = [];
 

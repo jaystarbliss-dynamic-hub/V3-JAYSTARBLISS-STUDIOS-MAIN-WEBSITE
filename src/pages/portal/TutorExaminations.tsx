@@ -1208,6 +1208,24 @@ ANSWER KEY
 
       const targetStatus = overrideStatus || status;
 
+      if (availableFrom && availableUntil) {
+        const fromMs = new Date(availableFrom).getTime();
+        const untilMs = new Date(availableUntil).getTime();
+        if (Number.isFinite(fromMs) && Number.isFinite(untilMs) && untilMs <= fromMs) {
+          throw new Error(
+            '"Available Until" must be later than "Available From". Please check AM/PM on your end time, or clear the optional schedule dates to make the assessment immediately available.'
+          );
+        }
+      }
+      if (targetStatus === "active" && availableUntil) {
+        const untilMs = new Date(availableUntil).getTime();
+        if (Number.isFinite(untilMs) && untilMs <= Date.now()) {
+          throw new Error(
+            '"Available Until" is set in the past, which will immediately mark this assessment as Completed for students. Please choose a future end time or clear the schedule.'
+          );
+        }
+      }
+
       let validatedExternalUrl = "";
       let preparedQuestions: any[] = [];
 
@@ -2336,29 +2354,48 @@ ANSWER KEY
               </button>
 
               {showScheduleSection && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800">
-                  <label className="block">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                      Available From (Optional)
-                    </span>
-                    <input
-                      type="datetime-local"
-                      value={availableFrom}
-                      onChange={(e) => setAvailableFrom(e.target.value)}
-                      className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                      Available Until (Optional)
-                    </span>
-                    <input
-                      type="datetime-local"
-                      value={availableUntil}
-                      onChange={(e) => setAvailableUntil(e.target.value)}
-                      className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs"
-                    />
-                  </label>
+                <div className="space-y-2.5 mt-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <label className="block">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        Available From (Optional)
+                      </span>
+                      <input
+                        type="datetime-local"
+                        value={availableFrom}
+                        onChange={(e) => setAvailableFrom(e.target.value)}
+                        className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        Available Until (Optional)
+                      </span>
+                      <input
+                        type="datetime-local"
+                        value={availableUntil}
+                        onChange={(e) => setAvailableUntil(e.target.value)}
+                        className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs"
+                      />
+                    </label>
+                  </div>
+                  {(availableFrom || availableUntil) && (
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <span className="text-[11px] text-slate-500">
+                        Leave both blank if you want the assessment to be immediately open while active.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAvailableFrom("");
+                          setAvailableUntil("");
+                        }}
+                        className="text-xs font-bold text-red-600 hover:underline cursor-pointer shrink-0"
+                      >
+                        Clear Schedule Dates
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -3946,6 +3983,23 @@ ANSWER KEY
                     />
                   </label>
                 </div>
+                {(availableFrom || availableUntil) && (
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="text-[11px] text-slate-500">
+                      Note: Setting an &ldquo;Available Until&rdquo; time in the past (e.g. AM instead of PM) will show the assessment as Completed to students.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAvailableFrom("");
+                        setAvailableUntil("");
+                      }}
+                      className="text-xs font-bold text-red-600 hover:underline cursor-pointer shrink-0"
+                    >
+                      Clear Schedule Dates
+                    </button>
+                  </div>
+                )}
 
                 <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                   <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
