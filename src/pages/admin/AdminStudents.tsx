@@ -113,6 +113,9 @@ const AdminStudents: React.FC = () => {
   // Modals & Drawers
   const [showCreate, setShowCreate] = useState(false);
   const [managingStudent, setManagingStudent] = useState<UnifiedStudent | null>(null);
+  const [inspectedStudent, setInspectedStudent] = useState<UnifiedStudent | null>(null);
+  const [showResourceModal, setShowResourceModal] = useState(false);
+  const [showSchoolExplorer, setShowSchoolExplorer] = useState(false);
   const [credentials, setCredentials] = useState<Credentials | null>(null);
   const [assigningTutorStudent, setAssigningTutorStudent] = useState<UnifiedStudent | null>(null);
   const [selectedTutorsList, setSelectedTutorsList] = useState<AssignedStudentTutor[]>([]);
@@ -977,6 +980,7 @@ const AdminStudents: React.FC = () => {
       await addDoc(collection(db, collectionName), payload);
       toast.success(`Dispatched ${resourceForm.type} to ${selectedStudent?.fullName || 'student'}!`);
       setResourceForm({ studentId: '', type: 'resource', title: '', url: '', description: '' });
+      setShowResourceModal(false);
       await loadAllData();
     } catch (err: any) {
       toast.error('Failed to send resource: ' + err.message);
@@ -1028,98 +1032,328 @@ const AdminStudents: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8">
-      {/* Action Toolbar */}
-      <div className="flex items-center justify-end">
+    <div className="space-y-5">
+      {/* Top Command Header & Action Toolbar */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-5 py-4 shadow-xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/90">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-2 w-2 rounded-full bg-brand-red" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-brand-red">
+              Scholars &amp; Credentials Command Center
+            </span>
+          </div>
+          <h1 className="mt-0.5 text-lg font-black text-slate-900 dark:text-white">
+            Unified Student Roster &amp; 360° Inspector
+          </h1>
+          <p className="text-xs text-slate-500">
+            Filter across school-affiliated, parent-enrolled, and personal scholars — inspect credentials, mentors, and dispatches side-by-side.
+          </p>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => loadAllData()}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200/80 bg-white/70 px-4 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 cursor-pointer"
           >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
-            Sync Directory
+            <RefreshCw size={14} className={loading ? 'animate-spin text-brand-red' : ''} aria-hidden="true" />
+            Sync
           </button>
-          
+
+          <button
+            type="button"
+            onClick={() => setShowSchoolExplorer(prev => !prev)}
+            className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3.5 text-xs font-bold shadow-2xs transition-all cursor-pointer ${
+              showSchoolExplorer
+                ? 'border-emerald-600 bg-emerald-600 text-white'
+                : 'border-slate-200/80 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
+            }`}
+          >
+            <School size={14} />
+            Schools ({schoolGroups.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowResourceModal(true)}
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-brand-red/30 bg-brand-red/5 px-3.5 text-xs font-bold text-brand-red hover:bg-brand-red/10 dark:border-brand-red/40 dark:bg-brand-red/10 cursor-pointer"
+          >
+            <Send size={14} aria-hidden="true" />
+            Dispatch Resource
+          </button>
+
           <button
             type="button"
             onClick={exportToCSV}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200/80 bg-white/70 px-4 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 cursor-pointer"
           >
-            <Download size={15} aria-hidden="true" />
+            <Download size={14} aria-hidden="true" />
             Export CSV
           </button>
 
           <button
             type="button"
             onClick={() => setShowCreate(true)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-brand-red px-5 text-xs font-bold text-white shadow-md shadow-brand-red/20 hover:bg-red-700 transition-all"
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand-red px-4 text-xs font-bold text-white shadow-md shadow-brand-red/20 hover:bg-red-700 transition-all cursor-pointer"
           >
-            <UserPlus size={15} aria-hidden="true" />
-            Add Student / Student
+            <UserPlus size={14} aria-hidden="true" />
+            + Add Scholar
           </button>
         </div>
       </div>
 
-      {/* KPI Stats Overview */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-        <div className="pro-surface rounded-2xl border border-slate-200/80 p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900/80">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Scholars</p>
-          <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{stats.total}</p>
-        </div>
-        <div className="pro-surface rounded-2xl border border-slate-200/80 p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900/80">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Personal Learners</p>
-          <p className="mt-1 text-2xl font-black text-purple-700 dark:text-purple-300">{stats.personal}</p>
-        </div>
-        <div className="pro-surface rounded-2xl border border-slate-200/80 p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900/80">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400">Parent Enrolled</p>
-          <p className="mt-1 text-2xl font-black text-sky-700 dark:text-sky-300">{stats.parent}</p>
-        </div>
-        <div className="pro-surface rounded-2xl border border-slate-200/80 p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900/80">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">School Affiliated</p>
-          <p className="mt-1 text-2xl font-black text-emerald-700 dark:text-emerald-300">{stats.school}</p>
-        </div>
-        <div className="pro-surface col-span-2 rounded-2xl border border-slate-200/80 p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900/80 md:col-span-1">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Active Accounts</p>
-          <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{stats.active}</p>
-        </div>
+      {/* Interactive KPI Filter Strip */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <button
+          type="button"
+          onClick={() => { setTypeFilter('all'); setStatusFilter('all'); }}
+          className={`text-left rounded-2xl border p-3.5 transition-all cursor-pointer ${
+            typeFilter === 'all' && statusFilter === 'all'
+              ? 'border-slate-900 bg-slate-900 text-white shadow-md dark:border-white dark:bg-white dark:text-slate-900'
+              : 'pro-surface border-slate-200/80 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/80'
+          }`}
+        >
+          <p className={`text-[10px] font-extrabold uppercase tracking-wider ${typeFilter === 'all' && statusFilter === 'all' ? 'text-slate-300 dark:text-slate-600' : 'text-slate-500 dark:text-slate-400'}`}>
+            All Scholars
+          </p>
+          <p className="mt-1 text-2xl font-black">{stats.total}</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTypeFilter(typeFilter === 'school' ? 'all' : 'school')}
+          className={`text-left rounded-2xl border p-3.5 transition-all cursor-pointer ${
+            typeFilter === 'school'
+              ? 'border-emerald-600 bg-emerald-600 text-white shadow-md'
+              : 'pro-surface border-slate-200/80 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900/80'
+          }`}
+        >
+          <p className={`text-[10px] font-extrabold uppercase tracking-wider ${typeFilter === 'school' ? 'text-emerald-100' : 'text-emerald-600 dark:text-emerald-400'}`}>
+            School Affiliated
+          </p>
+          <p className={`mt-1 text-2xl font-black ${typeFilter === 'school' ? 'text-white' : 'text-emerald-700 dark:text-emerald-300'}`}>{stats.school}</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTypeFilter(typeFilter === 'parent' ? 'all' : 'parent')}
+          className={`text-left rounded-2xl border p-3.5 transition-all cursor-pointer ${
+            typeFilter === 'parent'
+              ? 'border-sky-600 bg-sky-600 text-white shadow-md'
+              : 'pro-surface border-slate-200/80 hover:border-sky-300 dark:border-slate-800 dark:bg-slate-900/80'
+          }`}
+        >
+          <p className={`text-[10px] font-extrabold uppercase tracking-wider ${typeFilter === 'parent' ? 'text-sky-100' : 'text-sky-600 dark:text-sky-400'}`}>
+            Parent Enrolled
+          </p>
+          <p className={`mt-1 text-2xl font-black ${typeFilter === 'parent' ? 'text-white' : 'text-sky-700 dark:text-sky-300'}`}>{stats.parent}</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTypeFilter(typeFilter === 'personal' ? 'all' : 'personal')}
+          className={`text-left rounded-2xl border p-3.5 transition-all cursor-pointer ${
+            typeFilter === 'personal'
+              ? 'border-purple-600 bg-purple-600 text-white shadow-md'
+              : 'pro-surface border-slate-200/80 hover:border-purple-300 dark:border-slate-800 dark:bg-slate-900/80'
+          }`}
+        >
+          <p className={`text-[10px] font-extrabold uppercase tracking-wider ${typeFilter === 'personal' ? 'text-purple-100' : 'text-purple-600 dark:text-purple-400'}`}>
+            Personal / Direct
+          </p>
+          <p className={`mt-1 text-2xl font-black ${typeFilter === 'personal' ? 'text-white' : 'text-purple-700 dark:text-purple-300'}`}>{stats.personal}</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'active' ? 'all' : 'active')}
+          className={`col-span-2 md:col-span-1 text-left rounded-2xl border p-3.5 transition-all cursor-pointer ${
+            statusFilter === 'active'
+              ? 'border-brand-red bg-brand-red text-white shadow-md'
+              : 'pro-surface border-slate-200/80 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/80'
+          }`}
+        >
+          <p className={`text-[10px] font-extrabold uppercase tracking-wider ${statusFilter === 'active' ? 'text-red-100' : 'text-emerald-600 dark:text-emerald-400'}`}>
+            Active Accounts
+          </p>
+          <p className={`mt-1 text-2xl font-black ${statusFilter === 'active' ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{stats.active}</p>
+        </button>
       </div>
 
-      {/* Student population explorer */}
-      <div className="pro-surface rounded-2xl border border-slate-200/80 p-5 dark:border-slate-800 dark:bg-slate-900/80">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
-          <div>
-            <h2 className="text-sm font-black text-slate-900 dark:text-white">Student Directory by School</h2>
-            <p className="text-xs text-slate-500 mt-1">Click a school to view every student onboarded under that school.</p>
+      {/* On-Demand Partner School Explorer Drawer */}
+      {showSchoolExplorer && (
+        <div className="pro-surface rounded-2xl border border-emerald-200/80 p-5 dark:border-emerald-900/40 dark:bg-slate-900/90 animate-fadeIn">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-sm font-black text-slate-900 dark:text-white">Partner School &amp; Cohort Explorer</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Select any partner school to filter the main directory or inspect its onboarded students.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedSchoolView(selectedSchoolView === "__private__" ? null : "__private__")}
+                className="min-h-9 rounded-xl border border-purple-200 bg-purple-50/70 dark:border-purple-800 dark:bg-purple-950/30 px-3 text-xs font-black text-purple-700 dark:text-purple-300 cursor-pointer"
+              >
+                {selectedSchoolView === "__private__" ? "Close Private List" : `Private Scholars (${privateStudents.length})`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSchoolExplorer(false)}
+                className="min-h-9 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+              >
+                Hide Explorer
+              </button>
+            </div>
           </div>
-          <button type="button" onClick={() => setSelectedSchoolView(selectedSchoolView ? null : "__private__")} className="min-h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-black text-slate-700 dark:text-slate-200">
-            {selectedSchoolView === "__private__" ? "Close Private Students" : "View Private Students (" + privateStudents.length + ")"}
-          </button>
+          {selectedSchoolView === "__private__" ? (
+            <div className="rounded-2xl border border-purple-200/70 dark:border-purple-900/40 overflow-hidden max-h-72 overflow-y-auto">
+              <div className="px-4 py-2.5 bg-purple-50/60 dark:bg-purple-950/20 text-xs font-black text-purple-800 dark:text-purple-200">
+                Private Scholars · Parent-Enrolled + Personal Direct
+              </div>
+              {privateStudents.length === 0 ? (
+                <div className="p-5 text-xs text-slate-500">No private students found.</div>
+              ) : (
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {privateStudents.map(s => (
+                    <button
+                      type="button"
+                      key={s.id}
+                      onClick={() => { setInspectedStudent(s); setSelectedSchoolView(null); }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 flex items-center justify-between gap-3 cursor-pointer"
+                    >
+                      <span>
+                        <span className="block text-xs font-black text-slate-900 dark:text-white">{s.fullName}</span>
+                        <span className="block text-[11px] text-slate-500">{s.studentType === "parent" ? "Parent-registered" : "Personal"} · {s.class}</span>
+                      </span>
+                      <ChevronRight size={14} className="text-slate-400" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {schoolGroups.map(s => {
+                const isSelected = schoolFilter === s.id;
+                return (
+                  <button
+                    type="button"
+                    key={s.id}
+                    onClick={() => {
+                      setSchoolFilter(isSelected ? 'all' : s.id);
+                      setTypeFilter(isSelected ? 'all' : 'school');
+                    }}
+                    className={`text-left rounded-2xl border p-3.5 transition-all cursor-pointer ${
+                      isSelected
+                        ? 'border-emerald-600 bg-emerald-50/80 dark:bg-emerald-950/40 ring-2 ring-emerald-500/20'
+                        : 'border-slate-200 dark:border-slate-800 hover:border-brand-red hover:bg-brand-red/5'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-slate-900 dark:text-white truncate">{s.name}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{s.students.length} scholars onboarded</p>
+                      </div>
+                      <span className={`rounded-lg px-2 py-0.5 text-[10px] font-black ${
+                        isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                      }`}>
+                        {isSelected ? 'Filtered' : 'Filter'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
-        {selectedSchoolView === "__private__" ? (
-          <div className="rounded-2xl border border-purple-200/70 dark:border-purple-900/40 overflow-hidden">
-            <div className="px-4 py-3 bg-purple-50/60 dark:bg-purple-950/20 text-xs font-black text-purple-800 dark:text-purple-200">Private students · parent-registered + self-registered</div>
-            {privateStudents.length === 0 ? <div className="p-5 text-xs text-slate-500">No private students found.</div> : <div className="divide-y divide-slate-100 dark:divide-slate-800">{privateStudents.map(s => <button type="button" key={s.id} onClick={() => { setManagingStudent(s); setSelectedSchoolView(null); }} className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 flex items-center justify-between gap-3"><span><span className="block text-xs font-black text-slate-900 dark:text-white">{s.fullName}</span><span className="block text-[11px] text-slate-500">{s.studentType === "parent" ? "Parent-registered" : "Self-registered"} · {s.class}</span></span><ChevronDown size={14} className="text-slate-400"/></button>)}</div>}
-          </div>
-        ) : selectedSchoolView ? (() => {
-          const school = schoolGroups.find(s => s.id === selectedSchoolView);
-          return school ? <div className="rounded-2xl border border-emerald-200/70 dark:border-emerald-900/40 overflow-hidden">
-            <div className="px-4 py-3 bg-emerald-50/60 dark:bg-emerald-950/20 flex items-center justify-between"><div><p className="text-xs font-black text-emerald-800 dark:text-emerald-200">{school.name}</p><p className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80">{school.students.length} onboarded students</p></div><button type="button" onClick={() => setSelectedSchoolView(null)} className="text-xs font-black text-slate-500 hover:text-slate-900 dark:hover:text-white">Close</button></div>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">{school.students.map(s => <button type="button" key={s.id} onClick={() => setManagingStudent(s)} className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 flex items-center justify-between gap-3"><span><span className="block text-xs font-black text-slate-900 dark:text-white">{s.fullName}</span><span className="block text-[11px] text-slate-500">{s.class} · {s.username}</span></span><ChevronRight size={14} className="text-slate-400"/></button>)}</div>
-          </div> : null;
-        })() : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">{schoolGroups.map(s => <button type="button" key={s.id} onClick={() => setSelectedSchoolView(s.id)} className="text-left rounded-2xl border border-slate-200 dark:border-slate-800 p-4 hover:border-brand-red hover:bg-brand-red/5 transition-colors"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black text-slate-900 dark:text-white truncate">{s.name}</p><p className="text-[11px] text-slate-500 mt-1">{s.students.length} students onboarded</p></div><ChevronRight size={16} className="text-slate-400 shrink-0"/></div></button>)}</div>}
-      </div>
+      )}
 
-      {/* Search & Unified Filter Popover Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-        <div className="relative flex-1">
+      {/* Visible Segmented Scope Bar + Inline Search & Quick Filters */}
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-2xs dark:border-slate-800 dark:bg-slate-900 space-y-3">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2.5">
+          {/* Segmented Category Pills */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { id: 'all', label: 'All Scholars', count: stats.total },
+              { id: 'school', label: 'School-Assigned', count: stats.school },
+              { id: 'parent', label: 'Parent-Enrolled', count: stats.parent },
+              { id: 'personal', label: 'Personal / Direct', count: stats.personal },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setTypeFilter(tab.id as any)}
+                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-black transition-all cursor-pointer ${
+                  typeFilter === tab.id
+                    ? 'bg-brand-red text-white shadow-xs'
+                    : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/70 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono ${
+                  typeFilter === tab.id ? 'bg-white/20 text-white' : 'bg-white dark:bg-slate-900 text-slate-500'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Inline Partner School & Mentor Dropdowns */}
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={schoolFilter}
+              onChange={e => setSchoolFilter(e.target.value)}
+              aria-label="Filter by Partner School"
+              className="min-h-9 rounded-xl border border-slate-200/90 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 focus:border-brand-red focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 cursor-pointer"
+            >
+              <option value="all">All Schools &amp; Direct</option>
+              {schools.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+
+            <select
+              value={tutorFilter}
+              onChange={e => setTutorFilter(e.target.value)}
+              aria-label="Filter by Assigned Mentor"
+              className="min-h-9 rounded-xl border border-slate-200/90 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 focus:border-brand-red focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 cursor-pointer"
+            >
+              <option value="all">All Mentor Scopes</option>
+              <option value="assigned">Assigned to Mentor</option>
+              <option value="unassigned">Unassigned Only</option>
+              {tutors.map(t => (
+                <option key={t.id} value={t.id}>Mentor: {t.name}</option>
+              ))}
+            </select>
+
+            {(typeFilter !== 'all' || schoolFilter !== 'all' || tutorFilter !== 'all' || statusFilter !== 'all' || search) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTypeFilter('all');
+                  setSchoolFilter('all');
+                  setTutorFilter('all');
+                  setStatusFilter('all');
+                  setSearch('');
+                }}
+                className="min-h-9 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-brand-red hover:bg-red-100 dark:border-red-900/40 dark:bg-red-950/30 cursor-pointer"
+              >
+                Reset ({filteredStudents.length})
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Search Input Row */}
+        <div className="relative">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={15} aria-hidden="true" />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search student, username, school, parent..."
-            className="w-full min-h-10 pl-9 pr-9 rounded-xl border border-slate-200/90 bg-white text-xs font-medium text-slate-900 placeholder-slate-400 focus:border-brand-red focus:outline-none focus:ring-2 focus:ring-brand-red/20 dark:border-slate-800 dark:bg-slate-900 dark:text-white shadow-2xs"
+            placeholder="Search scholar by full name, @username, access code, school, parent guardian, or class..."
+            className="w-full min-h-10 pl-9 pr-9 rounded-xl border border-slate-200/90 bg-slate-50/60 text-xs font-medium text-slate-900 placeholder-slate-400 focus:border-brand-red focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-red/20 dark:border-slate-800 dark:bg-slate-950/60 dark:text-white"
           />
           {search && (
             <button
@@ -1132,432 +1366,557 @@ const AdminStudents: React.FC = () => {
             </button>
           )}
         </div>
-
-        {/* Filter Dropdown Popover */}
-        <div className="relative shrink-0" ref={filterMenuRef}>
-          <button
-            type="button"
-            onClick={() => setIsFilterOpen(prev => !prev)}
-            aria-expanded={isFilterOpen}
-            className={`min-h-10 px-3.5 rounded-xl border text-xs font-bold inline-flex items-center gap-2 transition-all cursor-pointer ${
-              typeFilter !== 'all' || schoolFilter !== 'all' || tutorFilter !== 'all' || statusFilter !== 'all'
-                ? 'bg-brand-red text-white border-brand-red shadow-xs'
-                : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/80 shadow-2xs'
-            }`}
-          >
-            <Filter size={14} className={typeFilter !== 'all' || schoolFilter !== 'all' || tutorFilter !== 'all' || statusFilter !== 'all' ? 'text-white' : 'text-slate-400'} />
-            <span>
-              {typeFilter === 'all' && schoolFilter === 'all' && tutorFilter === 'all' && statusFilter === 'all'
-                ? 'All Filters'
-                : typeFilter !== 'all'
-                  ? typeFilter === 'personal' ? 'Personal' : typeFilter === 'parent' ? 'Parent' : 'School'
-                  : 'Filtered'}
-            </span>
-            {(typeFilter !== 'all' || schoolFilter !== 'all' || tutorFilter !== 'all' || statusFilter !== 'all') && (
-              <span className="px-1.5 py-0.2 bg-white/20 rounded-full text-[10px] font-mono">
-                {filteredStudents.length}
-              </span>
-            )}
-            <ChevronDown size={14} className={`transition-transform ${isFilterOpen ? 'rotate-180' : ''}`} />
-          </button>
-
-          {isFilterOpen && (
-            <div className="absolute right-0 sm:left-auto top-full mt-1.5 w-72 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl p-3 z-40 animate-fadeIn space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Filter Scholars</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTypeFilter('all');
-                    setSchoolFilter('all');
-                    setTutorFilter('all');
-                    setStatusFilter('all');
-                    setIsFilterOpen(false);
-                  }}
-                  className="text-[10px] font-bold text-brand-red hover:underline"
-                >
-                  Reset All
-                </button>
-              </div>
-
-              {/* Student Category */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  Enrolment Category
-                </label>
-                <div className="grid grid-cols-2 gap-1 text-[11px]">
-                  {[
-                    { id: 'all', label: 'All Students', count: stats.total },
-                    { id: 'personal', label: 'Personal', count: stats.personal },
-                    { id: 'parent', label: 'Parent Enrolled', count: stats.parent },
-                    { id: 'school', label: 'School Affiliated', count: stats.school },
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setTypeFilter(tab.id as any)}
-                      className={`px-2 py-1.5 rounded-lg font-bold text-left transition-all text-xs flex items-center justify-between ${
-                        typeFilter === tab.id
-                          ? 'bg-brand-red text-white'
-                          : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <span className="truncate">{tab.label}</span>
-                      <span className="text-[9px] opacity-70 font-mono ml-1">({tab.count})</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* School Affiliation */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  Partner School
-                </label>
-                <select
-                  value={schoolFilter}
-                  onChange={e => setSchoolFilter(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-red cursor-pointer"
-                >
-                  <option value="all">All Schools &amp; Direct</option>
-                  {schools.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Mentor Assignment */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  Mentor Assignment
-                </label>
-                <select
-                  value={tutorFilter}
-                  onChange={e => setTutorFilter(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-red cursor-pointer"
-                >
-                  <option value="all">All Mentor Assignments</option>
-                  <option value="assigned">Assigned to Mentor</option>
-                  <option value="unassigned">Unassigned</option>
-                  {tutors.map(t => (
-                    <option key={t.id} value={t.id}>{t.name} (Mentor)</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Account Status */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  Account Status
-                </label>
-                <select
-                  value={statusFilter}
-                  onChange={e => setStatusFilter(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-red cursor-pointer"
-                >
-                  <option value="all">All Account Statuses</option>
-                  <option value="active">Active Only</option>
-                  <option value="suspended">Suspended / Inactive</option>
-                </select>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Main Student Directory Roster */}
-      <section className="pro-surface overflow-hidden rounded-3xl border border-slate-200/80 shadow-xs dark:border-slate-800 dark:bg-slate-900/80">
-        <div className="flex items-center justify-between border-b border-slate-100 p-6 dark:border-slate-800">
-          <div>
-            <h2 className="text-lg font-black text-slate-900 dark:text-white">Student &amp; Student Directory</h2>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Showing {filteredStudents.length} of {students.length} enrolled scholars across all programs.
-            </p>
+      {/* MASTER-DETAIL SPLIT WORKSPACE: Left Directory Table + Right Docked 360° Scholar Inspector */}
+      <div className={`grid grid-cols-1 gap-5 items-start ${inspectedStudent ? 'xl:grid-cols-[minmax(0,1fr)_390px]' : ''}`}>
+        {/* Left: Main Student Directory Roster */}
+        <section className="pro-surface overflow-hidden rounded-3xl border border-slate-200/80 shadow-xs dark:border-slate-800 dark:bg-slate-900/80">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+            <div>
+              <h2 className="text-base font-black text-slate-900 dark:text-white">Scholar Directory</h2>
+              <p className="text-xs text-slate-500">
+                Showing {filteredStudents.length} of {students.length} scholars · Click any scholar row to open the 360° Inspector.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                {filteredStudents.length} Visible
+              </span>
+            </div>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            {filteredStudents.length} Visible
-          </span>
-        </div>
 
-        {loading ? (
-          <div className="flex flex-col items-center justify-center p-16 text-center">
-            <RefreshCw className="h-8 w-8 animate-spin text-brand-red" />
-            <p className="mt-3 text-sm font-bold text-slate-700 dark:text-slate-300">Synchronizing student records...</p>
-            <p className="text-xs text-slate-500">Aggregating personal students, parent registrations, and school rosters.</p>
-          </div>
-        ) : filteredStudents.length === 0 ? (
-          <div className="p-16 text-center">
-            <Users className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" aria-hidden="true" />
-            <p className="mt-3 text-base font-black text-slate-800 dark:text-slate-200">No students match your criteria</p>
-            <p className="mt-1 text-xs text-slate-500">Try clearing filters or onboarding a new student below.</p>
-            <button
-              type="button"
-              onClick={() => {
-                setTypeFilter('all');
-                setSchoolFilter('all');
-                setStatusFilter('all');
-                setTutorFilter('all');
-                setSearch('');
-              }}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-brand-red hover:bg-red-50 dark:border-slate-700 dark:hover:bg-slate-800"
-            >
-              Reset All Filters
-            </button>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {filteredStudents.map(student => {
-              const isSuspended = ['SUSPENDED', 'BANNED', 'DISABLED'].includes(student.accountStatus.toUpperCase());
-              
-              return (
-                <div 
-                  key={student.id} 
-                  className="flex items-center justify-between gap-4 p-4 sm:p-5 transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
-                >
-                  {/* Left: Avatar & Core Summary Info */}
-                  <div className="flex min-w-0 items-center gap-3.5 sm:gap-4">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-red to-red-700 text-sm font-black text-white shadow-xs">
-                      {(student.fullName || 'C').charAt(0).toUpperCase()}
-                    </div>
+          {loading ? (
+            <div className="flex flex-col items-center justify-center p-16 text-center">
+              <RefreshCw className="h-8 w-8 animate-spin text-brand-red" />
+              <p className="mt-3 text-sm font-bold text-slate-700 dark:text-slate-300">Synchronizing student records...</p>
+              <p className="text-xs text-slate-500">Aggregating personal students, parent registrations, and school rosters.</p>
+            </div>
+          ) : filteredStudents.length === 0 ? (
+            <div className="p-16 text-center">
+              <Users className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" aria-hidden="true" />
+              <p className="mt-3 text-base font-black text-slate-800 dark:text-slate-200">No scholars match your criteria</p>
+              <p className="mt-1 text-xs text-slate-500">Try clearing filters or onboarding a new student.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setTypeFilter('all');
+                  setSchoolFilter('all');
+                  setStatusFilter('all');
+                  setTutorFilter('all');
+                  setSearch('');
+                }}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-brand-red hover:bg-red-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              >
+                Reset All Filters
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {filteredStudents.map(student => {
+                const isSuspended = ['SUSPENDED', 'BANNED', 'DISABLED'].includes(student.accountStatus.toUpperCase());
+                const isInspected = inspectedStudent?.id === student.id;
+                const mentorCount = Array.isArray(student.assignedTutors) && student.assignedTutors.length > 0
+                  ? student.assignedTutors.length
+                  : student.tutorName ? 1 : 0;
+                const primaryMentorName = Array.isArray(student.assignedTutors) && student.assignedTutors.length > 0
+                  ? student.assignedTutors[0].tutorName
+                  : student.tutorName;
 
-                    <div className="min-w-0 space-y-0.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-black text-slate-900 dark:text-white">
-                          {student.fullName}
-                        </p>
-
-                        {/* Category Badge */}
-                        {student.studentType === 'school' ? (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-extrabold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                            <School size={11} />
-                            {student.schoolName || 'School Student'}
-                          </span>
-                        ) : student.studentType === 'parent' ? (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-[10px] font-extrabold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
-                            <Users size={11} />
-                            Parent Enrolled
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-[10px] font-extrabold text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
-                            <UserCheck size={11} />
-                            Personal Student
-                          </span>
-                        )}
-
-                        {/* Status Badge */}
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase ${
-                          isSuspended 
-                            ? 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300' 
-                            : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
-                        }`}>
-                          <ShieldCheck size={11} />
-                          {isSuspended ? 'Suspended' : 'Active'}
-                        </span>
+                return (
+                  <div
+                    key={student.id}
+                    onClick={() => setInspectedStudent(student)}
+                    className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 p-4 transition-all cursor-pointer ${
+                      isInspected
+                        ? 'bg-brand-red/5 border-l-4 border-l-brand-red dark:bg-brand-red/10'
+                        : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
+                    }`}
+                  >
+                    {/* Left: Avatar & Core Summary Info */}
+                    <div className="flex min-w-0 items-start sm:items-center gap-3.5">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-red to-red-700 text-sm font-black text-white shadow-xs">
+                        {(student.fullName || 'S').charAt(0).toUpperCase()}
                       </div>
 
-                      {/* Core Identifiers Line */}
-                      <p className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
-                        <span className="font-mono font-bold text-slate-700 dark:text-slate-300">@{student.username}</span>
-                        {student.class && <span>· Class: <strong className="text-slate-700 dark:text-slate-200">{student.class}</strong></span>}
-                        {student.track && <span>· Track: <strong className="text-slate-700 dark:text-slate-200">{student.track}</strong></span>}
-                        {student.studentType === 'school' && student.schoolName && (
-                          <span className="hidden sm:inline">· School: <strong className="text-slate-700 dark:text-slate-200">{student.schoolName}</strong></span>
-                        )}
-                      </p>
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="truncate text-sm font-black text-slate-900 dark:text-white">
+                            {student.fullName}
+                          </p>
+
+                          {/* Category Badge */}
+                          {student.studentType === 'school' ? (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-extrabold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                              <School size={11} />
+                              {student.schoolName || 'School Student'}
+                            </span>
+                          ) : student.studentType === 'parent' ? (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-[10px] font-extrabold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+                              <Users size={11} />
+                              Parent: {student.parentName || 'Enrolled'}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-[10px] font-extrabold text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
+                              <UserCheck size={11} />
+                              Personal Learner
+                            </span>
+                          )}
+
+                          {/* Mentor Pill */}
+                          {mentorCount > 0 ? (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-purple-100/80 px-2 py-0.5 text-[10px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-300">
+                              <GraduationCap size={11} />
+                              {primaryMentorName}{mentorCount > 1 ? ` +${mentorCount - 1}` : ''}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openAssignMentorModal(student);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md border border-dashed border-slate-300 px-2 py-0.5 text-[10px] font-bold text-slate-500 hover:border-purple-500 hover:text-purple-600 dark:border-slate-700 dark:text-slate-400"
+                            >
+                              + Assign Mentor
+                            </button>
+                          )}
+
+                          {/* Status Badge */}
+                          {isSuspended && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-black uppercase text-red-700 dark:bg-red-950/30 dark:text-red-300">
+                              Suspended
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Core Identifiers & Inline Credentials */}
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500">
+                          <span className="font-mono font-bold text-slate-700 dark:text-slate-300">@{student.username}</span>
+                          {student.accessCode && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyToClipboard(student.accessCode, `${student.fullName}'s Access Code`);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 font-mono text-[10px] font-black text-amber-800 hover:bg-amber-100 dark:bg-amber-950/30 dark:border-amber-800/50 dark:text-amber-300"
+                              title="Click to copy Access Code"
+                            >
+                              <KeyRound size={10} />
+                              {student.accessCode}
+                              <Copy size={9} />
+                            </button>
+                          )}
+                          {student.class && (
+                            <span>· Class: <strong className="text-slate-700 dark:text-slate-200">{student.class}</strong></span>
+                          )}
+                          {student.track && (
+                            <span className="hidden md:inline">· Track: <strong className="text-slate-700 dark:text-slate-200">{student.track}</strong></span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Streamlined Actions */}
+                    <div className="shrink-0 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setInspectedStudent(isInspected ? null : student)}
+                        className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                          isInspected
+                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                            : 'border border-slate-200/90 bg-white text-slate-700 hover:border-brand-red hover:text-brand-red dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
+                        }`}
+                      >
+                        <span>{isInspected ? 'Inspecting' : '360° View'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          toast.info(`Directly viewing student dashboard for ${student.fullName}...`);
+                          startImpersonation({
+                            id: student.id,
+                            uid: student.firebaseUid || student.id,
+                            name: student.fullName,
+                            email: student.email || student.parentEmail,
+                            role: 'STUDENT',
+                            schoolId: student.schoolId,
+                            schoolName: student.schoolName,
+                            studentDocId: student.id,
+                            class: student.class || student.grade,
+                            classLevel: student.class || student.grade,
+                            phone: student.parentPhone
+                          }, navigate);
+                        }}
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs transition-all cursor-pointer whitespace-nowrap"
+                        title={`Directly log into ${student.fullName}'s student dashboard`}
+                      >
+                        <UserCheck size={13} />
+                        <span className="hidden sm:inline">Log In As</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setManagingStudent(student)}
+                        className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-200/90 bg-white p-2 text-slate-600 hover:border-brand-red hover:text-brand-red dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 cursor-pointer"
+                        title={`Full settings for ${student.fullName}`}
+                      >
+                        <Settings size={14} />
+                      </button>
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
-                  {/* Right: Actions */}
-                  <div className="shrink-0 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        toast.info(`Directly viewing student dashboard for ${student.fullName}...`);
-                        startImpersonation({
-                          id: student.id,
-                          uid: student.firebaseUid || student.id,
-                          name: student.fullName,
-                          email: student.email || student.parentEmail,
-                          role: 'STUDENT',
-                          schoolId: student.schoolId,
-                          schoolName: student.schoolName,
-                          studentDocId: student.id,
-                          class: student.class || student.grade,
-                          classLevel: student.class || student.grade,
-                          phone: student.parentPhone
-                        }, navigate);
-                      }}
-                      className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 px-3 py-2 text-xs font-bold text-white shadow-2xs transition-all active:scale-95 cursor-pointer whitespace-nowrap"
-                      title={`Directly log into ${student.fullName}'s student dashboard`}
-                    >
-                      <UserCheck size={14} />
-                      <span className="hidden sm:inline">Log In As</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setManagingStudent(student)}
-                      className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200/90 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-2xs transition-all hover:border-brand-red hover:bg-brand-red/5 hover:text-brand-red dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-brand-red dark:hover:bg-brand-red/10 cursor-pointer"
-                      title={`Manage ${student.fullName}`}
-                    >
-                      <Settings size={15} className="text-slate-500 hover:text-brand-red dark:text-slate-400" />
-                      <span>Manage</span>
-                    </button>
-                  </div>
+        {/* Right: Docked 360° Scholar Inspector Drawer */}
+        {inspectedStudent && (
+          <aside className="xl:sticky xl:top-20 rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900 space-y-4 animate-fadeIn">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-red to-red-700 text-base font-black text-white">
+                  {(inspectedStudent.fullName || 'S').charAt(0).toUpperCase()}
                 </div>
-              );
-            })}
-          </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-brand-red">360° Scholar Inspector</span>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white truncate">{inspectedStudent.fullName}</h3>
+                  <p className="text-xs font-mono text-slate-500 truncate">@{inspectedStudent.username}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInspectedStudent(null)}
+                className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                title="Close Inspector"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Credentials Card */}
+            <div className="rounded-2xl border border-amber-200/80 bg-amber-50/50 p-3.5 dark:border-amber-900/40 dark:bg-amber-950/20 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                  Portal Login Credentials
+                </span>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => issueCredentials(inspectedStudent)}
+                  className="text-[11px] font-bold text-brand-red hover:underline cursor-pointer"
+                >
+                  Re-Issue Code
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(inspectedStudent.username, 'Username')}
+                  className="flex items-center justify-between rounded-xl bg-white dark:bg-slate-900 px-2.5 py-2 border border-amber-200/60 dark:border-slate-800 text-left cursor-pointer"
+                >
+                  <div className="min-w-0">
+                    <span className="block text-[9px] font-bold uppercase text-slate-400">Username</span>
+                    <span className="block font-mono text-xs font-black text-slate-900 dark:text-white truncate">@{inspectedStudent.username}</span>
+                  </div>
+                  <Copy size={12} className="text-slate-400 shrink-0" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => inspectedStudent.accessCode && copyToClipboard(inspectedStudent.accessCode, 'Access Code')}
+                  className="flex items-center justify-between rounded-xl bg-white dark:bg-slate-900 px-2.5 py-2 border border-amber-200/60 dark:border-slate-800 text-left cursor-pointer"
+                >
+                  <div className="min-w-0">
+                    <span className="block text-[9px] font-bold uppercase text-slate-400">Access Code</span>
+                    <span className="block font-mono text-xs font-black text-brand-red truncate">{inspectedStudent.accessCode || 'Not Set'}</span>
+                  </div>
+                  <Copy size={12} className="text-slate-400 shrink-0" />
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Class & Affiliation Metadata */}
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/50">
+                <span className="font-bold text-slate-500">Class / Grade</span>
+                <select
+                  value={normalizeClassName(inspectedStudent.class, 'Grade 1')}
+                  onChange={async (e) => {
+                    const nextClass = normalizeClassName(e.target.value, 'Grade 1');
+                    setInspectedStudent(prev => prev ? { ...prev, class: nextClass, grade: nextClass } : null);
+                    setStudents(prev => prev.map(s => s.id === inspectedStudent.id ? { ...s, class: nextClass, grade: nextClass } : s));
+                    try {
+                      await Promise.all([
+                        updateDoc(doc(db, 'students', inspectedStudent.id), { class: nextClass, grade: nextClass }).catch(() => undefined),
+                        updateDoc(doc(db, 'individualStudents', inspectedStudent.id), { class: nextClass, grade: nextClass }).catch(() => undefined),
+                        updateDoc(doc(db, 'users', inspectedStudent.id), { class: nextClass, grade: nextClass }).catch(() => undefined),
+                      ]);
+                      toast.success(`Updated class to ${nextClass}`);
+                    } catch {
+                      toast.error('Failed to update class');
+                    }
+                  }}
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs font-black text-slate-900 dark:text-white"
+                >
+                  {CANONICAL_CLASSES.map(cls => (
+                    <option key={cls} value={cls}>{cls}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-950/50">
+                <span className="block text-[10px] font-bold uppercase text-slate-400">Enrolment &amp; Guardian Link</span>
+                <p className="mt-0.5 font-bold text-slate-900 dark:text-white">
+                  {inspectedStudent.schoolName
+                    ? `School: ${inspectedStudent.schoolName}`
+                    : inspectedStudent.parentName
+                      ? `Parent: ${inspectedStudent.parentName}`
+                      : 'Personal / Direct Student'}
+                </p>
+                {(inspectedStudent.parentEmail || inspectedStudent.email) && (
+                  <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                    {inspectedStudent.parentEmail || inspectedStudent.email}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Assigned Mentors Quick Card */}
+            <div className="rounded-2xl border border-purple-200/70 bg-purple-50/30 p-3.5 dark:border-purple-900/40 dark:bg-purple-950/20 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-purple-900 dark:text-purple-200">
+                  Assigned Mentors
+                </span>
+                <button
+                  type="button"
+                  onClick={() => openAssignMentorModal(inspectedStudent)}
+                  className="text-[11px] font-bold text-purple-700 dark:text-purple-300 hover:underline cursor-pointer"
+                >
+                  + Manage Mentors
+                </button>
+              </div>
+              {Array.isArray(inspectedStudent.assignedTutors) && inspectedStudent.assignedTutors.length > 0 ? (
+                <div className="space-y-1.5">
+                  {inspectedStudent.assignedTutors.map((tm, idx) => (
+                    <div key={idx} className="flex items-center justify-between rounded-xl bg-white dark:bg-slate-900 px-2.5 py-1.5 border border-purple-100 dark:border-purple-900/50 text-xs">
+                      <span className="font-bold text-slate-900 dark:text-white truncate">{tm.tutorName}</span>
+                      <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400">{tm.role || 'Mentor'}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : inspectedStudent.tutorName ? (
+                <div className="flex items-center justify-between rounded-xl bg-white dark:bg-slate-900 px-2.5 py-1.5 border border-purple-100 dark:border-purple-900/50 text-xs">
+                  <span className="font-bold text-slate-900 dark:text-white truncate">{inspectedStudent.tutorName}</span>
+                  <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400">Lead Mentor</span>
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic">No mentor assigned yet.</p>
+              )}
+            </div>
+
+            {/* Quick Inspector Action Buttons */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setResourceForm(prev => ({ ...prev, studentId: inspectedStudent.id }));
+                  setShowResourceModal(true);
+                }}
+                className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-brand-red/30 bg-brand-red/5 px-3 text-xs font-bold text-brand-red hover:bg-brand-red/10 cursor-pointer"
+              >
+                <Send size={13} />
+                Send Resource
+              </button>
+              <button
+                type="button"
+                onClick={() => setManagingStudent(inspectedStudent)}
+                className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+              >
+                <Settings size={13} />
+                Full Settings
+              </button>
+            </div>
+          </aside>
         )}
-      </section>
+      </div>
 
-      {/* Send Personal Learning Resource Section */}
-      <section 
-        id="personal-resource-dispatch-card"
-        className="pro-surface rounded-3xl border border-slate-200/80 p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900/80 md:p-8"
-      >
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-red/10 text-brand-red dark:bg-brand-red/20">
-            <Send size={18} aria-hidden="true" />
-          </div>
-          <div>
-            <h2 className="text-lg font-black text-slate-900 dark:text-white">Send Personal Learning Resource</h2>
-            <p className="text-xs text-slate-500">
-              Deliver an interactive class link, lesson sheet, or coding challenge directly into a specific student's portal.
-            </p>
-          </div>
-        </div>
-
-        <form onSubmit={handleSendResource} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
-              Target Student / Student <span className="text-brand-red">*</span>
-            </label>
-            <select
-              value={resourceForm.studentId}
-              onChange={e => setResourceForm(prev => ({ ...prev, studentId: e.target.value }))}
-              className="w-full rounded-xl border border-slate-200/80 bg-white/70 px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none focus:ring-2 focus:ring-brand-red/20 dark:border-slate-800 dark:bg-slate-950/70 dark:text-white"
-              required
-            >
-              <option value="">-- Choose from all {students.length} students --</option>
-              {students.map(student => (
-                <option key={student.id} value={student.id}>
-                  {student.fullName} (@{student.username}) {student.schoolName ? `[${student.schoolName}]` : student.studentType === 'parent' ? '[Parent Enrolled]' : '[Personal]'}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
-              Dispatch Format
-            </label>
-            <select
-              value={resourceForm.type}
-              onChange={e => setResourceForm(prev => ({ ...prev, type: e.target.value as 'resource' | 'link' }))}
-              className="w-full rounded-xl border border-slate-200/80 bg-white/70 px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none focus:ring-2 focus:ring-brand-red/20 dark:border-slate-800 dark:bg-slate-950/70 dark:text-white"
-            >
-              <option value="resource">File / Curriculum Document (PDF, Slides)</option>
-              <option value="link">Live Classroom / Platform URL (Google Meet, Zoom, Scratch)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
-              Resource Title <span className="text-brand-red">*</span>
-            </label>
-            <input
-              type="text"
-              value={resourceForm.title}
-              onChange={e => setResourceForm(prev => ({ ...prev, title: e.target.value }))}
-              placeholder="e.g. Python Loops Workshop Guide or Google Meet workspace"
-              className="w-full rounded-xl border border-slate-200/80 bg-white/70 px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none focus:ring-2 focus:ring-brand-red/20 dark:border-slate-800 dark:bg-slate-950/70 dark:text-white"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
-              URL Link <span className="text-brand-red">*</span>
-            </label>
-            <input
-              type="url"
-              value={resourceForm.url}
-              onChange={e => setResourceForm(prev => ({ ...prev, url: e.target.value }))}
-              placeholder="https://drive.google.com/... or https://meet.google.com/..."
-              className="w-full rounded-xl border border-slate-200/80 bg-white/70 px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none focus:ring-2 focus:ring-brand-red/20 dark:border-slate-800 dark:bg-slate-950/70 dark:text-white"
-              required
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
-              Optional Instructions or Notes
-            </label>
-            <input
-              type="text"
-              value={resourceForm.description}
-              onChange={e => setResourceForm(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="e.g. Review exercises 1 through 4 before our Thursday live session."
-              className="w-full rounded-xl border border-slate-200/80 bg-white/70 px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none focus:ring-2 focus:ring-brand-red/20 dark:border-slate-800 dark:bg-slate-950/70 dark:text-white"
-            />
-          </div>
-
-          <div className="md:col-span-2">
+      {/* Compact Recent Dispatches Strip */}
+      {dispatches.length > 0 && (
+        <section className="pro-surface rounded-2xl border border-slate-200/80 p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900/80">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Recent Learning Resource Dispatches ({dispatches.length})
+            </h2>
             <button
-              type="submit"
-              disabled={sendingResource}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-brand-red px-6 text-xs font-bold text-white shadow-md shadow-brand-red/20 hover:bg-red-700 disabled:opacity-50"
+              type="button"
+              onClick={() => setShowResourceModal(true)}
+              className="text-xs font-bold text-brand-red hover:underline cursor-pointer"
             >
-              {sendingResource ? 'Dispatching...' : 'Dispatch to Student Portal'}
-              <Send size={14} aria-hidden="true" />
+              + Dispatch New Resource
             </button>
           </div>
-        </form>
-      </section>
-
-      {/* Recent Dispatches Feed */}
-      {dispatches.length > 0 && (
-        <section className="pro-surface rounded-3xl border border-slate-200/80 p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900/80">
-          <h2 className="text-base font-black text-slate-900 dark:text-white">Recent Learning Dispatches</h2>
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {dispatches.slice(0, 6).map((item, idx) => {
+          <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+            {dispatches.slice(0, 3).map((item, idx) => {
               const targetStudent = students.find(s => s.id === item.studentId);
               return (
                 <div
                   key={`${item.collectionName}-${item.id}-${idx}`}
-                  className="flex flex-col justify-between rounded-2xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/50"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-950/50"
                 >
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="rounded bg-brand-red/10 px-2 py-0.5 text-[10px] font-black uppercase text-brand-red">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded bg-brand-red/10 px-1.5 py-0.5 text-[9px] font-black uppercase text-brand-red">
                         {item.kind}
                       </span>
-                      <span className="text-[10px] font-bold text-slate-400">Delivered</span>
+                      <p className="text-xs font-black text-slate-900 dark:text-white truncate">
+                        {item.title || 'Untitled'}
+                      </p>
                     </div>
-                    <h3 className="mt-2 text-xs font-black text-slate-900 dark:text-white truncate">
-                      {item.title || 'Untitled'}
-                    </h3>
-                    <p className="mt-1 text-[11px] text-slate-500">
+                    <p className="mt-0.5 text-[11px] text-slate-500 truncate">
                       To: <strong>{targetStudent?.fullName || 'Student'}</strong>
                     </p>
                   </div>
-                  <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-                    <a
-                      href={item.url || item.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-red hover:underline"
-                    >
-                      <LinkIcon size={12} />
-                      Open Link
-                    </a>
-                  </div>
+                  <a
+                    href={item.url || item.fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-white dark:bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-brand-red border border-slate-200 dark:border-slate-800 hover:border-brand-red"
+                  >
+                    <LinkIcon size={11} />
+                    Open
+                  </a>
                 </div>
               );
             })}
           </div>
         </section>
+      )}
+
+      {/* MODAL: Send Personal Learning Resource */}
+      {showResourceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 md:p-8">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-red/10 text-brand-red dark:bg-brand-red/20">
+                  <Send size={18} aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-slate-900 dark:text-white">Dispatch Personal Learning Resource</h2>
+                  <p className="text-xs text-slate-500">
+                    Deliver an interactive class link, lesson sheet, or coding challenge directly to a scholar.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowResourceModal(false)}
+                className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendResource} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Target Scholar <span className="text-brand-red">*</span>
+                  </label>
+                  <select
+                    value={resourceForm.studentId}
+                    onChange={e => setResourceForm(prev => ({ ...prev, studentId: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                    required
+                  >
+                    <option value="">-- Choose from {students.length} scholars --</option>
+                    {students.map(student => (
+                      <option key={student.id} value={student.id}>
+                        {student.fullName} (@{student.username})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Dispatch Format
+                  </label>
+                  <select
+                    value={resourceForm.type}
+                    onChange={e => setResourceForm(prev => ({ ...prev, type: e.target.value as 'resource' | 'link' }))}
+                    className="w-full rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                  >
+                    <option value="resource">File / Curriculum Document (PDF, Slides)</option>
+                    <option value="link">Live Classroom / Platform URL (Meet, Scratch)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Resource Title <span className="text-brand-red">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={resourceForm.title}
+                  onChange={e => setResourceForm(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="e.g. Python Loops Workshop Guide or Google Meet workspace"
+                  className="w-full rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  URL Link <span className="text-brand-red">*</span>
+                </label>
+                <input
+                  type="url"
+                  value={resourceForm.url}
+                  onChange={e => setResourceForm(prev => ({ ...prev, url: e.target.value }))}
+                  placeholder="https://drive.google.com/... or https://meet.google.com/..."
+                  className="w-full rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Optional Instructions or Notes
+                </label>
+                <input
+                  type="text"
+                  value={resourceForm.description}
+                  onChange={e => setResourceForm(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="e.g. Review exercises 1 through 4 before our Thursday live session."
+                  className="w-full rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowResourceModal(false)}
+                  className="min-h-10 rounded-xl border border-slate-200 px-4 text-xs font-bold text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendingResource}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand-red px-5 text-xs font-bold text-white shadow-md shadow-brand-red/20 hover:bg-red-700 disabled:opacity-50"
+                >
+                  {sendingResource ? 'Dispatching...' : 'Dispatch to Scholar'}
+                  <Send size={14} aria-hidden="true" />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* MODAL: Onboard New Student / Student */}
@@ -2030,8 +2389,7 @@ const AdminStudents: React.FC = () => {
                     const targetId = managingStudent.id;
                     setManagingStudent(null);
                     setResourceForm(prev => ({ ...prev, studentId: targetId }));
-                    const elem = document.getElementById('personal-resource-dispatch-card');
-                    elem?.scrollIntoView({ behavior: 'smooth' });
+                    setShowResourceModal(true);
                   }}
                   className="flex items-center gap-3 p-3.5 rounded-2xl border border-slate-200 bg-white hover:border-brand-red hover:bg-brand-red/5 text-left transition-all dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-brand-red cursor-pointer"
                 >

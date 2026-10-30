@@ -1,0 +1,204 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 980" width="100%" height="100%" font-family="'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <defs>
+    <filter id="shadow4" x="-2%" y="-2%" width="104%" height="106%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="980" fill="#F1F5F9"/>
+
+  <!-- Top Blueprint Banner -->
+  <rect x="0" y="0" width="1600" height="72" fill="#0F172A"/>
+  <rect x="28" y="16" width="40" height="40" rx="10" fill="#0F766E"/>
+  <text x="48" y="42" fill="#FFFFFF" font-size="15" font-weight="800" text-anchor="middle">04</text>
+  <text x="84" y="34" fill="#FFFFFF" font-size="18" font-weight="800">WIREFRAME BOARD 04 — TUTOR TEACHING WORKSPACE (DASHBOARD, ASSIGNMENTS, MILESTONES &amp; RESOURCES)</text>
+  <text x="84" y="54" fill="#94A3B8" font-size="12">Maps out /portal/staff, /portal/staff/assignments, /portal/staff/milestones, /portal/staff/classes &amp; /portal/staff/resources</text>
+
+  <!-- 2x2 Quadrant Grid Mapping the Remaining Tutor Tabs -->
+  <!-- QUADRANT 1 (Top-Left): Tutor Dashboard & Assigned Learners Roster -->
+  <g transform="translate(28, 92)">
+    <rect width="758" height="420" rx="14" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#shadow4)"/>
+    <rect width="758" height="46" rx="14" fill="#1E293B"/>
+    <rect y="32" width="758" height="14" fill="#1E293B"/>
+    <text x="20" y="28" fill="#FFFFFF" font-size="13" font-weight="800">TAB A · TUTOR DASHBOARD &amp; ASSIGNED LEARNERS (/portal/staff &amp; /portal/staff/students)</text>
+
+    <!-- 3 Compact KPI Strip -->
+    <rect x="20" y="62" width="230" height="58" rx="10" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="36" y="82" fill="#64748B" font-size="10" font-weight="700">ASSIGNED SCHOOLS</text>
+    <text x="36" y="106" fill="#0F172A" font-size="18" font-weight="800" font-family="monospace">2 Partner Schools</text>
+
+    <rect x="264" y="62" width="230" height="58" rx="10" fill="#EFF6FF" stroke="#BFDBFE"/>
+    <text x="280" y="82" fill="#1D4ED8" font-size="10" font-weight="800">SCHOOL-ASSIGNED SCHOLARS</text>
+    <text x="280" y="106" fill="#1E3A8A" font-size="18" font-weight="800" font-family="monospace">26 Learners</text>
+
+    <rect x="508" y="62" width="230" height="58" rx="10" fill="#FAF5FF" stroke="#E9D5FF"/>
+    <text x="524" y="82" fill="#7E22CE" font-size="10" font-weight="800">PRIVATE / PARENT LEARNERS</text>
+    <text x="524" y="106" fill="#581C87" font-size="18" font-weight="800" font-family="monospace">6 Learners</text>
+
+    <!-- Segmented Filter Bar -->
+    <rect x="20" y="134" width="440" height="34" rx="8" fill="#F1F5F9"/>
+    <rect x="24" y="138" width="136" height="26" rx="6" fill="#FFFFFF"/>
+    <text x="92" y="155" fill="#0F172A" font-size="10" font-weight="800" text-anchor="middle">All Assigned (32)</text>
+    <text x="235" y="155" fill="#1D4ED8" font-size="10" font-weight="700" text-anchor="middle">School-Assigned (26)</text>
+    <text x="385" y="155" fill="#7E22CE" font-size="10" font-weight="700" text-anchor="middle">Private Learners (6)</text>
+
+    <rect x="474" y="134" width="264" height="34" rx="8" fill="#F8FAFC" stroke="#CBD5E1"/>
+    <text x="490" y="155" fill="#94A3B8" font-size="10">Search learner or grade...</text>
+
+    <!-- Structured List Rows -->
+    <g transform="translate(20, 180)">
+      <rect width="718" height="64" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+      <text x="18" y="26" fill="#0F172A" font-size="13" font-weight="800">Emmanuella Torru</text>
+      <rect x="155" y="13" width="108" height="18" rx="4" fill="#F3E8FF"/>
+      <text x="209" y="25" fill="#7E22CE" font-size="9" font-weight="800" text-anchor="middle">PRIVATE LEARNER</text>
+      <text x="18" y="46" fill="#64748B" font-size="10">Grade 6 · Parent: Eno Torru · Track: Creative Design &amp; Tech</text>
+      <rect x="460" y="18" width="124" height="28" rx="6" fill="#0F172A"/>
+      <text x="522" y="36" fill="#FFFFFF" font-size="10" font-weight="700" text-anchor="middle">Open Workspace</text>
+      <rect x="592" y="18" width="110" height="28" rx="6" fill="#F1F5F9"/>
+      <text x="647" y="36" fill="#334155" font-size="10" font-weight="700" text-anchor="middle">Assignments</text>
+    </g>
+
+    <g transform="translate(20, 254)">
+      <rect width="718" height="64" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+      <text x="18" y="26" fill="#0F172A" font-size="13" font-weight="800">Southgold Grade 4 Cohort (26 Students)</text>
+      <rect x="285" y="13" width="115" height="18" rx="4" fill="#DBEAFE"/>
+      <text x="342" y="25" fill="#1D4ED8" font-size="9" font-weight="800" text-anchor="middle">SCHOOL-ASSIGNED</text>
+      <text x="18" y="46" fill="#64748B" font-size="10">Southgold Montessori School · Assigned via Partner School Access</text>
+      <rect x="460" y="18" width="124" height="28" rx="6" fill="#0F172A"/>
+      <text x="522" y="36" fill="#FFFFFF" font-size="10" font-weight="700" text-anchor="middle">Open Roster</text>
+      <rect x="592" y="18" width="110" height="28" rx="6" fill="#F1F5F9"/>
+      <text x="647" y="36" fill="#334155" font-size="10" font-weight="700" text-anchor="middle">Passcodes</text>
+    </g>
+
+    <g transform="translate(20, 328)">
+      <rect width="718" height="64" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+      <text x="18" y="26" fill="#0F172A" font-size="13" font-weight="800">Jayden Torru &amp; Shawn Torru</text>
+      <rect x="215" y="13" width="108" height="18" rx="4" fill="#F3E8FF"/>
+      <text x="269" y="25" fill="#7E22CE" font-size="9" font-weight="800" text-anchor="middle">PRIVATE LEARNER</text>
+      <text x="18" y="46" fill="#64748B" font-size="10">Grade 5 &amp; Grade 3 · Parent: Eno Torru · Track: Coding &amp; Robotics</text>
+      <rect x="460" y="18" width="124" height="28" rx="6" fill="#0F172A"/>
+      <text x="522" y="36" fill="#FFFFFF" font-size="10" font-weight="700" text-anchor="middle">Open Workspace</text>
+      <rect x="592" y="18" width="110" height="28" rx="6" fill="#F1F5F9"/>
+      <text x="647" y="36" fill="#334155" font-size="10" font-weight="700" text-anchor="middle">Milestones</text>
+    </g>
+  </g>
+
+  <!-- QUADRANT 2 (Top-Right): Assignments & Review Split Queue -->
+  <g transform="translate(814, 92)">
+    <rect width="758" height="420" rx="14" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#shadow4)"/>
+    <rect width="758" height="46" rx="14" fill="#1E293B"/>
+    <rect y="32" width="758" height="14" fill="#1E293B"/>
+    <text x="20" y="28" fill="#FFFFFF" font-size="13" font-weight="800">TAB B · ASSIGNMENTS &amp; COURSEWORK REVIEW (/portal/staff/assignments)</text>
+
+    <!-- Top Action Bar -->
+    <rect x="20" y="62" width="460" height="34" rx="8" fill="#F1F5F9"/>
+    <rect x="24" y="66" width="145" height="26" rx="6" fill="#FFFFFF"/>
+    <text x="96" y="83" fill="#0F172A" font-size="10" font-weight="800" text-anchor="middle">Needs Grading (5)</text>
+    <text x="245" y="83" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">Active Tasks (12)</text>
+    <text x="395" y="83" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">Graded Archive</text>
+
+    <rect x="578" y="62" width="160" height="34" rx="8" fill="#2563EB"/>
+    <text x="658" y="83" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">+ Issue New Assignment</text>
+
+    <!-- Split Queue: Left Submissions List (45%) + Right Grading Drawer (55%) -->
+    <rect x="20" y="110" width="310" height="290" rx="10" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="34" y="132" fill="#64748B" font-size="10" font-weight="800">STUDENT SUBMISSIONS</text>
+
+    <rect x="32" y="144" width="286" height="68" rx="8" fill="#EFF6FF" stroke="#2563EB"/>
+    <text x="44" y="164" fill="#0F172A" font-size="12" font-weight="800">Jayden Torru · Private</text>
+    <text x="44" y="180" fill="#1D4ED8" font-size="10" font-weight="700">Scratch Space Shooter Project</text>
+    <text x="44" y="198" fill="#64748B" font-size="9">Submitted 2h ago · Deliverable Link</text>
+
+    <rect x="32" y="220" width="286" height="68" rx="8" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <text x="44" y="240" fill="#0F172A" font-size="12" font-weight="700">Emmanuella Torru · Private</text>
+    <text x="44" y="256" fill="#475569" font-size="10">UI Wireframe Challenge</text>
+    <text x="44" y="274" fill="#64748B" font-size="9">Submitted Yesterday · File Attached</text>
+
+    <!-- Right Grading Pane -->
+    <rect x="344" y="110" width="394" height="290" rx="10" fill="#FFFFFF" stroke="#CBD5E1"/>
+    <text x="364" y="136" fill="#0F172A" font-size="13" font-weight="800">Grade Submission: Jayden Torru</text>
+    <text x="364" y="154" fill="#2563EB" font-size="10" font-weight="700">Open Deliverable: https://scratch.mit.edu/projects/... ↗</text>
+
+    <text x="364" y="184" fill="#64748B" font-size="10" font-weight="800">SCORE (0–100) &amp; TUTOR FEEDBACK</text>
+    <rect x="364" y="194" width="110" height="36" rx="8" fill="#F8FAFC" stroke="#CBD5E1"/>
+    <text x="419" y="217" fill="#0F172A" font-size="13" font-weight="800" font-family="monospace" text-anchor="middle">95 / 100</text>
+    <rect x="486" y="194" width="232" height="36" rx="8" fill="#F8FAFC" stroke="#CBD5E1"/>
+    <text x="602" y="217" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">Insert Remark Preset ▾</text>
+
+    <rect x="364" y="240" width="354" height="92" rx="8" fill="#F8FAFC" stroke="#CBD5E1"/>
+    <text x="378" y="262" fill="#334155" font-size="10">Excellent sprite collision logic and score counter! Next step:</text>
+    <text x="378" y="278" fill="#334155" font-size="10">add a boss level transition.</text>
+
+    <rect x="364" y="346" width="354" height="36" rx="8" fill="#16A34A"/>
+    <text x="541" y="369" fill="#FFFFFF" font-size="11" font-weight="800" text-anchor="middle">Save Grade &amp; Notify Scholar + Parent</text>
+  </g>
+
+  <!-- QUADRANT 3 (Bottom-Left): Milestone Roadmap & Student 360 Workspace -->
+  <g transform="translate(28, 532)">
+    <rect width="758" height="420" rx="14" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#shadow4)"/>
+    <rect width="758" height="46" rx="14" fill="#1E293B"/>
+    <rect y="32" width="758" height="14" fill="#1E293B"/>
+    <text x="20" y="28" fill="#FFFFFF" font-size="13" font-weight="800">TAB C · CURRICULUM MILESTONES &amp; STUDENT 360° WORKSPACE (/portal/staff/milestones)</text>
+
+    <rect x="20" y="62" width="718" height="42" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="36" y="88" fill="#0F172A" font-size="11" font-weight="800">Target Filter: [School Cohort: Southgold Grade 4]  or  [Private Learner: Emmanuella Torru ▾]</text>
+
+    <!-- Milestone Cards -->
+    <g transform="translate(20, 118)">
+      <rect width="718" height="82" rx="10" fill="#ECFDF5" stroke="#A7F3D0"/>
+      <text x="20" y="28" fill="#047857" font-size="12" font-weight="800">Module 01 · Hardware &amp; Digital Logic Foundations</text>
+      <text x="20" y="48" fill="#065F46" font-size="10">Completed Oct 12, 2026 · Verified by Okoh Daniel Nwachukwu</text>
+      <rect x="590" y="24" width="110" height="30" rx="7" fill="#059669"/>
+      <text x="645" y="43" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">✓ Mastered</text>
+    </g>
+
+    <g transform="translate(20, 212)">
+      <rect width="718" height="82" rx="10" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="20" y="28" fill="#1D4ED8" font-size="12" font-weight="800">Module 02 · Algorithmic Thinking &amp; Block Coding</text>
+      <text x="20" y="48" fill="#1E40AF" font-size="10">In Progress (75%) · 3 of 4 Practical Checkpoints Completed</text>
+      <rect x="560" y="24" width="140" height="30" rx="7" fill="#2563EB"/>
+      <text x="630" y="43" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">Mark Checkpoint</text>
+    </g>
+
+    <g transform="translate(20, 306)">
+      <rect width="718" height="82" rx="10" fill="#F8FAFC" stroke="#E2E8F0"/>
+      <text x="20" y="28" fill="#334155" font-size="12" font-weight="700">Module 03 · Interactive Game Design &amp; Capstone Presentation</text>
+      <text x="20" y="48" fill="#64748B" font-size="10">Upcoming Milestone · Unlocks after Module 02</text>
+      <rect x="560" y="24" width="140" height="30" rx="7" fill="#E2E8F0"/>
+      <text x="630" y="43" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">Unlock Early</text>
+    </g>
+  </g>
+
+  <!-- QUADRANT 4 (Bottom-Right): Live Classes & Resource Library -->
+  <g transform="translate(814, 532)">
+    <rect width="758" height="420" rx="14" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#shadow4)"/>
+    <rect width="758" height="46" rx="14" fill="#1E293B"/>
+    <rect y="32" width="758" height="14" fill="#1E293B"/>
+    <text x="20" y="28" fill="#FFFFFF" font-size="13" font-weight="800">TAB D · LIVE CLASSES &amp; LESSON RESOURCES (/portal/staff/classes &amp; /resources)</text>
+
+    <!-- Live Classes Strip -->
+    <rect x="20" y="62" width="718" height="132" rx="10" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="36" y="84" fill="#0F172A" font-size="12" font-weight="800">UPCOMING TEACHING SESSIONS &amp; 1-CLICK ROLL CALL</text>
+    <rect x="36" y="96" width="686" height="42" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/>
+    <text x="52" y="121" fill="#0F172A" font-size="11" font-weight="700">Thu 4:00 PM · Jayden &amp; Shawn Torru (Private Coding)</text>
+    <rect x="466" y="103" width="116" height="28" rx="6" fill="#F1F5F9"/>
+    <text x="524" y="121" fill="#334155" font-size="10" font-weight="700" text-anchor="middle">Mark Attendance</text>
+    <rect x="592" y="103" width="116" height="28" rx="6" fill="#2563EB"/>
+    <text x="650" y="121" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">Launch Class ↗</text>
+
+    <!-- Resource Library Upload & Categorized Recipient List -->
+    <rect x="20" y="208" width="718" height="192" rx="10" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="36" y="232" fill="#0F172A" font-size="12" font-weight="800">DISTRIBUTE LESSON RESOURCE (CLEAN CATEGORIZED RECIPIENT SELECTOR)</text>
+    <text x="36" y="250" fill="#64748B" font-size="10">Target Audience Tabs: [School &amp; Grade Cohort]  |  [Available Assigned Learners: All · School · Private]</text>
+
+    <rect x="36" y="264" width="686" height="38" rx="8" fill="#FFFFFF" stroke="#BFDBFE"/>
+    <text x="52" y="287" fill="#0F172A" font-size="11" font-weight="700">Emmanuella Torru</text>
+    <text x="200" y="287" fill="#7E22CE" font-size="10" font-weight="800">PRIVATE · Grade 6 · Parent: Eno Torru</text>
+    <text x="698" y="287" fill="#2563EB" font-size="10" font-weight="800" text-anchor="end">✓ Selected</text>
+
+    <rect x="36" y="310" width="686" height="38" rx="8" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <text x="52" y="333" fill="#0F172A" font-size="11" font-weight="700">Southgold Grade 4 Class</text>
+    <text x="200" y="333" fill="#1D4ED8" font-size="10" font-weight="800">SCHOOL-ASSIGNED · Southgold Montessori</text>
+    <text x="698" y="333" fill="#64748B" font-size="10" font-weight="700" text-anchor="end">Select</text>
+  </g>
+</svg>

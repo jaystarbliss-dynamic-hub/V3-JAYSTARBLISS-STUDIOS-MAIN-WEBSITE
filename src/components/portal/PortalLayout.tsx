@@ -782,6 +782,14 @@ const PortalLayout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <Link
+              to="/wireframes"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-[#2563EB] dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px] font-bold transition-colors"
+            >
+              <ChartNoAxesColumn size={14} />
+              <span className="hidden sm:inline">Redesign Wireframes (5 Boards)</span>
+              <span className="sm:hidden">Wireframes</span>
+            </Link>
             <Tooltip content="Customer Support & Help Desk" placement="bottom">
               <Link
                 to={`/portal/${role}/support`}

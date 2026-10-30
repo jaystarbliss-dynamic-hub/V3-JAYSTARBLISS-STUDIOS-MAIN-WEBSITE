@@ -550,6 +550,14 @@ const AdminLayout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <Link
+              to="/wireframes"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px] font-bold transition-colors"
+            >
+              <Layers size={14} />
+              <span className="hidden sm:inline">Redesign Wireframes (5 Boards)</span>
+              <span className="sm:hidden">Wireframes</span>
+            </Link>
             {/* Impersonate Icon Button */}
             <Tooltip content="Log in directly as student, school admin or tutor" placement="bottom">
               <button

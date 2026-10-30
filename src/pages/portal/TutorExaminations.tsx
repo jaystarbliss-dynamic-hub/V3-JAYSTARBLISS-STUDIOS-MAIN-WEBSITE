@@ -159,7 +159,7 @@ type EnrolledStudent = {
   isPrivate?: boolean;
 };
 
-type EditorTab = "questions" | "responses" | "settings";
+type EditorTab = "setup" | "questions" | "responses" | "settings" | "directory";
 type ResponsesSubTab = "live" | "summary" | "question" | "individual";
 type ImportSourceTab = "text" | "csv";
 
@@ -184,6 +184,8 @@ export default function TutorExaminations() {
   const [editingExamId, setEditingExamId] = useState<string>("");
   const [showCreateTypeModal, setShowCreateTypeModal] = useState<boolean>(false);
   const [showScheduleSection, setShowScheduleSection] = useState<boolean>(false);
+  const [showLeftDirectoryRail, setShowLeftDirectoryRail] = useState<boolean>(true);
+  const [focusedQuestionIndex, setFocusedQuestionIndex] = useState<number | "all">("all");
   const creatorTopRef = useRef<HTMLElement | null>(null);
 
   // Unified Academic Work Type & Recipient State
@@ -1826,7 +1828,7 @@ ANSWER KEY
   return (
     <main
       ref={creatorTopRef}
-      className="dashboard-interface mx-auto w-full max-w-6xl space-y-5 px-3 sm:px-5 pb-20 text-slate-900 dark:text-slate-100 overflow-x-hidden"
+      className="dashboard-interface mx-auto w-full max-w-[1440px] space-y-4 px-2 sm:px-4 pb-16 text-slate-900 dark:text-slate-100 overflow-x-hidden"
     >
       {/* Toast Alert Message Banner */}
       {message && (
@@ -1870,502 +1872,737 @@ ANSWER KEY
       )}
 
       {/* ============================================================== */}
-      {/* TOP WORKSPACE BAR & CREATE NEW ASSESSMENT BUTTON               */}
+      {/* ZERO-SCROLL SPLIT-PANE ASSESSMENT STUDIO                       */}
+      {/* Left Rail: Pinned Assessment Directory & Quick Switcher        */}
+      {/* Right Canvas: 4-Mode Studio (Setup, Questions, Live, Settings) */}
       {/* ============================================================== */}
-      <header className="rounded-2xl border border-slate-200/80 bg-white dark:bg-[#161B26] dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          {/* Left: Workspace Title & Active Mode */}
-          <div className="flex items-start sm:items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-              {deliveryMode === "EXTERNAL_LINK" ? <Link2 size={20} /> : <FileText size={20} />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-black text-base sm:text-lg text-slate-900 dark:text-white truncate">
-                  {editingExamId
-                    ? `Editing ${workType.toLowerCase()}: ${title || "Untitled"}`
-                    : title || `Create New ${workType.charAt(0) + workType.slice(1).toLowerCase()}`}
-                </h2>
-                <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-md bg-red-50 text-[#B91C1C] dark:bg-red-950/60 dark:text-red-300 shrink-0">
-                  {workType}
-                </span>
-                <span
-                  className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-md shrink-0 ${
-                    deliveryMode === "EXTERNAL_LINK"
-                      ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
-                      : "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300"
-                  }`}
-                >
-                  {deliveryMode === "EXTERNAL_LINK"
-                    ? "External Link / Google Forms"
-                    : "Native Jaystarbliss Editor"}
-                </span>
+      <div
+        className={`grid grid-cols-1 ${
+          showLeftDirectoryRail ? "xl:grid-cols-[320px_minmax(0,1fr)]" : "xl:grid-cols-1"
+        } gap-5 items-start`}
+      >
+        {/* PINNED LEFT RAIL: ASSESSMENT DIRECTORY & HISTORY (ZERO-SCROLL SWITCHER) */}
+        {showLeftDirectoryRail && (
+          <aside className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#161B26] shadow-xs overflow-hidden xl:sticky xl:top-16 flex flex-col max-h-[520px] xl:max-h-[calc(100vh-5.5rem)]">
+            <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 space-y-2.5 shrink-0">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 block">
+                    Zero-Scroll Directory
+                  </span>
+                  <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                    Assessments ({filteredExistingExams.length})
+                  </h3>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateTypeModal(true)}
+                    className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer shadow-2xs"
+                    title="Create New Assessment"
+                  >
+                    <Plus size={13} /> New
+                  </button>
+                  <button
+                    type="button"
+                    disabled={existingBusy}
+                    onClick={() => void loadExistingExams()}
+                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
+                    title="Refresh Assessments"
+                  >
+                    <RefreshCw size={13} className={existingBusy ? "animate-spin" : ""} />
+                  </button>
+                </div>
               </div>
-              <p className="text-xs text-slate-500 truncate mt-0.5">
-                {recipientMode === "PRIVATE_LEARNERS"
-                  ? `Private Learners (${targetStudentIds.length} selected)`
-                  : `${assignedSchools.find((s) => s.id === schoolId)?.name || "Select School"} · ${selectedClass}`}
-                {deliveryMode === "NATIVE"
-                  ? isUngradedActivity && workType === "ACTIVITY"
-                    ? ` · ${questions.length} Item(s) · Ungraded Activity`
-                    : ` · ${questions.length} Question(s) · ${totalExamMarks} Marks`
-                  : " · Hosted Externally"}
-              </p>
+
+              {/* Quick Search inside Left Rail */}
+              <div className="relative">
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={examSearchQuery}
+                  onChange={(e) => setExamSearchQuery(e.target.value)}
+                  placeholder="Search exams, subject, school..."
+                  className="w-full h-8 pl-8 pr-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white"
+                />
+              </div>
+
+              {/* Compact Status Filter Pills */}
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                {(
+                  [
+                    { id: "all", label: `All (${existingExams.length})` },
+                    {
+                      id: "active",
+                      label: `Live (${existingExams.filter((e) => e.status === "active").length})`,
+                    },
+                    {
+                      id: "draft",
+                      label: `Drafts (${existingExams.filter((e) => e.status === "draft").length})`,
+                    },
+                    {
+                      id: "scheduled",
+                      label: `Sched (${existingExams.filter((e) => e.status === "scheduled").length})`,
+                    },
+                  ] as const
+                ).map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => setLifecycleTab(st.id)}
+                    className={`px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                      lifecycleTab === st.id
+                        ? "bg-slate-900 text-white dark:bg-blue-600"
+                        : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* Right: Primary Actions */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowCreateTypeModal(true)}
-              className="min-h-[42px] rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 px-4 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-100 transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer flex-1 sm:flex-initial"
-            >
-              <PlusCircle size={15} /> Create New Assessment
-            </button>
+            {/* Scrollable Assessment List inside Left Rail */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/80 p-2 space-y-1.5 custom-scrollbar">
+              {existingBusy ? (
+                <div className="p-4 text-center text-xs text-slate-500">Loading assessments…</div>
+              ) : filteredExistingExams.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  No assessments match your filter. Click <strong>+ New</strong> above to create one.
+                </div>
+              ) : (
+                filteredExistingExams.map((ex) => {
+                  const isSelected = editingExamId === ex.id;
+                  const isExternal = ex.deliveryMode === "EXTERNAL_LINK";
+                  const itemWorkType = normalizeWorkType(ex.workType, ex);
+                  return (
+                    <div
+                      key={ex.id}
+                      className={`rounded-xl border p-2.5 transition-all ${
+                        isSelected
+                          ? "border-blue-600 bg-blue-50/50 dark:bg-blue-950/30 shadow-2xs"
+                          : "border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/40 hover:border-blue-300"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleEditExam(
+                              ex,
+                              editorTab === "responses" && !isExternal ? "responses" : "questions"
+                            )
+                          }
+                          className="text-left min-w-0 flex-1 cursor-pointer"
+                        >
+                          <div className="flex flex-wrap items-center gap-1 mb-1">
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-red-50 text-[#B91C1C] dark:bg-red-950/60 dark:text-red-300">
+                              {itemWorkType}
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                                ex.status === "active"
+                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                  : ex.status === "scheduled"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                              }`}
+                            >
+                              {ex.status}
+                            </span>
+                          </div>
+                          <p className="font-bold text-xs text-slate-900 dark:text-white line-clamp-2 leading-snug">
+                            {ex.title}
+                          </p>
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                            {ex.subject} ·{" "}
+                            {ex.recipientMode === "PRIVATE_LEARNERS"
+                              ? `Private (${(ex.targetStudentIds || []).length})`
+                              : ex.targetClass || "All"}
+                          </p>
+                        </button>
+                      </div>
 
-            <Link
-              to={isAdminWorkspace ? "/admin/examination-history" : "/portal/staff/exam-history"}
-              className="min-h-[42px] px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition-colors inline-flex items-center justify-center gap-1.5"
-            >
-              <Clock size={15} />
-              <span>History</span>
-            </Link>
+                      <div className="flex items-center justify-between gap-1.5 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                        <button
+                          type="button"
+                          onClick={() => handleEditExam(ex, "questions")}
+                          className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold text-center transition-colors cursor-pointer ${
+                            isSelected && editorTab === "questions"
+                              ? "bg-blue-600 text-white"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200"
+                          }`}
+                        >
+                          Edit ({ex.questionCount || 0}Q)
+                        </button>
+                        {!isExternal && (
+                          <button
+                            type="button"
+                            onClick={() => handleEditExam(ex, "responses")}
+                            className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold text-center transition-colors cursor-pointer inline-flex items-center justify-center gap-1 ${
+                              isSelected && editorTab === "responses"
+                                ? "bg-emerald-600 text-white"
+                                : "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100"
+                            }`}
+                          >
+                            <Activity size={11} /> Monitor
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
 
-            <button
-              type="button"
-              onClick={() => setShowHeaderCustomizer(true)}
-              className="min-h-[42px] px-3.5 py-2 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-100 transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
-              title="Official Document Header Customizer"
-            >
-              <LayoutTemplate size={15} />
-              <span className="hidden sm:inline">Document Header Customizer</span>
-            </button>
-
-            {deliveryMode === "NATIVE" && (
+            <div className="p-2.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 flex items-center justify-between gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => setShowPreview((prev) => !prev)}
-                className="min-h-[42px] px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
-                title="Preview Assessment"
+                onClick={() => setEditorTab("directory")}
+                className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
               >
-                <Eye size={15} />
-                <span className="hidden sm:inline">{showPreview ? "Hide Preview" : "Preview"}</span>
+                Open Full Directory Table →
               </button>
-            )}
+              <Link
+                to={isAdminWorkspace ? "/admin/examination-history" : "/portal/staff/exam-history"}
+                className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-white"
+              >
+                Full History
+              </Link>
+            </div>
+          </aside>
+        )}
 
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void handleSaveOrPublish("draft")}
-              className="min-h-[42px] px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial"
-            >
-              Save Draft
-            </button>
-
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void handleSaveOrPublish("active")}
-              className="min-h-[42px] rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer text-xs w-full sm:w-auto"
-            >
-              {busy ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-              {editingExamId
-                ? "Update & Republish"
-                : `Publish ${workType.charAt(0) + workType.slice(1).toLowerCase()}`}
-            </button>
-          </div>
-        </div>
-
-        {/* Clean Work Type Selector (Assignment, Activity, Test, Examination) */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-5 overflow-x-auto no-scrollbar touch-pan-x">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
-              Work Type:
-            </span>
-            {(
-              [
-                { id: "ASSIGNMENT", label: "Assignment" },
-                { id: "ACTIVITY", label: "Activity" },
-                { id: "TEST", label: "Test" },
-                { id: "EXAMINATION", label: "Examination" },
-              ] as const
-            ).map((wt) => {
-              const active = workType === wt.id;
-              return (
+        {/* RIGHT STUDIO WORKSPACE COLUMN */}
+        <div className="min-w-0 space-y-4">
+          {/* ============================================================== */}
+          {/* TOP WORKSPACE BAR & 4-MODE STUDIO SWITCHER                     */}
+          {/* ============================================================== */}
+          <header className="rounded-2xl border border-slate-200/80 bg-white dark:bg-[#161B26] dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              {/* Left: Workspace Title & Active Mode */}
+              <div className="flex items-start sm:items-center gap-3 min-w-0">
                 <button
-                  key={wt.id}
                   type="button"
-                  onClick={() => handleSelectWorkType(wt.id)}
-                  className={`relative pb-1.5 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
-                    active
-                      ? "text-[#14284B] dark:text-white"
-                      : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-                  }`}
+                  onClick={() => setShowLeftDirectoryRail((prev) => !prev)}
+                  className="hidden xl:inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 shrink-0 cursor-pointer"
+                  title={showLeftDirectoryRail ? "Hide Left Assessment Directory" : "Show Left Assessment Directory"}
                 >
-                  {wt.label}
-                  {active && (
-                    <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
-                  )}
+                  <LayoutTemplate size={16} />
                 </button>
-              );
-            })}
-          </div>
+                <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                  {deliveryMode === "EXTERNAL_LINK" ? <Link2 size={20} /> : <FileText size={20} />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-black text-base sm:text-lg text-slate-900 dark:text-white truncate">
+                      {editingExamId
+                        ? `${title || "Untitled Assessment"}`
+                        : title || `New ${workType.charAt(0) + workType.slice(1).toLowerCase()}`}
+                    </h2>
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-red-50 text-[#B91C1C] dark:bg-red-950/60 dark:text-red-300 shrink-0">
+                      {workType}
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-md shrink-0 ${
+                        deliveryMode === "EXTERNAL_LINK"
+                          ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
+                          : "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300"
+                      }`}
+                    >
+                      {deliveryMode === "EXTERNAL_LINK" ? "External Link" : "Native Studio"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 truncate mt-0.5">
+                    {recipientMode === "PRIVATE_LEARNERS"
+                      ? `Private Learners (${targetStudentIds.length} selected)`
+                      : `${assignedSchools.find((s) => s.id === schoolId)?.name || "Select School"} · ${selectedClass}`}
+                    {deliveryMode === "NATIVE"
+                      ? isUngradedActivity && workType === "ACTIVITY"
+                        ? ` · ${questions.length} Item(s) · Ungraded`
+                        : ` · ${questions.length} Question(s) · ${totalExamMarks} Marks`
+                      : " · Hosted Externally"}
+                  </p>
+                </div>
+              </div>
 
-          {/* Work-type specific quick toggles */}
-          <div className="flex flex-wrap items-center gap-3 text-xs">
-            {workType === "ACTIVITY" && (
-              <label className="inline-flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isUngradedActivity}
-                  onChange={(e) => setIsUngradedActivity(e.target.checked)}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span>Ungraded formative activity (no formal score)</span>
-              </label>
-            )}
-            {workType === "ASSIGNMENT" && deliveryMode === "NATIVE" && (
-              <div className="inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+              {/* Right: Primary Actions */}
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setSubmissionFormat("QUESTIONS")}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer ${
-                    submissionFormat === "QUESTIONS"
-                      ? "bg-white dark:bg-slate-900 text-blue-600 shadow-2xs"
-                      : "text-slate-600 dark:text-slate-400"
-                  }`}
+                  onClick={() => setShowCreateTypeModal(true)}
+                  className="min-h-[38px] rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 px-3.5 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-100 transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  Question-Based
+                  <PlusCircle size={14} /> New Assessment
                 </button>
+
                 <button
                   type="button"
-                  onClick={() => setSubmissionFormat("DELIVERABLE")}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer ${
-                    submissionFormat === "DELIVERABLE"
-                      ? "bg-white dark:bg-slate-900 text-blue-600 shadow-2xs"
-                      : "text-slate-600 dark:text-slate-400"
-                  }`}
+                  onClick={() => setShowHeaderCustomizer(true)}
+                  className="min-h-[38px] px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
+                  title="Official Document Header Customizer"
                 >
-                  Deliverable / Submission
+                  <LayoutTemplate size={14} />
+                  <span className="hidden sm:inline">Header Branding</span>
+                </button>
+
+                {deliveryMode === "NATIVE" && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPreview((prev) => !prev)}
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
+                    title="Preview Assessment"
+                  >
+                    <Eye size={14} />
+                    <span className="hidden sm:inline">{showPreview ? "Hide Preview" : "Preview"}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleSaveOrPublish("draft")}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Save Draft
+                </button>
+
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleSaveOrPublish("active")}
+                  className="min-h-[38px] rounded-xl bg-blue-600 px-4 py-1.5 font-bold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer text-xs"
+                >
+                  {busy ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                  {editingExamId
+                    ? "Update & Republish"
+                    : `Publish ${workType.charAt(0) + workType.slice(1).toLowerCase()}`}
                 </button>
               </div>
-            )}
-          </div>
-        </div>
+            </div>
 
-        {/* Authorised Recipient Audience Mode Selector */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Authorised Audience / Recipient Selection:
-            </span>
-            <div className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs">
-              {(
-                [
-                  { id: "SCHOOL_CLASS", label: "School & Class/Grade" },
-                  { id: "PRIVATE_LEARNERS", label: "Private Learner(s)" },
-                  { id: "MULTI_TARGET", label: "School Class + Private Learners" },
-                ] as const
-              ).map((rm) => (
+            {/* 4-MODE STUDIO NAVIGATION BAR (Eliminates vertical stacking) */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <nav
+                aria-label="Assessment Studio Modes"
+                className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/90 rounded-xl w-full sm:w-auto"
+              >
                 <button
-                  key={rm.id}
                   type="button"
-                  onClick={() => setRecipientMode(rm.id)}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
-                    recipientMode === rm.id
-                      ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs"
+                  onClick={() => setEditorTab("setup")}
+                  className={`min-h-[36px] px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                    editorTab === "setup"
+                      ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs"
                       : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
                   }`}
                 >
-                  {rm.label}
+                  <Users size={13} />
+                  <span>1. Setup &amp; Recipients</span>
+                  {targetStudentIds.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                      {targetStudentIds.length}
+                    </span>
+                  )}
                 </button>
-              ))}
-            </div>
-          </div>
 
-          {(recipientMode === "PRIVATE_LEARNERS" || recipientMode === "MULTI_TARGET") && (
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <span className="text-xs font-black text-slate-900 dark:text-white">
-                    Available &amp; Assigned Learners ({targetStudentIds.length} selected)
-                  </span>
-                  <p className="text-[11px] text-slate-500">
-                    Switch between School-Assigned Students and Private Learners below, then click any row to assign.
-                  </p>
-                </div>
-                {privateLearners.length > 0 && (
-                  <div className="flex items-center gap-2">
+                {deliveryMode === "NATIVE" && (
+                  <>
                     <button
                       type="button"
-                      onClick={() => {
-                        const visibleIds = privateLearners
-                          .filter((p) => {
-                            if (studentCategoryTab === "school") return !p.isPrivate;
-                            if (studentCategoryTab === "private") return Boolean(p.isPrivate);
-                            return true;
-                          })
-                          .map((p) => p.id);
-                        const allSelected = visibleIds.every((id) => targetStudentIds.includes(id));
-                        if (allSelected) {
-                          setTargetStudentIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
-                        } else {
-                          setTargetStudentIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
-                        }
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                      onClick={() => setEditorTab("questions")}
+                      className={`min-h-[36px] px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                        editorTab === "questions"
+                          ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs"
+                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                      }`}
                     >
-                      Select / Clear Current View
+                      <FileText size={13} />
+                      <span>2. Question Builder</span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                        {questions.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("responses")}
+                      className={`min-h-[36px] px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                        editorTab === "responses"
+                          ? "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs"
+                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                      }`}
+                    >
+                      <Activity size={13} />
+                      <span>3. Live Monitor &amp; Responses</span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
+                        {examAttempts.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("settings")}
+                      className={`min-h-[36px] px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                        editorTab === "settings"
+                          ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs"
+                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                      }`}
+                    >
+                      <SettingsIcon size={13} />
+                      <span>4. Quiz &amp; Security</span>
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setEditorTab("directory")}
+                  className={`min-h-[36px] px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                    editorTab === "directory"
+                      ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  }`}
+                >
+                  <Calendar size={13} />
+                  <span>All Assessments ({existingExams.length})</span>
+                </button>
+              </nav>
+
+              {/* Compact Work Type Pill Switcher */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                {(
+                  [
+                    { id: "ASSIGNMENT", label: "Assignment" },
+                    { id: "ACTIVITY", label: "Activity" },
+                    { id: "TEST", label: "Test" },
+                    { id: "EXAMINATION", label: "Examination" },
+                  ] as const
+                ).map((wt) => {
+                  const active = workType === wt.id;
+                  return (
+                    <button
+                      key={wt.id}
+                      type="button"
+                      onClick={() => handleSelectWorkType(wt.id)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                        active
+                          ? "bg-[#14284B] text-white dark:bg-blue-600"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                      }`}
+                    >
+                      {wt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* SETUP & RECIPIENTS PANEL (Shown when in "1. Setup & Recipients" tab OR when targeting Private Learners) */}
+            {(editorTab === "setup" || deliveryMode === "EXTERNAL_LINK") && (
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-4">
+                {/* Delivery Mode + Activity/Assignment format options */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full lg:max-w-xl">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectDeliveryMode("NATIVE")}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
+                        deliveryMode === "NATIVE"
+                          ? "border-blue-600 bg-blue-50/60 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200"
+                          : "border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-900/30"
+                      }`}
+                    >
+                      <Layers size={16} className={deliveryMode === "NATIVE" ? "text-blue-600 shrink-0 mt-0.5" : "text-slate-400 shrink-0 mt-0.5"} />
+                      <div className="min-w-0">
+                        <p className="font-bold text-xs">Native Jaystarbliss Assessment</p>
+                        <p className="text-[11px] text-slate-500 line-clamp-1">Question builder, auto-grading &amp; live proctor</p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectDeliveryMode("EXTERNAL_LINK")}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
+                        deliveryMode === "EXTERNAL_LINK"
+                          ? "border-blue-600 bg-blue-50/60 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200"
+                          : "border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-900/30"
+                      }`}
+                    >
+                      <ExternalLink size={16} className={deliveryMode === "EXTERNAL_LINK" ? "text-blue-600 shrink-0 mt-0.5" : "text-slate-400 shrink-0 mt-0.5"} />
+                      <div className="min-w-0">
+                        <p className="font-bold text-xs">External Link / Google Forms</p>
+                        <p className="text-[11px] text-slate-500 line-clamp-1">Direct students via access code to external URL</p>
+                      </div>
                     </button>
                   </div>
-                )}
-              </div>
 
-              {/* Segmented Category Tabs + Search */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1">
-                <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setStudentCategoryTab("all")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      studentCategoryTab === "all"
-                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-                    }`}
-                  >
-                    All Available ({privateLearners.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStudentCategoryTab("school")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      studentCategoryTab === "school"
-                        ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-                    }`}
-                  >
-                    School-Assigned ({privateLearners.filter((p) => !p.isPrivate).length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStudentCategoryTab("private")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      studentCategoryTab === "private"
-                        ? "bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-2xs"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-                    }`}
-                  >
-                    Private Learners ({privateLearners.filter((p) => p.isPrivate).length})
-                  </button>
-                </div>
-
-                <div className="relative sm:w-64">
-                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    value={studentSearchFilter}
-                    onChange={(e) => setStudentSearchFilter(e.target.value)}
-                    placeholder="Filter learner by name or grade..."
-                    className="w-full min-h-8 pl-8 pr-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              {privateLearners.length === 0 ? (
-                <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 text-center text-xs text-slate-500">
-                  No assigned learners found for your tutor account.
-                </div>
-              ) : (
-                <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                  {privateLearners
-                    .filter((pl) => {
-                      if (studentCategoryTab === "school" && pl.isPrivate) return false;
-                      if (studentCategoryTab === "private" && !pl.isPrivate) return false;
-                      if (studentSearchFilter.trim()) {
-                        const q = studentSearchFilter.toLowerCase().trim();
-                        const hay = `${pl.fullName} ${pl.class || ""} ${pl.schoolName || ""} ${pl.parentName || ""}`.toLowerCase();
-                        if (!hay.includes(q)) return false;
-                      }
-                      return true;
-                    })
-                    .map((pl) => {
-                      const selected = targetStudentIds.includes(pl.id);
-                      return (
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                    {workType === "ACTIVITY" && (
+                      <label className="inline-flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isUngradedActivity}
+                          onChange={(e) => setIsUngradedActivity(e.target.checked)}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Ungraded formative activity</span>
+                      </label>
+                    )}
+                    {workType === "ASSIGNMENT" && deliveryMode === "NATIVE" && (
+                      <div className="inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                         <button
-                          key={pl.id}
                           type="button"
-                          onClick={() =>
-                            setTargetStudentIds((prev) =>
-                              prev.includes(pl.id)
-                                ? prev.filter((id) => id !== pl.id)
-                                : [...prev, pl.id]
-                            )
-                          }
-                          className={`w-full px-4 py-2.5 text-left flex items-center justify-between gap-3 transition-colors cursor-pointer ${
-                            selected
-                              ? "bg-blue-50/80 dark:bg-blue-950/40"
-                              : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                          onClick={() => setSubmissionFormat("QUESTIONS")}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer ${
+                            submissionFormat === "QUESTIONS"
+                              ? "bg-white dark:bg-slate-900 text-blue-600 shadow-2xs"
+                              : "text-slate-600 dark:text-slate-400"
                           }`}
                         >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div
-                              className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${
-                                selected
-                                  ? "bg-blue-600 text-white"
-                                  : pl.isPrivate
-                                  ? "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300"
-                                  : "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300"
-                              }`}
-                            >
-                              {pl.fullName.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                                  {pl.fullName}
-                                </span>
-                                <span
-                                  className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${
-                                    pl.isPrivate
-                                      ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800"
-                                      : "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
-                                  }`}
-                                >
-                                  {pl.isPrivate ? "Private Learner" : "School-Assigned"}
-                                </span>
-                              </div>
-                              <div className="text-[11px] text-slate-500 truncate">
-                                {pl.class || "General"}
-                                {pl.isPrivate && pl.parentName ? ` · Parent: ${pl.parentName}` : ""}
-                                {!pl.isPrivate && pl.schoolName ? ` · ${pl.schoolName}` : ""}
-                              </div>
-                            </div>
-                          </div>
+                          Question-Based
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSubmissionFormat("DELIVERABLE")}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer ${
+                            submissionFormat === "DELIVERABLE"
+                              ? "bg-white dark:bg-slate-900 text-blue-600 shadow-2xs"
+                              : "text-slate-600 dark:text-slate-400"
+                          }`}
+                        >
+                          Deliverable / Submission
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-                          <span
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold shrink-0 inline-flex items-center gap-1 ${
-                              selected
-                                ? "bg-blue-600 text-white"
-                                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                {/* Authorised Recipient Audience Mode Selector */}
+                <div className="space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Authorised Audience / Recipient Selection:
+                    </span>
+                    <div className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs">
+                      {(
+                        [
+                          { id: "SCHOOL_CLASS", label: "School & Class/Grade" },
+                          { id: "PRIVATE_LEARNERS", label: "Specific / Private Learner(s)" },
+                          { id: "MULTI_TARGET", label: "School Class + Specific Learners" },
+                        ] as const
+                      ).map((rm) => (
+                        <button
+                          key={rm.id}
+                          type="button"
+                          onClick={() => setRecipientMode(rm.id)}
+                          className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                            recipientMode === rm.id
+                              ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs"
+                              : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                          }`}
+                        >
+                          {rm.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {(recipientMode === "PRIVATE_LEARNERS" || recipientMode === "MULTI_TARGET" || editorTab === "setup") && (
+                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <span className="text-xs font-black text-slate-900 dark:text-white">
+                            Categorized Student Directory ({targetStudentIds.length} individually selected)
+                          </span>
+                          <p className="text-[11px] text-slate-500">
+                            Switch between School-Assigned Students and Private Learners below. Click any student row to target them directly.
+                          </p>
+                        </div>
+                        {privateLearners.length > 0 && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (recipientMode === "SCHOOL_CLASS") setRecipientMode("MULTI_TARGET");
+                                const visibleIds = privateLearners
+                                  .filter((p) => {
+                                    if (studentCategoryTab === "school") return !p.isPrivate;
+                                    if (studentCategoryTab === "private") return Boolean(p.isPrivate);
+                                    return true;
+                                  })
+                                  .map((p) => p.id);
+                                const allSelected = visibleIds.every((id) => targetStudentIds.includes(id));
+                                if (allSelected) {
+                                  setTargetStudentIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+                                } else {
+                                  setTargetStudentIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                            >
+                              Select / Clear Current View
+                            </button>
+                            {deliveryMode === "NATIVE" && (
+                              <button
+                                type="button"
+                                onClick={() => setEditorTab("questions")}
+                                className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[11px] font-bold hover:bg-blue-700 cursor-pointer transition-colors"
+                              >
+                                Continue to Questions →
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Segmented Category Tabs + Search */}
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1">
+                        <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800">
+                          <button
+                            type="button"
+                            onClick={() => setStudentCategoryTab("all")}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              studentCategoryTab === "all"
+                                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs"
+                                : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
                             }`}
                           >
-                            {selected ? (
-                              <>
-                                <Check size={12} /> Assigned
-                              </>
-                            ) : (
-                              "Click to Select"
-                            )}
-                          </span>
-                        </button>
-                      );
-                    })}
+                            All Available ({privateLearners.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setStudentCategoryTab("school")}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              studentCategoryTab === "school"
+                                ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs"
+                                : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                            }`}
+                          >
+                            School-Assigned ({privateLearners.filter((p) => !p.isPrivate).length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setStudentCategoryTab("private")}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              studentCategoryTab === "private"
+                                ? "bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-2xs"
+                                : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                            }`}
+                          >
+                            Private Learners ({privateLearners.filter((p) => p.isPrivate).length})
+                          </button>
+                        </div>
+
+                        <div className="relative sm:w-64">
+                          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            value={studentSearchFilter}
+                            onChange={(e) => setStudentSearchFilter(e.target.value)}
+                            placeholder="Filter learner by name or grade..."
+                            className="w-full min-h-8 pl-8 pr-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+
+                      {privateLearners.length === 0 ? (
+                        <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 text-center text-xs text-slate-500">
+                          No assigned learners found for your tutor account.
+                        </div>
+                      ) : (
+                        <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                          {privateLearners
+                            .filter((pl) => {
+                              if (studentCategoryTab === "school" && pl.isPrivate) return false;
+                              if (studentCategoryTab === "private" && !pl.isPrivate) return false;
+                              if (studentSearchFilter.trim()) {
+                                const q = studentSearchFilter.toLowerCase().trim();
+                                const hay = `${pl.fullName} ${pl.class || ""} ${pl.schoolName || ""} ${pl.parentName || ""}`.toLowerCase();
+                                if (!hay.includes(q)) return false;
+                              }
+                              return true;
+                            })
+                            .map((pl) => {
+                              const selected = targetStudentIds.includes(pl.id);
+                              return (
+                                <button
+                                  key={pl.id}
+                                  type="button"
+                                  onClick={() => {
+                                    if (recipientMode === "SCHOOL_CLASS") setRecipientMode("MULTI_TARGET");
+                                    setTargetStudentIds((prev) =>
+                                      prev.includes(pl.id)
+                                        ? prev.filter((id) => id !== pl.id)
+                                        : [...prev, pl.id]
+                                    );
+                                  }}
+                                  className={`w-full px-4 py-2.5 text-left flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                                    selected
+                                      ? "bg-blue-50/80 dark:bg-blue-950/40"
+                                      : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div
+                                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${
+                                        selected
+                                          ? "bg-blue-600 text-white"
+                                          : pl.isPrivate
+                                          ? "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300"
+                                          : "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300"
+                                      }`}
+                                    >
+                                      {pl.fullName.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                          {pl.fullName}
+                                        </span>
+                                        <span
+                                          className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${
+                                            pl.isPrivate
+                                              ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800"
+                                              : "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
+                                          }`}
+                                        >
+                                          {pl.isPrivate ? "Private Learner" : "School-Assigned"}
+                                        </span>
+                                      </div>
+                                      <div className="text-[11px] text-slate-500 truncate">
+                                        {pl.class || "General"}
+                                        {pl.isPrivate && pl.parentName ? ` · Parent: ${pl.parentName}` : ""}
+                                        {!pl.isPrivate && pl.schoolName ? ` · ${pl.schoolName}` : ""}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <span
+                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold shrink-0 inline-flex items-center gap-1 ${
+                                      selected
+                                        ? "bg-blue-600 text-white"
+                                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                                    }`}
+                                  >
+                                    {selected ? (
+                                      <>
+                                        <Check size={12} /> Assigned
+                                      </>
+                                    ) : (
+                                      "Click to Select"
+                                    )}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Examination Type Switcher (Preserves work & editingExamId when switching) */}
-        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full lg:max-w-2xl">
-            <button
-              type="button"
-              onClick={() => handleSelectDeliveryMode("EXTERNAL_LINK")}
-              className={`min-h-[52px] p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-3 ${
-                deliveryMode === "EXTERNAL_LINK"
-                  ? "border-blue-600 bg-blue-50/60 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200 shadow-2xs"
-                  : "border-slate-200 dark:border-slate-700 hover:border-slate-300 bg-slate-50/40 dark:bg-slate-900/30"
-              }`}
-            >
-              <ExternalLink
-                size={18}
-                className={
-                  deliveryMode === "EXTERNAL_LINK" ? "text-blue-600 shrink-0 mt-0.5" : "text-slate-400 shrink-0 mt-0.5"
-                }
-              />
-              <div className="min-w-0">
-                <p className="font-bold text-xs">External Link / Google Forms</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
-                  Direct students via access code to an external form URL
-                </p>
               </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleSelectDeliveryMode("NATIVE")}
-              className={`min-h-[52px] p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-3 ${
-                deliveryMode === "NATIVE"
-                  ? "border-blue-600 bg-blue-50/60 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200 shadow-2xs"
-                  : "border-slate-200 dark:border-slate-700 hover:border-slate-300 bg-slate-50/40 dark:bg-slate-900/30"
-              }`}
-            >
-              <Layers
-                size={18}
-                className={
-                  deliveryMode === "NATIVE" ? "text-blue-600 shrink-0 mt-0.5" : "text-slate-400 shrink-0 mt-0.5"
-                }
-              />
-              <div className="min-w-0">
-                <p className="font-bold text-xs">Native Jaystarbliss Assessment</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
-                  Full question builder, grading, timer &amp; live proctor
-                </p>
-              </div>
-            </button>
-          </div>
-
-          {/* Center Tabs: Shown ONLY for Native Jaystarbliss Assessment */}
-          {deliveryMode === "NATIVE" && (
-            <nav
-              aria-label="Native assessment sections"
-              className="grid grid-cols-3 sm:inline-flex items-center p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl w-full sm:w-auto shrink-0"
-            >
-              <button
-                type="button"
-                onClick={() => setEditorTab("questions")}
-                className={`min-h-[38px] px-3 sm:px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  editorTab === "questions"
-                    ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-                }`}
-              >
-                <FileText size={14} className="shrink-0" />
-                <span>Questions</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditorTab("responses")}
-                className={`min-h-[38px] px-3 sm:px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  editorTab === "responses"
-                    ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-                }`}
-              >
-                <Users size={14} className="shrink-0" />
-                <span>Responses</span>
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
-                  {examAttempts.length}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditorTab("settings")}
-                className={`min-h-[38px] px-3 sm:px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  editorTab === "settings"
-                    ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-                }`}
-              >
-                <SettingsIcon size={14} className="shrink-0" />
-                <span>Settings</span>
-              </button>
-            </nav>
-          )}
-        </div>
-      </header>
+            )}
+          </header>
 
       {/* ============================================================== */}
       {/* MODE A: EXTERNAL LINK / GOOGLE FORMS WORKSPACE                 */}
@@ -2809,30 +3046,79 @@ ANSWER KEY
                 </div>
               </div>
 
-              {/* Quick Action Toolbar (Add question, Import questions) */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 bg-white dark:bg-[#161B26] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => addQuestionCard("single_choice")}
-                    className="min-h-[42px] flex-1 sm:flex-initial rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-xs font-bold inline-flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                  >
-                    <Plus size={15} /> Add Question
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowImportModal(true)}
-                    className="min-h-[42px] flex-1 sm:flex-initial rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2 text-xs font-bold hover:bg-slate-50 transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Upload size={14} className="text-blue-600" /> Import Questions
-                  </button>
+              {/* Quick Action Toolbar + Horizontal Q1..QN Question Navigator Strip */}
+              <div className="p-3 sm:p-4 bg-white dark:bg-[#161B26] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        addQuestionCard("single_choice");
+                        if (focusedQuestionIndex !== "all") {
+                          setFocusedQuestionIndex(questions.length);
+                        }
+                      }}
+                      className="min-h-[40px] flex-1 sm:flex-initial rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-xs font-bold inline-flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                    >
+                      <Plus size={15} /> Add Question
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowImportModal(true)}
+                      className="min-h-[40px] flex-1 sm:flex-initial rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2 text-xs font-bold hover:bg-slate-50 transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Upload size={14} className="text-blue-600" /> Import CSV / Text
+                    </button>
+                  </div>
+                  <div className="text-xs font-semibold text-slate-500 text-center sm:text-right">
+                    {questions.length} Question(s) ·{" "}
+                    <strong className="text-slate-900 dark:text-white">
+                      {totalExamMarks} Total Marks
+                    </strong>
+                  </div>
                 </div>
-                <div className="text-xs font-semibold text-slate-500 text-center sm:text-right">
-                  {questions.length} Question(s) ·{" "}
-                  <strong className="text-slate-900 dark:text-white">
-                    {totalExamMarks} Total Marks
-                  </strong>
-                </div>
+
+                {questions.length > 0 && (
+                  <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 shrink-0 mr-1">
+                      Jump to:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setFocusedQuestionIndex("all")}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold shrink-0 transition-colors cursor-pointer ${
+                        focusedQuestionIndex === "all"
+                          ? "bg-slate-900 text-white dark:bg-blue-600"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                      }`}
+                    >
+                      All ({questions.length})
+                    </button>
+                    {questions.map((qItem, idxPill) => {
+                      const hasAnswer =
+                        (Array.isArray(qItem.correctOptionIds) && qItem.correctOptionIds.length > 0) ||
+                        (Array.isArray(qItem.acceptedAnswers) && qItem.acceptedAnswers.length > 0);
+                      const isFocused = focusedQuestionIndex === idxPill;
+                      return (
+                        <button
+                          key={qItem.id || idxPill}
+                          type="button"
+                          onClick={() => setFocusedQuestionIndex(idxPill)}
+                          className={`min-w-[34px] h-7 px-2 rounded-lg text-[11px] font-bold shrink-0 transition-all cursor-pointer flex items-center justify-center gap-1 border ${
+                            isFocused
+                              ? "border-blue-600 bg-blue-600 text-white shadow-2xs"
+                              : hasAnswer
+                              ? "border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300"
+                              : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400"
+                          }`}
+                          title={qItem.prompt ? `Q${idxPill + 1}: ${qItem.prompt}` : `Question ${idxPill + 1}`}
+                        >
+                          Q{idxPill + 1}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Empty State when no questions have been added yet */}
@@ -2867,9 +3153,51 @@ ANSWER KEY
                   </div>
                 </div>
               ) : (
-                /* Question Cards List */
+                /* Question Cards List (Filtered by focusedQuestionIndex if a specific Q# pill is active) */
                 <div className="space-y-4">
-                  {questions.map((q, qIdx) => (
+                  {focusedQuestionIndex !== "all" && (
+                    <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 text-xs">
+                      <span className="font-bold text-blue-900 dark:text-blue-200">
+                        Focused Mode: Viewing Question {Number(focusedQuestionIndex) + 1} of {questions.length}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={Number(focusedQuestionIndex) <= 0}
+                          onClick={() =>
+                            setFocusedQuestionIndex(Math.max(0, Number(focusedQuestionIndex) - 1))
+                          }
+                          className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold disabled:opacity-40 cursor-pointer"
+                        >
+                          ← Prev
+                        </button>
+                        <button
+                          type="button"
+                          disabled={Number(focusedQuestionIndex) >= questions.length - 1}
+                          onClick={() =>
+                            setFocusedQuestionIndex(
+                              Math.min(questions.length - 1, Number(focusedQuestionIndex) + 1)
+                            )
+                          }
+                          className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold disabled:opacity-40 cursor-pointer"
+                        >
+                          Next →
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFocusedQuestionIndex("all")}
+                          className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-bold cursor-pointer"
+                        >
+                          Show All
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {questions.map((q, qIdx) => {
+                    if (focusedQuestionIndex !== "all" && focusedQuestionIndex !== qIdx) {
+                      return null;
+                    }
+                    return (
                     <article
                       key={q.id || qIdx}
                       className="group relative rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#161B26] p-4 sm:p-6 shadow-xs hover:border-blue-400 dark:hover:border-blue-600 transition-all space-y-4"
@@ -3072,7 +3400,8 @@ ANSWER KEY
                         </div>
                       </div>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>
@@ -4231,8 +4560,9 @@ ANSWER KEY
       )}
 
       {/* ============================================================== */}
-      {/* SECTION: EXISTING EXAMINATIONS MANAGEMENT (LIFECYCLE & ROSTER) */}
+      {/* SECTION: EXISTING EXAMINATIONS MANAGEMENT (FULL DIRECTORY TAB) */}
       {/* ============================================================== */}
+      {(editorTab === "directory" || !showLeftDirectoryRail) && (
       <section className="rounded-2xl border border-slate-200/80 bg-white dark:bg-[#161B26] dark:border-slate-800 p-4 sm:p-6 shadow-xs space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -4563,6 +4893,9 @@ ANSWER KEY
         )}
         </div>
       </section>
+      )}
+        </div>
+      </div>
 
       {/* ============================================================== */}
       {/* MODAL 1: CREATE NEW ASSESSMENT TYPE & WORKFLOW CHOOSER         */}

@@ -1,109 +1,120 @@
-# Student Portal Login, Self-Healing & Security Rules Overhaul
+# Jaystarbliss Portal-Wide Architectural Wireframes & 38-Page Redesign Blueprint
 
-This plan resolves the persistent student login failures across both existing and newly onboarded student accounts while keeping all other portal roles (Admin, School, Staff, Parent) working seamlessly. It aligns database routing between the `(default)` and named Firestore databases, restores resilient server-first login with client fallback, adds automatic student profile self-healing in `ProtectedRoute`, and updates `firestore.rules` so first-time and returning students can link and access their portal sessions without permission denials.
+We audited every single route, sidebar tab, and sub-view across all **5 Portal Ecosystems** (Tutor/Staff, Scholar/Student, Parent, Partner School, and Super Admin) to eliminate vertical clutter, scrolling fatigue, and cramped tables.
 
-## User Review & Critical Decisions
-
-> [!IMPORTANT]
-> All three architectural choices have been confirmed from your answers and are incorporated into this plan:
-
-- **Confirmed Decision 1 (Database Routing)**: Query the `(default)` Firestore database first—where your active student and school records reside—with an automatic fallback to the named database (`ai-studio-jaystarblissdyna-...`) in server functions so no student record is ever missed across environments.
-- **Confirmed Decision 2 (Login Execution Path)**: Attempt the server function (`/.netlify/functions/portal-access-login`) first, and automatically fall back to direct client-side Firestore lookup and Firebase Auth session establishment whenever the serverless endpoint is unreachable (such as in preview environments) or returns a server/lookup failure.
-- **Confirmed Decision 3 (ProtectedRoute & Rules Self-Healing)**: Automatically resolve, link, and self-heal missing `users/{uid}` student profiles inside `ProtectedRoute` and permit safe student profile linking in `firestore.rules` instead of signing students out when `users/{uid}` is missing.
+> **Interactive Full-Screen Viewer Available:** You can also inspect and zoom into all 5 high-resolution wireframe boards directly inside the app at **`/wireframes`** (or click the **"Redesign Wireframes (5 Boards)"** button in the top bar of any portal or admin page).
 
 ---
 
-## 1. Overview & Core Concept
+## Board 01 — Complete Portal Information Architecture & 38-Page Tab Map
+![Board 01: Complete Portal Information Architecture & 38-Page Tab Map](/assets/wireframes/01-portal-sitemap-architecture.svg)
 
-- **What It Does**: Enables every valid student—whether legacy, newly onboarded by an administrator or school, or re-issued a fresh access pack—to sign in using their username/email and access code, establish an authenticated session, pass `ProtectedRoute` verification, and load their student dashboard.
-- **Target Audience / Persona**: Individual learners, school-affiliated students, and parent-enrolled students accessing `/portal` and `/portal/student`.
-- **Key Value**: Eliminates false `"Invalid student credentials"` and `"No student record found"` errors caused by database mismatches, serverless function unavailability, case-sensitive queries, and post-login `ProtectedRoute` sign-outs.
+### Why It Was Feeling Cluttered Before
+- **38 pages across 5 roles** used inconsistent page headers, stacked cards, and duplicated sub-navigation.
+- Tutors and Admins had to jump between separate pages or scroll down thousands of pixels to perform linked workflows (e.g., creating an assessment vs. checking who submitted it, or viewing a student roster vs. resetting their access code).
 
----
-
-## 2. User Experience & Visual Design
-
-- **Key User Flows**:
-  1. **Student Login (`/portal`)**: The student selects the **Student** tab, enters their Username (or Email / Access Code) and Access Code (case-insensitive, with or without hyphens/spaces), and submits.
-  2. **Credential Verification & Session Creation**: The portal checks the server endpoint first; if unavailable or if the record lives in the `(default)` database, the client fallback verifies the access code/hash against `individualStudents`, `students`, and `users`, then signs in or provisions the student's dedicated Firebase Auth session.
-  3. **Seamless Portal Entry (`/portal/student`)**: `ProtectedRoute` verifies the authenticated user. If `users/{uid}` does not exist yet or is missing `role: 'STUDENT'`, it automatically locates the matching student record in `individualStudents` or `students` (via `firebaseUid`, `studentDocId` in sessionStorage, or `username`), creates/repairs `users/{uid}`, and grants immediate access to the Student Dashboard.
-- **Visual Identity & Theme**:
-  - Preserves the existing Jaystarbliss Studios dark/light portal aesthetic (`--brand-red`, slate glassmorphism cards, responsive layout).
-  - Clear, actionable error feedback distinguishing between an unknown username, an incorrect access code, or a suspended account.
-
----
-
-## 3. Key Product Decisions & Trade-Offs
-
-- **Decision 1: Dual-Database Lookup in Admin SDK (`(default)` Primary + Named DB Fallback)**
-  - *Chosen Approach*: Configure `api/_lib/firebase-admin.ts` to default to `(default)` while exposing a helper to also query the named database (`ai-studio-jaystarblissdyna-...`) as a fallback inside `portal-access-login`.
-  - *Why*: Live inspection confirmed that student records (`individualStudents`) and `firestore.rules` are active on `(default)`, whereas pinning Admin SDK exclusively to the named database caused queries to miss records in `(default)`.
-- **Decision 2: Server-First Student Login with Client Firestore Fallback**
-  - *Chosen Approach*: In `SecurePortalLogin.tsx`, try `serverAccess()` first; if it fails (e.g., 404/500 in preview or uncommitted service account env vars), execute the comprehensive client-side lookup (supporting uppercase, lowercase, `@` prefix, stripped hyphens, SHA-256 hashes, and legacy code fields) and establish the Firebase Auth session.
-  - *Why*: Other roles (`School`, `Staff`, `Admin`, `Parent`) work because they authenticate directly with Firebase in the browser. Restoring the client fallback for students gives them the same reliability across both preview and production.
-- **Decision 3: Student Self-Healing in `ProtectedRoute` & `firestore.rules`**
-  - *Chosen Approach*: Add student self-healing to `ProtectedRoute` (matching the existing self-healing already present for Super Admins and School Admins) and update `firestore.rules` so authenticated students can create/update their own `users/{uid}` student profile and link `firebaseUid` / `userId` on their `individualStudents` / `students` record.
-  - *Why*: Previously, even after a student authenticated, `ProtectedRoute` checked `users/{uid}`, saw it was missing, and immediately called `signOut(auth)`.
+### What This Redesign Changes Across All 5 Portals
+1. **Tutor / Staff Portal (13 Tabs Consolidated into 4 Focused Groups):**
+   - **Overview:** `Dashboard` (`/portal/staff`)
+   - **Teaching:** `My Students` (`/portal/staff/students`), `Student Access` (`/portal/staff/credentials`), `Subjects I Teach` (`/portal/staff/subjects`), `Live Classes` (`/portal/staff/classes`), `Class Schedules` (`/portal/staff/calendar`), `Resources` (`/portal/staff/resources`)
+   - **Academic Tracking:** `Assignments` (`/portal/staff/assignments`), `Milestones` (`/portal/staff/milestones`), `Assessments Studio` (`/portal/staff/assessments`), `Assessment History` (`/portal/staff/exam-history`)
+   - **Account:** `Agreements` (`/portal/staff/agreements`), `Earnings` (`/portal/staff/payments`), `Support` (`/portal/staff/support`), `Settings` (`/portal/staff/settings`)
+2. **Scholar / Student Portal (11 Tabs):**
+   - **Overview:** `Dashboard` (`/portal/student`)
+   - **Learning:** `Learning & Tracks` (`/portal/student/courses`), `Ed Club` (`/portal/student/edge-club`), `Live Classrooms` (`/portal/student/live-classrooms`), `Class Schedules` (`/portal/student/schedules`), `Resources` (`/portal/student/resources`)
+   - **Progress:** `Assignments` (`/portal/student/assignments`), `Milestones` (`/portal/student/milestones`), `Assessments` (`/portal/student/assessments`), `Achievements` (`/portal/student/achievements`)
+   - **Account:** `Billing` (`/portal/student/payments`), `Support` (`/portal/student/support`), `Settings` (`/portal/student/settings`)
+3. **Parent Portal (9 Tabs):**
+   - **Overview:** `Dashboard` (`/portal/parent`) with a persistent **Top Child Switcher Bar** so parents with multiple children (e.g., Jayden & Shawn Torru, or Zoe & Joanna Udofia) switch children in 1 click without losing context.
+   - **Child Progress:** `Assignments`, `Milestones`, `Assessment Results` (`/portal/parent/examinations`), `Class Schedules`, `Resources`
+   - **Account:** `Agreements`, `Billing`, `Support`, `Settings`
+4. **Partner School Portal (11 Tabs):**
+   - **Overview:** `Dashboard` (`/portal/school`)
+   - **Students:** `Learners Roster` (`/portal/school/roster`), `Student Access` (`/portal/school/credentials`), `Learner Progress` (`/portal/school/learner-progress`), `Assessment Overview` (`/portal/school/exams`), `Onboard Student` (`/portal/school/onboard-student`)
+   - **Operations & Account:** `Class Schedules`, `Class Links`, `Resources`, `Agreements`, `Programme & Billing`, `Support`, `Settings`
+5. **Super Admin Hub (22 Tabs Across 5 Collapsible Sections):**
+   - Unified Master-Detail patterns across `Scholars & Students` (`/admin/students`), `Assessments` (`/admin/examinations`), `Users & RBAC` (`/admin/users`), `Affiliated Schools` (`/admin/schools`), `Faculty & Staff` (`/admin/staff`), `Approvals`, `Billings / Fees`, and CMS modules.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+## Board 02 — Tutor & Admin Assessment Studio (`/portal/staff/assessments` & `/admin/examinations`)
+![Board 02: Tutor & Admin Assessment Studio (Zero-Scroll Split Workspace)](/assets/wireframes/02-tutor-assessment-studio.svg)
 
-### Architecture & Authentication Flow Diagram
+### Why It Was "Choking" Before
+- `TutorExaminations.tsx` is currently a **4,905-line single vertical page**.
+- The **Existing Assessments & History list sits at line 4,450** at the very bottom of the page—below the metadata form, below the recipient targeting list, and below every single question card.
+- To monitor student responses or switch to another exam, a tutor had to scroll all the way to the bottom, click an assessment or "Monitor Responses", and scroll all the way back to the top.
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Student Login (/portal)                          │
-│               Input: Identifier (Username/Email) + Code                 │
-└───────────────────────────────────┬─────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│ 1. Server Function Attempt (/.netlify/functions/portal-access-login)    │
-│    • Queries (default) Firestore DB first, then named DB fallback       │
-│    • Validates accessCode / passcode / code / SHA-256 accessCodeHash    │
-│    • Returns customToken if Firebase Admin credentials are active       │
-└─────────────────┬───────────────────────────────────┬───────────────────┘
-                  │ Success                           │ Error / Unreachable
-                  ▼                                   ▼
-┌───────────────────────────────────┐ ┌───────────────────────────────────┐
-│  signInWithCustomToken(auth)      │ │ 2. Client Firestore & Auth Flow   │
-└─────────────────┬─────────────────┘ │    • Case-insensitive lookup in   │
-                  │                   │      individualStudents & students│
-                  │                   │    • Verifies plain code or SHA256│
-                  │                   │    • Signs in / creates student   │
-                  │                   │      Auth session & links UID     │
-                  └─────────┬─────────┴─────────────────┬─────────────────┘
-                            │                           │
-                            ▼                           ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│ 3. ProtectedRoute Gate (/portal/student)                                │
-│    • Checks users/{uid}                                                 │
-│    • Self-Heal: If missing, resolves student from sessionStorage /      │
-│      individualStudents / students, writes users/{uid} (role: STUDENT)  │
-└───────────────────────────────────┬─────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│ 4. Firestore Security Rules (firestore.rules)                           │
-│    • Allows student lookup & first-time firebaseUid/userId linking      │
-│    • Allows authenticated student to create/sync own users/{uid} doc    │
-│    • Allows student read/write access to schedules, exams, assignments  │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+### How the New Split-Pane Assessment Studio Solves It
+1. **Pinned Left Rail — Assessment Directory & History (`320px` Fixed Height, Independently Scrollable):**
+   - Always visible on the left side of the screen.
+   - Instant search + filter tabs (`All (14)`, `Published (8)`, `Drafts (3)`, `History (3)`).
+   - Clicking any assessment card immediately loads it into the right workspace **with zero page scrolling**.
+   - Each card shows live submission counts (`38/42 Submitted`) and a 1-click **`Monitor Live ->`** action.
+2. **Right Workspace — 4-Tab Mode Switcher in a Sticky Top Bar:**
+   - **Tab 1: `1. Setup & Recipients`** — Exam title, subject, duration, pass mark, schedule window, and the clean **Categorized Student Targeting List** (`All Available`, `School-Assigned`, `Private Learners` + Grade/Cohort pills) with search and 1-click "Select Filtered".
+   - **Tab 2: `2. Question Builder`** — Horizontal **Question Navigator Strip** (`Q1` … `Q25` pills + `+ Add Question` + `Import CSV/Doc`) so tutors jump directly to Question 19 without scrolling past Questions 1–18, paired with a focused single-question or compact-list editor.
+   - **Tab 3: `3. Live Monitor & Responses`** — Real-time submission counter (`Submitted`, `In Progress`, `Not Started`), per-student score breakdown, auto-grade / manual score override, and **1-Click "Release Selected Results"**.
+   - **Tab 4: `4. Analytics & Export`** — Grade distribution, hardest questions, and 1-click PDF/CSV result sheet export.
 
-### Interactive Component & State Mapping
+---
 
-1. **Firebase Admin & Server Login (`api/_lib/firebase-admin.ts` & `netlify/functions/portal-access-login.ts`)**:
-   - Provide primary `(default)` Firestore instance and secondary named database fallback so `findStudent` checks `(default)` first and falls back to `ai-studio-jaystarblissdyna-085e16ac-52ee-43ae-9c0c-52f6db7f8f7c` if not found.
-   - Normalize access codes by stripping optional hyphens/spaces in addition to exact and uppercase SHA-256 hash comparisons in `api/_lib/student-login-compat.mjs`.
-2. **Client Student Login (`src/pages/SecurePortalLogin.tsx` & `src/pages/Portal.tsx`)**:
-   - Execute `serverAccess()` first; on any error, run the multi-vector client lookup across `individualStudents`, `students`, and `users` (including uppercase, lowercase, `@username`, stripped-hyphen access codes, and SHA-256 hashes).
-   - Sign in with or create the student's synthetic Firebase Auth account (`student_<username>_<docSuffix>@jaystarbliss-studios.firebaseapp.com`), persist session keys in `sessionStorage` and `localStorage`, and sync `users/{uid}` and `individualStudents/{docId}`.
-3. **Portal Authorization Gate (`src/components/admin/ProtectedRoute.tsx`)**:
-   - When `userSnap` (`users/{currentUser.uid}`) is missing or lacks a role on `/portal/student` (or when `sessionStorage.getItem('userRole') === 'student'`), look up the student's record in `individualStudents` and `students` by `studentDocId` (from `sessionStorage`), `firebaseUid == currentUser.uid`, `userId == currentUser.uid`, or `username`.
-   - Automatically write and self-heal `users/{currentUser.uid}` with `role: 'STUDENT'`, `accountStatus: 'ACTIVE'`, `studentDocId`, `schoolId`, and `class`, preventing premature `signOut(auth)`.
-4. **Firestore Security Rules (`firestore.rules`)**:
-   - In `match /users/{userId}`: Allow authenticated users (`request.auth.uid == userId`) to create their profile with a student role and update their own profile fields (including self-healing `role: 'STUDENT'`, `studentDocId`, `schoolId`, `class`, `status: 'ACTIVE'` when transitioning from an uninitialized doc or maintaining their student role) while still strictly blocking privilege escalation to admin/staff/school roles.
-   - In `match /individualStudents/{studentId}` and `match /students/{studentId}`: Allow an authenticated student to update/link `firebaseUid`, `userId`, `authEmail`, `portalAccessEnabled`, `lastLoginAt`, and `updatedAt` on their student record during login.
-   - Consolidate duplicate `match /schoolExams/{examId}` blocks and deploy the updated rules to Firebase.
+## Board 03 — Scholars & Students Command Center (`/admin/students`, `/portal/staff/students`, `/portal/school/roster`, `/portal/staff/credentials`)
+![Board 03: Scholars & Students Command Center (Master-Detail Table + 360° Inspector Drawer)](/assets/wireframes/03-scholars-students-directory.svg)
+
+### Why It Was "Choking" Before
+- In `AdminStudents.tsx` (2,370 lines), a massive "Dispatch Individual Learning Resource" form, partner school summary cards, filter controls, and a crowded table with 7+ action buttons per row were all stacked vertically.
+- Tutors and Admins had to open separate modals or navigate away just to check a scholar's access code, parent linkage, assigned tutor, or exam submissions.
+
+### How the New Master-Detail + 360° Inspector Drawer Solves It
+1. **Compact 4-Card KPI Strip (`64px` height):**
+   - `Total Active Scholars`, `School-Assigned Scholars`, `Private / Individual Learners`, and `Access Codes Active`.
+2. **Single-Row Segmented Scope Bar:**
+   - Segmented toggle: **`All Scholars`** | **`School-Assigned`** | **`Private / Individual`** | **`By Grade/Track`** + School dropdown + Instant Search (`Name, Access Code, Email, Parent`).
+3. **Breathing 5-Column Master Table:**
+   - Only essential columns in the table (`Scholar & ID`, `Enrollment Type`, `School / Parent Link`, `Grade & Track`, `Access Code & Status`) so no text is truncated or squished.
+4. **Docked Right 360° Scholar Inspector Drawer (`400px` Slide-Over):**
+   - Clicking any student row opens their complete profile on the right without leaving the list:
+     - **Overview & Access Tab:** Instant copy/reset for `JDI-XXXX-XXXX` Access Code, Parent Account Link status (e.g., linked to Eno Torru / Aniebiet Udofia), Assigned Tutor selector, and feature toggles (`CBT Assessments`, `Ed Club`).
+     - **Assessments Tab:** All exams taken, scores, and 1-click result release.
+     - **Assignments & Milestones Tab:** Current projects and curriculum stage progress.
+     - **Resources Tab:** Quick "Dispatch Resource to Scholar" form tucked neatly inside the drawer (or triggered via the top button) instead of pushing the entire student table down the page.
+
+---
+
+## Board 04 — Tutor Teaching Workspace (`Dashboard`, `Assignments`, `Milestones`, `Resources`, `Live Classes`, `Subjects`)
+![Board 04: Tutor Teaching Workspace (Assignments Split Queue, Milestones & Resource Targeting)](/assets/wireframes/04-tutor-teaching-workspace.svg)
+
+### Key Improvements Across All Other Tutor Tabs
+1. **Tutor Home Dashboard (`/portal/staff`):**
+   - Replaces long vertical lists with a 4-stat header (`Assigned Scholars`, `Pending Submissions to Grade`, `Active Assessments`, `Next Live Class`) + **Assigned Scholars Quick-Table** (with `All` / `School-Assigned` / `Private` filter pills) + **Needs Grading Queue**.
+2. **Assignments Center (`/portal/staff/assignments`):**
+   - **2-Pane Grading Queue:** Left pane lists assignments (`Needs Grading`, `Active`, `Graded`); right pane shows student submissions with inline score input (`/100`), feedback box, and `Save & Next Student` so tutors grade 20 students in seconds.
+3. **Milestones Matrix (`/portal/staff/milestones`):**
+   - Cohort progress matrix where tutors check off curriculum stages across their assigned scholars without opening 15 separate pages.
+4. **Resources & Live Classes (`/portal/staff/resources`, `/portal/staff/classes`):**
+   - Uses the exact same **Categorized Student Targeting List** (`All Available`, `School-Assigned`, `Private Learners`) so dispatching study materials or scheduling a live class is 100% consistent with the Assessment Studio.
+
+---
+
+## Board 05 — Scholar Portal, Parent Multi-Child Portal & Partner School Portal
+![Board 05: Scholar Portal, Parent Multi-Child Switcher Portal & Partner School Portal](/assets/wireframes/05-student-parent-school-portals.svg)
+
+### Key Improvements for Students, Parents, and Partner Schools
+1. **Scholar / Student Portal (`/portal/student/*`):**
+   - **Assessments Tab (`/portal/student/assessments`):** Clearly separated into **3 Scannable Sections**:
+     1. **`Available Now — Ready to Start`** (Prominent green card with `Start Assessment Now ->` button—never falsely marked "Completed" before the student takes it).
+     2. **`Submitted — Awaiting Result Release`** (Clear amber status badge so the student knows their submission is recorded and awaiting teacher release).
+     3. **`Released Results & Certificates`** (Score badge + full question breakdown).
+2. **Parent Portal (`/portal/parent/*`):**
+   - **Persistent Top Child Switcher Bar:** Parents with multiple children (such as **Eno Torru** viewing **Jayden Torru** & **Shawn Torru**, or **Aniebiet Udofia** viewing **Zoe** & **Joanna**) see a prominent child selector pill bar at the top of every tab (`Dashboard`, `Assessment Results`, `Assignments`, `Milestones`, `Billing`) to switch between children in 1 click.
+3. **Partner School Portal (`/portal/school/*`):**
+   - Clean **Cohort & Grade Filter Bar** (`All Grades`, `Grade 7`, `Grade 8`, `Year 2`) across `Learners Roster`, `Student Access` (bulk printable credential cards), and `Assessment Overview` (school-wide score analytics and released result sheets).
+
+---
+
+## Summary of Implementation Phases (Once You Give the Go-Ahead)
+1. **Phase 1 — Tutor & Admin Assessment Studio Refactor (`TutorExaminations.tsx`):** Convert the 4,905-line vertical stack into the zero-scroll Split-Pane Studio (Pinned Left Assessment Directory + 4-Mode Right Workspace: Setup & Recipients, Question Builder with Q1–Q25 Navigator Strip, Live Monitor & Responses, and Analytics).
+2. **Phase 2 — Scholars & Students Master-Detail Directory (`AdminStudents.tsx`, `StaffStudentWorkspace.tsx`, `SchoolRoster.tsx`, `StudentCredentialCenter.tsx`):** Move stacked dispatch forms into drawers/modals, implement the 5-column Master Table with `All` / `School-Assigned` / `Private` segmented filters, and add the docked **360° Scholar Inspector Drawer**.
+3. **Phase 3 — Tutor Teaching Tabs (`AssignmentCenter.tsx`, `MilestoneCenter.tsx`, `ResourceLibrary.tsx`):** Apply the 2-pane grading queue and unified categorized student selector.
+4. **Phase 4 — Student, Parent & Partner School Portals (`StudentExaminations.tsx`, `ParentExaminationResults.tsx`, `SchoolExaminationOverview.tsx`):** Add the 3-state Student Exam cards, Parent Multi-Child Switcher Bar, and Partner School grade cohort filters.

@@ -1,0 +1,307 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 980" width="100%" height="100%" font-family="'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#F1F5F9"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-2%" y="-2%" width="104%" height="106%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="1600" height="980" fill="url(#bgGrad)"/>
+
+  <!-- Top Blueprint Header -->
+  <rect x="0" y="0" width="1600" height="76" fill="#0F172A"/>
+  <rect x="28" y="18" width="40" height="40" rx="10" fill="#DC2626"/>
+  <text x="48" y="44" fill="#FFFFFF" font-size="16" font-weight="800" text-anchor="middle">JB</text>
+  <text x="84" y="36" fill="#FFFFFF" font-size="18" font-weight="800">WIREFRAME BOARD 01 — COMPLETE PORTAL INFORMATION ARCHITECTURE &amp; TAB MAP</text>
+  <text x="84" y="56" fill="#94A3B8" font-size="12" font-weight="500">Every Portal, Every Sidebar Group, and Every Sub-Tab Mapped to Eliminate Vertical Scroll &amp; Clutter</text>
+  <rect x="1310" y="22" width="260" height="32" rx="8" fill="#1E293B" stroke="#334155"/>
+  <text x="1440" y="42" fill="#38BDF8" font-size="11" font-weight="700" text-anchor="middle">5 ECOSYSTEMS · 38 PAGES MAPPED</text>
+
+  <!-- Core Architectural Principles Strip -->
+  <rect x="28" y="92" width="1544" height="54" rx="12" fill="#FFFFFF" stroke="#E2E8F0" filter="url(#cardShadow)"/>
+  <text x="48" y="115" fill="#DC2626" font-size="11" font-weight="800">KEY REDESIGN PRINCIPLES:</text>
+  <text x="215" y="115" fill="#0F172A" font-size="11" font-weight="700">1. Zero-Scroll Split Workspaces</text>
+  <text x="215" y="132" fill="#64748B" font-size="10">History, Editor &amp; Live Responses sit in top-level mode tabs + left drawer—never stacked 4,900px down.</text>
+  <line x1="560" y1="102" x2="560" y2="136" stroke="#E2E8F0"/>
+  <text x="580" y="115" fill="#0F172A" font-size="11" font-weight="700">2. Master-Detail Inspector Drawers</text>
+  <text x="580" y="132" fill="#64748B" font-size="10">Scholars &amp; Staff tables stay clean; clicking a row opens a right slide-over drawer for actions &amp; credentials.</text>
+  <line x1="955" y1="102" x2="955" y2="136" stroke="#E2E8F0"/>
+  <text x="975" y="115" fill="#0F172A" font-size="11" font-weight="700">3. School-Assigned vs. Private Learner Split</text>
+  <text x="975" y="132" fill="#64748B" font-size="10">Every student selector uses structured rows with instant [All | School-Assigned | Private] segmented tabs.</text>
+  <line x1="1335" y1="102" x2="1335" y2="136" stroke="#E2E8F0"/>
+  <text x="1355" y="115" fill="#0F172A" font-size="11" font-weight="700">4. Strict RBAC Separation</text>
+  <text x="1355" y="132" fill="#64748B" font-size="10">Students, Parents, Staff, Schools &amp; Admins isolated cleanly.</text>
+
+  <!-- ================================================= -->
+  <!-- COLUMN 1: TUTOR / STAFF PORTAL (/portal/staff)    -->
+  <!-- ================================================= -->
+  <g transform="translate(28, 164)">
+    <rect width="296" height="788" rx="14" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#cardShadow)"/>
+    <rect width="296" height="48" rx="14" fill="#1E3A8A"/>
+    <rect y="34" width="296" height="14" fill="#1E3A8A"/>
+    <text x="18" y="29" fill="#FFFFFF" font-size="13" font-weight="800">1. TUTOR &amp; STAFF PORTAL</text>
+    <text x="278" y="29" fill="#93C5FD" font-size="10" font-weight="700" text-anchor="end">/portal/staff</text>
+
+    <!-- Group 1: Overview & Roster -->
+    <text x="16" y="72" fill="#64748B" font-size="10" font-weight="800">GROUP A · OVERVIEW &amp; LEARNERS</text>
+    <rect x="14" y="80" width="268" height="60" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="98" fill="#0F172A" font-size="12" font-weight="700">1.1 Tutor Command Dashboard</text>
+    <text x="26" y="114" fill="#475569" font-size="10">• KPI Bar: Assigned Schools, School Learners, Private</text>
+    <text x="26" y="128" fill="#475569" font-size="10">• Today's Live Classes + Pending Grading Alerts</text>
+
+    <rect x="14" y="148" width="268" height="72" rx="8" fill="#EFF6FF" stroke="#BFDBFE"/>
+    <text x="26" y="166" fill="#1D4ED8" font-size="12" font-weight="800">1.2 Assigned Learners Directory</text>
+    <text x="26" y="182" fill="#1E40AF" font-size="10">• Tabs: [All Available] [School-Assigned] [Private]</text>
+    <text x="26" y="196" fill="#1E40AF" font-size="10">• Structured List Rows (No checkbox clutter)</text>
+    <text x="26" y="210" fill="#1E40AF" font-size="10">• 1-Click: Student 360° Workspace · Passcode</text>
+
+    <!-- Group 2: Assessment Studio -->
+    <text x="16" y="242" fill="#64748B" font-size="10" font-weight="800">GROUP B · ASSESSMENT STUDIO (REDESIGNED)</text>
+    <rect x="14" y="250" width="268" height="114" rx="8" fill="#FEF2F2" stroke="#FECACA"/>
+    <text x="26" y="268" fill="#B91C1C" font-size="12" font-weight="800">1.3 Unified Assessment Studio</text>
+    <text x="26" y="284" fill="#7F1D1D" font-size="10" font-weight="700">Replaces 4,900-line scroll with 4 Top Tabs:</text>
+    <text x="26" y="300" fill="#991B1B" font-size="10">  [Tab 1] Assessment Library &amp; History Drawer</text>
+    <text x="26" y="315" fill="#991B1B" font-size="10">  [Tab 2] Question Authoring &amp; Smart Import</text>
+    <text x="26" y="330" fill="#991B1B" font-size="10">  [Tab 3] Live Proctor &amp; Response Grading</text>
+    <text x="26" y="345" fill="#991B1B" font-size="10">  [Tab 4] Rules, Timer, Access Code &amp; Header</text>
+
+    <!-- Group 3: Coursework & Progress -->
+    <text x="16" y="384" fill="#64748B" font-size="10" font-weight="800">GROUP C · COURSEWORK &amp; MILESTONES</text>
+    <rect x="14" y="392" width="268" height="58" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="410" fill="#0F172A" font-size="12" font-weight="700">1.4 Assignments &amp; Review Queue</text>
+    <text x="26" y="426" fill="#475569" font-size="10">• Split View: Submission List (Left) + Grading Pane</text>
+    <text x="26" y="440" fill="#475569" font-size="10">• Filter by School Class or Private Learner</text>
+
+    <rect x="14" y="458" width="268" height="54" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="476" fill="#0F172A" font-size="12" font-weight="700">1.5 Curriculum Milestone Roadmap</text>
+    <text x="26" y="492" fill="#475569" font-size="10">• Module Progress Checklists per Class / Learner</text>
+
+    <!-- Group 4: Teaching & Schedule -->
+    <text x="16" y="532" fill="#64748B" font-size="10" font-weight="800">GROUP D · TEACHING, ACCESS &amp; RESOURCES</text>
+    <rect x="14" y="540" width="268" height="54" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="558" fill="#0F172A" font-size="12" font-weight="700">1.6 Live Classes &amp; Attendance</text>
+    <text x="26" y="574" fill="#475569" font-size="10">• Timetable, Meet Links &amp; 1-Click Roll Call</text>
+
+    <rect x="14" y="602" width="268" height="54" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="620" fill="#0F172A" font-size="12" font-weight="700">1.7 Student Access &amp; Passcodes</text>
+    <text x="26" y="636" fill="#475569" font-size="10">• Tabs: [All] [School-Assigned] [Private] + CSV</text>
+
+    <rect x="14" y="664" width="268" height="54" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="682" fill="#0F172A" font-size="12" font-weight="700">1.8 Lesson Resource Library</text>
+    <text x="26" y="698" fill="#475569" font-size="10">• Structured Recipient Selector + Class Notes</text>
+
+    <rect x="14" y="726" width="268" height="48" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="744" fill="#0F172A" font-size="11" font-weight="700">1.9 Subjects · Billing · Agreements · Settings</text>
+    <text x="26" y="760" fill="#64748B" font-size="10">• Compact utility tabs under Administration</text>
+  </g>
+
+  <!-- ================================================= -->
+  <!-- COLUMN 2: STUDENT / SCHOLAR PORTAL (/portal/student)-->
+  <!-- ================================================= -->
+  <g transform="translate(340, 164)">
+    <rect width="296" height="788" rx="14" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#cardShadow)"/>
+    <rect width="296" height="48" rx="14" fill="#0F766E"/>
+    <rect y="34" width="296" height="14" fill="#0F766E"/>
+    <text x="18" y="29" fill="#FFFFFF" font-size="13" font-weight="800">2. SCHOLAR / STUDENT PORTAL</text>
+    <text x="278" y="29" fill="#99F6E4" font-size="10" font-weight="700" text-anchor="end">/portal/student</text>
+
+    <text x="16" y="72" fill="#64748B" font-size="10" font-weight="800">GROUP A · MY LEARNING WORKSPACE</text>
+    <rect x="14" y="80" width="268" height="72" rx="8" fill="#F0FDFA" stroke="#99F6E4"/>
+    <text x="26" y="98" fill="#0F766E" font-size="12" font-weight="800">2.1 Scholar Home Dashboard</text>
+    <text x="26" y="114" fill="#115E59" font-size="10">• Next Live Session Banner + Join Button</text>
+    <text x="26" y="128" fill="#115E59" font-size="10">• Active Exam Alert (Ready to Start with Passcode)</text>
+    <text x="26" y="142" fill="#115E59" font-size="10">• Assigned Mentor Card &amp; Track Progress</text>
+
+    <text x="16" y="174" fill="#64748B" font-size="10" font-weight="800">GROUP B · ASSESSMENTS &amp; COURSEWORK</text>
+    <rect x="14" y="182" width="268" height="106" rx="8" fill="#FEF2F2" stroke="#FECACA"/>
+    <text x="26" y="200" fill="#B91C1C" font-size="12" font-weight="800">2.2 Assessments &amp; Exams Hub</text>
+    <text x="26" y="216" fill="#7F1D1D" font-size="10" font-weight="700">Clear 3-Tab Separation (No Status Confusion):</text>
+    <text x="26" y="232" fill="#991B1B" font-size="10">  [Tab 1] Available to Take Now (Passcode Entry)</text>
+    <text x="26" y="247" fill="#991B1B" font-size="10">  [Tab 2] Submitted · Awaiting Result Release</text>
+    <text x="26" y="262" fill="#991B1B" font-size="10">  [Tab 3] Released Results &amp; Printable Report Card</text>
+    <text x="26" y="278" fill="#991B1B" font-size="10">  + Distraction-Free CBT Exam Attempt Player</text>
+
+    <rect x="14" y="298" width="268" height="62" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="316" fill="#0F172A" font-size="12" font-weight="700">2.3 Assignments &amp; Project Submissions</text>
+    <text x="26" y="332" fill="#475569" font-size="10">• Pending Tasks vs. Graded Deliverables</text>
+    <text x="26" y="346" fill="#475569" font-size="10">• Direct Link / File Upload + Tutor Remarks</text>
+
+    <text x="16" y="382" fill="#64748B" font-size="10" font-weight="800">GROUP C · TRACKS, CLASSES &amp; RESOURCES</text>
+    <rect x="14" y="390" width="268" height="56" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="408" fill="#0F172A" font-size="12" font-weight="700">2.4 Learning Tracks &amp; Milestones</text>
+    <text x="26" y="424" fill="#475569" font-size="10">• Interactive Module Roadmap &amp; Skill Mastery</text>
+
+    <rect x="14" y="454" width="268" height="56" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="472" fill="#0F172A" font-size="12" font-weight="700">2.5 Live Classrooms &amp; Schedules</text>
+    <text x="26" y="488" fill="#475569" font-size="10">• Weekly Class Calendar &amp; Virtual Classroom</text>
+
+    <rect x="14" y="518" width="268" height="56" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="536" fill="#0F172A" font-size="12" font-weight="700">2.6 Lesson Resources &amp; Notes</text>
+    <text x="26" y="552" fill="#475569" font-size="10">• Filtered to Student's Class &amp; Personal Dispatches</text>
+
+    <rect x="14" y="582" width="268" height="56" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="600" fill="#0F172A" font-size="12" font-weight="700">2.7 Achievements, Badges &amp; Ed Club</text>
+    <text x="26" y="616" fill="#475569" font-size="10">• Certificates, Badges &amp; Typing Speed Arena</text>
+
+    <rect x="14" y="646" width="268" height="56" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="664" fill="#0F172A" font-size="12" font-weight="700">2.8 Support &amp; Account Settings</text>
+    <text x="26" y="680" fill="#475569" font-size="10">• Profile, Password &amp; Help Desk</text>
+  </g>
+
+  <!-- ================================================= -->
+  <!-- COLUMN 3: PARTNER SCHOOL PORTAL (/portal/school)  -->
+  <!-- ================================================= -->
+  <g transform="translate(652, 164)">
+    <rect width="296" height="788" rx="14" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#cardShadow)"/>
+    <rect width="296" height="48" rx="14" fill="#4338CA"/>
+    <rect y="34" width="296" height="14" fill="#4338CA"/>
+    <text x="18" y="29" fill="#FFFFFF" font-size="13" font-weight="800">3. PARTNER SCHOOL PORTAL</text>
+    <text x="278" y="29" fill="#C7D2FE" font-size="10" font-weight="700" text-anchor="end">/portal/school</text>
+
+    <text x="16" y="72" fill="#64748B" font-size="10" font-weight="800">GROUP A · INSTITUTIONAL OVERVIEW</text>
+    <rect x="14" y="80" width="268" height="68" rx="8" fill="#EEF2FF" stroke="#C7D2FE"/>
+    <text x="26" y="98" fill="#3730A3" font-size="12" font-weight="800">3.1 School Executive Dashboard</text>
+    <text x="26" y="114" fill="#4338CA" font-size="10">• Enrolled Scholars Count, Active Classes &amp; Tutors</text>
+    <text x="26" y="128" fill="#4338CA" font-size="10">• Quick Links: Onboard Student · Export Passcodes</text>
+
+    <text x="16" y="170" fill="#64748B" font-size="10" font-weight="800">GROUP B · SCHOOL ROSTER &amp; CREDENTIALS</text>
+    <rect x="14" y="178" width="268" height="86" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="196" fill="#0F172A" font-size="12" font-weight="700">3.2 Learners Roster &amp; Onboarding</text>
+    <text x="26" y="212" fill="#475569" font-size="10">• Horizontal Grade Bar: [All] [Grade 1] ... [Grade 12]</text>
+    <text x="26" y="226" fill="#475569" font-size="10">• Clean Table + Slide-Over Student Detail Drawer</text>
+    <text x="26" y="240" fill="#475569" font-size="10">• Single &amp; Bulk CSV Student Onboarding Modal</text>
+
+    <rect x="14" y="272" width="268" height="64" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="290" fill="#0F172A" font-size="12" font-weight="700">3.3 Student Access &amp; Passcode Center</text>
+    <text x="26" y="306" fill="#475569" font-size="10">• Batch Generate / Copy Access Codes by Grade</text>
+    <text x="26" y="320" fill="#475569" font-size="10">• 1-Click Printable Credential Slips &amp; CSV Export</text>
+
+    <text x="16" y="358" fill="#64748B" font-size="10" font-weight="800">GROUP C · ACADEMICS &amp; EXAM RESULTS</text>
+    <rect x="14" y="366" width="268" height="86" rx="8" fill="#FEF2F2" stroke="#FECACA"/>
+    <text x="26" y="384" fill="#B91C1C" font-size="12" font-weight="800">3.4 School Assessment &amp; Result Hub</text>
+    <text x="26" y="400" fill="#991B1B" font-size="10">• Unified View of Active Exams &amp; Past Submissions</text>
+    <text x="26" y="414" fill="#991B1B" font-size="10">• Grade-by-Grade Score Matrix &amp; Pass Rates</text>
+    <text x="26" y="428" fill="#991B1B" font-size="10">• Printable Broadsheet &amp; Individual Report Cards</text>
+
+    <rect x="14" y="460" width="268" height="60" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="478" fill="#0F172A" font-size="12" font-weight="700">3.5 Learner Progress &amp; Attendance</text>
+    <text x="26" y="494" fill="#475569" font-size="10">• Track Milestones, Assignments &amp; Roll-Call Logs</text>
+
+    <text x="16" y="542" fill="#64748B" font-size="10" font-weight="800">GROUP D · SCHEDULES, BILLING &amp; CONTRACTS</text>
+    <rect x="14" y="550" width="268" height="54" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="568" fill="#0F172A" font-size="12" font-weight="700">3.6 Class Schedules &amp; Virtual Links</text>
+    <text x="26" y="584" fill="#475569" font-size="10">• Assigned Tutors &amp; Weekly School Timetable</text>
+
+    <rect x="14" y="612" width="268" height="54" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="630" fill="#0F172A" font-size="12" font-weight="700">3.7 Institutional Resources Library</text>
+    <text x="26" y="646" fill="#475569" font-size="10">• Curriculum Syllabi &amp; Lesson Materials</text>
+
+    <rect x="14" y="674" width="268" height="54" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="692" fill="#0F172A" font-size="12" font-weight="700">3.8 Partnership Billing &amp; Agreements</text>
+    <text x="26" y="708" fill="#475569" font-size="10">• Term Invoices, Payment Receipts &amp; MOUs</text>
+  </g>
+
+  <!-- ================================================= -->
+  <!-- COLUMN 4: PARENT PORTAL (/portal/parent)          -->
+  <!-- ================================================= -->
+  <g transform="translate(964, 164)">
+    <rect width="296" height="788" rx="14" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#cardShadow)"/>
+    <rect width="296" height="48" rx="14" fill="#7E22CE"/>
+    <rect y="34" width="296" height="14" fill="#7E22CE"/>
+    <text x="18" y="29" fill="#FFFFFF" font-size="13" font-weight="800">4. PARENT &amp; GUARDIAN PORTAL</text>
+    <text x="278" y="29" fill="#E9D5FF" font-size="10" font-weight="700" text-anchor="end">/portal/parent</text>
+
+    <text x="16" y="72" fill="#64748B" font-size="10" font-weight="800">PERSISTENT TOP BAR · MULTI-CHILD SWITCHER</text>
+    <rect x="14" y="80" width="268" height="68" rx="8" fill="#FAF5FF" stroke="#E9D5FF"/>
+    <text x="26" y="98" fill="#6B21A8" font-size="12" font-weight="800">4.1 Linked Children Selector Bar</text>
+    <text x="26" y="114" fill="#7E22CE" font-size="10">• Instant Tabs: [All Children] [Jayden Torru] [Shawn]</text>
+    <text x="26" y="128" fill="#7E22CE" font-size="10">• Shows Assigned Tutor, Grade &amp; Student Passcode</text>
+
+    <text x="16" y="170" fill="#64748B" font-size="10" font-weight="800">GROUP A · FAMILY OVERVIEW &amp; SCHEDULES</text>
+    <rect x="14" y="178" width="268" height="68" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="196" fill="#0F172A" font-size="12" font-weight="700">4.2 Parent Family Dashboard</text>
+    <text x="26" y="212" fill="#475569" font-size="10">• Child Progress Summary Cards &amp; Attendance</text>
+    <text x="26" y="226" fill="#475569" font-size="10">• Enroll Additional Child / Request Tutor Modal</text>
+
+    <rect x="14" y="254" width="268" height="60" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="272" fill="#0F172A" font-size="12" font-weight="700">4.3 Class Schedules &amp; Session Status</text>
+    <text x="26" y="288" fill="#475569" font-size="10">• Upcoming Live Sessions &amp; Tutor Attendance Logs</text>
+
+    <text x="16" y="336" fill="#64748B" font-size="10" font-weight="800">GROUP B · ACADEMIC REPORTS &amp; WORK</text>
+    <rect x="14" y="344" width="268" height="82" rx="8" fill="#FEF2F2" stroke="#FECACA"/>
+    <text x="26" y="362" fill="#B91C1C" font-size="12" font-weight="800">4.4 Released Assessment Results</text>
+    <text x="26" y="378" fill="#991B1B" font-size="10">• Official Released Exam Scores per Child</text>
+    <text x="26" y="392" fill="#991B1B" font-size="10">• Question-by-Question Breakdown &amp; Tutor Remarks</text>
+    <text x="26" y="406" fill="#991B1B" font-size="10">• 1-Click PDF / Print Official Result Sheet</text>
+
+    <rect x="14" y="434" width="268" height="64" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="452" fill="#0F172A" font-size="12" font-weight="700">4.5 Assignments &amp; Milestone Tracker</text>
+    <text x="26" y="468" fill="#475569" font-size="10">• Homework Completion Status &amp; Curriculum Badges</text>
+
+    <rect x="14" y="506" width="268" height="56" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="524" fill="#0F172A" font-size="12" font-weight="700">4.6 Learning Resources for Children</text>
+    <text x="26" y="540" fill="#475569" font-size="10">• Study Guides &amp; Practice Materials</text>
+
+    <text x="16" y="584" fill="#64748B" font-size="10" font-weight="800">GROUP C · TUITION &amp; FAMILY AGREEMENTS</text>
+    <rect x="14" y="592" width="268" height="60" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="610" fill="#0F172A" font-size="12" font-weight="700">4.7 Payments, Invoices &amp; Agreements</text>
+    <text x="26" y="626" fill="#475569" font-size="10">• Paystack Tuition Checkout, Receipts &amp; Contracts</text>
+  </g>
+
+  <!-- ================================================= -->
+  <!-- COLUMN 5: ADMIN COMMAND CENTER (/admin)           -->
+  <!-- ================================================= -->
+  <g transform="translate(1276, 164)">
+    <rect width="296" height="788" rx="14" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#cardShadow)"/>
+    <rect width="296" height="48" rx="14" fill="#991B1B"/>
+    <rect y="34" width="296" height="14" fill="#991B1B"/>
+    <text x="18" y="29" fill="#FFFFFF" font-size="13" font-weight="800">5. ADMIN COMMAND CENTER</text>
+    <text x="278" y="29" fill="#FECACA" font-size="10" font-weight="700" text-anchor="end">/admin/*</text>
+
+    <text x="16" y="72" fill="#64748B" font-size="10" font-weight="800">GROUP A · OPERATIONS &amp; RBAC</text>
+    <rect x="14" y="80" width="268" height="62" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="98" fill="#0F172A" font-size="12" font-weight="700">5.1 Executive Command Dashboard</text>
+    <text x="26" y="114" fill="#475569" font-size="10">• Ecosystem KPIs, View-As Impersonation, Audit Log</text>
+
+    <rect x="14" y="150" width="268" height="74" rx="8" fill="#FEF2F2" stroke="#FECACA"/>
+    <text x="26" y="168" fill="#B91C1C" font-size="12" font-weight="800">5.2 Users &amp; RBAC Directory (/admin/users)</text>
+    <text x="26" y="184" fill="#991B1B" font-size="10">• Open Segmented Tabs: [All] [Students] [Parents]</text>
+    <text x="26" y="198" fill="#991B1B" font-size="10">  [Staff &amp; Tutors] [Partner Schools] [Admins]</text>
+    <text x="26" y="212" fill="#991B1B" font-size="10">• Strict Parent/Tutor Isolation + 1-Click View-As</text>
+
+    <text x="16" y="246" fill="#64748B" font-size="10" font-weight="800">GROUP B · ACADEMIC HUB &amp; DIRECTORIES</text>
+    <rect x="14" y="254" width="268" height="82" rx="8" fill="#EFF6FF" stroke="#BFDBFE"/>
+    <text x="26" y="272" fill="#1D4ED8" font-size="12" font-weight="800">5.3 Scholars Hub (/admin/students)</text>
+    <text x="26" y="288" fill="#1E40AF" font-size="10">• Master-Detail Table + Slide-Over Inspector Drawer</text>
+    <text x="26" y="302" fill="#1E40AF" font-size="10">• Tabs: [All] [School-Assigned] [Parent/Private]</text>
+    <text x="26" y="316" fill="#1E40AF" font-size="10">• 1-Click Assign Tutor, Link Parent &amp; Passcode</text>
+
+    <rect x="14" y="344" width="268" height="66" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="362" fill="#0F172A" font-size="12" font-weight="700">5.4 Faculty &amp; Staff (/admin/staff)</text>
+    <text x="26" y="378" fill="#475569" font-size="10">• Tabs: [Faculty Roster] [School Access] [Resources]</text>
+    <text x="26" y="392" fill="#475569" font-size="10">• Shows School-Assigned vs Private Learner counts</text>
+
+    <rect x="14" y="418" width="268" height="64" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="436" fill="#0F172A" font-size="12" font-weight="700">5.5 Affiliated Schools &amp; Parents</text>
+    <text x="26" y="452" fill="#475569" font-size="10">• Partner School Portals, Programs &amp; Parent Links</text>
+
+    <text x="16" y="504" fill="#64748B" font-size="10" font-weight="800">GROUP C · CBT ASSESSMENTS &amp; GRADING</text>
+    <rect x="14" y="512" width="268" height="68" rx="8" fill="#FEF2F2" stroke="#FECACA"/>
+    <text x="26" y="530" fill="#B91C1C" font-size="12" font-weight="800">5.6 Global Assessment Studio &amp; History</text>
+    <text x="26" y="546" fill="#991B1B" font-size="10">• Same Zero-Scroll Split Studio as Tutors + Global</text>
+    <text x="26" y="560" fill="#991B1B" font-size="10">  School Filter &amp; 1-Click Result Release Queue</text>
+
+    <text x="16" y="602" fill="#64748B" font-size="10" font-weight="800">GROUP D · FINANCE &amp; WEBSITE CMS</text>
+    <rect x="14" y="610" width="268" height="56" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="628" fill="#0F172A" font-size="12" font-weight="700">5.7 Approvals, Billing &amp; Agreements</text>
+    <text x="26" y="644" fill="#475569" font-size="10">• Enrollment Approvals, Treasury Ledger &amp; Contracts</text>
+
+    <rect x="14" y="674" width="268" height="56" rx="8" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="26" y="692" fill="#0F172A" font-size="12" font-weight="700">5.8 Website CMS (Pages, Programs, Blog)</text>
+    <text x="26" y="708" fill="#475569" font-size="10">• Live Homepage Sync, Portfolio &amp; Kids Zone Builds</text>
+  </g>
+</svg>

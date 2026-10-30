@@ -1,0 +1,245 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 980" width="100%" height="100%" font-family="'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <defs>
+    <filter id="shadow3" x="-2%" y="-2%" width="104%" height="106%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="980" fill="#F1F5F9"/>
+
+  <!-- Top Blueprint Banner -->
+  <rect x="0" y="0" width="1600" height="72" fill="#0F172A"/>
+  <rect x="28" y="16" width="40" height="40" rx="10" fill="#7E22CE"/>
+  <text x="48" y="42" fill="#FFFFFF" font-size="15" font-weight="800" text-anchor="middle">03</text>
+  <text x="84" y="34" fill="#FFFFFF" font-size="18" font-weight="800">WIREFRAME BOARD 03 — SCHOLARS &amp; STUDENTS DIRECTORY (MASTER-DETAIL + INSPECTOR DRAWER)</text>
+  <text x="84" y="54" fill="#94A3B8" font-size="12">Eliminates "choking" stacked forms &amp; cramped cards in /admin/students, /portal/staff/students &amp; /portal/school/roster</text>
+
+  <!-- Callout Strip -->
+  <rect x="28" y="86" width="760" height="44" rx="10" fill="#FEF2F2" stroke="#FECACA"/>
+  <text x="44" y="112" fill="#B91C1C" font-size="11" font-weight="700">OLD DESIGN PAIN: Giant dispatch forms, school cards, and 8-button rows stacked together—making the scholar tab feel "choking".</text>
+  <rect x="808" y="86" width="764" height="44" rx="10" fill="#ECFDF5" stroke="#A7F3D0"/>
+  <text x="824" y="112" fill="#047857" font-size="11" font-weight="700">NEW REDESIGN: Open Segmented Category Bar + Clean Scannable Table (65% Left) + Docked Scholar 360° Inspector (35% Right).</text>
+
+  <!-- Main Workspace Frame -->
+  <g transform="translate(28, 144)">
+    <rect width="1544" height="808" rx="16" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#shadow3)"/>
+
+    <!-- Top Header & Filter Strip -->
+    <rect x="0" y="0" width="1544" height="124" rx="16" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <text x="28" y="36" fill="#0F172A" font-size="18" font-weight="800">Scholars &amp; Students Directory</text>
+    <text x="28" y="56" fill="#64748B" font-size="11">Unified roster separating School-Assigned Scholars from Private / Parent-Enrolled Learners with 1-click access &amp; mentor assignment</text>
+
+    <!-- Top Right Primary Actions -->
+    <rect x="1050" y="18" width="154" height="40" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/>
+    <text x="1127" y="42" fill="#334155" font-size="11" font-weight="700" text-anchor="middle">Export Credentials CSV</text>
+
+    <rect x="1216" y="18" width="144" height="40" rx="10" fill="#EFF6FF" stroke="#BFDBFE"/>
+    <text x="1288" y="42" fill="#1D4ED8" font-size="11" font-weight="700" text-anchor="middle">Dispatch Resource</text>
+
+    <rect x="1372" y="18" width="148" height="40" rx="10" fill="#DC2626"/>
+    <text x="1446" y="42" fill="#FFFFFF" font-size="11" font-weight="800" text-anchor="middle">+ Onboard Scholar</text>
+
+    <!-- Open Segmented Category Tabs + School/Class Filter + Search -->
+    <g transform="translate(28, 74)">
+      <rect x="0" y="0" width="620" height="38" rx="10" fill="#F1F5F9"/>
+      <rect x="4" y="4" width="146" height="30" rx="7" fill="#FFFFFF"/>
+      <text x="77" y="23" fill="#0F172A" font-size="11" font-weight="800" text-anchor="middle">All Scholars (245)</text>
+      <text x="235" y="23" fill="#1D4ED8" font-size="11" font-weight="700" text-anchor="middle">School-Assigned (198)</text>
+      <text x="395" y="23" fill="#7E22CE" font-size="11" font-weight="700" text-anchor="middle">Private / Parent (47)</text>
+      <text x="545" y="23" fill="#475569" font-size="11" font-weight="700" text-anchor="middle">By Partner School</text>
+
+      <!-- Grade Filter Pill -->
+      <rect x="636" y="0" width="170" height="38" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="721" y="23" fill="#334155" font-size="11" font-weight="700" text-anchor="middle">Grade: All Classes ▾</text>
+
+      <!-- Tutor Filter Pill -->
+      <rect x="818" y="0" width="180" height="38" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="908" y="23" fill="#334155" font-size="11" font-weight="700" text-anchor="middle">Tutor: All Mentors ▾</text>
+
+      <!-- Search Box -->
+      <rect x="1010" y="0" width="482" height="38" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="1030" y="23" fill="#94A3B8" font-size="11">Search scholar by name, username, access code, parent, or school...</text>
+    </g>
+
+    <!-- ============================================================== -->
+    <!-- LEFT MASTER TABLE (64% WIDTH): CLEAN, BREATHABLE SCHOLAR LIST   -->
+    <!-- ============================================================== -->
+    <g transform="translate(24, 142)">
+      <rect width="976" height="644" rx="12" fill="#FFFFFF" stroke="#E2E8F0"/>
+
+      <!-- Table Header -->
+      <rect x="0" y="0" width="976" height="40" rx="12" fill="#F8FAFC" stroke="#E2E8F0"/>
+      <text x="20" y="25" fill="#475569" font-size="10" font-weight="800">SCHOLAR NAME &amp; HANDLE</text>
+      <text x="255" y="25" fill="#475569" font-size="10" font-weight="800">ENROLLMENT TYPE &amp; INSTITUTION</text>
+      <text x="515" y="25" fill="#475569" font-size="10" font-weight="800">GRADE &amp; TRACK</text>
+      <text x="680" y="25" fill="#475569" font-size="10" font-weight="800">ASSIGNED TUTOR</text>
+      <text x="845" y="25" fill="#475569" font-size="10" font-weight="800">ACCESS CODE</text>
+
+      <!-- Row 1 (Selected in Inspector) -->
+      <g transform="translate(0, 44)">
+        <rect x="8" y="4" width="960" height="68" rx="10" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+        <circle cx="36" cy="38" r="18" fill="#7E22CE"/>
+        <text x="36" y="43" fill="#FFFFFF" font-size="13" font-weight="800" text-anchor="middle">JT</text>
+        <text x="66" y="32" fill="#0F172A" font-size="13" font-weight="800">Jayden Torru</text>
+        <text x="66" y="50" fill="#64748B" font-size="11" font-family="monospace">@jayden.torru</text>
+
+        <text x="255" y="32" fill="#7E22CE" font-size="11" font-weight="800">Private Learner (Parent-Linked)</text>
+        <text x="255" y="50" fill="#475569" font-size="11">Parent: Eno Torru · gifttorru@gmail.com</text>
+
+        <text x="515" y="32" fill="#0F172A" font-size="12" font-weight="700">Grade 5</text>
+        <text x="515" y="50" fill="#64748B" font-size="10">Coding &amp; Robotics</text>
+
+        <text x="680" y="32" fill="#0F172A" font-size="12" font-weight="700">Johnny Rufai</text>
+        <text x="680" y="50" fill="#16A34A" font-size="10" font-weight="700">Lead Mentor</text>
+
+        <rect x="840" y="20" width="112" height="32" rx="7" fill="#FFFFFF" stroke="#CBD5E1"/>
+        <text x="896" y="40" fill="#0F172A" font-size="11" font-weight="800" font-family="monospace" text-anchor="middle">JDI-882419 ⧉</text>
+      </g>
+
+      <!-- Row 2 -->
+      <g transform="translate(0, 120)">
+        <rect x="8" y="4" width="960" height="68" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+        <circle cx="36" cy="38" r="18" fill="#2563EB"/>
+        <text x="36" y="43" fill="#FFFFFF" font-size="13" font-weight="800" text-anchor="middle">MA</text>
+        <text x="66" y="32" fill="#0F172A" font-size="13" font-weight="800">Adewoyin Manuel Adetola</text>
+        <text x="66" y="50" fill="#64748B" font-size="11" font-family="monospace">@manuel.adewoyin</text>
+
+        <text x="255" y="32" fill="#1D4ED8" font-size="11" font-weight="800">School-Assigned Scholar</text>
+        <text x="255" y="50" fill="#475569" font-size="11">Christy Caleb International School</text>
+
+        <text x="515" y="32" fill="#0F172A" font-size="12" font-weight="700">Grade 7</text>
+        <text x="515" y="50" fill="#64748B" font-size="10">Smart Techies Track</text>
+
+        <text x="680" y="32" fill="#0F172A" font-size="12" font-weight="700">School Faculty</text>
+        <text x="680" y="50" fill="#64748B" font-size="10">Assigned via School</text>
+
+        <rect x="840" y="20" width="112" height="32" rx="7" fill="#F8FAFC" stroke="#E2E8F0"/>
+        <text x="896" y="40" fill="#0F172A" font-size="11" font-weight="800" font-family="monospace" text-anchor="middle">JDI-304912 ⧉</text>
+      </g>
+
+      <!-- Row 3 -->
+      <g transform="translate(0, 196)">
+        <rect x="8" y="4" width="960" height="68" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+        <circle cx="36" cy="38" r="18" fill="#7E22CE"/>
+        <text x="36" y="43" fill="#FFFFFF" font-size="13" font-weight="800" text-anchor="middle">ET</text>
+        <text x="66" y="32" fill="#0F172A" font-size="13" font-weight="800">Emmanuella Torru</text>
+        <text x="66" y="50" fill="#64748B" font-size="11" font-family="monospace">@emmanuella.torru</text>
+
+        <text x="255" y="32" fill="#7E22CE" font-size="11" font-weight="800">Private Learner (Parent-Linked)</text>
+        <text x="255" y="50" fill="#475569" font-size="11">Parent: Eno Torru · gifttorru@gmail.com</text>
+
+        <text x="515" y="32" fill="#0F172A" font-size="12" font-weight="700">Grade 6</text>
+        <text x="515" y="50" fill="#64748B" font-size="10">Creative Design &amp; Tech</text>
+
+        <text x="680" y="32" fill="#0F172A" font-size="12" font-weight="700">Okoh Daniel N.</text>
+        <text x="680" y="50" fill="#16A34A" font-size="10" font-weight="700">Lead Mentor</text>
+
+        <rect x="840" y="20" width="112" height="32" rx="7" fill="#F8FAFC" stroke="#E2E8F0"/>
+        <text x="896" y="40" fill="#0F172A" font-size="11" font-weight="800" font-family="monospace" text-anchor="middle">JDI-519023 ⧉</text>
+      </g>
+
+      <!-- Row 4 -->
+      <g transform="translate(0, 272)">
+        <rect x="8" y="4" width="960" height="68" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+        <circle cx="36" cy="38" r="18" fill="#2563EB"/>
+        <text x="36" y="43" fill="#FFFFFF" font-size="13" font-weight="800" text-anchor="middle">CE</text>
+        <text x="66" y="32" fill="#0F172A" font-size="13" font-weight="800">Charis Eghan</text>
+        <text x="66" y="50" fill="#64748B" font-size="11" font-family="monospace">@charis.eghan</text>
+
+        <text x="255" y="32" fill="#1D4ED8" font-size="11" font-weight="800">School-Assigned Scholar</text>
+        <text x="255" y="50" fill="#475569" font-size="11">Sapphire Explorer Montessori School</text>
+
+        <text x="515" y="32" fill="#0F172A" font-size="12" font-weight="700">Grade 2</text>
+        <text x="515" y="50" fill="#64748B" font-size="10">Digital Literacy</text>
+
+        <text x="680" y="32" fill="#0F172A" font-size="12" font-weight="700">Assigned Faculty</text>
+        <text x="680" y="50" fill="#64748B" font-size="10">Sapphire Team</text>
+
+        <rect x="840" y="20" width="112" height="32" rx="7" fill="#F8FAFC" stroke="#E2E8F0"/>
+        <text x="896" y="40" fill="#0F172A" font-size="11" font-weight="800" font-family="monospace" text-anchor="middle">JDI-661042 ⧉</text>
+      </g>
+
+      <!-- Row 5 -->
+      <g transform="translate(0, 348)">
+        <rect x="8" y="4" width="960" height="68" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+        <circle cx="36" cy="38" r="18" fill="#7E22CE"/>
+        <text x="36" y="43" fill="#FFFFFF" font-size="13" font-weight="800" text-anchor="middle">ZU</text>
+        <text x="66" y="32" fill="#0F172A" font-size="13" font-weight="800">Zoe Udofia</text>
+        <text x="66" y="50" fill="#64748B" font-size="11" font-family="monospace">@zoe.udofia</text>
+
+        <text x="255" y="32" fill="#7E22CE" font-size="11" font-weight="800">Private Learner (Parent-Linked)</text>
+        <text x="255" y="50" fill="#475569" font-size="11">Parent: Aniebiet Udofia · anie.udofia31@gmail.com</text>
+
+        <text x="515" y="32" fill="#0F172A" font-size="12" font-weight="700">Grade 4</text>
+        <text x="515" y="50" fill="#64748B" font-size="10">Coding &amp; Logic</text>
+
+        <text x="680" y="32" fill="#0F172A" font-size="12" font-weight="700">Johnny Rufai</text>
+        <text x="680" y="50" fill="#16A34A" font-size="10" font-weight="700">Lead Mentor</text>
+
+        <rect x="840" y="20" width="112" height="32" rx="7" fill="#F8FAFC" stroke="#E2E8F0"/>
+        <text x="896" y="40" fill="#0F172A" font-size="11" font-weight="800" font-family="monospace" text-anchor="middle">JDI-749201 ⧉</text>
+      </g>
+    </g>
+
+    <!-- ============================================================== -->
+    <!-- RIGHT DOCKED INSPECTOR DRAWER (34% WIDTH): SCHOLAR 360° PANEL   -->
+    <!-- ============================================================== -->
+    <g transform="translate(1016, 142)">
+      <rect width="504" height="644" rx="12" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <rect x="0" y="0" width="504" height="78" rx="12" fill="#0F172A"/>
+      <rect x="0" y="64" width="504" height="14" fill="#0F172A"/>
+      <circle cx="38" cy="39" r="20" fill="#7E22CE"/>
+      <text x="38" y="44" fill="#FFFFFF" font-size="14" font-weight="800" text-anchor="middle">JT</text>
+      <text x="70" y="34" fill="#FFFFFF" font-size="15" font-weight="800">Jayden Torru</text>
+      <text x="70" y="54" fill="#94A3B8" font-size="11">Private Learner · Grade 5 · Active Portal Access</text>
+      <rect x="372" y="22" width="114" height="32" rx="8" fill="#F59E0B"/>
+      <text x="429" y="42" fill="#0F172A" font-size="10" font-weight="800" text-anchor="middle">View As Scholar →</text>
+
+      <!-- 3 Clean Inspector Sub-Tabs -->
+      <rect x="16" y="92" width="472" height="36" rx="8" fill="#E2E8F0"/>
+      <rect x="20" y="96" width="154" height="28" rx="6" fill="#FFFFFF"/>
+      <text x="97" y="114" fill="#0F172A" font-size="10" font-weight="800" text-anchor="middle">1. Profile &amp; Access</text>
+      <text x="252" y="114" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">2. Tutors &amp; Parent</text>
+      <text x="406" y="114" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">3. Dispatch Work</text>
+
+      <!-- Credentials Box -->
+      <rect x="16" y="142" width="472" height="106" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+      <text x="32" y="166" fill="#64748B" font-size="10" font-weight="800">PORTAL LOGIN &amp; ACCESS PASSCODE</text>
+      <text x="32" y="190" fill="#0F172A" font-size="12" font-weight="700">Username: @jayden.torru</text>
+      <text x="260" y="190" fill="#1D4ED8" font-size="13" font-weight="800" font-family="monospace">Code: JDI-882419</text>
+      <rect x="32" y="204" width="140" height="30" rx="7" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="102" y="223" fill="#1D4ED8" font-size="10" font-weight="800" text-anchor="middle">Copy Credentials</text>
+      <rect x="182" y="204" width="140" height="30" rx="7" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="252" y="223" fill="#334155" font-size="10" font-weight="700" text-anchor="middle">Regenerate Code</text>
+      <rect x="332" y="204" width="140" height="30" rx="7" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="402" y="223" fill="#334155" font-size="10" font-weight="700" text-anchor="middle">Open 360° Workspace</text>
+
+      <!-- Assigned Mentors & Parent Link Box -->
+      <rect x="16" y="262" width="472" height="196" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+      <text x="32" y="286" fill="#64748B" font-size="10" font-weight="800">ASSIGNED TUTORS &amp; LINKED PARENT ACCOUNT</text>
+
+      <rect x="32" y="298" width="440" height="46" rx="8" fill="#FAF5FF" stroke="#E9D5FF"/>
+      <text x="46" y="318" fill="#6B21A8" font-size="11" font-weight="800">Linked Parent: Eno Torru (gifttorru@gmail.com)</text>
+      <text x="46" y="334" fill="#7E22CE" font-size="10">Siblings Linked: Shawn Torru, Emmanuella Torru</text>
+      <text x="456" y="325" fill="#6B21A8" font-size="10" font-weight="700" text-anchor="end">Change</text>
+
+      <rect x="32" y="354" width="440" height="46" rx="8" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="46" y="374" fill="#1E40AF" font-size="11" font-weight="800">Lead Tutor: Johnny Rufai (rufaijohnny@gmail.com)</text>
+      <text x="46" y="390" fill="#1D4ED8" font-size="10">Synced across students &amp; individualStudents</text>
+      <text x="456" y="381" fill="#1D4ED8" font-size="10" font-weight="700" text-anchor="end">+ Add Tutor</text>
+
+      <rect x="32" y="412" width="440" height="32" rx="7" fill="#0F172A"/>
+      <text x="252" y="432" fill="#FFFFFF" font-size="11" font-weight="800" text-anchor="middle">Save Mentor &amp; Parent Assignment</text>
+
+      <!-- Quick Dispatch Resource Box -->
+      <rect x="16" y="472" width="472" height="154" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+      <text x="32" y="496" fill="#64748B" font-size="10" font-weight="800">DIRECT STUDENT DISPATCH (CLASS LINK OR LESSON NOTE)</text>
+      <rect x="32" y="508" width="440" height="32" rx="7" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="46" y="528" fill="#94A3B8" font-size="10">Resource Title or Live Class Link...</text>
+      <rect x="32" y="548" width="440" height="32" rx="7" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="46" y="568" fill="#94A3B8" font-size="10">https://meet.google.com/... or document URL</text>
+      <rect x="32" y="588" width="440" height="28" rx="7" fill="#2563EB"/>
+      <text x="252" y="606" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">Send Directly to Jayden Torru</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,273 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 980" width="100%" height="100%" font-family="'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <defs>
+    <filter id="shadow2" x="-2%" y="-2%" width="104%" height="106%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="1600" height="980" fill="#F1F5F9"/>
+
+  <!-- Top Blueprint Banner -->
+  <rect x="0" y="0" width="1600" height="72" fill="#0F172A"/>
+  <rect x="28" y="16" width="40" height="40" rx="10" fill="#2563EB"/>
+  <text x="48" y="42" fill="#FFFFFF" font-size="15" font-weight="800" text-anchor="middle">02</text>
+  <text x="84" y="34" fill="#FFFFFF" font-size="18" font-weight="800">WIREFRAME BOARD 02 — TUTOR &amp; ADMIN ASSESSMENT STUDIO (ZERO-SCROLL SPLIT WORKSPACE)</text>
+  <text x="84" y="54" fill="#94A3B8" font-size="12">Solves the 4,900-line vertical scroll problem: Assessment History, Authoring, and Live Response Grading are available at the top level simultaneously.</text>
+
+  <!-- Problem -> Solution Callout Strip -->
+  <rect x="28" y="86" width="760" height="44" rx="10" fill="#FEF2F2" stroke="#FECACA"/>
+  <text x="44" y="112" fill="#B91C1C" font-size="11" font-weight="700">OLD DESIGN PAIN: History &amp; Responses buried at the bottom of a huge page; endless scrolling between questions &amp; grading.</text>
+  <rect x="808" y="86" width="764" height="44" rx="10" fill="#ECFDF5" stroke="#A7F3D0"/>
+  <text x="824" y="112" fill="#047857" font-size="11" font-weight="700">NEW REDESIGN: Pinned Left Assessment Directory (30% width) + 4-Tab Right Studio Canvas (70% width). Zero page scrolling.</text>
+
+  <!-- App Shell Frame -->
+  <g transform="translate(28, 144)">
+    <rect width="1544" height="808" rx="16" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#shadow2)"/>
+
+    <!-- Left Collapsed Portal Rail (64px) -->
+    <rect x="0" y="0" width="64" height="808" rx="16" fill="#0F172A"/>
+    <rect x="48" y="0" width="16" height="808" fill="#0F172A"/>
+    <rect x="14" y="18" width="36" height="36" rx="10" fill="#DC2626"/>
+    <text x="32" y="41" fill="#FFFFFF" font-size="13" font-weight="800" text-anchor="middle">JB</text>
+    <!-- Nav Icons -->
+    <rect x="12" y="80" width="40" height="40" rx="10" fill="#1E293B"/>
+    <rect x="12" y="132" width="40" height="40" rx="10" fill="#1E293B"/>
+    <rect x="12" y="184" width="40" height="40" rx="10" fill="#2563EB"/>
+    <rect x="12" y="236" width="40" height="40" rx="10" fill="#1E293B"/>
+    <rect x="12" y="288" width="40" height="40" rx="10" fill="#1E293B"/>
+
+    <!-- Top Workspace Command Header -->
+    <rect x="64" y="0" width="1480" height="72" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <text x="92" y="30" fill="#0F172A" font-size="17" font-weight="800">Assessments &amp; Examination Studio</text>
+    <text x="92" y="50" fill="#64748B" font-size="11">Active: SeMS Year 2 Digital Literacy Examination · 25 Questions · 100 Marks · Access Code: JDI-482910</text>
+
+    <!-- Primary Top-Right Action Bar -->
+    <rect x="1030" y="16" width="156" height="40" rx="10" fill="#EFF6FF" stroke="#BFDBFE"/>
+    <text x="1108" y="40" fill="#1D4ED8" font-size="11" font-weight="800" text-anchor="middle">+ New Assessment</text>
+
+    <rect x="1198" y="16" width="140" height="40" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/>
+    <text x="1268" y="40" fill="#334155" font-size="11" font-weight="700" text-anchor="middle">Save as Draft</text>
+
+    <rect x="1350" y="16" width="170" height="40" rx="10" fill="#2563EB"/>
+    <text x="1435" y="40" fill="#FFFFFF" font-size="12" font-weight="800" text-anchor="middle">Publish Assessment</text>
+
+    <!-- ============================================================== -->
+    <!-- PINNED LEFT COLUMN (32%): EXISTING ASSESSMENTS & HISTORY DRAWER -->
+    <!-- ============================================================== -->
+    <rect x="64" y="72" width="440" height="736" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="84" y="102" fill="#0F172A" font-size="13" font-weight="800">ASSESSMENT DIRECTORY &amp; HISTORY (18)</text>
+    <text x="84" y="118" fill="#64748B" font-size="10">Always visible on the left—no scrolling to the bottom of the page!</text>
+
+    <!-- Search + Work Type Pills -->
+    <rect x="84" y="130" width="400" height="36" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/>
+    <text x="100" y="152" fill="#94A3B8" font-size="11">Search exam title, school, class, or code...</text>
+
+    <!-- Work-Type Filter Bar -->
+    <g transform="translate(84, 174)">
+      <rect x="0" y="0" width="58" height="28" rx="6" fill="#0F172A"/>
+      <text x="29" y="18" fill="#FFFFFF" font-size="10" font-weight="700" text-anchor="middle">All (18)</text>
+      <rect x="64" y="0" width="76" height="28" rx="6" fill="#FFFFFF" stroke="#CBD5E1"/>
+      <text x="102" y="18" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">Exams (7)</text>
+      <rect x="146" y="0" width="72" height="28" rx="6" fill="#FFFFFF" stroke="#CBD5E1"/>
+      <text x="182" y="18" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">Tests (5)</text>
+      <rect x="224" y="0" width="96" height="28" rx="6" fill="#FFFFFF" stroke="#CBD5E1"/>
+      <text x="272" y="18" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">Assignments</text>
+      <rect x="326" y="0" width="74" height="28" rx="6" fill="#FFFFFF" stroke="#CBD5E1"/>
+      <text x="363" y="18" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">Activities</text>
+    </g>
+
+    <!-- Assessment Card 1 (Active / Selected) -->
+    <g transform="translate(84, 214)">
+      <rect width="400" height="122" rx="12" fill="#EFF6FF" stroke="#2563EB" stroke-width="2"/>
+      <rect x="14" y="14" width="128" height="20" rx="5" fill="#FEF3C7"/>
+      <text x="78" y="28" fill="#B45309" font-size="9" font-weight="800" text-anchor="middle">4 AWAITING RELEASE</text>
+      <text x="384" y="28" fill="#1D4ED8" font-size="10" font-weight="800" text-anchor="end">JDI-482910</text>
+      <text x="14" y="52" fill="#0F172A" font-size="13" font-weight="800">SeMS Year 2 Digital Literacy Exam</text>
+      <text x="14" y="69" fill="#475569" font-size="11">Sapphire Explorer Montessori · Grade 2 · 25 Qs</text>
+      <rect x="14" y="82" width="180" height="28" rx="7" fill="#2563EB"/>
+      <text x="104" y="100" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">Monitor &amp; Release (4)</text>
+      <rect x="204" y="82" width="90" height="28" rx="7" fill="#FFFFFF" stroke="#CBD5E1"/>
+      <text x="249" y="100" fill="#0F172A" font-size="10" font-weight="700" text-anchor="middle">Edit Questions</text>
+      <rect x="302" y="82" width="84" height="28" rx="7" fill="#FFFFFF" stroke="#CBD5E1"/>
+      <text x="344" y="100" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">Duplicate</text>
+    </g>
+
+    <!-- Assessment Card 2 -->
+    <g transform="translate(84, 348)">
+      <rect width="400" height="114" rx="12" fill="#FFFFFF" stroke="#E2E8F0"/>
+      <rect x="14" y="14" width="76" height="20" rx="5" fill="#DCFCE7"/>
+      <text x="52" y="28" fill="#15803D" font-size="9" font-weight="800" text-anchor="middle">PUBLISHED</text>
+      <text x="384" y="28" fill="#64748B" font-size="10" font-weight="700" text-anchor="end">JDI-773190</text>
+      <text x="14" y="52" fill="#0F172A" font-size="13" font-weight="800">CCIC Programming Grade 7 Makeup Test</text>
+      <text x="14" y="69" fill="#64748B" font-size="11">Christy Caleb Int'l School · Grade 7 · 100 Marks</text>
+      <rect x="14" y="80" width="145" height="24" rx="6" fill="#F1F5F9"/>
+      <text x="86" y="96" fill="#1E293B" font-size="10" font-weight="700" text-anchor="middle">Responses (21)</text>
+      <rect x="168" y="80" width="90" height="24" rx="6" fill="#F1F5F9"/>
+      <text x="213" y="96" fill="#1E293B" font-size="10" font-weight="700" text-anchor="middle">Edit</text>
+    </g>
+
+    <!-- Assessment Card 3 -->
+    <g transform="translate(84, 474)">
+      <rect width="400" height="114" rx="12" fill="#FFFFFF" stroke="#E2E8F0"/>
+      <rect x="14" y="14" width="110" height="20" rx="5" fill="#F3E8FF"/>
+      <text x="69" y="28" fill="#6B21A8" font-size="9" font-weight="800" text-anchor="middle">PRIVATE LEARNERS</text>
+      <text x="384" y="28" fill="#64748B" font-size="10" font-weight="700" text-anchor="end">JDI-910244</text>
+      <text x="14" y="52" fill="#0F172A" font-size="13" font-weight="800">Python &amp; Robotics Milestone Quiz</text>
+      <text x="14" y="69" fill="#64748B" font-size="11">Private Learners (Jayden Torru, Shawn Torru)</text>
+      <rect x="14" y="80" width="145" height="24" rx="6" fill="#F1F5F9"/>
+      <text x="86" y="96" fill="#1E293B" font-size="10" font-weight="700" text-anchor="middle">Responses (2)</text>
+      <rect x="168" y="80" width="90" height="24" rx="6" fill="#F1F5F9"/>
+      <text x="213" y="96" fill="#1E293B" font-size="10" font-weight="700" text-anchor="middle">Edit</text>
+    </g>
+
+    <!-- ============================================================== -->
+    <!-- RIGHT MAIN STUDIO CANVAS (68%): TOP-LEVEL 4-MODE TAB BAR        -->
+    <!-- ============================================================== -->
+    <rect x="504" y="72" width="1040" height="58" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <g transform="translate(524, 83)">
+      <rect x="0" y="0" width="230" height="36" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/>
+      <text x="115" y="23" fill="#475569" font-size="11" font-weight="700" text-anchor="middle">1. Audience &amp; Setup</text>
+
+      <rect x="240" y="0" width="240" height="36" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/>
+      <text x="360" y="23" fill="#475569" font-size="11" font-weight="700" text-anchor="middle">2. Question Builder (25)</text>
+
+      <rect x="490" y="0" width="280" height="36" rx="8" fill="#2563EB"/>
+      <text x="630" y="23" fill="#FFFFFF" font-size="11" font-weight="800" text-anchor="middle">3. Live Proctor &amp; Release Results (4)</text>
+
+      <rect x="780" y="0" width="215" height="36" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/>
+      <text x="887" y="23" fill="#475569" font-size="11" font-weight="700" text-anchor="middle">4. Timing, Rules &amp; Header</text>
+    </g>
+
+    <!-- Top Half of Right Studio: Structured Audience & Available Learners Selector -->
+    <g transform="translate(524, 146)">
+      <rect width="1000" height="246" rx="12" fill="#FFFFFF" stroke="#E2E8F0"/>
+      <text x="20" y="28" fill="#0F172A" font-size="13" font-weight="800">STEP 1 · RECIPIENT AUDIENCE &amp; AVAILABLE LEARNERS LIST (NO SCATTERED CHECKBOXES)</text>
+
+      <!-- Segmented Category Switcher -->
+      <rect x="20" y="42" width="490" height="34" rx="8" fill="#F1F5F9"/>
+      <rect x="24" y="46" width="150" height="26" rx="6" fill="#FFFFFF"/>
+      <text x="99" y="63" fill="#0F172A" font-size="10" font-weight="800" text-anchor="middle">All Available (32)</text>
+      <text x="260" y="63" fill="#1D4ED8" font-size="10" font-weight="700" text-anchor="middle">School-Assigned (26)</text>
+      <text x="425" y="63" fill="#7E22CE" font-size="10" font-weight="700" text-anchor="middle">Private Learners (6)</text>
+
+      <!-- Search Input -->
+      <rect x="526" y="42" width="310" height="34" rx="8" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="542" y="63" fill="#94A3B8" font-size="10">Filter learner by name, grade, or school...</text>
+      <rect x="848" y="42" width="132" height="34" rx="8" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="914" y="63" fill="#1D4ED8" font-size="10" font-weight="700" text-anchor="middle">Select Current View</text>
+
+      <!-- Clean Structured List Rows -->
+      <g transform="translate(20, 88)">
+        <!-- Row 1 -->
+        <rect x="0" y="0" width="960" height="44" rx="8" fill="#EFF6FF" stroke="#BFDBFE"/>
+        <circle cx="24" cy="22" r="13" fill="#2563EB"/>
+        <text x="24" y="26" fill="#FFFFFF" font-size="11" font-weight="800" text-anchor="middle">C</text>
+        <text x="48" y="20" fill="#0F172A" font-size="12" font-weight="800">Charis Eghan</text>
+        <rect x="145" y="7" width="115" height="18" rx="4" fill="#DBEAFE"/>
+        <text x="202" y="19" fill="#1D4ED8" font-size="9" font-weight="800" text-anchor="middle">SCHOOL-ASSIGNED</text>
+        <text x="48" y="35" fill="#475569" font-size="10">Year 2 / Grade 2 · Sapphire Explorer Montessori School</text>
+        <rect x="850" y="9" width="96" height="26" rx="6" fill="#2563EB"/>
+        <text x="898" y="26" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">✓ Assigned</text>
+
+        <!-- Row 2 -->
+        <rect x="0" y="50" width="960" height="44" rx="8" fill="#FAF5FF" stroke="#E9D5FF"/>
+        <circle cx="24" cy="72" r="13" fill="#7E22CE"/>
+        <text x="24" y="76" fill="#FFFFFF" font-size="11" font-weight="800" text-anchor="middle">J</text>
+        <text x="48" y="70" fill="#0F172A" font-size="12" font-weight="800">Jayden Torru</text>
+        <rect x="145" y="57" width="115" height="18" rx="4" fill="#F3E8FF"/>
+        <text x="202" y="69" fill="#7E22CE" font-size="9" font-weight="800" text-anchor="middle">PRIVATE LEARNER</text>
+        <text x="48" y="85" fill="#475569" font-size="10">Grade 5 · Parent Linked: Eno Torru (gifttorru@gmail.com)</text>
+        <rect x="850" y="59" width="96" height="26" rx="6" fill="#F1F5F9" stroke="#CBD5E1"/>
+        <text x="898" y="76" fill="#334155" font-size="10" font-weight="700" text-anchor="middle">Click to Assign</text>
+
+        <!-- Row 3 -->
+        <rect x="0" y="100" width="960" height="44" rx="8" fill="#FFFFFF" stroke="#E2E8F0"/>
+        <circle cx="24" cy="122" r="13" fill="#DBEAFE"/>
+        <text x="24" y="126" fill="#1D4ED8" font-size="11" font-weight="800" text-anchor="middle">Y</text>
+        <text x="48" y="120" fill="#0F172A" font-size="12" font-weight="800">Yiskah</text>
+        <rect x="105" y="107" width="115" height="18" rx="4" fill="#DBEAFE"/>
+        <text x="162" y="119" fill="#1D4ED8" font-size="9" font-weight="800" text-anchor="middle">SCHOOL-ASSIGNED</text>
+        <text x="48" y="135" fill="#475569" font-size="10">Year 2 / Grade 2 · Sapphire Explorer Montessori School</text>
+        <rect x="850" y="109" width="96" height="26" rx="6" fill="#2563EB"/>
+        <text x="898" y="126" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">✓ Assigned</text>
+      </g>
+    </g>
+
+    <!-- Bottom Half of Right Studio: Live Proctor & Instant Result Release Table -->
+    <g transform="translate(524, 408)">
+      <rect width="1000" height="380" rx="12" fill="#FFFFFF" stroke="#E2E8F0"/>
+      <rect x="0" y="0" width="1000" height="54" rx="12" fill="#F8FAFC" stroke="#E2E8F0"/>
+      <text x="20" y="25" fill="#0F172A" font-size="13" font-weight="800">LIVE PROCTORING, SUBMISSIONS &amp; 1-CLICK RESULT RELEASE</text>
+      <text x="20" y="42" fill="#64748B" font-size="10">Sub-Tabs: [All Attempts (4)] · [Pending Release (4)] · [Released (0)] · [Question Analytics]</text>
+
+      <!-- Batch Release CTA -->
+      <rect x="756" y="11" width="224" height="32" rx="8" fill="#16A34A"/>
+      <text x="868" y="31" fill="#FFFFFF" font-size="11" font-weight="800" text-anchor="middle">✓ Release All 4 Results Now</text>
+
+      <!-- Table Header -->
+      <rect x="20" y="68" width="960" height="32" rx="6" fill="#F1F5F9"/>
+      <text x="36" y="88" fill="#475569" font-size="10" font-weight="800">SCHOLAR NAME</text>
+      <text x="260" y="88" fill="#475569" font-size="10" font-weight="800">CATEGORY &amp; SCHOOL</text>
+      <text x="490" y="88" fill="#475569" font-size="10" font-weight="800">SCORE</text>
+      <text x="610" y="88" fill="#475569" font-size="10" font-weight="800">STATUS</text>
+      <text x="850" y="88" fill="#475569" font-size="10" font-weight="800" text-anchor="end">ACTIONS</text>
+
+      <!-- Attempt Row 1 -->
+      <g transform="translate(20, 108)">
+        <rect width="960" height="54" rx="8" fill="#FFFFFF" stroke="#E2E8F0"/>
+        <text x="16" y="24" fill="#0F172A" font-size="12" font-weight="800">Charis Eghan</text>
+        <text x="16" y="40" fill="#64748B" font-size="10">Submitted Oct 2026 · 25/25 Answered</text>
+        <text x="240" y="30" fill="#1D4ED8" font-size="11" font-weight="700">School · Sapphire Explorer</text>
+        <text x="470" y="30" fill="#0F172A" font-size="13" font-weight="800" font-family="monospace">88 / 100 (88%)</text>
+        <text x="590" y="30" fill="#B45309" font-size="11" font-weight="700">Submitted · Unreleased</text>
+        <rect x="730" y="13" width="104" height="28" rx="6" fill="#F8FAFC" stroke="#CBD5E1"/>
+        <text x="782" y="31" fill="#334155" font-size="10" font-weight="700" text-anchor="middle">Inspect Script</text>
+        <rect x="842" y="13" width="104" height="28" rx="6" fill="#16A34A"/>
+        <text x="894" y="31" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">Release Result</text>
+      </g>
+
+      <!-- Attempt Row 2 -->
+      <g transform="translate(20, 170)">
+        <rect width="960" height="54" rx="8" fill="#FFFFFF" stroke="#E2E8F0"/>
+        <text x="16" y="24" fill="#0F172A" font-size="12" font-weight="800">Yiskah</text>
+        <text x="16" y="40" fill="#64748B" font-size="10">Submitted Oct 2026 · 25/25 Answered</text>
+        <text x="240" y="30" fill="#1D4ED8" font-size="11" font-weight="700">School · Sapphire Explorer</text>
+        <text x="470" y="30" fill="#0F172A" font-size="13" font-weight="800" font-family="monospace">92 / 100 (92%)</text>
+        <text x="590" y="30" fill="#B45309" font-size="11" font-weight="700">Submitted · Unreleased</text>
+        <rect x="730" y="13" width="104" height="28" rx="6" fill="#F8FAFC" stroke="#CBD5E1"/>
+        <text x="782" y="31" fill="#334155" font-size="10" font-weight="700" text-anchor="middle">Inspect Script</text>
+        <rect x="842" y="13" width="104" height="28" rx="6" fill="#16A34A"/>
+        <text x="894" y="31" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">Release Result</text>
+      </g>
+
+      <!-- Attempt Row 3 -->
+      <g transform="translate(20, 232)">
+        <rect width="960" height="54" rx="8" fill="#FFFFFF" stroke="#E2E8F0"/>
+        <text x="16" y="24" fill="#0F172A" font-size="12" font-weight="800">Kamsiyochukwu</text>
+        <text x="16" y="40" fill="#64748B" font-size="10">Submitted Oct 2026 · 25/25 Answered</text>
+        <text x="240" y="30" fill="#1D4ED8" font-size="11" font-weight="700">School · Sapphire Explorer</text>
+        <text x="470" y="30" fill="#0F172A" font-size="13" font-weight="800" font-family="monospace">84 / 100 (84%)</text>
+        <text x="590" y="30" fill="#B45309" font-size="11" font-weight="700">Submitted · Unreleased</text>
+        <rect x="730" y="13" width="104" height="28" rx="6" fill="#F8FAFC" stroke="#CBD5E1"/>
+        <text x="782" y="31" fill="#334155" font-size="10" font-weight="700" text-anchor="middle">Inspect Script</text>
+        <rect x="842" y="13" width="104" height="28" rx="6" fill="#16A34A"/>
+        <text x="894" y="31" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">Release Result</text>
+      </g>
+
+      <!-- Attempt Row 4 -->
+      <g transform="translate(20, 294)">
+        <rect width="960" height="54" rx="8" fill="#FFFFFF" stroke="#E2E8F0"/>
+        <text x="16" y="24" fill="#0F172A" font-size="12" font-weight="800">Tobe</text>
+        <text x="16" y="40" fill="#64748B" font-size="10">Submitted Oct 2026 · 25/25 Answered</text>
+        <text x="240" y="30" fill="#1D4ED8" font-size="11" font-weight="700">School · Sapphire Explorer</text>
+        <text x="470" y="30" fill="#0F172A" font-size="13" font-weight="800" font-family="monospace">80 / 100 (80%)</text>
+        <text x="590" y="30" fill="#B45309" font-size="11" font-weight="700">Submitted · Unreleased</text>
+        <rect x="730" y="13" width="104" height="28" rx="6" fill="#F8FAFC" stroke="#CBD5E1"/>
+        <text x="782" y="31" fill="#334155" font-size="10" font-weight="700" text-anchor="middle">Inspect Script</text>
+        <rect x="842" y="13" width="104" height="28" rx="6" fill="#16A34A"/>
+        <text x="894" y="31" fill="#FFFFFF" font-size="10" font-weight="800" text-anchor="middle">Release Result</text>
+      </g>
+    </g>
+  </g>
+</svg>
