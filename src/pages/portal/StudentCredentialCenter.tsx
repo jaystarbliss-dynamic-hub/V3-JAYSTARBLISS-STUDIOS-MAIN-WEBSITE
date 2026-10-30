@@ -12,6 +12,8 @@ import { auth, db, getStandbyFirestore } from '../../lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { CANONICAL_CLASSES, formatNormalizedClassDisplay } from '../../lib/classes';
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
+import { fetchAcademicStudentsFallback } from '../../lib/academicFallback';
+import { getEffectiveAuth } from '../../utils/impersonation';
 
 type Props = { role: 'staff' | 'school' };
 type Student = { 
@@ -25,6 +27,8 @@ type Student = {
   grade?: string; 
   schoolName?: string;
   schoolId?: string;
+  parentName?: string;
+  assignmentCategory?: 'school' | 'private';
   track?: string;
   programName?: string;
   accessCode?: string;
@@ -39,7 +43,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [issued, setIssued] = useState<Record<string, { username: string; accessCode: string; portal: string }>>({});
-  const [filterTab, setFilterTab] = useState<'all' | 'classes' | 'tracks'>('all');
+  const [filterTab, setFilterTab] = useState<'all' | 'school' | 'private' | 'classes' | 'tracks'>('all');
   const [selectedClass, setSelectedClass] = useState('All Classes');
   const [selectedTrack, setSelectedTrack] = useState('All Tracks');
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,11 +55,39 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
 
     try {
       await migrateAllFirestoreClasses().catch(() => null);
+      const effective = getEffectiveAuth();
       const currentUser = auth.currentUser;
-      const targetSchoolId = sessionStorage.getItem('schoolId') || localStorage.getItem('jaystar_cached_school_id') || (isSchool ? currentUser?.uid : '') || '';
+      const targetSchoolId =
+        effective.effectiveSchoolId ||
+        sessionStorage.getItem('schoolId') ||
+        localStorage.getItem('jaystar_cached_school_id') ||
+        (isSchool ? effective.effectiveUid || currentUser?.uid : '') ||
+        '';
 
-      if (currentUser) {
-        // 1. Fetch from scoped backend endpoint
+      // For staff/tutors, always load all assigned students (both school-assigned and private learners)
+      if (!isSchool) {
+        const tutorStudents = await fetchAcademicStudentsFallback().catch(() => []);
+        tutorStudents.forEach((s) => {
+          combinedMap.set(s.id, {
+            id: s.id,
+            fullName: s.fullName,
+            studentName: s.fullName,
+            username: s.username || s.id,
+            class: formatNormalizedClassDisplay(s.class || s.grade, 'Grade 1'),
+            schoolName: s.schoolName || '',
+            schoolId: s.schoolId || '',
+            parentName: s.parentName || '',
+            assignmentCategory: s.assignmentCategory,
+            track: s.track || s.plan || 'Digital Literacy Junior',
+            accessCode: s.accessCode,
+            portalAccessEnabled: s.portalAccessEnabled !== false,
+            accountStatus: s.accountStatus || 'ACTIVE',
+          });
+        });
+      }
+
+      if (currentUser && isSchool) {
+        // 1. Fetch from scoped backend endpoint for school role
         try {
           const token = await currentUser.getIdToken();
           const url = '/.netlify/functions/school-students' + (targetSchoolId ? `?schoolId=${encodeURIComponent(targetSchoolId)}` : '');
@@ -64,7 +96,6 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
           if (res.ok && Array.isArray(resJson?.students)) {
             resJson.students.forEach((s: any) => {
               if (s && s.id) {
-                // If school portal, strictly enforce schoolId match
                 if (isSchool && targetSchoolId && s.schoolId !== targetSchoolId) return;
 
                 const existingCode = String(s.accessCode || s.passcode || s.code || '').trim();
@@ -76,6 +107,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                   class: formatNormalizedClassDisplay(s.class || s.classLevel || s.grade, 'Grade 1'),
                   schoolName: s.schoolName || '',
                   schoolId: s.schoolId || targetSchoolId,
+                  assignmentCategory: 'school',
                   track: s.track || s.programName || s.plan || 'Digital Literacy Junior',
                   accessCode: existingCode || undefined,
                   portalAccessEnabled: s.portalAccessEnabled !== false,
@@ -136,7 +168,6 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                 const data = d.data();
                 const key = String(data.studentDocId || d.id);
                 const sId = String(data.schoolId || data.school_id || '').trim();
-                // Strictly require matching schoolId
                 if (sId !== targetSchoolId) return;
 
                 if (isDuplicate(data, d.id)) return;
@@ -151,6 +182,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                   class: formatNormalizedClassDisplay(data.class || data.classLevel || data.grade, 'Grade 1'),
                   schoolName: data.schoolName || '',
                   schoolId: targetSchoolId,
+                  assignmentCategory: 'school',
                   track: data.track || data.programName || data.plan || 'Digital Literacy Junior',
                   accessCode: existingCode || undefined,
                   portalAccessEnabled: data.portalAccessEnabled !== false,
@@ -221,6 +253,10 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
     return students.filter(student => {
       const studentClass = formatNormalizedClassDisplay(student.class || student.classLevel || student.grade, 'Grade 1');
       const studentTrack = (student.track || student.programName || 'Digital Literacy Junior').trim();
+      const isSchoolStudent = student.assignmentCategory === 'school' || Boolean(student.schoolId && student.schoolId !== 'private');
+
+      if (filterTab === 'school' && !isSchoolStudent) return false;
+      if (filterTab === 'private' && isSchoolStudent) return false;
 
       if (filterTab === 'classes' && selectedClass !== 'All Classes' && studentClass !== selectedClass) {
         return false;
@@ -236,7 +272,9 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
         const user = String(student.username || '').toLowerCase();
         const cl = String(studentClass).toLowerCase();
         const tr = String(studentTrack).toLowerCase();
-        if (!name.includes(queryStr) && !user.includes(queryStr) && !cl.includes(queryStr) && !tr.includes(queryStr)) {
+        const sch = String(student.schoolName || '').toLowerCase();
+        const par = String(student.parentName || '').toLowerCase();
+        if (!name.includes(queryStr) && !user.includes(queryStr) && !cl.includes(queryStr) && !tr.includes(queryStr) && !sch.includes(queryStr) && !par.includes(queryStr)) {
           return false;
         }
       }
@@ -514,12 +552,12 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
           </div>
         </div>
 
-        {/* 3 Dedicated Filter Tabs */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl w-full sm:w-fit">
+        {/* Dedicated Filter Tabs */}
+        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl w-full sm:w-fit">
           <button
             type="button"
             onClick={() => { setFilterTab('all'); setSelectedClass('All Classes'); setSelectedTrack('All Tracks'); }}
-            className={`flex-1 sm:flex-initial px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
               filterTab === 'all'
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -527,10 +565,36 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
           >
             All Students ({students.length})
           </button>
+          {!isSchool && (
+            <>
+              <button
+                type="button"
+                onClick={() => setFilterTab('school')}
+                className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  filterTab === 'school'
+                    ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 font-black shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                School-Assigned ({students.filter(s => s.assignmentCategory === 'school' || Boolean(s.schoolId)).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterTab('private')}
+                className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  filterTab === 'private'
+                    ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 font-black shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Private Learners ({students.filter(s => s.assignmentCategory === 'private' || (!s.schoolId && s.assignmentCategory !== 'school')).length})
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setFilterTab('classes')}
-            className={`flex-1 sm:flex-initial px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
               filterTab === 'classes'
                 ? 'bg-white dark:bg-slate-900 text-brand-red font-black shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -541,7 +605,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
           <button
             type="button"
             onClick={() => setFilterTab('tracks')}
-            className={`flex-1 sm:flex-initial px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
               filterTab === 'tracks'
                 ? 'bg-white dark:bg-slate-900 text-brand-red font-black shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -653,6 +717,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
             const credential = issued[student.id];
             const name = student.fullName || student.studentName || student.name || 'Student';
             const studentClass = student.class || student.classLevel || student.grade || 'General';
+            const isPrivate = student.assignmentCategory === 'private' || (!student.schoolId && student.assignmentCategory !== 'school');
 
             return (
               <article 
@@ -661,10 +726,19 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-base font-black text-slate-900 dark:text-white">{name}</h3>
                       <span className="text-xs font-bold text-slate-500">
                         · {studentClass}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${
+                        isPrivate
+                          ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800'
+                          : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
+                      }`}>
+                        {isPrivate
+                          ? `Private Learner${student.parentName ? ` · ${student.parentName}` : ''}`
+                          : `School-Assigned${student.schoolName ? ` · ${student.schoolName}` : ''}`}
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-slate-500 font-mono">

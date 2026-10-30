@@ -26,31 +26,26 @@ function resolveInitialDatabaseId(): string {
   try {
     if (typeof window !== "undefined" && window.localStorage) {
       const saved = window.localStorage.getItem(ACTIVE_DB_STORAGE_KEY)?.trim();
-      if (saved === DEFAULT_DATABASE_ID || saved === LEGACY_NAMED_DATABASE_ID) {
-        return saved;
+      if (saved === LEGACY_NAMED_DATABASE_ID) {
+        window.localStorage.setItem(ACTIVE_DB_STORAGE_KEY, DEFAULT_DATABASE_ID);
       }
     }
   } catch {
     // ignore storage access errors
   }
-  if (envDbId && String(envDbId).trim()) {
-    return String(envDbId).trim();
-  }
   return DEFAULT_DATABASE_ID;
 }
 
 export const ACTIVE_DATABASE_ID = resolveInitialDatabaseId();
-export const STANDBY_DATABASE_ID =
-  ACTIVE_DATABASE_ID === DEFAULT_DATABASE_ID ? LEGACY_NAMED_DATABASE_ID : DEFAULT_DATABASE_ID;
+export const STANDBY_DATABASE_ID = DEFAULT_DATABASE_ID;
 const PRIMARY_DATABASE_ID = ACTIVE_DATABASE_ID;
 
 export function getActiveDatabaseId(): string {
   return ACTIVE_DATABASE_ID;
 }
 
-export function setActiveDatabaseId(nextDbId: string, reload = true): void {
-  const normalized =
-    nextDbId === LEGACY_NAMED_DATABASE_ID ? LEGACY_NAMED_DATABASE_ID : DEFAULT_DATABASE_ID;
+export function setActiveDatabaseId(_nextDbId: string, reload = true): void {
+  const normalized = DEFAULT_DATABASE_ID;
   try {
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.setItem(ACTIVE_DB_STORAGE_KEY, normalized);
@@ -152,23 +147,16 @@ const defaultDb = db;
 
 let standbyDbInstance: ReturnType<typeof getFirestore> | null = null;
 export function getStandbyFirestore(): ReturnType<typeof getFirestore> {
-  if (!standbyDbInstance) {
-    standbyDbInstance = createFirestoreInstance(STANDBY_DATABASE_ID);
-  }
-  return standbyDbInstance;
+  return db;
 }
 
-export function getFirestoreById(databaseId: string): ReturnType<typeof getFirestore> {
-  if (databaseId === ACTIVE_DATABASE_ID) return db;
-  return getStandbyFirestore();
+export function getFirestoreById(_databaseId: string): ReturnType<typeof getFirestore> {
+  return db;
 }
 
 export const getClientDatabases = () => [db];
 
-export const getAllClientDatabases = () => {
-  const standby = getStandbyFirestore();
-  return standby && standby !== db ? [db, standby] : [db];
-};
+export const getAllClientDatabases = () => [db];
 
 // Initialize Auth with multi-tier persistence (localStorage -> indexedDB -> sessionStorage -> memory)
 // Note: browserPopupRedirectResolver is passed on-demand to signInWithPopup to avoid eager COOP window.closed checks

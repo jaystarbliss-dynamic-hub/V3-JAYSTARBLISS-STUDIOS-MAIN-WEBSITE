@@ -38,18 +38,36 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
         const usersList: ImpersonationTarget[] = [];
         const seenIds = new Set<string>();
 
-        // 1. Fetch from 'users' collection
+        // 1. Fetch from 'users' & 'parents' collections
         try {
-          const userSnaps = await getDocs(collection(db, 'users'));
+          const [userSnaps, parentSnaps] = await Promise.all([
+            getDocs(collection(db, 'users')),
+            getDocs(collection(db, 'parents')).catch(() => ({ docs: [] } as any))
+          ]);
+          const parentIds = new Set<string>();
+          const parentEmails = new Set<string>();
+          parentSnaps.docs.forEach((pDoc: any) => {
+            parentIds.add(pDoc.id);
+            const pd = pDoc.data() || {};
+            if (pd.uid) parentIds.add(String(pd.uid));
+            if (pd.email) parentEmails.add(String(pd.email).toLowerCase().trim());
+          });
+
           userSnaps.forEach(docSnap => {
             const d = docSnap.data();
+            if (d.isDuplicate) return;
             const id = docSnap.id;
+            const emailKey = (d.email || '').toLowerCase().trim();
+            if (emailKey && seenIds.has(emailKey)) return;
             seenIds.add(id);
             if (d.userId) seenIds.add(d.userId);
             if (d.studentDocId) seenIds.add(d.studentDocId);
-            if (d.email) seenIds.add(d.email.toLowerCase().trim());
+            if (emailKey) seenIds.add(emailKey);
 
-            const role = String(d.role || 'STUDENT').toUpperCase();
+            let role = String(d.role || 'STUDENT').toUpperCase();
+            if (parentIds.has(id) || (emailKey && parentEmails.has(emailKey)) || d.isParent === true) {
+              role = 'PARENT';
+            }
             usersList.push({
               id: id,
               uid: id,

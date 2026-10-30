@@ -49,7 +49,7 @@ const PROTECTED_EMAILS = [
   'admin@jaystar.com'
 ];
 
-type RoleCategory = 'ALL' | 'STUDENT' | 'PARENT' | 'STAFF' | 'ADMIN';
+type RoleCategory = 'ALL' | 'STUDENT' | 'PARENT' | 'STAFF' | 'SCHOOL' | 'ADMIN';
 
 const AdminUsers: React.FC = () => {
   const navigate = useNavigate();
@@ -98,8 +98,84 @@ const AdminUsers: React.FC = () => {
   const loadUsers = async () => {
     setLoading(true);
     try {
-      const snapshot = await getDocs(collection(db, 'users'));
-      setUsers(snapshot.docs.map((userDoc) => ({ id: userDoc.id, ...userDoc.data() })));
+      const [usersSnap, parentsSnap, schoolsSnap] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'parents')).catch(() => ({ docs: [] } as any)),
+        getDocs(collection(db, 'schools')).catch(() => ({ docs: [] } as any)),
+      ]);
+
+      const parentIds = new Set<string>();
+      const parentEmails = new Set<string>();
+      parentsSnap.docs.forEach((pDoc: any) => {
+        parentIds.add(pDoc.id);
+        const pd = pDoc.data() || {};
+        if (pd.uid) parentIds.add(String(pd.uid));
+        if (pd.email) parentEmails.add(String(pd.email).toLowerCase().trim());
+      });
+
+      const schoolIds = new Set<string>();
+      const schoolEmails = new Set<string>();
+      schoolsSnap.docs.forEach((sDoc: any) => {
+        schoolIds.add(sDoc.id);
+        const sd = sDoc.data() || {};
+        if (sd.email) schoolEmails.add(String(sd.email).toLowerCase().trim());
+        if (sd.adminEmail) schoolEmails.add(String(sd.adminEmail).toLowerCase().trim());
+      });
+
+      const rawDocs = usersSnap.docs
+        .map((userDoc) => ({ id: userDoc.id, ...userDoc.data() }))
+        .filter((u: any) => !u.isDuplicate);
+
+      // Deduplicate by email (preferring Firebase Auth UID docs over email-named or legacy docs)
+      const byEmail = new Map<string, any>();
+      const resultList: any[] = [];
+
+      rawDocs.forEach((u: any) => {
+        const emailLower = String(u.email || '').toLowerCase().trim();
+        const isProtected = PROTECTED_EMAILS.includes(emailLower);
+
+        // Enforce strict RBAC role classification so parents never leak into STAFF or ADMIN
+        let effectiveRole = String(u.role || 'user').toLowerCase().trim();
+        if (!isProtected) {
+          if (
+            parentIds.has(u.id) ||
+            (emailLower && parentEmails.has(emailLower)) ||
+            u.isParent === true ||
+            (Array.isArray(u.children) && u.children.length > 0 && effectiveRole !== 'admin' && effectiveRole !== 'super_admin')
+          ) {
+            effectiveRole = 'parent';
+          } else if (
+            schoolIds.has(u.id) ||
+            (emailLower && schoolEmails.has(emailLower) && effectiveRole !== 'admin' && effectiveRole !== 'super_admin')
+          ) {
+            effectiveRole = 'school';
+          }
+        }
+
+        const normalizedUser = {
+          ...u,
+          role: effectiveRole,
+        };
+
+        if (!emailLower) {
+          resultList.push(normalizedUser);
+          return;
+        }
+
+        const existing = byEmail.get(emailLower);
+        if (!existing) {
+          byEmail.set(emailLower, normalizedUser);
+        } else {
+          // Prefer real UID document (not containing '@' or starting with 'parent_')
+          const existingIsSynthetic = existing.id.includes('@') || existing.id.startsWith('parent_');
+          const currentIsSynthetic = normalizedUser.id.includes('@') || normalizedUser.id.startsWith('parent_');
+          if (existingIsSynthetic && !currentIsSynthetic) {
+            byEmail.set(emailLower, { ...existing, ...normalizedUser, id: normalizedUser.id, role: effectiveRole });
+          }
+        }
+      });
+
+      setUsers([...Array.from(byEmail.values()), ...resultList]);
     } catch (error) {
       console.error('Error fetching users:', error);
       toast.error('Unable to load user records.');
@@ -432,12 +508,13 @@ const AdminUsers: React.FC = () => {
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
-      // Category filter
+      // Strict RBAC Category filter
       const userRole = String(u.role || 'user').toUpperCase();
       if (activeCategory === 'STUDENT' && userRole !== 'STUDENT') return false;
       if (activeCategory === 'PARENT' && userRole !== 'PARENT') return false;
-      if (activeCategory === 'STAFF' && userRole !== 'STAFF' && userRole !== 'TUTOR') return false;
-      if (activeCategory === 'ADMIN' && !userRole.includes('ADMIN') && userRole !== 'SCHOOL') return false;
+      if (activeCategory === 'STAFF' && !['STAFF', 'TUTOR', 'INSTRUCTOR', 'TEACHER', 'FACULTY'].includes(userRole)) return false;
+      if (activeCategory === 'SCHOOL' && userRole !== 'SCHOOL') return false;
+      if (activeCategory === 'ADMIN' && !['ADMIN', 'SUPER_ADMIN', 'SUPERADMIN'].includes(userRole)) return false;
 
       // Text search
       if (!searchQuery.trim()) return true;
@@ -450,15 +527,16 @@ const AdminUsers: React.FC = () => {
   }, [users, activeCategory, searchQuery]);
 
   const counts = useMemo(() => {
-    let student = 0, parent = 0, staff = 0, admin = 0;
+    let student = 0, parent = 0, staff = 0, school = 0, admin = 0;
     users.forEach((u) => {
       const r = String(u.role || 'user').toUpperCase();
       if (r === 'STUDENT') student += 1;
       else if (r === 'PARENT') parent += 1;
-      else if (r === 'STAFF' || r === 'TUTOR') staff += 1;
-      else if (r.includes('ADMIN') || r === 'SCHOOL') admin += 1;
+      else if (['STAFF', 'TUTOR', 'INSTRUCTOR', 'TEACHER', 'FACULTY'].includes(r)) staff += 1;
+      else if (r === 'SCHOOL') school += 1;
+      else if (['ADMIN', 'SUPER_ADMIN', 'SUPERADMIN'].includes(r)) admin += 1;
     });
-    return { all: users.length, student, parent, staff, admin };
+    return { all: users.length, student, parent, staff, school, admin };
   }, [users]);
 
   return (
@@ -619,107 +697,67 @@ const AdminUsers: React.FC = () => {
         <button onClick={exportToCSV} disabled={users.length === 0} className="min-h-10 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-200"><span className="inline-flex items-center gap-2"><Download size={14} /> Export CSV</span></button>
       </div>
 
-      {/* Filter Icon Dropdown & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-        <div className="relative flex-1">
-          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, email, or role..."
-            className="w-full min-h-10 pl-9 pr-8 rounded-xl border border-gray-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 focus:ring-2 focus:ring-brand-red focus:border-brand-red outline-none shadow-2xs"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              aria-label="Clear search"
-            >
-              <X size={14} />
-            </button>
-          )}
+      {/* Open, Accessible RBAC Filter Bar & Search */}
+      <div className="rounded-2xl border border-gray-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-2xs space-y-3">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search user by name, email, or role..."
+              className="w-full min-h-10 pl-9 pr-8 rounded-xl border border-gray-200/90 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 focus:ring-2 focus:ring-brand-red focus:border-brand-red outline-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <div className="text-xs font-bold text-slate-500">
+            Showing <span className="text-slate-900 dark:text-white">{filteredUsers.length}</span> of {users.length} accounts
+          </div>
         </div>
 
-        {/* Filter Dropdown beside Search Bar */}
-        <div className="relative shrink-0" ref={filterMenuRef}>
-          <button
-            type="button"
-            onClick={() => setIsFilterOpen((prev) => !prev)}
-            aria-expanded={isFilterOpen}
-            className={`min-h-10 px-3.5 rounded-xl border text-xs font-bold inline-flex items-center gap-2 transition-all cursor-pointer ${
-              activeCategory !== 'ALL'
-                ? 'bg-brand-red text-white border-brand-red shadow-xs'
-                : 'bg-white dark:bg-slate-900 border-gray-200/90 dark:border-slate-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-800/80 shadow-2xs'
-            }`}
-          >
-            <Filter size={14} className={activeCategory !== 'ALL' ? 'text-white' : 'text-gray-400'} />
-            <span>
-              {activeCategory === 'ALL' ? 'All Users' :
-               activeCategory === 'STUDENT' ? 'Students' :
-               activeCategory === 'PARENT' ? 'Parents' :
-               activeCategory === 'STAFF' ? 'Staff' : 'Admins'}
-            </span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-              activeCategory !== 'ALL' ? 'bg-white/20 text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-400'
-            }`}>
-              {activeCategory === 'ALL' ? counts.all :
-               activeCategory === 'STUDENT' ? counts.student :
-               activeCategory === 'PARENT' ? counts.parent :
-               activeCategory === 'STAFF' ? counts.staff : counts.admin}
-            </span>
-            <ChevronDown size={14} className={`transition-transform ${isFilterOpen ? 'rotate-180' : ''}`} />
-          </button>
-
-          {isFilterOpen && (
-            <div className="absolute right-0 sm:left-auto top-full mt-1.5 w-56 rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl py-1.5 z-40 animate-fadeIn">
-              <div className="px-3 py-1.5 border-b border-gray-100 dark:border-slate-800/70 text-[10px] font-black uppercase tracking-wider text-gray-400 flex items-center justify-between">
-                <span>Filter Role Type</span>
-                {activeCategory !== 'ALL' && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveCategory('ALL'); setIsFilterOpen(false); }}
-                    className="text-brand-red hover:underline text-[10px] font-bold"
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
-              <div className="py-1">
-                {[
-                  { id: 'ALL', label: 'All Users', count: counts.all },
-                  { id: 'STUDENT', label: 'Students', count: counts.student },
-                  { id: 'PARENT', label: 'Parents', count: counts.parent },
-                  { id: 'STAFF', label: 'Staff & Tutors', count: counts.staff },
-                  { id: 'ADMIN', label: 'Admins & Schools', count: counts.admin },
-                ].map((tab) => {
-                  const isSelected = activeCategory === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveCategory(tab.id as RoleCategory);
-                        setIsFilterOpen(false);
-                      }}
-                      className={`w-full px-3 py-2 text-xs font-semibold text-left flex items-center justify-between transition-colors ${
-                        isSelected
-                          ? 'bg-red-50/80 dark:bg-red-950/40 text-brand-red font-bold'
-                          : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-800/60'
-                      }`}
-                    >
-                      <span>{tab.label}</span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="text-[10px] text-gray-400 font-mono">({tab.count})</span>
-                        {isSelected && <Check size={14} className="text-brand-red" />}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+        {/* Accessible Segmented Role Filter Tabs */}
+        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl">
+          {[
+            { id: 'ALL', label: 'All Users', count: counts.all },
+            { id: 'STUDENT', label: 'Students', count: counts.student },
+            { id: 'PARENT', label: 'Parents', count: counts.parent },
+            { id: 'STAFF', label: 'Staff & Tutors', count: counts.staff },
+            { id: 'SCHOOL', label: 'Partner Schools', count: counts.school },
+            { id: 'ADMIN', label: 'Admins', count: counts.admin },
+          ].map((tab) => {
+            const isSelected = activeCategory === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveCategory(tab.id as RoleCategory)}
+                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-2 ${
+                  isSelected
+                    ? 'bg-white dark:bg-slate-900 text-brand-red font-black shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono ${
+                  isSelected
+                    ? 'bg-red-50 text-brand-red dark:bg-red-950/50 dark:text-red-300'
+                    : 'bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

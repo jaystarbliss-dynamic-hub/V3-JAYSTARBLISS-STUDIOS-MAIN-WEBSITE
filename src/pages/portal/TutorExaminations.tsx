@@ -71,6 +71,11 @@ import {
   getSuggestedTutorRemark,
 } from "../../lib/documentHeaderTemplates";
 import DocumentHeaderCustomizerModal from "../../components/portal/DocumentHeaderCustomizerModal";
+import { getEffectiveAuth } from "../../utils/impersonation";
+import {
+  fetchAcademicStudentsFallback,
+  fetchAcademicSchoolsFallback,
+} from "../../lib/academicFallback";
 
 type ExistingExamItem = {
   id: string;
@@ -148,6 +153,9 @@ type EnrolledStudent = {
   class?: string;
   className?: string;
   schoolId?: string;
+  schoolName?: string;
+  parentName?: string;
+  assignmentCategory?: "school" | "private";
   isPrivate?: boolean;
 };
 
@@ -190,6 +198,8 @@ export default function TutorExaminations() {
   const [recipientMode, setRecipientMode] = useState<"SCHOOL_CLASS" | "PRIVATE_LEARNERS" | "MULTI_TARGET">("SCHOOL_CLASS");
   const [privateLearners, setPrivateLearners] = useState<EnrolledStudent[]>([]);
   const [targetStudentIds, setTargetStudentIds] = useState<string[]>([]);
+  const [studentCategoryTab, setStudentCategoryTab] = useState<"all" | "school" | "private">("all");
+  const [studentSearchFilter, setStudentSearchFilter] = useState<string>("");
   const [workTypeFilter, setWorkTypeFilter] = useState<"ALL" | AcademicWorkType>("ALL");
 
   // Core Metadata & Header Settings (Starts empty — no demo questions or fabricated titles)
@@ -509,35 +519,79 @@ export default function TutorExaminations() {
             }
           }
         });
+        // Load all assigned schools & students (both School-Assigned and Private Learners) via academicFallback
+        const effectiveAuth = getEffectiveAuth();
+        const [fallbackSchools, fallbackStudents] = await Promise.all([
+          fetchAcademicSchoolsFallback().catch(() => []),
+          fetchAcademicStudentsFallback({ scope: isAdmin ? "all" : "tutor" }).catch(() => []),
+        ]);
+
+        // Merge any fallback schools not already in schoolsList
+        const existingSchoolIds = new Set(schoolsList.map((s) => s.id));
+        fallbackSchools.forEach((fs: any) => {
+          if (fs.id && !existingSchoolIds.has(fs.id)) {
+            schoolsList.push({
+              id: fs.id,
+              name: resolvePartnerSchoolName(fs.name, fs.schoolName) || `Partner School (${fs.id})`,
+            });
+            existingSchoolIds.add(fs.id);
+          }
+        });
         schoolsList.sort((a, b) => a.name.localeCompare(b.name));
 
-        // Load assigned private learners for Private Learner / Multi-target recipient modes
+        const privateMap = new Map<string, EnrolledStudent>();
+        fallbackStudents.forEach((st: any) => {
+          const stClass = normalizeClassName(st.className || st.grade || st.class || "Grade 1");
+          const isPriv =
+            st.assignmentCategory === "private" ||
+            (!st.schoolId && st.assignmentCategory !== "school");
+          privateMap.set(st.id, {
+            id: st.id,
+            fullName: String(st.fullName || st.name || st.studentName || "Learner").trim(),
+            class: stClass,
+            className: stClass,
+            schoolId: String(st.schoolId || "").trim(),
+            schoolName: String(st.schoolName || "").trim(),
+            parentName: String(st.parentName || "").trim(),
+            assignmentCategory: isPriv ? "private" : "school",
+            isPrivate: isPriv,
+          });
+        });
+
+        // Also check direct collections in case of impersonation or newly added learners
         const [indStudentsSnap, stdStudentsSnap] = await Promise.all([
           getDocs(collection(db, "individualStudents")).catch(() => ({ docs: [] } as any)),
           getDocs(collection(db, "students")).catch(() => ({ docs: [] } as any)),
         ]);
-        const privateMap = new Map<string, EnrolledStudent>();
+        const effectiveUid = effectiveAuth.effectiveUid || currentUser.uid;
         [...(indStudentsSnap.docs || []), ...(stdStudentsSnap.docs || [])].forEach((d: any) => {
+          if (privateMap.has(d.id)) return;
           const st = d.data();
           const tutorMatch =
             isAdmin ||
             [st.tutorId, st.staffId, st.assignedTutorId, st.assignedStaffId, st.instructorId]
               .map((v) => String(v || "").trim())
-              .includes(currentUser.uid);
+              .includes(effectiveUid);
           if (!tutorMatch) return;
           const stClass = normalizeClassName(st.className || st.grade || st.class || "Grade 1");
+          const isPriv = !st.schoolId || d.ref?.parent?.id === "individualStudents";
           privateMap.set(d.id, {
             id: d.id,
             fullName: String(st.fullName || st.name || st.studentName || "Private Learner").trim(),
             class: stClass,
             className: stClass,
             schoolId: String(st.schoolId || "").trim(),
-            isPrivate: !st.schoolId || d.ref?.parent?.id === "individualStudents",
+            schoolName: String(st.schoolName || st.school || "").trim(),
+            parentName: String(st.parentName || "").trim(),
+            assignmentCategory: isPriv ? "private" : "school",
+            isPrivate: isPriv,
           });
         });
 
         if (isMounted) {
-          setPrivateLearners(Array.from(privateMap.values()));
+          setPrivateLearners(
+            Array.from(privateMap.values()).sort((a, b) => a.fullName.localeCompare(b.fullName))
+          );
           setAssignedSchools(schoolsList);
           if (schoolsList.length > 0 && !schoolId) {
             setSchoolId(schoolsList[0].id);
@@ -2031,61 +2085,182 @@ ANSWER KEY
           </div>
 
           {(recipientMode === "PRIVATE_LEARNERS" || recipientMode === "MULTI_TARGET") && (
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                  Select Authorised Private Learners ({targetStudentIds.length} selected)
-                </span>
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="text-xs font-black text-slate-900 dark:text-white">
+                    Available &amp; Assigned Learners ({targetStudentIds.length} selected)
+                  </span>
+                  <p className="text-[11px] text-slate-500">
+                    Switch between School-Assigned Students and Private Learners below, then click any row to assign.
+                  </p>
+                </div>
                 {privateLearners.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setTargetStudentIds(
-                        targetStudentIds.length === privateLearners.length
-                          ? []
-                          : privateLearners.map((p) => p.id)
-                      )
-                    }
-                    className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
-                  >
-                    {targetStudentIds.length === privateLearners.length ? "Clear all" : "Select all"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const visibleIds = privateLearners
+                          .filter((p) => {
+                            if (studentCategoryTab === "school") return !p.isPrivate;
+                            if (studentCategoryTab === "private") return Boolean(p.isPrivate);
+                            return true;
+                          })
+                          .map((p) => p.id);
+                        const allSelected = visibleIds.every((id) => targetStudentIds.includes(id));
+                        if (allSelected) {
+                          setTargetStudentIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+                        } else {
+                          setTargetStudentIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                    >
+                      Select / Clear Current View
+                    </button>
+                  </div>
                 )}
               </div>
+
+              {/* Segmented Category Tabs + Search */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1">
+                <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setStudentCategoryTab("all")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      studentCategoryTab === "all"
+                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                    }`}
+                  >
+                    All Available ({privateLearners.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudentCategoryTab("school")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      studentCategoryTab === "school"
+                        ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                    }`}
+                  >
+                    School-Assigned ({privateLearners.filter((p) => !p.isPrivate).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudentCategoryTab("private")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      studentCategoryTab === "private"
+                        ? "bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                    }`}
+                  >
+                    Private Learners ({privateLearners.filter((p) => p.isPrivate).length})
+                  </button>
+                </div>
+
+                <div className="relative sm:w-64">
+                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={studentSearchFilter}
+                    onChange={(e) => setStudentSearchFilter(e.target.value)}
+                    placeholder="Filter learner by name or grade..."
+                    className="w-full min-h-8 pl-8 pr-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
               {privateLearners.length === 0 ? (
-                <p className="text-xs text-slate-500">
-                  No individually assigned learners found for your tutor account.
-                </p>
+                <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 text-center text-xs text-slate-500">
+                  No assigned learners found for your tutor account.
+                </div>
               ) : (
-                <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                  {privateLearners.map((pl) => {
-                    const checked = targetStudentIds.includes(pl.id);
-                    return (
-                      <label
-                        key={pl.id}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs cursor-pointer transition-colors ${
-                          checked
-                            ? "border-blue-600 bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-200 font-semibold"
-                            : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() =>
+                <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                  {privateLearners
+                    .filter((pl) => {
+                      if (studentCategoryTab === "school" && pl.isPrivate) return false;
+                      if (studentCategoryTab === "private" && !pl.isPrivate) return false;
+                      if (studentSearchFilter.trim()) {
+                        const q = studentSearchFilter.toLowerCase().trim();
+                        const hay = `${pl.fullName} ${pl.class || ""} ${pl.schoolName || ""} ${pl.parentName || ""}`.toLowerCase();
+                        if (!hay.includes(q)) return false;
+                      }
+                      return true;
+                    })
+                    .map((pl) => {
+                      const selected = targetStudentIds.includes(pl.id);
+                      return (
+                        <button
+                          key={pl.id}
+                          type="button"
+                          onClick={() =>
                             setTargetStudentIds((prev) =>
                               prev.includes(pl.id)
                                 ? prev.filter((id) => id !== pl.id)
                                 : [...prev, pl.id]
                             )
                           }
-                          className="rounded border-slate-300 text-blue-600"
-                        />
-                        <span>{pl.fullName}</span>
-                        <span className="text-[10px] text-slate-400">({pl.class})</span>
-                      </label>
-                    );
-                  })}
+                          className={`w-full px-4 py-2.5 text-left flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                            selected
+                              ? "bg-blue-50/80 dark:bg-blue-950/40"
+                              : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div
+                              className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${
+                                selected
+                                  ? "bg-blue-600 text-white"
+                                  : pl.isPrivate
+                                  ? "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300"
+                                  : "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300"
+                              }`}
+                            >
+                              {pl.fullName.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                  {pl.fullName}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${
+                                    pl.isPrivate
+                                      ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800"
+                                      : "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
+                                  }`}
+                                >
+                                  {pl.isPrivate ? "Private Learner" : "School-Assigned"}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-500 truncate">
+                                {pl.class || "General"}
+                                {pl.isPrivate && pl.parentName ? ` · Parent: ${pl.parentName}` : ""}
+                                {!pl.isPrivate && pl.schoolName ? ` · ${pl.schoolName}` : ""}
+                              </div>
+                            </div>
+                          </div>
+
+                          <span
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold shrink-0 inline-flex items-center gap-1 ${
+                              selected
+                                ? "bg-blue-600 text-white"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                            }`}
+                          >
+                            {selected ? (
+                              <>
+                                <Check size={12} /> Assigned
+                              </>
+                            ) : (
+                              "Click to Select"
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
                 </div>
               )}
             </div>

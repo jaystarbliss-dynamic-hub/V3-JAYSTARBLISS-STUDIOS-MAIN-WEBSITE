@@ -120,9 +120,10 @@ const AdminStaff: React.FC = () => {
   const fetchStaffData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Concurrently fetch users, tutors, staff, applications, schools, access, students
+      // 1. Concurrently fetch users, parents, tutors, staff, applications, schools, access, students
       const [
         usersSnap,
+        parentsSnap,
         tutorsSnap,
         staffCollSnap,
         tutorAppsSnap,
@@ -134,6 +135,7 @@ const AdminStaff: React.FC = () => {
         resSnap
       ] = await Promise.all([
         getDocs(query(collection(db, 'users'), where('role', 'in', ['staff', 'tutor', 'STAFF', 'TUTOR', 'instructor', 'faculty', 'teacher']))).catch(() => ({ docs: [] } as any)),
+        getDocs(collection(db, 'parents')).catch(() => ({ docs: [] } as any)),
         getDocs(collection(db, 'tutors')).catch(() => ({ docs: [] } as any)),
         getDocs(collection(db, 'staff')).catch(() => ({ docs: [] } as any)),
         getDocs(collection(db, 'tutor_applications')).catch(() => ({ docs: [] } as any)),
@@ -144,6 +146,16 @@ const AdminStaff: React.FC = () => {
         getDocs(collection(db, 'individualStudents')).catch(() => ({ docs: [] } as any)),
         getDocs(query(collection(db, 'staffGeneralResources'), orderBy('timestamp', 'desc'))).catch(() => getDocs(collection(db, 'staffGeneralResources')).catch(() => ({ docs: [] } as any)))
       ]);
+
+      // Build strict parent exclusion sets so parents never leak into Staff/Faculty
+      const parentIdSet = new Set<string>();
+      const parentEmailSet = new Set<string>();
+      parentsSnap.docs.forEach((d: any) => {
+        parentIdSet.add(d.id);
+        const pd = d.data() || {};
+        if (pd.uid) parentIdSet.add(String(pd.uid));
+        if (pd.email) parentEmailSet.add(String(pd.email).toLowerCase().trim());
+      });
 
       // Map schools
       const schoolsMap = new Map<string, { id: string; name?: string; schoolCode?: string }>();
@@ -198,30 +210,59 @@ const AdminStaff: React.FC = () => {
 
       // All students deduplicated
       const allStudentsMap = new Map<string, any>();
-      schoolStudentsSnap.docs.forEach((d: any) => allStudentsMap.set(d.id, { id: d.id, studentType: 'school', ...d.data() }));
+      schoolStudentsSnap.docs.forEach((d: any) => {
+        const sd = d.data();
+        allStudentsMap.set(d.id, {
+          id: d.id,
+          studentType: sd.schoolId ? 'school' : (sd.studentType || 'school'),
+          ...sd
+        });
+      });
       indStudentsSnap.docs.forEach((d: any) => {
+        const sd = d.data();
         if (!allStudentsMap.has(d.id)) {
-          allStudentsMap.set(d.id, { id: d.id, studentType: 'individual', ...d.data() });
+          allStudentsMap.set(d.id, { id: d.id, studentType: 'individual', ...sd });
+        } else {
+          const existing = allStudentsMap.get(d.id);
+          allStudentsMap.set(d.id, { ...existing, ...sd, studentType: sd.schoolId ? 'school' : 'individual' });
         }
       });
       const allStudentDocs: any[] = Array.from(allStudentsMap.values());
 
-      // Combine user profiles with tutors & staff collections
+      // Combine user profiles with tutors & staff collections, excluding parents and duplicates
       const rawUsersMap = new Map<string, any>();
-      usersSnap.docs.forEach((d: any) => rawUsersMap.set(d.id, { id: d.id, ...d.data() }));
+      const seenEmails = new Map<string, string>();
 
-      // Also incorporate documents from `tutors` and `staff` if not present in users
-      tutorsSnap.docs.forEach((d: any) => {
-        if (!rawUsersMap.has(d.id)) {
-          rawUsersMap.set(d.id, { id: d.id, role: 'tutor', ...d.data() });
-        }
-      });
+      const addCandidate = (id: string, data: any, defaultRole: string) => {
+        if (!data || data.isDuplicate || data.isParent === true) return;
+        const emailLower = String(data.email || '').toLowerCase().trim();
+        const roleLower = String(data.role || defaultRole).toLowerCase().trim();
+        if (roleLower === 'parent' || roleLower === 'student' || roleLower === 'school') return;
+        if (parentIdSet.has(id) || (emailLower && parentEmailSet.has(emailLower))) return;
 
-      staffCollSnap.docs.forEach((d: any) => {
-        if (!rawUsersMap.has(d.id)) {
-          rawUsersMap.set(d.id, { id: d.id, role: 'staff', ...d.data() });
+        if (emailLower && seenEmails.has(emailLower)) {
+          const existingId = seenEmails.get(emailLower)!;
+          const existing = rawUsersMap.get(existingId);
+          rawUsersMap.set(existingId, {
+            ...data,
+            ...existing,
+            aliasTutorIds: Array.from(new Set([
+              existingId,
+              id,
+              ...(Array.isArray(existing?.aliasTutorIds) ? existing.aliasTutorIds : []),
+              ...(Array.isArray(data?.aliasTutorIds) ? data.aliasTutorIds : []),
+            ])),
+          });
+          return;
         }
-      });
+
+        rawUsersMap.set(id, { id, role: defaultRole, ...data });
+        if (emailLower) seenEmails.set(emailLower, id);
+      };
+
+      usersSnap.docs.forEach((d: any) => addCandidate(d.id, d.data(), 'staff'));
+      tutorsSnap.docs.forEach((d: any) => addCandidate(d.id, d.data(), 'tutor'));
+      staffCollSnap.docs.forEach((d: any) => addCandidate(d.id, d.data(), 'staff'));
 
       const rawStaffList = Array.from(rawUsersMap.values());
 
@@ -230,6 +271,14 @@ const AdminStaff: React.FC = () => {
         const staffEmail = (st.email || '').toLowerCase().trim();
         const tutorData = tutorsById.get(staffId) || tutorsByEmail.get(staffEmail) || {};
         const appData = tutorAppsById.get(staffId) || tutorAppsByEmail.get(staffEmail) || {};
+
+        // Build alias IDs for this tutor (including legacy tutor doc IDs with same email)
+        const aliasIds = new Set<string>([
+          staffId,
+          ...(Array.isArray(st.aliasTutorIds) ? st.aliasTutorIds.map(String) : []),
+          ...(Array.isArray(tutorData.aliasTutorIds) ? tutorData.aliasTutorIds.map(String) : []),
+        ]);
+        if (tutorData.id) aliasIds.add(String(tutorData.id));
 
         // Resolve Real Name across user, tutor, and application documents
         const mergedProfile = { ...appData, ...tutorData, ...st };
@@ -245,40 +294,53 @@ const AdminStaff: React.FC = () => {
         const specialization = st.specialization || tutorData.specialization || appData.specialization || 
                                st.track || st.department || (mergedSubjects.length > 0 ? mergedSubjects.join(', ') : 'Academic & Creative Track');
 
-        // Matched Students
-        const staffNameLower = fullName.toLowerCase();
-        const matchedStudents = allStudentDocs.filter(stu => {
-          if (stu.tutorId === staffId || stu.assignedTutorId === staffId || stu.staffId === staffId) return true;
-          if (Array.isArray(stu.assignedTutors) && stu.assignedTutors.length > 0) {
-            return stu.assignedTutors.some((at: any) => 
-              at.tutorId === staffId || 
-              (at.tutorEmail && at.tutorEmail.toLowerCase().trim() === staffEmail) ||
-              (at.tutorName && at.tutorName.toLowerCase().trim() === staffNameLower)
-            );
-          }
-          if (stu.tutorEmail && stu.tutorEmail.toLowerCase().trim() === staffEmail) return true;
-          if (stu.tutorName && stu.tutorName.toLowerCase().trim() === staffNameLower) return true;
-          return false;
-        }).map(stu => ({
-          id: stu.id,
-          fullName: stu.fullName || stu.name || stu.studentName || 'Student Cadet',
-          username: stu.username,
-          class: stu.class || stu.grade,
-          track: stu.track || stu.learningTrack,
-          studentType: stu.studentType,
-          schoolName: stu.schoolName || stu.school,
-          parentName: stu.parentName
-        }));
-
-        // Matched Schools
+        // Matched Schools (resolved first so school-assigned students are also linked)
+        const schoolIdsFromAccess: string[] = [];
+        aliasIds.forEach(aid => {
+          const sids = staffSchoolsMap.get(aid) || [];
+          schoolIdsFromAccess.push(...sids);
+        });
         const schoolIds = [
-          ...(staffSchoolsMap.get(staffId) || []),
-          ...(Array.isArray(st.schoolIds) ? st.schoolIds : st.schoolId ? [st.schoolId] : [])
+          ...schoolIdsFromAccess,
+          ...(Array.isArray(st.schoolIds) ? st.schoolIds : st.schoolId ? [st.schoolId] : []),
+          ...(Array.isArray(tutorData.schoolIds) ? tutorData.schoolIds : tutorData.schoolId ? [tutorData.schoolId] : []),
         ];
-        const uniqueSchoolIds = Array.from(new Set(schoolIds.map(String)));
+        const uniqueSchoolIds = Array.from(new Set(schoolIds.map(String).filter(Boolean)));
         const matchedSchools = uniqueSchoolIds
           .map(sid => schoolsMap.get(sid) || { id: sid, name: `School (${sid.slice(0, 6)})`, schoolCode: '' })
           .filter(Boolean);
+        const matchedSchoolIdSet = new Set(uniqueSchoolIds);
+
+        // Matched Students (direct tutor assignment + aliasTutorIds + assigned schools)
+        const staffNameLower = fullName.toLowerCase();
+        const matchedStudents = allStudentDocs.filter(stu => {
+          if (aliasIds.has(String(stu.tutorId || '')) || aliasIds.has(String(stu.assignedTutorId || '')) || aliasIds.has(String(stu.staffId || ''))) return true;
+          if (Array.isArray(stu.assignedTutors) && stu.assignedTutors.length > 0) {
+            const matchedInArr = stu.assignedTutors.some((at: any) => 
+              aliasIds.has(String(at?.tutorId || at?.id || at || '')) || 
+              (at?.tutorEmail && at.tutorEmail.toLowerCase().trim() === staffEmail) ||
+              (at?.tutorName && at.tutorName.toLowerCase().trim() === staffNameLower)
+            );
+            if (matchedInArr) return true;
+          }
+          if (stu.tutorEmail && stu.tutorEmail.toLowerCase().trim() === staffEmail) return true;
+          if (stu.tutorName && stu.tutorName.toLowerCase().trim() === staffNameLower) return true;
+          if (stu.schoolId && matchedSchoolIdSet.has(String(stu.schoolId))) return true;
+          return false;
+        }).map(stu => {
+          const isSchoolLearner = Boolean(stu.schoolId);
+          const resolvedSchoolName = stu.schoolName || stu.school || (stu.schoolId ? schoolsMap.get(String(stu.schoolId))?.name : '');
+          return {
+            id: stu.id,
+            fullName: stu.fullName || stu.name || stu.studentName || 'Student Cadet',
+            username: stu.username,
+            class: stu.class || stu.grade,
+            track: stu.track || stu.learningTrack,
+            studentType: isSchoolLearner ? 'school' : 'individual',
+            schoolName: resolvedSchoolName,
+            parentName: stu.parentName
+          };
+        });
 
         const accountStatus = String(st.accountStatus || st.status || tutorData.status || 'ACTIVE').toUpperCase();
 
@@ -1254,12 +1316,18 @@ const AdminStaff: React.FC = () => {
 
             {/* Assigned Students Section */}
             <div className="rounded-2xl border border-purple-200/70 bg-purple-50/30 p-4 dark:border-purple-900/40 dark:bg-purple-950/20 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <GraduationCap size={16} className="text-purple-600 dark:text-purple-400" />
                   <h3 className="text-xs font-black uppercase tracking-wider text-purple-900 dark:text-purple-200">
                     Assigned Students ({managingStaff.assignedStudents.length})
                   </h3>
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                    School: {managingStaff.assignedStudents.filter(s => s.studentType === 'school').length}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
+                    Private: {managingStaff.assignedStudents.filter(s => s.studentType !== 'school').length}
+                  </span>
                 </div>
                 <a
                   href="/admin/students"
@@ -1271,24 +1339,38 @@ const AdminStaff: React.FC = () => {
               </div>
 
               {managingStaff.assignedStudents.length > 0 ? (
-                <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {managingStaff.assignedStudents.map((stu, idx) => (
-                      <div key={idx} className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-purple-100 dark:border-purple-900/50 shadow-2xs">
-                        <div className="h-8 w-8 rounded-lg bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 flex items-center justify-center font-bold text-xs shrink-0">
-                          {stu.fullName.charAt(0)}
+                <div className="max-h-64 overflow-y-auto divide-y divide-purple-100 dark:divide-purple-900/40 rounded-xl border border-purple-100 dark:border-purple-900/50 bg-white dark:bg-slate-900">
+                  {managingStaff.assignedStudents.map((stu, idx) => {
+                    const isSchool = stu.studentType === 'school';
+                    return (
+                      <div key={idx} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                            isSchool
+                              ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                              : 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300'
+                          }`}>
+                            {stu.fullName.charAt(0)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                              {stu.fullName}
+                            </p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                              {stu.class || 'Cadet'} {stu.track ? `• ${stu.track}` : ''} {stu.schoolName ? `• ${stu.schoolName}` : ''} {stu.parentName ? `• Parent: ${stu.parentName}` : ''}
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                            {stu.fullName}
-                          </p>
-                          <p className="text-[10px] text-purple-600 dark:text-purple-400 truncate">
-                            {stu.class || 'Cadet'} {stu.track ? `• ${stu.track}` : ''} {stu.schoolName ? `• ${stu.schoolName}` : ''}
-                          </p>
-                        </div>
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase shrink-0 ${
+                          isSchool
+                            ? 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800'
+                            : 'bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800'
+                        }`}>
+                          {isSchool ? 'School-Assigned' : 'Private Learner'}
+                        </span>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-xs text-slate-500 dark:text-slate-400 italic">

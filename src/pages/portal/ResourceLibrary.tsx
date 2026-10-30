@@ -13,6 +13,7 @@ import { useToast } from '../../contexts/ToastContext';
 import SEO from '../../components/ui/SEO';
 import { ResourceListView } from '../../components/portal/ResourceListView';
 import { triggerResourceNotification } from '../../utils/resourceTracking';
+import { fetchAcademicStudentsFallback, fetchAcademicSchoolsFallback } from '../../lib/academicFallback';
 
 export interface ResourceDocument {
   id: string;
@@ -247,7 +248,15 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
   // New Resource Upload Modal State (for tutors, school admins & super admins)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [authorisedSchools, setAuthorisedSchools] = useState<{ id: string; name: string }[]>([]);
-  const [privateLearners, setPrivateLearners] = useState<{ id: string; name: string; class: string }[]>([]);
+  const [privateLearners, setPrivateLearners] = useState<{
+    id: string;
+    name: string;
+    class: string;
+    isPrivate?: boolean;
+    schoolName?: string;
+    parentName?: string;
+  }[]>([]);
+  const [learnerTab, setLearnerTab] = useState<'all' | 'school' | 'private'>('all');
   const [uploadForm, setUploadForm] = useState({
     title: '',
     subject: 'Computer Science & ICT',
@@ -263,40 +272,28 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
   });
   const [uploadSubmitting, setUploadSubmitting] = useState(false);
 
-  // Load authorised schools and private learners for tutors/staff
+  // Load authorised schools and assigned learners (School-Assigned + Private Learners) for tutors/staff
   useEffect(() => {
     if (role !== 'staff' && role !== 'school') return;
     let mounted = true;
     const loadTargets = async () => {
       try {
-        const uid = auth.currentUser?.uid || '';
-        if (!uid) return;
-        const [schoolsSnap, indSnap] = await Promise.all([
-          getDocs(collection(db, 'schools')).catch(() => ({ docs: [] } as any)),
-          getDocs(query(collection(db, 'individualStudents'), where('tutorId', '==', uid))).catch(
-            () => ({ docs: [] } as any)
-          ),
+        const [fallbackSchools, fallbackStudents] = await Promise.all([
+          fetchAcademicSchoolsFallback().catch(() => []),
+          fetchAcademicStudentsFallback({ scope: role === 'school' ? 'school' : 'tutor', schoolId }).catch(() => []),
         ]);
-        const mySchools = schoolsSnap.docs
-          .map((d: any) => ({ id: d.id, ...d.data() }))
-          .filter((s: any) => {
-            if (role === 'school') return s.id === schoolId;
-            return (
-              s.tutorId === uid ||
-              s.assignedTutorId === uid ||
-              (Array.isArray(s.assignedTutors) &&
-                s.assignedTutors.some((t: any) => String(t?.id || t?.tutorId || t || '') === uid)) ||
-              (Array.isArray(s.assignedStaff) &&
-                s.assignedStaff.some((t: any) => String(t?.id || t?.uid || t || '') === uid))
-            );
-          })
+        const mySchools = fallbackSchools
+          .filter((s: any) => (role === 'school' ? s.id === schoolId : true))
           .map((s: any) => ({ id: s.id, name: s.name || s.schoolName || 'Partner School' }));
-        const learners = indSnap.docs.map((d: any) => {
-          const sd = d.data() || {};
+        const learners = fallbackStudents.map((sd: any) => {
+          const isPriv = sd.assignmentCategory === 'private' || (!sd.schoolId && sd.assignmentCategory !== 'school');
           return {
-            id: d.id,
-            name: sd.fullName || sd.studentName || sd.name || 'Private Learner',
-            class: sd.class || sd.grade || 'Private',
+            id: sd.id,
+            name: sd.fullName || sd.studentName || sd.name || 'Assigned Learner',
+            class: sd.class || sd.grade || 'General',
+            isPrivate: isPriv,
+            schoolName: sd.schoolName || '',
+            parentName: sd.parentName || '',
           };
         });
         if (mounted) {
@@ -1227,35 +1224,108 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
               )}
 
               {uploadForm.audienceMode === 'PRIVATE_LEARNERS' ? (
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Select Private Learner(s)
-                  </label>
+                <div className="space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300">
+                      Available Assigned Learners ({uploadForm.targetStudentIds.length} selected)
+                    </label>
+                    <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setLearnerTab('all')}
+                        className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
+                          learnerTab === 'all'
+                            ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                            : 'text-slate-500'
+                        }`}
+                      >
+                        All ({privateLearners.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLearnerTab('school')}
+                        className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
+                          learnerTab === 'school'
+                            ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-2xs'
+                            : 'text-slate-500'
+                        }`}
+                      >
+                        School ({privateLearners.filter(l => !l.isPrivate).length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLearnerTab('private')}
+                        className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
+                          learnerTab === 'private'
+                            ? 'bg-white dark:bg-slate-900 text-purple-600 shadow-2xs'
+                            : 'text-slate-500'
+                        }`}
+                      >
+                        Private ({privateLearners.filter(l => l.isPrivate).length})
+                      </button>
+                    </div>
+                  </div>
                   {privateLearners.length === 0 ? (
-                    <p className="text-[11px] text-slate-500">No private learners assigned to your account.</p>
+                    <p className="text-[11px] text-slate-500">No learners assigned to your account.</p>
                   ) : (
-                    <div className="max-h-32 overflow-y-auto space-y-1.5 p-2 rounded-xl border border-gray-200 dark:border-slate-800">
-                      {privateLearners.map(lr => {
-                        const checked = uploadForm.targetStudentIds.includes(lr.id);
-                        return (
-                          <label key={lr.id} className="flex items-center gap-2 text-xs cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() =>
+                    <div className="max-h-56 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-800 rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+                      {privateLearners
+                        .filter(lr => {
+                          if (learnerTab === 'school') return !lr.isPrivate;
+                          if (learnerTab === 'private') return Boolean(lr.isPrivate);
+                          return true;
+                        })
+                        .map(lr => {
+                          const selected = uploadForm.targetStudentIds.includes(lr.id);
+                          return (
+                            <button
+                              key={lr.id}
+                              type="button"
+                              onClick={() =>
                                 setUploadForm(prev => ({
                                   ...prev,
-                                  targetStudentIds: checked
+                                  targetStudentIds: selected
                                     ? prev.targetStudentIds.filter(id => id !== lr.id)
                                     : [...prev.targetStudentIds, lr.id],
                                 }))
                               }
-                            />
-                            <span className="font-semibold">{lr.name}</span>
-                            <span className="text-[10px] text-slate-400">({lr.class})</span>
-                          </label>
-                        );
-                      })}
+                              className={`w-full px-3 py-2 text-left flex items-center justify-between gap-2 text-xs transition-colors cursor-pointer ${
+                                selected
+                                  ? 'bg-blue-50/80 dark:bg-blue-950/40'
+                                  : 'hover:bg-slate-50 dark:hover:bg-slate-900'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-slate-900 dark:text-white truncate">{lr.name}</span>
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                      lr.isPrivate
+                                        ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+                                        : 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                                    }`}
+                                  >
+                                    {lr.isPrivate ? 'Private' : 'School'}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-400 truncate">
+                                  {lr.class}
+                                  {lr.isPrivate && lr.parentName ? ` · Parent: ${lr.parentName}` : ''}
+                                  {!lr.isPrivate && lr.schoolName ? ` · ${lr.schoolName}` : ''}
+                                </div>
+                              </div>
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                                  selected
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                }`}
+                              >
+                                {selected ? 'Selected' : 'Select'}
+                              </span>
+                            </button>
+                          );
+                        })}
                     </div>
                   )}
                 </div>

@@ -1,15 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { db, auth } from '../../lib/firebase';
 import {
   collection,
   getDocs,
   addDoc,
   serverTimestamp,
-  query,
-  where,
-  doc,
-  getDoc,
 } from 'firebase/firestore';
 import {
   Users,
@@ -25,20 +21,39 @@ import {
   ClipboardCheck,
   ExternalLink,
   BookOpenCheck,
+  Search,
+  GraduationCap,
+  KeyRound,
+  Flag,
+  ClipboardList,
+  RefreshCw,
+  UserRound,
 } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
 import { DashboardGreeting } from '../../components/portal/DashboardGreeting';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
-import { normalizeClassName, resolvePartnerSchoolName } from '../../lib/classes';
+import { normalizeClassName } from '../../lib/classes';
+import {
+  fetchAcademicStudentsFallback,
+  fetchAcademicSchoolsFallback,
+  resolveTutorAssignedContext,
+  type AcademicStudentRecord,
+} from '../../lib/academicFallback';
 
 const StaffDashboard: React.FC = () => {
   const { toast } = useToast();
+  const location = useLocation();
+  const rosterSectionRef = useRef<HTMLElement | null>(null);
+
   const [resources, setResources] = useState<any[]>([]);
-  const [students, setStudents] = useState<any[]>([]);
-  const [assignedSchools, setAssignedSchools] = useState<any[]>([]);
+  const [students, setStudents] = useState<AcademicStudentRecord[]>([]);
+  const [assignedSchools, setAssignedSchools] = useState<Array<{ id: string; name: string; code?: string }>>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
   const [selectedScope, setSelectedScope] = useState<string>('ALL');
+  const [rosterCategory, setRosterCategory] = useState<'ALL' | 'SCHOOL' | 'PRIVATE'>('ALL');
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL');
+  const [rosterSearch, setRosterSearch] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
   // Modals state
@@ -62,9 +77,17 @@ const StaffDashboard: React.FC = () => {
       const currentUser = auth.currentUser;
       if (!currentUser && !effective.isMasquerading) return;
 
-      const staffUid = effective.effectiveUid || currentUser?.uid || '';
+      // 1. Fetch Assigned Students, Assigned Schools & Tutor Alias Context concurrently
+      const [loadedStudents, loadedSchools, tutorCtx] = await Promise.all([
+        fetchAcademicStudentsFallback().catch(() => []),
+        fetchAcademicSchoolsFallback().catch(() => []),
+        resolveTutorAssignedContext().catch(() => null),
+      ]);
 
-      // 1. Fetch Curriculum Resources Count
+      setStudents(loadedStudents);
+      setAssignedSchools(loadedSchools);
+
+      // 2. Fetch Curriculum Resources Count
       try {
         const [staffResSnap, generalResSnap, schoolResSnap] = await Promise.all([
           getDocs(collection(db, 'staffGeneralResources')).catch(() => ({ docs: [] })),
@@ -82,121 +105,10 @@ const StaffDashboard: React.FC = () => {
         console.warn('staffGeneralResources error:', e);
       }
 
-      // 2. Fetch Assigned Students
-      const assignmentFields = [
-        'tutorId',
-        'staffId',
-        'assignedTutorId',
-        'assignedStaffId',
-        'instructorId',
-      ];
-      const studentMap = new Map<string, any>();
-      if (staffUid) {
-        for (const field of assignmentFields) {
-          for (const collectionName of ['individualStudents', 'students']) {
-            try {
-              const snap = await getDocs(
-                query(collection(db, collectionName), where(field, '==', staffUid))
-              );
-              snap.forEach((d) => studentMap.set(d.id, { id: d.id, ...d.data() }));
-            } catch (e) {
-              console.warn(`Assigned ${collectionName} query failed for ${field}:`, e);
-            }
-          }
-        }
-      }
-
-      // 3. Fetch assigned schools (including staffSchoolAccess + user profile + school records)
-      try {
-        const [schoolsSnap, accessSnap, userSnap] = await Promise.all([
-          getDocs(collection(db, 'schools')).catch(() => ({ docs: [] } as any)),
-          staffUid
-            ? getDoc(doc(db, 'staffSchoolAccess', staffUid)).catch(() => null)
-            : Promise.resolve(null),
-          staffUid ? getDoc(doc(db, 'users', staffUid)).catch(() => null) : Promise.resolve(null),
-        ]);
-
-        const accessData = accessSnap?.exists() ? accessSnap.data() || {} : {};
-        const userData = userSnap?.exists() ? userSnap.data() || {} : {};
-        const directSchoolIds = new Set<string>(
-          [
-            accessData.schoolId,
-            ...(Array.isArray(accessData.schoolIds) ? accessData.schoolIds : []),
-            userData.schoolId,
-            ...(Array.isArray(userData.schoolIds) ? userData.schoolIds : []),
-          ]
-            .filter(Boolean)
-            .map(String)
-        );
-
-        const allSchools = schoolsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        const mySchools = allSchools
-          .filter((sch: any) => {
-            if (!staffUid) return false;
-            if (directSchoolIds.has(sch.id)) return true;
-            if (
-              sch.tutorId === staffUid ||
-              sch.assignedTutorId === staffUid ||
-              sch.assignedStaffId === staffUid
-            )
-              return true;
-            if (
-              Array.isArray(sch.assignedTutors) &&
-              sch.assignedTutors.some(
-                (t: any) => String(t?.id || t?.tutorId || t || '') === staffUid
-              )
-            )
-              return true;
-            if (
-              Array.isArray(sch.assignedStaff) &&
-              sch.assignedStaff.some((t: any) => String(t?.id || t?.uid || t || '') === staffUid)
-            )
-              return true;
-            if (
-              Array.isArray(sch.tutors) &&
-              sch.tutors.some((t: any) => t.id === staffUid || t.email === currentUser?.email)
-            )
-              return true;
-            return false;
-          })
-          .map((sch: any) => ({
-            ...sch,
-            name:
-              resolvePartnerSchoolName(sch.name, sch.schoolName, sch.institutionName) ||
-              'Partner School',
-          }));
-        setAssignedSchools(mySchools);
-
-        // Fetch school-scoped students
-        const scopedStudents = new Map<string, any>(studentMap);
-        const schoolIds = mySchools.map((school: any) => school.id).filter(Boolean);
-        for (const schoolId of schoolIds) {
-          for (const collectionName of ['students', 'individualStudents']) {
-            try {
-              const snap = await getDocs(
-                query(collection(db, collectionName), where('schoolId', '==', schoolId))
-              );
-              snap.forEach((d) => scopedStudents.set(d.id, { id: d.id, ...d.data() }));
-            } catch (e) {
-              console.warn(`School-scoped ${collectionName} query failed:`, e);
-            }
-          }
-        }
-        setStudents(
-          Array.from(scopedStudents.values()).filter((student: any) => {
-            if (student.schoolId && schoolIds.includes(student.schoolId)) return true;
-            return assignmentFields.some((field) => String(student[field] || '') === staffUid);
-          })
-        );
-      } catch (e) {
-        console.warn('Assigned schools fetch failed:', e);
-        setStudents(Array.from(studentMap.values()));
-      }
-
-      // 4. Fetch Tutor Class Schedules (safely scoped by tutorId)
+      // 3. Fetch Tutor Class Schedules (matching any aliasTutorId, email, or name)
       try {
         let loadedSchedules: any[] = [];
-        if (currentUser) {
+        if (currentUser && !effective.isMasquerading) {
           const token = await currentUser.getIdToken();
           const res = await fetch('/.netlify/functions/class-schedules', {
             headers: { Authorization: `Bearer ${token}` },
@@ -208,14 +120,29 @@ const StaffDashboard: React.FC = () => {
             }
           }
         }
-        if (!loadedSchedules.length && staffUid) {
-          const schedSnap = await getDocs(
-            query(collection(db, 'classSchedules'), where('tutorId', '==', staffUid))
-          ).catch(() => ({ docs: [] } as any));
+        if (!loadedSchedules.length) {
+          const schedSnap = await getDocs(collection(db, 'classSchedules')).catch(
+            () => ({ docs: [] } as any)
+          );
           loadedSchedules = schedSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
         }
+
+        const aliasIds = tutorCtx?.aliasTutorIds || new Set([effective.effectiveUid || currentUser?.uid || '']);
+        const tutorEmailLower = (tutorCtx?.email || '').toLowerCase();
+        const tutorNameLower = (tutorCtx?.name || '').toLowerCase();
+
         setSchedules(
-          loadedSchedules.filter((s: any) => !staffUid || String(s.tutorId || '') === staffUid)
+          loadedSchedules.filter((s: any) => {
+            if (tutorCtx?.isAdmin) return true;
+            const sTutorId = String(s.tutorId || '').trim();
+            const sTutorEmail = String(s.tutorEmail || '').trim().toLowerCase();
+            const sTutorName = String(s.tutorName || '').trim().toLowerCase();
+            return (
+              (sTutorId && aliasIds.has(sTutorId)) ||
+              (tutorEmailLower && sTutorEmail === tutorEmailLower) ||
+              (tutorNameLower && sTutorName === tutorNameLower)
+            );
+          })
         );
       } catch (e) {
         console.warn('Tutor schedules fetch failed:', e);
@@ -229,24 +156,71 @@ const StaffDashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchStaffData();
+    void fetchStaffData();
   }, []);
+
+  useEffect(() => {
+    if (location.pathname.endsWith('/students') && rosterSectionRef.current) {
+      rosterSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [location.pathname, loading]);
+
+  const schoolAssignedStudents = useMemo(
+    () => students.filter((s) => s.assignmentCategory === 'school'),
+    [students]
+  );
+
+  const privateAssignedStudents = useMemo(
+    () => students.filter((s) => s.assignmentCategory === 'private'),
+    [students]
+  );
 
   // Scoped students and schedules according to the active Assigned-School Selector
   const scopedStudents = useMemo(() => {
     if (selectedScope === 'ALL') return students;
-    if (selectedScope === 'PRIVATE') return students.filter((s) => !s.schoolId);
+    if (selectedScope === 'PRIVATE') return privateAssignedStudents;
     return students.filter((s) => String(s.schoolId || '') === selectedScope);
-  }, [students, selectedScope]);
+  }, [students, privateAssignedStudents, selectedScope]);
 
   const scopedClasses = useMemo(() => {
     const set = new Set<string>();
     scopedStudents.forEach((s) => {
-      const c = normalizeClassName(s.class || s.grade || s.className || '');
+      const c = normalizeClassName(s.class || s.grade || '');
       if (c) set.add(c);
     });
     return Array.from(set).sort();
   }, [scopedStudents]);
+
+  // Filtered students for the Available & Assigned Learners Directory
+  const filteredRosterStudents = useMemo(() => {
+    return scopedStudents.filter((s) => {
+      if (rosterCategory === 'SCHOOL' && s.assignmentCategory !== 'school') return false;
+      if (rosterCategory === 'PRIVATE' && s.assignmentCategory !== 'private') return false;
+
+      if (selectedClassFilter !== 'ALL') {
+        const sClass = normalizeClassName(s.class || s.grade || '');
+        if (sClass !== selectedClassFilter) return false;
+      }
+
+      if (rosterSearch.trim()) {
+        const q = rosterSearch.toLowerCase().trim();
+        const hay = [
+          s.fullName,
+          s.username,
+          s.class,
+          s.plan,
+          s.schoolName,
+          s.parentName,
+          s.email,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [scopedStudents, rosterCategory, selectedClassFilter, rosterSearch]);
 
   // Upcoming class reminders sorted by actual session date & startTime
   const upcomingReminders = useMemo(() => {
@@ -342,7 +316,7 @@ const StaffDashboard: React.FC = () => {
 
       <DashboardGreeting
         role="Faculty Mentor"
-        subtitle="Deliver interactive lessons, manage assigned learners, review teaching schedules, and access faculty tools."
+        subtitle="Deliver interactive lessons, manage school-assigned and private learners, review teaching schedules, and access faculty tools."
       />
 
       {successMsg && (
@@ -359,37 +333,49 @@ const StaffDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ASSIGNED-SCHOOL & LEARNER SCOPE SELECTOR (Programs-page style clean horizontal tabs) */}
+      {/* ASSIGNED-SCHOOL & LEARNER SCOPE SELECTOR */}
       <section className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
               Authorised Teaching Scope
             </h2>
             <p className="text-xs text-slate-500">
               Switch between your assigned partner schools and private learners to filter rosters,
-              classes, and upcoming reminders.
+              classes, and upcoming sessions.
             </p>
           </div>
-          <Link
-            to="/portal/staff/assessments"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 text-xs font-bold self-start sm:self-auto"
-          >
-            <BookOpenCheck size={14} /> Open Assessments Workspace
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void fetchStaffData()}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+            >
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh
+            </button>
+            <Link
+              to="/portal/staff/assessments"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 text-xs font-bold whitespace-nowrap"
+            >
+              <BookOpenCheck size={14} /> Open Assessments Workspace
+            </Link>
+          </div>
         </div>
 
         <div className="flex items-center gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-slate-800 touch-pan-x">
           <button
             type="button"
-            onClick={() => setSelectedScope('ALL')}
+            onClick={() => {
+              setSelectedScope('ALL');
+              setRosterCategory('ALL');
+            }}
             className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer ${
               selectedScope === 'ALL'
                 ? 'text-[#14284B] dark:text-white'
                 : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
           >
-            All Assigned Scopes ({students.length})
+            All Assigned Learners ({students.length})
             {selectedScope === 'ALL' && (
               <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
             )}
@@ -402,7 +388,10 @@ const StaffDashboard: React.FC = () => {
               <button
                 key={sch.id}
                 type="button"
-                onClick={() => setSelectedScope(sch.id)}
+                onClick={() => {
+                  setSelectedScope(sch.id);
+                  setRosterCategory('SCHOOL');
+                }}
                 className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
                   active
                     ? 'text-[#14284B] dark:text-white'
@@ -411,7 +400,7 @@ const StaffDashboard: React.FC = () => {
               >
                 <School size={14} className="text-blue-600 shrink-0" />
                 <span>{sch.name}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 tabular-nums">
                   {count}
                 </span>
                 {active && (
@@ -423,7 +412,10 @@ const StaffDashboard: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => setSelectedScope('PRIVATE')}
+            onClick={() => {
+              setSelectedScope('PRIVATE');
+              setRosterCategory('PRIVATE');
+            }}
             className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
               selectedScope === 'PRIVATE'
                 ? 'text-[#14284B] dark:text-white'
@@ -431,7 +423,7 @@ const StaffDashboard: React.FC = () => {
             }`}
           >
             <Users size={14} className="text-emerald-600 shrink-0" />
-            <span>Private Learners ({students.filter((s) => !s.schoolId).length})</span>
+            <span>Private / Parent Learners ({privateAssignedStudents.length})</span>
             {selectedScope === 'PRIVATE' && (
               <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
             )}
@@ -441,8 +433,11 @@ const StaffDashboard: React.FC = () => {
         {/* Active Scope Classes & Roster Summary */}
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-300">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-bold text-slate-800 dark:text-white">
+            <span className="font-bold text-slate-800 dark:text-white tabular-nums">
               {scopedStudents.length} Learner(s) in Active Scope
+            </span>
+            <span className="text-slate-400">
+              ({schoolAssignedStudents.length} School-Assigned · {privateAssignedStudents.length} Private)
             </span>
             {scopedClasses.length > 0 && (
               <span className="text-slate-400">
@@ -450,41 +445,56 @@ const StaffDashboard: React.FC = () => {
               </span>
             )}
           </div>
-          <Link
-            to="/portal/staff/students"
-            className="font-bold text-blue-600 hover:underline inline-flex items-center gap-1"
+          <button
+            type="button"
+            onClick={() => rosterSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
+            className="font-bold text-blue-600 hover:underline inline-flex items-center gap-1 cursor-pointer"
           >
-            View Learner Roster <ArrowRight size={13} />
-          </Link>
+            Jump to Learner Directory <ArrowRight size={13} />
+          </button>
         </div>
       </section>
 
       {/* Quick Summary Bento Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="pro-surface p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-4 bg-white dark:bg-slate-900 shadow-xs">
           <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center shrink-0">
             <Users size={22} />
           </div>
           <div>
             <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
-              Scoped Learners
+              Total Assigned Learners
             </p>
-            <p className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-              {loading ? '...' : scopedStudents.length}
+            <p className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
+              {loading ? '...' : students.length}
+            </p>
+          </div>
+        </div>
+
+        <div className="pro-surface p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-4 bg-white dark:bg-slate-900 shadow-xs">
+          <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center shrink-0">
+            <School size={22} />
+          </div>
+          <div>
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
+              School-Assigned
+            </p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
+              {loading ? '...' : schoolAssignedStudents.length}
             </p>
           </div>
         </div>
 
         <div className="pro-surface p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-4 bg-white dark:bg-slate-900 shadow-xs">
           <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center shrink-0">
-            <School size={22} />
+            <UserRound size={22} />
           </div>
           <div>
             <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
-              Partner Schools
+              Private Learners
             </p>
-            <p className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-              {loading ? '...' : assignedSchools.length}
+            <p className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
+              {loading ? '...' : privateAssignedStudents.length}
             </p>
           </div>
         </div>
@@ -497,12 +507,235 @@ const StaffDashboard: React.FC = () => {
             <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
               Curriculum Library
             </p>
-            <p className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+            <p className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
               {loading ? '...' : resources.length}
             </p>
           </div>
         </div>
       </div>
+
+      {/* AVAILABLE & ASSIGNED LEARNERS DIRECTORY (Accessible Categorized List) */}
+      <section
+        ref={rosterSectionRef}
+        id="assigned-learners-roster"
+        className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-5"
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div>
+            <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <GraduationCap size={20} className="text-brand-red shrink-0" />
+              <span>Available &amp; Assigned Learners Directory</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Switch between School-Assigned Students and Private / Parent-Enrolled Learners to open individual workspaces, record attendance, or manage assignments.
+            </p>
+          </div>
+
+          {/* Open Segmented Filter Tabs: All vs School-Assigned vs Private */}
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 dark:bg-slate-800/90 p-1.5 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setRosterCategory('ALL')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                rosterCategory === 'ALL'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              All Available ({scopedStudents.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setRosterCategory('SCHOOL')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap inline-flex items-center gap-1.5 ${
+                rosterCategory === 'SCHOOL'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <School size={13} />
+              <span>
+                School-Assigned (
+                {scopedStudents.filter((s) => s.assignmentCategory === 'school').length})
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRosterCategory('PRIVATE')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap inline-flex items-center gap-1.5 ${
+                rosterCategory === 'PRIVATE'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <UserRound size={13} />
+              <span>
+                Private Learners (
+                {scopedStudents.filter((s) => s.assignmentCategory === 'private').length})
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Search & Class Filter Bar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={rosterSearch}
+              onChange={(e) => setRosterSearch(e.target.value)}
+              placeholder="Search learner by name, @username, class, school, or parent..."
+              className="w-full min-h-10 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-red/30"
+            />
+          </div>
+
+          {scopedClasses.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+              <button
+                type="button"
+                onClick={() => setSelectedClassFilter('ALL')}
+                className={`min-h-9 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                  selectedClassFilter === 'ALL'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                }`}
+              >
+                All Classes
+              </button>
+              {scopedClasses.map((cls) => (
+                <button
+                  key={cls}
+                  type="button"
+                  onClick={() => setSelectedClassFilter(cls)}
+                  className={`min-h-9 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                    selectedClassFilter === cls
+                      ? 'bg-brand-red text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                  }`}
+                >
+                  {cls}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Structured Learner List */}
+        {loading ? (
+          <div className="py-12 text-center text-xs text-slate-500">
+            Loading assigned learners and school rosters…
+          </div>
+        ) : filteredRosterStudents.length === 0 ? (
+          <div className="py-10 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl space-y-2">
+            <Users size={28} className="mx-auto text-slate-300 dark:text-slate-600" />
+            <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
+              No learners match the current filter
+            </p>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Try switching between &ldquo;All Available&rdquo;, &ldquo;School-Assigned&rdquo;, and &ldquo;Private Learners&rdquo; above or clearing your search query.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-slate-200/80 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+            {filteredRosterStudents.map((student) => {
+              const isSchool = student.assignmentCategory === 'school';
+              return (
+                <div
+                  key={student.id}
+                  className="p-4 sm:px-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-slate-900 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                >
+                  <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${
+                        isSchool
+                          ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800'
+                          : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800'
+                      }`}
+                    >
+                      {(student.fullName || 'S').charAt(0).toUpperCase()}
+                    </div>
+
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          to={`/portal/staff/students/${student.id}`}
+                          className="font-black text-sm text-slate-900 dark:text-white hover:text-brand-red transition-colors truncate"
+                        >
+                          {student.fullName}
+                        </Link>
+
+                        {/* Explicit Category Badge: School-Assigned vs Private Learner */}
+                        {isSchool ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/70">
+                            <School size={11} />
+                            <span>School-Assigned · {student.schoolName || 'Partner School'}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/70">
+                            <UserRound size={11} />
+                            <span>
+                              Private Learner
+                              {student.parentName ? ` · Parent: ${student.parentName}` : ''}
+                            </span>
+                          </span>
+                        )}
+
+                        <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                          {student.class || 'Grade 1'}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                        <span className="font-mono">@{student.username || student.id}</span>
+                        {student.plan && <span>· Track: {student.plan}</span>}
+                        {student.accessCode && (
+                          <span className="font-mono text-emerald-700 dark:text-emerald-400 font-semibold">
+                            · Code: {student.accessCode}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Direct Tutor Actions */}
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <Link
+                      to={`/portal/staff/students/${student.id}`}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-colors"
+                    >
+                      <span>Open Workspace</span>
+                      <ArrowRight size={13} />
+                    </Link>
+                    <Link
+                      to={`/portal/staff/assignments?studentId=${encodeURIComponent(student.id)}`}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-red/50 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap transition-colors"
+                    >
+                      <ClipboardList size={13} className="text-brand-red" />
+                      <span>Assignments</span>
+                    </Link>
+                    <Link
+                      to={`/portal/staff/milestones?studentId=${encodeURIComponent(student.id)}`}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-blue-500/50 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap transition-colors"
+                    >
+                      <Flag size={13} className="text-blue-600" />
+                      <span>Milestones</span>
+                    </Link>
+                    <Link
+                      to="/portal/staff/credentials"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap transition-colors"
+                      title="Manage Student Access Passcode"
+                    >
+                      <KeyRound size={13} className="text-amber-600" />
+                      <span>Access</span>
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* UPCOMING CLASS REMINDERS SECTION */}
       <section className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs space-y-4">
@@ -637,7 +870,46 @@ const StaffDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Card 2: Faculty Billing & Payout Center */}
+        {/* Card 2: Assessments, Assignments & Milestones */}
+        <div className="pro-surface rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between hover:border-blue-500/40 transition-all">
+          <div className="space-y-3">
+            <div className="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <ClipboardCheck size={22} />
+            </div>
+            <h3 className="font-black text-slate-900 dark:text-white text-base">
+              Assessments, Assignments &amp; Milestones
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Author native examinations, grade student assignments, release assessment results, and update learner milestone roadmaps.
+            </p>
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-3">
+            <Link
+              to="/portal/staff/assessments"
+              className="inline-flex items-center gap-1.5 text-xs font-black text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              <span>Assessments</span>
+              <ArrowRight size={13} />
+            </Link>
+            <span className="text-slate-300">·</span>
+            <Link
+              to="/portal/staff/assignments"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-brand-red"
+            >
+              <span>Assignments</span>
+            </Link>
+            <span className="text-slate-300">·</span>
+            <Link
+              to="/portal/staff/milestones"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-brand-red"
+            >
+              <span>Milestones</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* Card 3: Faculty Billing & Payout Center */}
         <div className="pro-surface rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between hover:border-emerald-500/40 transition-all">
           <div className="space-y-3">
             <div className="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
@@ -667,42 +939,42 @@ const StaffDashboard: React.FC = () => {
       {/* Broadcast Live Class Link Modal */}
       {showLinkModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl">
             <h3 className="text-base font-black text-slate-900 dark:text-white mb-1">
               Post Live Class Link
             </h3>
             <p className="text-xs text-slate-500 mb-4">
-              Broadcast a Google Meet, Zoom, or Scratch link directly to the student portal.
+              Broadcast a Google Meet, Zoom, or Scratch link directly to the student or school portal.
             </p>
             <form onSubmit={handlePostLink} className="space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setBroadcastTargetType('STUDENT')}
-                  className={`min-h-10 rounded-xl border text-xs font-bold transition-colors ${
+                  className={`min-h-10 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
                     broadcastTargetType === 'STUDENT'
                       ? 'bg-brand-red text-white border-brand-red'
                       : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                   }`}
                 >
-                  Private Student
+                  Individual Learner
                 </button>
                 <button
                   type="button"
                   onClick={() => setBroadcastTargetType('SCHOOL')}
-                  className={`min-h-10 rounded-xl border text-xs font-bold transition-colors ${
+                  className={`min-h-10 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
                     broadcastTargetType === 'SCHOOL'
                       ? 'bg-brand-red text-white border-brand-red'
                       : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                   }`}
                 >
-                  School
+                  Partner School
                 </button>
               </div>
               {broadcastTargetType === 'STUDENT' ? (
                 <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Select Private Student
+                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                    Select Assigned Learner
                   </label>
                   <select
                     required
@@ -710,14 +982,25 @@ const StaffDashboard: React.FC = () => {
                     onChange={(e) => setTargetStudentId(e.target.value)}
                     className="w-full min-h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-hidden"
                   >
-                    <option value="">-- Choose Student --</option>
-                    {students
-                      .filter((s) => !s.schoolId)
-                      .map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.fullName || s.studentName || s.username}
-                        </option>
-                      ))}
+                    <option value="">-- Choose Learner --</option>
+                    {privateAssignedStudents.length > 0 && (
+                      <optgroup label="Private / Parent Learners">
+                        {privateAssignedStudents.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.fullName} ({s.class || 'Private'})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {schoolAssignedStudents.length > 0 && (
+                      <optgroup label="School-Assigned Students">
+                        {schoolAssignedStudents.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.fullName} ({s.schoolName} · {s.class})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
               ) : (
@@ -812,7 +1095,7 @@ const StaffDashboard: React.FC = () => {
                   disabled={submittingLink}
                   className="min-h-11 px-5 rounded-xl bg-brand-red hover:bg-red-700 font-bold text-white flex items-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                 >
-                  {submittingLink ? 'Publishing...' : 'Broadcast to Student'}
+                  {submittingLink ? 'Publishing...' : 'Broadcast to Portal'}
                 </button>
               </div>
             </form>

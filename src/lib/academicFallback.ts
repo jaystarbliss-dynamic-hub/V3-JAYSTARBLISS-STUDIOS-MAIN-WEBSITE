@@ -13,7 +13,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { buildAttendanceRecordKey } from './classes';
+import { buildAttendanceRecordKey, formatNormalizedClassDisplay, resolvePartnerSchoolName } from './classes';
+import { getEffectiveAuth } from '../utils/impersonation';
 
 const assignmentFields = [
   'tutorId',
@@ -33,85 +34,485 @@ const toIso = (val: any): string | null => {
   return null;
 };
 
-export async function fetchAcademicStudentsFallback() {
-  const user = auth.currentUser;
-  if (!user) return [];
+const normLower = (val: unknown): string => String(val || '').trim().toLowerCase();
 
-  const userSnap = await getDoc(doc(db, 'users', user.uid)).catch(() => null);
+export interface AcademicStudentRecord {
+  id: string;
+  fullName: string;
+  studentName: string;
+  username: string;
+  email: string;
+  class: string;
+  grade: string;
+  plan: string;
+  track: string;
+  schoolId: string;
+  schoolName: string;
+  parentId: string;
+  parentName: string;
+  parentEmail: string;
+  tutorId: string;
+  tutorName: string;
+  firebaseUid: string;
+  accessCode?: string;
+  portalAccessEnabled?: boolean;
+  accountStatus?: string;
+  assignmentCategory: 'school' | 'private';
+  isPrivate: boolean;
+}
+
+export interface TutorAssignedContext {
+  uid: string;
+  email: string;
+  name: string;
+  role: string;
+  isAdmin: boolean;
+  aliasTutorIds: Set<string>;
+  assignedSchools: Array<{ id: string; name: string; code: string }>;
+  assignedSchoolIds: Set<string>;
+  schoolNameMap: Map<string, string>;
+}
+
+/**
+ * Resolves the effective tutor/staff identity (including Admin "Log In As" impersonation),
+ * all legacy/alias tutor document IDs, and all assigned partner schools.
+ */
+export async function resolveTutorAssignedContext(): Promise<TutorAssignedContext> {
+  const effective = getEffectiveAuth();
+  const currentUser = auth.currentUser;
+  const uid = String(effective.effectiveUid || currentUser?.uid || '').trim();
+  const userSnap = uid ? await getDoc(doc(db, 'users', uid)).catch(() => null) : null;
   const userData: Record<string, any> = userSnap?.exists() ? userSnap.data() || {} : {};
+
+  const email = normLower(
+    effective.effectiveEmail ||
+      userData.email ||
+      currentUser?.email ||
+      sessionStorage.getItem('userEmail') ||
+      ''
+  );
+  const name = String(
+    effective.effectiveName ||
+      userData.fullName ||
+      userData.name ||
+      userData.displayName ||
+      currentUser?.displayName ||
+      sessionStorage.getItem('userName') ||
+      ''
+  ).trim();
+  const nameLower = normLower(name);
+
   const role = String(
-    userData.role || sessionStorage.getItem('userRole') || localStorage.getItem('jaystar_cached_user_role') || ''
+    effective.effectiveRole ||
+      userData.role ||
+      sessionStorage.getItem('userRole') ||
+      localStorage.getItem('jaystar_cached_user_role') ||
+      'TUTOR'
   )
     .trim()
     .toUpperCase();
 
+  const isAdmin =
+    !effective.isMasquerading &&
+    ['ADMIN', 'SUPER_ADMIN', 'SUPERADMIN', 'ACADEMIC_ADMIN', 'EDUCATION_ADMIN'].some((r) =>
+      role.includes(r)
+    );
+
+  const aliasTutorIds = new Set<string>();
+  if (uid) aliasTutorIds.add(uid);
+  if (Array.isArray(userData.aliasTutorIds)) {
+    userData.aliasTutorIds.forEach((id: any) => {
+      if (id) aliasTutorIds.add(String(id).trim());
+    });
+  }
+
+  const directSchoolIds = new Set<string>();
+  const addSchoolId = (val: any) => {
+    if (!val) return;
+    if (typeof val === 'string' && val.trim()) directSchoolIds.add(val.trim());
+    else if (typeof val === 'object') {
+      const candidate = val.id || val.schoolId || val.code;
+      if (candidate) directSchoolIds.add(String(candidate).trim());
+    }
+  };
+
+  addSchoolId(userData.schoolId);
+  if (Array.isArray(userData.schoolIds)) userData.schoolIds.forEach(addSchoolId);
+  if (Array.isArray(userData.assignedSchools)) userData.assignedSchools.forEach(addSchoolId);
+  if (Array.isArray(userData.assignedSchoolIds)) userData.assignedSchoolIds.forEach(addSchoolId);
+
+  // Discover alias tutor IDs and school bindings from `tutors`, `staff`, and `staffSchoolAccess`
+  const [tutorsSnap, staffSnap, accessSnap, schoolsSnap] = await Promise.all([
+    getDocs(collection(db, 'tutors')).catch(() => ({ docs: [] } as any)),
+    getDocs(collection(db, 'staff')).catch(() => ({ docs: [] } as any)),
+    getDocs(collection(db, 'staffSchoolAccess')).catch(() => ({ docs: [] } as any)),
+    getDocs(collection(db, 'schools')).catch(() => ({ docs: [] } as any)),
+  ]);
+
+  const checkAndAddTutorDoc = (d: any) => {
+    const data = d.data() || {};
+    const docId = d.id;
+    const docUid = String(data.uid || data.userId || data.canonicalUid || '').trim();
+    const docEmail = normLower(data.email);
+    const docName = normLower(data.fullName || data.name || data.displayName);
+
+    const matches =
+      aliasTutorIds.has(docId) ||
+      (docUid && aliasTutorIds.has(docUid)) ||
+      (email && docEmail && docEmail === email) ||
+      (nameLower && docName && docName === nameLower);
+
+    if (matches) {
+      aliasTutorIds.add(docId);
+      if (docUid) aliasTutorIds.add(docUid);
+      if (Array.isArray(data.aliasIds)) {
+        data.aliasIds.forEach((a: any) => {
+          if (a) aliasTutorIds.add(String(a).trim());
+        });
+      }
+      addSchoolId(data.schoolId);
+      if (Array.isArray(data.schoolIds)) data.schoolIds.forEach(addSchoolId);
+      if (Array.isArray(data.assignedSchools)) data.assignedSchools.forEach(addSchoolId);
+    }
+  };
+
+  tutorsSnap.docs?.forEach(checkAndAddTutorDoc);
+  staffSnap.docs?.forEach(checkAndAddTutorDoc);
+
+  accessSnap.docs?.forEach((d: any) => {
+    const data = d.data() || {};
+    const docId = d.id;
+    const staffId = String(data.staffId || data.tutorId || '').trim();
+    const docEmail = normLower(data.email);
+    const aliases = Array.isArray(data.aliasTutorIds) ? data.aliasTutorIds.map(String) : [];
+
+    const matches =
+      aliasTutorIds.has(docId) ||
+      (staffId && aliasTutorIds.has(staffId)) ||
+      aliases.some((a: string) => aliasTutorIds.has(a)) ||
+      (email && docEmail && docEmail === email);
+
+    if (matches) {
+      aliasTutorIds.add(docId);
+      if (staffId) aliasTutorIds.add(staffId);
+      aliases.forEach((a: string) => {
+        if (a) aliasTutorIds.add(a);
+      });
+      addSchoolId(data.schoolId);
+      if (Array.isArray(data.schoolIds)) data.schoolIds.forEach(addSchoolId);
+      if (Array.isArray(data.assignedSchools)) data.assignedSchools.forEach(addSchoolId);
+    }
+  });
+
+  const assignedSchools: Array<{ id: string; name: string; code: string }> = [];
+  const assignedSchoolIds = new Set<string>();
+  const schoolNameMap = new Map<string, string>();
+
+  const extractIds = (arr: any): string[] =>
+    Array.isArray(arr)
+      ? arr
+          .map((x: any) =>
+            typeof x === 'string'
+              ? x.trim()
+              : String(x?.tutorId || x?.id || x?.uid || x?.staffId || x?.userId || '').trim()
+          )
+          .filter(Boolean)
+      : [];
+
+  const extractEmails = (arr: any): string[] =>
+    Array.isArray(arr)
+      ? arr
+          .map((x: any) =>
+            typeof x === 'object' && x !== null ? normLower(x?.tutorEmail || x?.email) : ''
+          )
+          .filter(Boolean)
+      : [];
+
+  const extractNames = (arr: any): string[] =>
+    Array.isArray(arr)
+      ? arr
+          .map((x: any) =>
+            typeof x === 'object' && x !== null ? normLower(x?.tutorName || x?.name) : ''
+          )
+          .filter(Boolean)
+      : [];
+
+  schoolsSnap.docs?.forEach((d: any) => {
+    const s = d.data() || {};
+    const sId = d.id;
+    const sCode = String(s.schoolId || s.code || s.schoolCode || '').trim();
+    const sName =
+      resolvePartnerSchoolName(s.name, s.schoolName, s.institutionName) || `Partner School (${sId})`;
+    schoolNameMap.set(sId, sName);
+    if (sCode) schoolNameMap.set(sCode, sName);
+
+    if (isAdmin) {
+      assignedSchoolIds.add(sId);
+      assignedSchools.push({ id: sId, name: sName, code: sCode });
+      return;
+    }
+
+    const schoolTutorIds = [
+      ...extractIds(s.tutors),
+      ...extractIds(s.assignedTutors),
+      ...extractIds(s.assignedTutorIds),
+      ...extractIds(s.assignedStaff),
+      ...extractIds(s.staffIds),
+      ...extractIds(s.tutorIds),
+      ...(s.tutorId ? [String(s.tutorId).trim()] : []),
+      ...(s.staffId ? [String(s.staffId).trim()] : []),
+      ...(s.assignedTutorId ? [String(s.assignedTutorId).trim()] : []),
+    ];
+
+    const schoolTutorEmails = [
+      ...extractEmails(s.tutors),
+      ...extractEmails(s.assignedTutors),
+      ...extractEmails(s.assignedStaff),
+    ];
+
+    const schoolTutorNames = [
+      ...extractNames(s.tutors),
+      ...extractNames(s.assignedTutors),
+      ...extractNames(s.assignedStaff),
+    ];
+
+    if (Array.isArray(s.programs)) {
+      s.programs.forEach((prog: any) => {
+        schoolTutorIds.push(...extractIds(prog?.assignedTutors), ...extractIds(prog?.tutors));
+        schoolTutorEmails.push(
+          ...extractEmails(prog?.assignedTutors),
+          ...extractEmails(prog?.tutors)
+        );
+        schoolTutorNames.push(...extractNames(prog?.assignedTutors), ...extractNames(prog?.tutors));
+      });
+    }
+
+    const matched =
+      directSchoolIds.has(sId) ||
+      (sCode && directSchoolIds.has(sCode)) ||
+      schoolTutorIds.some((id) => aliasTutorIds.has(id)) ||
+      (email && schoolTutorEmails.includes(email)) ||
+      (nameLower && schoolTutorNames.includes(nameLower));
+
+    if (matched) {
+      assignedSchoolIds.add(sId);
+      assignedSchools.push({ id: sId, name: sName, code: sCode });
+    }
+  });
+
+  assignedSchools.sort((a, b) => a.name.localeCompare(b.name));
+
+  return {
+    uid,
+    email,
+    name,
+    role,
+    isAdmin,
+    aliasTutorIds,
+    assignedSchools,
+    assignedSchoolIds,
+    schoolNameMap,
+  };
+}
+
+export async function fetchAcademicStudentsFallback(options?: {
+  scope?: string;
+  schoolId?: string;
+}): Promise<AcademicStudentRecord[]> {
+  const effective = getEffectiveAuth();
+  const currentUser = auth.currentUser;
+  if (!currentUser && !effective.isMasquerading) return [];
+
+  const uid = String(effective.effectiveUid || currentUser?.uid || '').trim();
+  const userSnap = uid ? await getDoc(doc(db, 'users', uid)).catch(() => null) : null;
+  const userData: Record<string, any> = userSnap?.exists() ? userSnap.data() || {} : {};
+  const rawRole = String(
+    effective.effectiveRole ||
+      userData.role ||
+      sessionStorage.getItem('userRole') ||
+      localStorage.getItem('jaystar_cached_user_role') ||
+      ''
+  )
+    .trim()
+    .toUpperCase();
+  const role =
+    options?.scope === 'all'
+      ? 'ADMIN'
+      : options?.scope === 'school'
+      ? 'SCHOOL'
+      : options?.scope === 'tutor'
+      ? 'TUTOR'
+      : rawRole;
+
   const docs = new Map<string, any>();
   const addDocEntry = (id: string, data: any) => {
     if (!id) return;
-    docs.set(id, { id, ...data });
+    const prev = docs.get(id) || {};
+    docs.set(id, { ...prev, ...data, id });
   };
 
-  if (['TUTOR', 'STAFF', 'INSTRUCTOR', 'TEACHER', 'FACULTY'].includes(role)) {
-    const accessSnap = await getDoc(doc(db, 'staffSchoolAccess', user.uid)).catch(() => null);
-    const accessData: Record<string, any> = accessSnap?.exists() ? accessSnap.data() || {} : {};
-    const schoolIds = new Set<string>([
-      ...(Array.isArray(accessData.schoolIds) ? accessData.schoolIds.map(String) : []),
-      ...(accessData.schoolId ? [String(accessData.schoolId)] : []),
-      ...(userData.schoolId ? [String(userData.schoolId)] : []),
-    ].filter(Boolean));
+  let schoolNameMap = new Map<string, string>();
 
-    const schoolsSnap = await getDocs(query(collection(db, 'schools'), limit(150))).catch(() => null);
-    schoolsSnap?.docs.forEach((sDoc) => {
-      const sd = sDoc.data() || {};
-      const assigned =
-        (Array.isArray(sd.assignedStaff) &&
-          sd.assignedStaff.some((st: any) => String(st?.id || st?.uid || '') === user.uid)) ||
-        (Array.isArray(sd.assignedTutors) &&
-          sd.assignedTutors.some((st: any) => String(st?.tutorId || st?.id || st?.uid || '') === user.uid));
-      if (assigned) schoolIds.add(sDoc.id);
+  if (['TUTOR', 'STAFF', 'INSTRUCTOR', 'TEACHER', 'FACULTY'].includes(role)) {
+    const ctx = await resolveTutorAssignedContext();
+    schoolNameMap = ctx.schoolNameMap;
+    const nameLower = normLower(ctx.name);
+
+    const [indSnap, stdSnap, enrollSnap, schedSnap] = await Promise.all([
+      getDocs(collection(db, 'individualStudents')).catch(() => ({ docs: [] } as any)),
+      getDocs(collection(db, 'students')).catch(() => ({ docs: [] } as any)),
+      getDocs(collection(db, 'enrollment_requests')).catch(() => ({ docs: [] } as any)),
+      getDocs(collection(db, 'classSchedules')).catch(() => ({ docs: [] } as any)),
+    ]);
+
+    // Identify any student IDs or schools linked via classSchedules for this tutor
+    const scheduleStudentIds = new Set<string>();
+    schedSnap.docs?.forEach((d: any) => {
+      const sc = d.data() || {};
+      const scTutorId = String(sc.tutorId || '').trim();
+      const scTutorEmail = normLower(sc.tutorEmail);
+      const scTutorName = normLower(sc.tutorName);
+      const matchesTutor =
+        (scTutorId && ctx.aliasTutorIds.has(scTutorId)) ||
+        (ctx.email && scTutorEmail === ctx.email) ||
+        (nameLower && scTutorName === nameLower);
+      if (matchesTutor) {
+        if (sc.schoolId) ctx.assignedSchoolIds.add(String(sc.schoolId).trim());
+        if (sc.studentId) {
+          const rawSid = String(sc.studentId).trim();
+          scheduleStudentIds.add(rawSid);
+          if (rawSid.startsWith('student_')) {
+            scheduleStudentIds.add(rawSid.replace(/^student_/, ''));
+          }
+        }
+      }
     });
 
-    for (const sid of Array.from(schoolIds)) {
-      for (const colName of ['individualStudents', 'students'] as const) {
-        const snap = await getDocs(query(collection(db, colName), where('schoolId', '==', sid), limit(250))).catch(
-          () => null
-        );
-        snap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
-      }
-    }
+    const isStudentAssignedToTutor = (docId: string, s: Record<string, any>): boolean => {
+      if (ctx.isAdmin) return true;
+      const sSchoolId = String(s.schoolId || s.school_id || '').trim();
+      if (sSchoolId && ctx.assignedSchoolIds.has(sSchoolId)) return true;
 
-    for (const field of assignmentFields) {
-      for (const colName of ['individualStudents', 'students'] as const) {
-        const snap = await getDocs(query(collection(db, colName), where(field, '==', user.uid), limit(150))).catch(
-          () => null
-        );
-        snap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
+      if (scheduleStudentIds.has(docId)) return true;
+      if (s.enrollmentRequestId && scheduleStudentIds.has(String(s.enrollmentRequestId))) return true;
+
+      for (const field of assignmentFields) {
+        const val = String(s[field] || '').trim();
+        if (val && ctx.aliasTutorIds.has(val)) return true;
       }
-    }
+
+      if (ctx.email && normLower(s.tutorEmail) === ctx.email) return true;
+      if (nameLower && normLower(s.tutorName || s.assignedTutorName) === nameLower) return true;
+
+      if (Array.isArray(s.assignedTutors)) {
+        const matchedInArray = s.assignedTutors.some((at: any) => {
+          if (!at) return false;
+          if (typeof at === 'string') return ctx.aliasTutorIds.has(at.trim());
+          const atId = String(at.tutorId || at.id || at.uid || at.staffId || '').trim();
+          const atEmail = normLower(at.tutorEmail || at.email);
+          const atName = normLower(at.tutorName || at.name);
+          return (
+            (atId && ctx.aliasTutorIds.has(atId)) ||
+            (ctx.email && atEmail === ctx.email) ||
+            (nameLower && atName === nameLower)
+          );
+        });
+        if (matchedInArray) return true;
+      }
+
+      return false;
+    };
+
+    stdSnap.docs?.forEach((d: any) => {
+      const data = d.data() || {};
+      if (isStudentAssignedToTutor(d.id, data)) {
+        addDocEntry(d.id, data);
+      }
+    });
+
+    indSnap.docs?.forEach((d: any) => {
+      const data = d.data() || {};
+      if (isStudentAssignedToTutor(d.id, data)) {
+        addDocEntry(d.id, data);
+      }
+    });
+
+    // Also check enrollment_requests for any private/parent learner assigned to this tutor
+    enrollSnap.docs?.forEach((d: any) => {
+      const data = d.data() || {};
+      if (isStudentAssignedToTutor(d.id, data)) {
+        const targetId = String(data.studentDocId || data.studentId || d.id).trim();
+        // Check if already present by name
+        const cName = normLower(data.studentName || data.childName || data.fullName);
+        const alreadyExists = Array.from(docs.values()).some(
+          (existing) =>
+            existing.id === targetId ||
+            (cName && normLower(existing.fullName || existing.studentName || existing.name) === cName)
+        );
+        if (!alreadyExists && cName) {
+          addDocEntry(targetId, {
+            fullName: data.studentName || data.childName || data.fullName || 'Private Learner',
+            studentName: data.studentName || data.childName || data.fullName || 'Private Learner',
+            class: data.class || data.grade || data.studentAge || 'Grade 1',
+            plan: data.programName || data.track || data.learningTrack || 'Private Coaching',
+            parentId: data.parentId || '',
+            parentName: data.parentName || '',
+            parentEmail: data.parentEmail || data.email || '',
+            tutorId: data.tutorId || ctx.uid,
+            tutorName: data.tutorName || ctx.name,
+            studentType: 'parent',
+          });
+        }
+      }
+    });
   } else if (role === 'PARENT') {
-    for (const colName of ['individualStudents', 'students'] as const) {
-      const snap = await getDocs(query(collection(db, colName), where('parentId', '==', user.uid), limit(100))).catch(
+    const parentEmail = normLower(
+      effective.effectiveEmail || userData.email || currentUser?.email || ''
+    );
+    const [indSnap, stdSnap] = await Promise.all([
+      getDocs(query(collection(db, 'individualStudents'), where('parentId', '==', uid), limit(100))).catch(
         () => null
-      );
-      snap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
+      ),
+      getDocs(query(collection(db, 'students'), where('parentId', '==', uid), limit(100))).catch(
+        () => null
+      ),
+    ]);
+    indSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
+    stdSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
+
+    if (parentEmail) {
+      const [indEmailSnap, stdEmailSnap] = await Promise.all([
+        getDocs(
+          query(collection(db, 'individualStudents'), where('parentEmail', '==', parentEmail), limit(100))
+        ).catch(() => null),
+        getDocs(
+          query(collection(db, 'students'), where('parentEmail', '==', parentEmail), limit(100))
+        ).catch(() => null),
+      ]);
+      indEmailSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
+      stdEmailSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
     }
   } else if (role.includes('SCHOOL')) {
     const sid = String(
-      userData.schoolId ||
+      options?.schoolId ||
+        effective.effectiveSchoolId ||
+        userData.schoolId ||
         userData.schoolDocId ||
+        sessionStorage.getItem('schoolId') ||
         sessionStorage.getItem('schoolDocId') ||
         localStorage.getItem('jaystar_cached_school_doc_id') ||
-        user.uid
+        uid
     );
     for (const colName of ['individualStudents', 'students'] as const) {
-      const snap = await getDocs(query(collection(db, colName), where('schoolId', '==', sid), limit(300))).catch(
-        () => null
-      );
+      const snap = await getDocs(
+        query(collection(db, colName), where('schoolId', '==', sid), limit(400))
+      ).catch(() => null);
       snap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
     }
   } else if (role.includes('STUDENT')) {
     const candidateId = String(
-      userData.studentDocId ||
+      effective.effectiveStudentDocId ||
+        userData.studentDocId ||
         sessionStorage.getItem('studentDocId') ||
         localStorage.getItem('jaystar_cached_student_doc_id') ||
         ''
@@ -122,88 +523,115 @@ export async function fetchAcademicStudentsFallback() {
         if (snap?.exists()) addDocEntry(snap.id, snap.data());
       }
     }
-    if (docs.size === 0) {
+    if (docs.size === 0 && uid) {
       for (const colName of ['individualStudents', 'students'] as const) {
         const snap = await getDocs(
-          query(collection(db, colName), where('firebaseUid', '==', user.uid), limit(10))
+          query(collection(db, colName), where('firebaseUid', '==', uid), limit(10))
         ).catch(() => null);
         snap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
       }
     }
   } else if (role.includes('ADMIN')) {
-    for (const colName of ['individualStudents', 'students'] as const) {
-      const snap = await getDocs(query(collection(db, colName), limit(500))).catch(() => null);
-      snap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
-    }
+    const [schoolsSnap, indSnap, stdSnap] = await Promise.all([
+      getDocs(collection(db, 'schools')).catch(() => null),
+      getDocs(query(collection(db, 'individualStudents'), limit(500))).catch(() => null),
+      getDocs(query(collection(db, 'students'), limit(500))).catch(() => null),
+    ]);
+    schoolsSnap?.docs.forEach((d) => {
+      const sd = d.data() || {};
+      schoolNameMap.set(
+        d.id,
+        resolvePartnerSchoolName(sd.name, sd.schoolName, sd.institutionName) || d.id
+      );
+    });
+    stdSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
+    indSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
   }
 
-  return Array.from(docs.values())
-    .map((s) => ({
+  // Deduplicate by normalized name + schoolId/parentId if duplicate IDs exist across collections
+  const deduplicated = new Map<string, AcademicStudentRecord>();
+  Array.from(docs.values()).forEach((s) => {
+    const fullName = String(s.fullName || s.studentName || s.name || '').trim();
+    if (!fullName) return;
+    const schoolId = String(s.schoolId || s.school_id || '').trim();
+    const schoolName =
+      String(s.schoolName || (schoolId ? schoolNameMap.get(schoolId) : '') || '').trim();
+    const isSchoolStudent = Boolean(schoolId && schoolId !== 'private');
+    const normalizedClass = formatNormalizedClassDisplay(
+      s.class || s.className || s.grade || s.classLevel,
+      'Grade 1'
+    );
+    const plan = String(
+      s.plan || s.programName || s.program || s.track || s.learningTrack || 'Digital Literacy & Tech'
+    ).trim();
+    const existingCode = String(s.accessCode || s.passcode || s.code || '').trim();
+
+    const record: AcademicStudentRecord = {
       id: s.id,
-      fullName: s.fullName || s.studentName || s.name || 'Student',
-      username: s.username || '',
-      email: s.email || '',
-      plan: s.plan || s.programName || s.program || '',
-      schoolId: s.schoolId || '',
-      parentId: s.parentId || '',
-      tutorId: s.tutorId || s.staffId || s.assignedTutorId || s.assignedStaffId || s.instructorId || '',
-      firebaseUid: s.firebaseUid || s.userId || '',
-    }))
-    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+      fullName,
+      studentName: fullName,
+      username: String(s.username || s.studentUsername || s.id).trim(),
+      email: String(s.email || s.studentEmail || s.parentEmail || '').trim(),
+      class: normalizedClass,
+      grade: normalizedClass,
+      plan,
+      track: plan,
+      schoolId,
+      schoolName: isSchoolStudent ? schoolName || 'Partner School' : '',
+      parentId: String(s.parentId || '').trim(),
+      parentName: String(s.parentName || s.guardianName || '').trim(),
+      parentEmail: String(s.parentEmail || s.guardianEmail || '').trim(),
+      tutorId: String(
+        s.tutorId || s.staffId || s.assignedTutorId || s.assignedStaffId || s.instructorId || ''
+      ).trim(),
+      tutorName: String(s.tutorName || s.assignedTutorName || '').trim(),
+      firebaseUid: String(s.firebaseUid || s.userId || '').trim(),
+      accessCode: existingCode || undefined,
+      portalAccessEnabled: s.portalAccessEnabled !== false,
+      accountStatus: String(s.accountStatus || s.status || 'ACTIVE').toUpperCase(),
+      assignmentCategory: isSchoolStudent ? 'school' : 'private',
+      isPrivate: !isSchoolStudent,
+    };
+
+    deduplicated.set(s.id, record);
+  });
+
+  return Array.from(deduplicated.values()).sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 
 export async function fetchAcademicSchoolsFallback() {
-  const user = auth.currentUser;
-  if (!user) return [];
+  const effective = getEffectiveAuth();
+  const currentUser = auth.currentUser;
+  if (!currentUser && !effective.isMasquerading) return [];
 
-  const userSnap = await getDoc(doc(db, 'users', user.uid)).catch(() => null);
+  const uid = String(effective.effectiveUid || currentUser?.uid || '').trim();
+  const userSnap = uid ? await getDoc(doc(db, 'users', uid)).catch(() => null) : null;
   const userData: Record<string, any> = userSnap?.exists() ? userSnap.data() || {} : {};
   const role = String(
-    userData.role || sessionStorage.getItem('userRole') || localStorage.getItem('jaystar_cached_user_role') || ''
+    effective.effectiveRole ||
+      userData.role ||
+      sessionStorage.getItem('userRole') ||
+      localStorage.getItem('jaystar_cached_user_role') ||
+      ''
   )
     .trim()
     .toUpperCase();
 
-  const schools = new Map<string, any>();
+  if (['TUTOR', 'STAFF', 'INSTRUCTOR', 'TEACHER', 'FACULTY'].includes(role) || role.includes('ADMIN')) {
+    const ctx = await resolveTutorAssignedContext();
+    return ctx.assignedSchools;
+  }
 
-  if (role.includes('ADMIN')) {
-    const snap = await getDocs(query(collection(db, 'schools'), limit(200))).catch(() => null);
-    snap?.docs.forEach((d) => schools.set(d.id, { id: d.id, ...d.data() }));
-  } else if (['TUTOR', 'STAFF', 'INSTRUCTOR', 'TEACHER', 'FACULTY'].includes(role)) {
-    const accessSnap = await getDoc(doc(db, 'staffSchoolAccess', user.uid)).catch(() => null);
-    const accessData: Record<string, any> = accessSnap?.exists() ? accessSnap.data() || {} : {};
-    const ids = Array.from(
-      new Set(
-        [
-          accessData.schoolId,
-          userData.schoolId,
-          ...(Array.isArray(accessData.schoolIds) ? accessData.schoolIds : []),
-        ]
-          .filter(Boolean)
-          .map(String)
-      )
-    );
-    for (const id of ids) {
-      const snap = await getDoc(doc(db, 'schools', id)).catch(() => null);
-      if (snap?.exists()) schools.set(snap.id, { id: snap.id, ...snap.data() });
-    }
-    const allSchoolsSnap = await getDocs(query(collection(db, 'schools'), limit(150))).catch(() => null);
-    allSchoolsSnap?.docs.forEach((sDoc) => {
-      const sd = sDoc.data() || {};
-      const assigned =
-        (Array.isArray(sd.assignedStaff) &&
-          sd.assignedStaff.some((st: any) => String(st?.id || st?.uid || '') === user.uid)) ||
-        (Array.isArray(sd.assignedTutors) &&
-          sd.assignedTutors.some((st: any) => String(st?.tutorId || st?.id || st?.uid || '') === user.uid));
-      if (assigned) schools.set(sDoc.id, { id: sDoc.id, ...sd });
-    });
-  } else if (role.includes('SCHOOL')) {
+  const schools = new Map<string, any>();
+  if (role.includes('SCHOOL')) {
     const sid = String(
-      userData.schoolId ||
+      effective.effectiveSchoolId ||
+        userData.schoolId ||
         userData.schoolDocId ||
+        sessionStorage.getItem('schoolId') ||
         sessionStorage.getItem('schoolDocId') ||
         localStorage.getItem('jaystar_cached_school_doc_id') ||
-        user.uid
+        uid
     );
     const snap = await getDoc(doc(db, 'schools', sid)).catch(() => null);
     if (snap?.exists()) schools.set(snap.id, { id: snap.id, ...snap.data() });
@@ -212,15 +640,17 @@ export async function fetchAcademicSchoolsFallback() {
   return Array.from(schools.values())
     .map((s) => ({
       id: s.id,
-      name: s.name || s.schoolName || s.institutionName || 'School',
+      name: resolvePartnerSchoolName(s.name, s.schoolName, s.institutionName) || 'School',
       code: s.code || s.schoolCode || '',
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function handleAssignmentsFallback(url: string, options: RequestInit = {}) {
+  const effective = getEffectiveAuth();
   const user = auth.currentUser;
-  if (!user) throw new Error('Please sign in again.');
+  const uid = effective.effectiveUid || user?.uid;
+  if (!uid) throw new Error('Please sign in again.');
 
   const parsedUrl = new URL(url, window.location.origin);
   const method = (options.method || 'GET').toUpperCase();
@@ -228,9 +658,9 @@ export async function handleAssignmentsFallback(url: string, options: RequestIni
   if (method === 'GET') {
     const studentId = parsedUrl.searchParams.get('studentId') || '';
     const snap = studentId
-      ? await getDocs(query(collection(db, 'assignments'), where('studentId', '==', studentId), limit(150))).catch(
-          () => null
-        )
+      ? await getDocs(
+          query(collection(db, 'assignments'), where('studentId', '==', studentId), limit(150))
+        ).catch(() => null)
       : await getDocs(query(collection(db, 'assignments'), limit(200))).catch(() => null);
 
     const rows = (snap?.docs || []).map((d) => {
@@ -264,8 +694,12 @@ export async function handleAssignmentsFallback(url: string, options: RequestIni
     const payload = {
       studentId,
       studentName,
-      tutorId: user.uid,
-      tutorName: user.displayName || sessionStorage.getItem('userName') || 'Tutor',
+      tutorId: uid,
+      tutorName:
+        effective.effectiveName ||
+        user?.displayName ||
+        sessionStorage.getItem('userName') ||
+        'Tutor',
       title: String(body.title || '').trim(),
       instructions: String(body.instructions || '').trim(),
       dueDate: body.dueDate || null,
@@ -309,8 +743,10 @@ export async function handleAssignmentsFallback(url: string, options: RequestIni
 }
 
 export async function handleMilestonesFallback(url: string, options: RequestInit = {}) {
+  const effective = getEffectiveAuth();
   const user = auth.currentUser;
-  if (!user) throw new Error('Please sign in again.');
+  const uid = effective.effectiveUid || user?.uid;
+  if (!uid) throw new Error('Please sign in again.');
 
   const parsedUrl = new URL(url, window.location.origin);
   const method = (options.method || 'GET').toUpperCase();
@@ -351,8 +787,12 @@ export async function handleMilestonesFallback(url: string, options: RequestInit
       position: Number(body.position || 1),
       status: 'NOT_STARTED',
       dueDate: body.dueDate || null,
-      ownerId: user.uid,
-      ownerName: user.displayName || sessionStorage.getItem('userName') || 'Tutor',
+      ownerId: uid,
+      ownerName:
+        effective.effectiveName ||
+        user?.displayName ||
+        sessionStorage.getItem('userName') ||
+        'Tutor',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -362,7 +802,8 @@ export async function handleMilestonesFallback(url: string, options: RequestInit
 
   if (action === 'complete' || action === 'status') {
     const milestoneId = String(body.milestoneId || '').trim();
-    const status = action === 'complete' ? 'COMPLETED' : String(body.status || 'IN_PROGRESS').toUpperCase();
+    const status =
+      action === 'complete' ? 'COMPLETED' : String(body.status || 'IN_PROGRESS').toUpperCase();
     await updateDoc(doc(db, 'milestones', milestoneId), {
       status,
       completedAt: status === 'COMPLETED' ? serverTimestamp() : null,
@@ -381,8 +822,10 @@ export async function handleMilestonesFallback(url: string, options: RequestInit
 }
 
 export async function handleAssessmentsFallback(url: string, options: RequestInit = {}) {
+  const effective = getEffectiveAuth();
   const user = auth.currentUser;
-  if (!user) throw new Error('Please sign in again.');
+  const uid = effective.effectiveUid || user?.uid;
+  if (!uid) throw new Error('Please sign in again.');
 
   const parsedUrl = new URL(url, window.location.origin);
   const method = (options.method || 'GET').toUpperCase();
@@ -405,7 +848,7 @@ export async function handleAssessmentsFallback(url: string, options: RequestIni
     assessmentType: String(body.assessmentType || 'QUIZ').trim(),
     score: body.score === '' || body.score == null ? null : Number(body.score),
     feedback: String(body.feedback || '').trim(),
-    assessedBy: user.uid,
+    assessedBy: uid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -414,8 +857,10 @@ export async function handleAssessmentsFallback(url: string, options: RequestIni
 }
 
 export async function handleAttendanceFallback(url: string, options: RequestInit = {}) {
+  const effective = getEffectiveAuth();
   const user = auth.currentUser;
-  if (!user) throw new Error('Please sign in again.');
+  const uid = effective.effectiveUid || user?.uid;
+  if (!uid) throw new Error('Please sign in again.');
 
   const parsedUrl = new URL(url, window.location.origin);
   const method = (options.method || 'GET').toUpperCase();
@@ -424,13 +869,14 @@ export async function handleAttendanceFallback(url: string, options: RequestInit
     const studentId = parsedUrl.searchParams.get('studentId') || '';
     const scheduleId = parsedUrl.searchParams.get('scheduleId') || '';
     if (!studentId && !scheduleId) return { records: [] };
-    const snap = scheduleId && !studentId
-      ? await getDocs(
-          query(collection(db, 'attendance'), where('scheduleId', '==', scheduleId), limit(250))
-        ).catch(() => null)
-      : await getDocs(
-          query(collection(db, 'attendance'), where('studentId', '==', studentId), limit(200))
-        ).catch(() => null);
+    const snap =
+      scheduleId && !studentId
+        ? await getDocs(
+            query(collection(db, 'attendance'), where('scheduleId', '==', scheduleId), limit(250))
+          ).catch(() => null)
+        : await getDocs(
+            query(collection(db, 'attendance'), where('studentId', '==', studentId), limit(200))
+          ).catch(() => null);
     const records = (snap?.docs || [])
       .map((d) => {
         const data = d.data() || {};
@@ -460,7 +906,7 @@ export async function handleAttendanceFallback(url: string, options: RequestInit
       const payload = {
         studentId,
         studentName: String(entry?.studentName || 'Student').trim(),
-        tutorId: user.uid,
+        tutorId: uid,
         schoolId,
         scheduleId: scheduleId || null,
         sessionTitle: sessionTitle || null,
@@ -486,7 +932,7 @@ export async function handleAttendanceFallback(url: string, options: RequestInit
   const docId = buildAttendanceRecordKey({ studentId, dateKey, scheduleId });
   const payload = {
     studentId,
-    tutorId: user.uid,
+    tutorId: uid,
     scheduleId: scheduleId || null,
     sessionTitle: String(body.sessionTitle || '').trim() || null,
     date: dateKey,
@@ -500,33 +946,39 @@ export async function handleAttendanceFallback(url: string, options: RequestInit
 }
 
 export async function academicApiWithFallback(path: string, options: RequestInit = {}) {
+  const effective = getEffectiveAuth();
   const user = auth.currentUser;
-  if (!user) throw new Error('Please sign in again.');
+  if (!user && !effective.isMasquerading) throw new Error('Please sign in again.');
 
-  try {
-    const token = await user.getIdToken();
-    const response = await fetch(path, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        ...(options.headers || {}),
-      },
-    });
-    const data = await response.json().catch(() => ({}));
-    if (response.ok && !data?.fallback) {
-      return data;
-    }
-  } catch {
-    // Fall through to client-side Firestore fallback
-  }
-
+  // Always use the unified client-side resolver for academic-students and academic-schools
+  // so that tutor alias IDs, impersonation, and school/private categorization are 100% consistent.
   if (path.includes('academic-students')) {
     return { students: await fetchAcademicStudentsFallback(), fallback: true };
   }
   if (path.includes('academic-schools')) {
     return { schools: await fetchAcademicSchoolsFallback(), fallback: true };
   }
+
+  if (user && !effective.isMasquerading) {
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(path, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          ...(options.headers || {}),
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && !data?.fallback) {
+        return data;
+      }
+    } catch {
+      // Fall through to client-side Firestore fallback
+    }
+  }
+
   if (path.includes('academic-assignments')) {
     return handleAssignmentsFallback(path, options);
   }

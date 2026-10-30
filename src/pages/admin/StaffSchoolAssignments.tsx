@@ -20,11 +20,22 @@ const StaffSchoolAssignments: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [usersSnap, schoolsSnap] = await Promise.all([
+      const [usersSnap, parentsSnap, schoolsSnap] = await Promise.all([
         getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'parents')).catch(() => ({ docs: [] } as any)),
         getDocs(collection(db, 'schools'))
       ]);
+      const parentIds = new Set<string>();
+      const parentEmails = new Set<string>();
+      parentsSnap.docs.forEach((pDoc: any) => {
+        parentIds.add(pDoc.id);
+        const pd = pDoc.data() || {};
+        if (pd.uid) parentIds.add(String(pd.uid));
+        if (pd.email) parentEmails.add(String(pd.email).toLowerCase().trim());
+      });
       setStaff(usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .filter((u: any) => !u.isDuplicate && !u.isParent)
+        .filter((u: any) => !parentIds.has(u.id) && !parentEmails.has(String(u.email || '').toLowerCase().trim()))
         .filter((u: any) => ['staff','tutor','instructor'].includes(String(u.role || '').toLowerCase()))
         .filter((u: any) => String(u.accountStatus || 'ACTIVE').toUpperCase() === 'ACTIVE'));
       setSchools(schoolsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));

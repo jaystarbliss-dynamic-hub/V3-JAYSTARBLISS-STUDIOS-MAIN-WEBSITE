@@ -392,7 +392,10 @@ const PortalLayout: React.FC = () => {
       return [
         {
           label: 'Overview',
-          items: [{ name: 'Dashboard', path: '/portal/staff', icon: <LayoutDashboard size={19} />, desc: 'Assigned schools, schedules & reminders' }]
+          items: [
+            { name: 'Dashboard', path: '/portal/staff', icon: <LayoutDashboard size={19} />, desc: 'Assigned schools, schedules & reminders' },
+            { name: 'Assigned Learners', path: '/portal/staff/students', icon: <Users size={19} />, desc: 'School-assigned & private learners roster' }
+          ]
         },
         {
           label: 'Teaching & Schedule',
@@ -406,13 +409,15 @@ const PortalLayout: React.FC = () => {
           label: 'Academics & Assessments',
           items: [
             { name: 'Assessments', path: '/portal/staff/assessments', icon: <ClipboardCheck size={19} />, desc: 'Create & manage assignments, activities, tests & assessments' },
-            { name: 'Assessment History', path: '/portal/staff/exam-history', icon: <History size={19} />, desc: 'Review history across assignments, activities, tests & assessments' }
+            { name: 'Assessment History', path: '/portal/staff/exam-history', icon: <History size={19} />, desc: 'Review history across assignments, activities, tests & assessments' },
+            { name: 'Assignments & Review', path: '/portal/staff/assignments', icon: <FileText size={19} />, desc: 'Assign & grade individual student coursework' },
+            { name: 'Milestone Roadmap', path: '/portal/staff/milestones', icon: <GraduationCap size={19} />, desc: 'Track learner & school curriculum milestones' }
           ]
         },
         {
           label: 'People & Resources',
           items: [
-            { name: 'Student Access', path: '/portal/staff/credentials', icon: <KeyRound size={19} />, desc: 'Access credentials' },
+            { name: 'Student Access', path: '/portal/staff/credentials', icon: <KeyRound size={19} />, desc: 'Issue & manage learner access codes' },
             { name: 'Lesson Resources', path: '/portal/staff/resources', icon: <BookOpen size={19} />, desc: 'Distribute documents, images, videos & links' }
           ]
         },
