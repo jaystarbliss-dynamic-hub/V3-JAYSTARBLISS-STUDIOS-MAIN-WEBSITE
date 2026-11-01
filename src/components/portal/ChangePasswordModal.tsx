@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { Lock, ShieldCheck, Eye, EyeOff, X, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Lock, ShieldCheck, Eye, EyeOff, X, CheckCircle2, AlertCircle, User } from 'lucide-react';
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { auth, db, getClientDatabases } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
+import { checkUsernameAvailability, claimGlobalUsername, normalizeUsername } from '../../lib/usernameRegistry';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
   onSuccess
 }) => {
   const { toast } = useToast();
+  const [username, setUsername] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [needsReauth, setNeedsReauth] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -38,6 +40,34 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const user = auth.currentUser;
+    const cachedUsername = sessionStorage.getItem('studentUsername') || '';
+    if (cachedUsername) setUsername(normalizeUsername(cachedUsername));
+    if (!user) return;
+
+    const loadCurrentUsername = async () => {
+      try {
+        const uSnap = await getDoc(doc(db, 'users', user.uid)).catch(() => null);
+        if (uSnap?.exists() && uSnap.data()?.username) {
+          setUsername(normalizeUsername(String(uSnap.data().username)));
+          return;
+        }
+        const studentDocId = sessionStorage.getItem('studentDocId') || localStorage.getItem('jaystar_cached_student_doc_id') || '';
+        if (studentDocId) {
+          const sSnap = await getDoc(doc(db, 'individualStudents', studentDocId)).catch(() => null);
+          if (sSnap?.exists() && sSnap.data()?.username) {
+            setUsername(normalizeUsername(String(sSnap.data().username)));
+          }
+        }
+      } catch {
+        // Non-fatal
+      }
+    };
+    void loadCurrentUsername();
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -58,6 +88,12 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     e.preventDefault();
     setError('');
 
+    const cleanUsername = normalizeUsername(username);
+    if (cleanUsername && (cleanUsername.length < 3 || cleanUsername.length > 30)) {
+      setError('Username must be between 3 and 30 characters.');
+      return;
+    }
+
     const cleanPassword = newPassword.trim();
     if (cleanPassword.length < 8) {
       setError('Password must be at least 8 characters long.');
@@ -74,6 +110,20 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       const user = auth.currentUser;
       if (!user) {
         throw new Error('No active user session. Please sign in again.');
+      }
+
+      const cachedStudentDocId = sessionStorage.getItem('studentDocId') || localStorage.getItem('jaystar_cached_student_doc_id') || '';
+      const cachedSchoolId = sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || '';
+
+      // Enforce global username uniqueness across the entire portal
+      if (cleanUsername) {
+        const check = await checkUsernameAvailability(cleanUsername, [user.uid, cachedStudentDocId, cachedSchoolId]);
+        if (!check.available) {
+          setError(check.reason || `The username "${cleanUsername}" is already taken. Please pick another username.`);
+          toast.error(`Username "${cleanUsername}" is already taken. Please pick another username.`);
+          setLoading(false);
+          return;
+        }
       }
 
       const [sha256Hash, upperSha256Hash] = await Promise.all([
@@ -109,7 +159,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
           },
-          body: JSON.stringify({ newPassword: cleanPassword })
+          body: JSON.stringify({ newPassword: cleanPassword, ...(cleanUsername ? { username: cleanUsername } : {}) })
         });
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.success && !data.fallback) {
@@ -128,6 +178,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
       // 3. Direct client-side Firestore sync across primary and fallback databases
       const userPatch: Record<string, any> = {
+        ...(cleanUsername ? { username: cleanUsername } : {}),
         passwordHash: sha256Hash,
         customPasswordHash: sha256Hash,
         accessCodeHash: upperSha256Hash,
@@ -139,6 +190,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       };
 
       const studentPatch: Record<string, any> = {
+        ...(cleanUsername ? { username: cleanUsername } : {}),
         passwordHash: sha256Hash,
         customPasswordHash: sha256Hash,
         accessCodeHash: upperSha256Hash,
@@ -152,7 +204,6 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         updatedAt: nowIso
       };
 
-      const cachedStudentDocId = sessionStorage.getItem('studentDocId') || localStorage.getItem('jaystar_cached_student_doc_id') || '';
       const userEmail = (user.email || '').toLowerCase().trim();
 
       for (const dbInstance of getClientDatabases()) {
@@ -219,10 +270,21 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         }
       }
 
+      if (cleanUsername) {
+        sessionStorage.setItem('studentUsername', cleanUsername);
+        await claimGlobalUsername(cleanUsername, {
+          uid: user.uid,
+          docId: cachedStudentDocId || user.uid,
+          role: (sessionStorage.getItem('userRole') || 'student').toUpperCase(),
+          email: user.email || '',
+          name: user.displayName || sessionStorage.getItem('userName') || '',
+        });
+      }
+
       sessionStorage.setItem('forcePasswordReset', 'false');
       sessionStorage.setItem('mustResetPassword', 'false');
       setSuccess(true);
-      toast.success('Your password has been successfully updated! You can now log in with your new password.');
+      toast.success('Your password and unique username have been updated! You can now log in with your credentials.');
 
       setTimeout(() => {
         if (onSuccess) onSuccess();
@@ -269,8 +331,8 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
             </h2>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               {isForced 
-                ? 'Your account was initialized with temporary credentials. Please choose a new secure password to proceed.' 
-                : 'Enter a strong, memorable password to secure your account.'}
+                ? 'Your account was initialized with temporary credentials. Please verify your unique username and choose a new secure password to proceed.' 
+                : 'Confirm your unique username and enter a strong, memorable password to secure your account.'}
             </p>
           </div>
         </div>
@@ -290,6 +352,27 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
+                Unique Portal Username
+              </label>
+              <div className="relative">
+                <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  minLength={3}
+                  maxLength={30}
+                  value={username}
+                  onChange={(e) => setUsername(normalizeUsername(e.target.value))}
+                  placeholder="your_unique_username"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-red"
+                />
+              </div>
+              <p className="mt-1 text-[10px] text-gray-500">
+                No two accounts can share the same username. If your username is taken, pick another.
+              </p>
+            </div>
+
             {needsReauth && (
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">

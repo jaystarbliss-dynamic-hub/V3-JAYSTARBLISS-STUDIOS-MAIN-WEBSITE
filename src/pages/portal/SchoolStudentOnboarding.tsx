@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Download, FileText, Image as ImageIcon, Loader2, UserPlus, Printer, ShieldCheck, Check, Copy } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
 import { auth, db } from '../../lib/firebase';
-import { collection, getDocs, doc, getDoc, setDoc, addDoc, serverTimestamp, query, limit, where } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, addDoc, serverTimestamp, query, limit } from 'firebase/firestore';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
 import { CANONICAL_CLASSES, normalizeClassName } from '../../lib/classes';
+import { checkUsernameAvailability, claimGlobalUsername, normalizeUsername } from '../../lib/usernameRegistry';
 
 const generateAccessCode = (length = 8) => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -86,13 +87,20 @@ const SchoolStudentOnboarding: React.FC = () => {
     }
     
     const trimmedName = form.fullName.trim();
-    const cleanUsername = form.username.toLowerCase().replace(/\s+/g, '').trim();
+    const cleanUsername = normalizeUsername(form.username);
     if (!trimmedName || !cleanUsername || !form.class) {
       return toast.error('Student name, username and class are required.');
     }
 
     setSaving(true);
     try {
+      // Enforce global username uniqueness across the entire portal
+      const usernameCheck = await checkUsernameAvailability(cleanUsername);
+      if (!usernameCheck.available) {
+        setSaving(false);
+        return toast.error(usernameCheck.reason || `The username "${cleanUsername}" is already taken. Please pick another username.`);
+      }
+
       const selectedProg = programs.find(p => p.id === programId);
       const programName = selectedProg?.name || form.track.trim() || 'General School Programme';
       let issuedCredentials: { username: string; accessCode: string; portal: string } | null = null;
@@ -119,9 +127,9 @@ const SchoolStudentOnboarding: React.FC = () => {
         }
       }
 
+      const studentId = `sch_${cleanUsername}_${Date.now().toString(36)}`;
       // 2. Direct Firestore fallback
       if (!issuedCredentials) {
-        const studentId = `sch_${cleanUsername}_${Date.now().toString(36)}`;
         const accessCode = generateAccessCode();
         const targetSchoolId = schoolInfo.id || effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || auth.currentUser?.uid || '';
         const targetSchoolName = schoolInfo.name || sessionStorage.getItem('schoolName') || 'Partner School';
@@ -218,6 +226,14 @@ const SchoolStudentOnboarding: React.FC = () => {
         };
       }
 
+      await claimGlobalUsername(cleanUsername, {
+        uid: studentId,
+        docId: studentId,
+        role: 'STUDENT',
+        email: form.email.trim().toLowerCase(),
+        name: trimmedName,
+      });
+
       setCredentials(issuedCredentials);
       setForm({ fullName: '', username: '', email: '', class: 'Grade 7', track: '', parentId: '' });
       setProgramId('');
@@ -247,17 +263,9 @@ const SchoolStudentOnboarding: React.FC = () => {
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${credentials?.username}-student-access.txt`; a.click(); URL.revokeObjectURL(url);
   };
 
-  const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] || character);
-
   const printCredentials = () => {
     if (!credentials) return;
-    const win = window.open('', '_blank', 'noopener,noreferrer');
-    if (!win) return toast.error('Allow pop-ups to print the credential card.');
-    const safeUsername = escapeHtml(credentials.username);
-    const safeAccessCode = escapeHtml(credentials.accessCode);
-    const safePortal = escapeHtml(`${window.location.origin}${credentials.portal}`);
-    win.document.write(`<html><head><title>Student Access</title><style>body{font-family:Arial,sans-serif;padding:48px;color:#1e293b}.card{max-width:560px;border:2px solid #b91c1c;border-radius:20px;padding:32px}.label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.08em}.value{font-size:22px;font-weight:800;margin:6px 0 20px}h1{font-size:26px;margin-top:0}</style></head><body><div class="card"><div class="label">Jaystarbliss Studios</div><h1>Student Portal Access</h1><div class="label">Username</div><div class="value">${safeUsername}</div><div class="label">Access Code</div><div class="value">${safeAccessCode}</div><div class="label">Portal</div><div class="value">${safePortal}</div></div><script>window.onload=()=>window.print()</script></body></html>`);
-    win.document.close();
+    window.print();
   };
 
   const downloadImage = () => {

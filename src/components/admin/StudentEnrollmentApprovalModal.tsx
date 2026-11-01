@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, CalendarDays, CheckCircle2, CheckSquare, GraduationCap, KeyRound, Link as LinkIcon, Loader2, ShieldCheck, User, X } from 'lucide-react';
-import { addDoc, collection, doc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, doc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { CANONICAL_CLASSES, normalizeClassName } from '../../lib/classes';
+import { checkUsernameAvailability, claimGlobalUsername } from '../../lib/usernameRegistry';
 
 export interface EnrollmentRequestData { id:string; studentName?:string; name?:string; studentAge?:string; studentClass?:string; class?:string; grade?:string; parentName?:string; parentEmail?:string; parentPhone?:string; parentId?:string; plan?:string; subjects?:string[]|string; email?:string; phone?:string; }
 interface ProgramOption { id:string; title:string; price:number; seriesName?:string; stageNumber?:number; stageName?:string; }
@@ -53,20 +54,19 @@ export const StudentEnrollmentApprovalModal:React.FC<Props>=({request,isOpen,onC
   setSaving(true);
   try{
    const studentId=`student_${request.id}`;
-   const [usernameUsers,usernameStudents,usernameIndividuals]=await Promise.all([
-    getDocs(query(collection(db,'users'),where('username','==',finalUsername),limit(2))).catch(()=>({docs:[]} as any)),
-    getDocs(query(collection(db,'students'),where('username','==',finalUsername),limit(2))).catch(()=>({docs:[]} as any)),
-    getDocs(query(collection(db,'individualStudents'),where('username','==',finalUsername),limit(2))).catch(()=>({docs:[]} as any))
-   ]);
-   const usernameTaken=[...usernameUsers.docs,...usernameStudents.docs,...usernameIndividuals.docs].some((d:any)=>d.id!==studentId);
-   if(usernameTaken)return toast.error('That username is already in use. Choose a different username.');
+   const availability=await checkUsernameAvailability(finalUsername,[studentId]);
+   if(!availability.available){
+    setSaving(false);
+    return toast.error(availability.reason||`The username "${finalUsername}" is already taken. Please pick another username.`);
+   }
    const tutorName=resolvedTutor?.name||'Jaystarbliss Lead Mentor',tutorEmail=resolvedTutor?.email||'faculty@jaystarbliss.com',email=(request.email||`${finalUsername}@jaystarbliss.cadet`).toLowerCase(),parentId=request.parentId||parentEmail||null,subjects=Array.isArray(request.subjects)?request.subjects:String(request.subjects||programTitle).split(',').map(x=>x.trim()).filter(Boolean);
    const initialTrack={programId:programId||null,programName:programTitle,seriesName:selectedProgram?.seriesName||'',stageNumber:selectedProgram?.stageNumber||1,stageName:selectedProgram?.stageName||'',progress:0,completed:false,status:'CURRENT'};
-   const master:any={id:studentId,fullName:studentName,name:studentName,username:finalUsername,accessCode:finalCode,email,studentEmail:email,grade:canonicalClass,class:canonicalClass,track:programTitle,plan:programTitle,programId:programId||null,programName:programTitle,programTitle,enrolledPrograms:[programTitle],subjects,tuitionFee:fee,fee,currency:'NGN',feePlanType:feePlan,paymentStatus:'PENDING',tutorId:tutorId||'tutor_default',tutorName,tutorEmail,mentorName:tutorName,schedule:scheduleSummary,classScheduleDetails:{days,daySchedules,deliveryMode,meetingLink:deliveryMode==='online'?meetingLink:'',locationRoom:deliveryMode!=='online'?location:'',recurrenceWeeks:durationWeeks,programDurationWeeks:durationWeeks},programDurationWeeks:durationWeeks,currentProgramId:programId||null,currentProgramName:programTitle,currentProgramStage:selectedProgram?.stageNumber||1,currentProgramStageName:selectedProgram?.stageName||'',learningTracks:[initialTrack],featureAccess:{edClub,assessments},edClubEnabled:edClub,parentId,parentEmail,parentName,parentPhone:request.parentPhone||request.phone||'',status:'ACTIVE',accountStatus:'ACTIVE',portalAccessEnabled:true,registrationSource:'parent-enrollment-approved',enrollmentRequestId:request.id,approvedAt:serverTimestamp(),createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+   const master:any={id:studentId,fullName:studentName,name:studentName,username:finalUsername,accessCode:finalCode,email,studentEmail:email,grade:canonicalClass,class:canonicalClass,track:programTitle,plan:programTitle,programId:programId||null,programName:programTitle,programTitle,enrolledPrograms:[programTitle],subjects,tuitionFee:fee,fee,currency:'NGN',feePlanType:feePlan,paymentStatus:'PENDING',tutorId:tutorId||'tutor_default',tutorName,tutorEmail,mentorName:tutorName,schedule:scheduleSummary,classScheduleDetails:{days,daySchedules,deliveryMode,meetingLink:deliveryMode==='online'?meetingLink:'',locationRoom:deliveryMode!=='online'?location:'',recurrenceWeeks:durationWeeks,programDurationWeeks:durationWeeks},programDurationWeeks:durationWeeks,currentProgramId:programId||null,currentProgramName:programTitle,currentProgramStage:selectedProgram?.stageNumber||1,currentProgramStageName:selectedProgram?.stageName||'',learningTracks:[initialTrack],featureAccess:{edClub,assessments},edClubEnabled:edClub,parentId,parentEmail,parentName,parentPhone:request.parentPhone||request.phone||'',isIndependent:false,registrationType:'parent',status:'ACTIVE',accountStatus:'ACTIVE',portalAccessEnabled:true,registrationSource:'parent-enrollment-approved',enrollmentRequestId:request.id,approvedAt:serverTimestamp(),createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
    await Promise.all([
     setDoc(doc(db,'students',studentId),master,{merge:true}),
     setDoc(doc(db,'individualStudents',studentId),{...master,firebaseUid:null},{merge:true}),
-    setDoc(doc(db,'users',studentId),{id:studentId,uid:studentId,email,displayName:studentName,fullName:studentName,username:finalUsername,accessCode:finalCode,role:'STUDENT',class:canonicalClass,grade:canonicalClass,accountStatus:'ACTIVE',status:'ACTIVE',studentDocId:studentId,parentId,parentEmail,plan:programTitle,programName:programTitle,currentProgramId:programId||null,currentProgramName:programTitle,tutorName,featureAccess:{edClub,assessments},edClubEnabled:edClub,updatedAt:serverTimestamp()},{merge:true})
+    setDoc(doc(db,'users',studentId),{id:studentId,uid:studentId,email,displayName:studentName,fullName:studentName,username:finalUsername,accessCode:finalCode,role:'STUDENT',class:canonicalClass,grade:canonicalClass,accountStatus:'ACTIVE',status:'ACTIVE',studentDocId:studentId,parentId,parentEmail,isIndependent:false,registrationType:'parent',plan:programTitle,programName:programTitle,currentProgramId:programId||null,currentProgramName:programTitle,tutorName,featureAccess:{edClub,assessments},edClubEnabled:edClub,updatedAt:serverTimestamp()},{merge:true}),
+    claimGlobalUsername(finalUsername,{uid:studentId,docId:studentId,role:'STUDENT',email,name:studentName})
    ]);
    const now=new Date(),writes:Promise<any>[]=[];
    for(let week=0;week<durationWeeks;week++)for(const dayName of days){let diff=DAY_INDEX[dayName]-now.getDay();if(diff<0||(diff===0&&week===0))diff+=7;const date=new Date(now);date.setDate(date.getDate()+diff+week*7);const cfg=daySchedules[dayName]||{startTime:'10:00',endTime:'12:00'};writes.push(addDoc(collection(db,'classSchedules'),{title:`${programTitle} Session (Week ${week+1})`,programName:programTitle,programId:programId||'prog_active',studentId,studentName,studentEmail:email,classLevel:canonicalClass,classLevels:[canonicalClass],parentId,parentEmail,parentName,tutorId:tutorId||'tutor_default',tutorName,tutorEmail,date:date.toISOString().slice(0,10),dayOfWeek:dayName,startTime:cfg.startTime,endTime:cfg.endTime,daySchedule:cfg,scheduleGroupId:studentId,programDurationWeeks:durationWeeks,occurrenceIndex:week+1,occurrenceTotal:durationWeeks,targetType:'parent',deliveryMode,meetingLink:deliveryMode==='online'?meetingLink:'',locationRoom:deliveryMode!=='online'?location:'',status:'SCHEDULED',createdAt:serverTimestamp()}));}

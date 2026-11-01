@@ -18,6 +18,11 @@ import { getEffectiveAuth } from '../../utils/impersonation';
 import { formatNaira } from '../../lib/billing';
 import { CANONICAL_CLASSES, formatNormalizedClassDisplay, normalizeClassName } from '../../lib/classes';
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
+import {
+  type StudentEnrollmentContext,
+  doesScheduleMatchStudent,
+  validateMeetingLink,
+} from '../../lib/scheduleEngine';
 
 interface ChildRecord {
   id: string;
@@ -168,18 +173,36 @@ const ParentDashboard: React.FC = () => {
         else { console.warn('Enrollment lookup failed:', enrollmentResult.reason); setEnrollments([]); }
         if (schedSnap.status === 'fulfilled') {
           const allScheds = schedSnap.value.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-          const childIds = childList.map(c => c.id);
-          const childNames = childList.map(c => (c.name || '').toLowerCase());
-          const childEmails = childList.map(c => (c.email || '').toLowerCase());
-          const childSchoolIds = childList.map(c => (c as any).schoolId).filter(Boolean);
+          const childContexts: StudentEnrollmentContext[] = childList.map(c => {
+            const cAny = c as any;
+            const cSchoolId = String(cAny.schoolId || '').trim();
+            const cSchoolName = String(cAny.schoolName || cAny.school || '').trim();
+            const cProgNames = new Set<string>(
+              [c.programName, c.programTitle, c.plan, c.track]
+                .map(v => String(v || '').trim().toLowerCase())
+                .filter(Boolean)
+            );
+            if (Array.isArray(c.subjects)) {
+              c.subjects.forEach(s => { if (s) cProgNames.add(String(s).trim().toLowerCase()); });
+            }
+            return {
+              ids: new Set([c.id, cAny.linkedStudentId, cAny.studentDocId, cAny.firebaseUid].filter(Boolean).map(String)),
+              emails: new Set([c.email].filter(Boolean).map(v => String(v).trim().toLowerCase())),
+              names: new Set([c.fullName, c.name].filter(Boolean).map(v => String(v).trim().toLowerCase())),
+              isSchoolStudent: Boolean(cSchoolId || cSchoolName),
+              schoolId: cSchoolId,
+              schoolName: cSchoolName,
+              className: String(c.class || c.grade || 'Grade 1'),
+              programIds: new Set([cAny.programId].filter(Boolean).map(v => String(v).trim().toLowerCase())),
+              programNames: cProgNames,
+              parentIds: new Set([userUid].filter(Boolean)),
+              parentEmails: new Set([userEmail].filter(Boolean)),
+            };
+          });
           const parentScheds = allScheds.filter((s: any) => {
-            if (s.parentId === userUid || s.parentId === userEmail) return true;
-            if (s.parentEmail && s.parentEmail.toLowerCase() === userEmail) return true;
-            if (s.studentId && childIds.includes(s.studentId)) return true;
-            if (s.studentName && childNames.includes(String(s.studentName).toLowerCase())) return true;
-            if (s.studentEmail && childEmails.includes(String(s.studentEmail).toLowerCase())) return true;
-            if (s.schoolId && childSchoolIds.includes(s.schoolId)) return true;
-            return false;
+            if (userUid && (s.parentId === userUid || s.parentId === userEmail)) return true;
+            if (userEmail && s.parentEmail && s.parentEmail.toLowerCase() === userEmail) return true;
+            return childContexts.some(ctx => doesScheduleMatchStudent(s, ctx));
           });
           setSchedules(parentScheds);
         } else {
@@ -535,12 +558,16 @@ const ParentDashboard: React.FC = () => {
                       <span>Mentor: <strong>{sched.tutorName}</strong></span>
                     </div>
                   )}
-                  {sched.meetingLink && (
+                  {validateMeetingLink(sched.meetingLink).valid ? (
                     <div className="flex items-center gap-1.5 pt-1">
                       <ExternalLink size={12} className="text-sky-500 shrink-0" />
-                      <a href={sched.meetingLink} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-sky-600 dark:text-sky-400 hover:underline truncate">
-                        Join Virtual Lab
+                      <a href={validateMeetingLink(sched.meetingLink).normalizedUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] font-bold text-sky-600 dark:text-sky-400 hover:underline truncate">
+                        Join Class ({validateMeetingLink(sched.meetingLink).platform})
                       </a>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-400 pt-1">
+                      Meeting link pending configuration
                     </div>
                   )}
                 </div>

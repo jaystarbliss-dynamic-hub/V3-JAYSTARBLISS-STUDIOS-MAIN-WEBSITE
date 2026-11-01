@@ -309,17 +309,14 @@ export default function PortalWireframesShowcase() {
           </div>
 
           <div className="flex items-center gap-2.5">
-            <Link
-              to="/portal/staff/assessments"
-              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 inline-flex items-center gap-1.5 transition-colors"
-            >
-              <ArrowLeft size={14} /> Tutor Portal
-            </Link>
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-[11px] font-bold text-slate-300">
+              <ShieldCheck size={13} className="text-emerald-400" /> Admin Ecosystem Exclusive
+            </span>
             <Link
               to="/admin"
               className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white inline-flex items-center gap-1.5 transition-colors"
             >
-              <ShieldCheck size={14} /> Admin Console
+              <ArrowLeft size={14} /> Back to Admin Console
             </Link>
           </div>
         </div>

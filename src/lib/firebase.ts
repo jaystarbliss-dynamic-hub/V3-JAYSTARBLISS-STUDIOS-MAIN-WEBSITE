@@ -62,42 +62,7 @@ export function setActiveDatabaseId(_nextDbId: string, reload = true): void {
   }
 }
 
-// Coordinate Client + Server Database Selection:
-// Automatically attach x-jaystar-database-id header to same-origin /.netlify/functions/* and /api/* requests
-if (typeof window !== "undefined" && typeof window.fetch === "function" && !(window as any).__jaystarFetchPatched) {
-  const originalFetch = window.fetch.bind(window);
-  (window as any).__jaystarFetchPatched = true;
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    try {
-      const urlStr =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-          ? input.toString()
-          : input?.url || "";
-      const isInternalApi =
-        urlStr.startsWith("/.netlify/functions/") ||
-        urlStr.startsWith("/api/") ||
-        (typeof window.location !== "undefined" &&
-          urlStr.startsWith(window.location.origin) &&
-          (urlStr.includes("/.netlify/functions/") || urlStr.includes("/api/")));
-      if (isInternalApi) {
-        const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
-        if (!headers.has("x-jaystar-database-id")) {
-          const activeId =
-            (typeof window.localStorage !== "undefined" &&
-              window.localStorage.getItem(ACTIVE_DB_STORAGE_KEY)?.trim()) ||
-            ACTIVE_DATABASE_ID;
-          headers.set("x-jaystar-database-id", activeId);
-        }
-        return originalFetch(input, { ...init, headers });
-      }
-    } catch {
-      // fall through to original fetch
-    }
-    return originalFetch(input, init);
-  };
-}
+// Note: Do not overwrite window.fetch, as window.fetch is a getter-only property in the preview runtime.
 
 const firebaseConfig = {
   apiKey: "AIzaSyD_lq2Z4qBrZZkzYmEMPPMtCKQmfSx2rkY",

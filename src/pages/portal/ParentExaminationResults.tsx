@@ -17,8 +17,9 @@ import {
   normalizeClassName,
   resolvePartnerSchoolName,
 } from "../../lib/classes";
+import { resolveParentLinkedChildren } from "../../lib/academicSyncEngine";
 
-type Child = { id: string; name: string; className: string; schoolId?: string; schoolName?: string };
+type Child = { id: string; name: string; className: string; schoolId?: string; schoolName?: string; allIds?: string[] };
 type Result = {
   attemptId: string;
   examId: string;
@@ -71,32 +72,32 @@ export default function ParentExaminationResults() {
       console.warn("Server parent results notice, engaging Firestore resolver:", e);
     }
 
-    // 2. Direct Firestore Fallback
-    if (loadedChildren.length === 0 || loadedResults.length === 0) {
-      const parentUid = auth.currentUser.uid;
-      const parentEmail = auth.currentUser.email?.toLowerCase() || "";
-
-      const [byUidSnap, byEmailSnap] = await Promise.all([
-        getDocs(query(collection(db, "individualStudents"), where("parentId", "==", parentUid))).catch(
-          () => ({ docs: [] } as any)
-        ),
-        parentEmail
-          ? getDocs(
-              query(collection(db, "individualStudents"), where("parentEmail", "==", parentEmail))
-            ).catch(() => ({ docs: [] } as any))
-          : Promise.resolve({ docs: [] } as any),
-      ]);
+    // 2. Direct Firestore Resolver (merges with server data so school-enrolled children and all ID aliases are always included)
+    try {
+      const resolvedProfiles = await resolveParentLinkedChildren(
+        auth.currentUser.uid,
+        auth.currentUser.email || ""
+      );
 
       const childMap = new Map<string, Child>();
-      [...byUidSnap.docs, ...byEmailSnap.docs].forEach((d: any) => {
-        const data = d.data();
-        childMap.set(d.id, {
-          id: d.id,
-          name: data.fullName || data.studentName || "Student",
-          className: normalizeClassName(data.class || data.grade || "") || data.class || "",
-          schoolId: data.schoolId || "",
-          schoolName: resolvePartnerSchoolName(data.schoolName),
-        });
+      const aliasToChildMap = new Map<string, Child>();
+
+      loadedChildren.forEach((c) => {
+        childMap.set(c.id, c);
+        aliasToChildMap.set(c.id, c);
+      });
+
+      resolvedProfiles.forEach((p) => {
+        const entry: Child = {
+          id: p.id,
+          name: p.fullName || "Student",
+          className: normalizeClassName(p.className || "") || p.className || "",
+          schoolId: p.schoolId || "",
+          schoolName: resolvePartnerSchoolName(p.schoolName),
+          allIds: p.allIds,
+        };
+        childMap.set(p.id, entry);
+        p.allIds.forEach((aid) => aliasToChildMap.set(aid, entry));
       });
 
       loadedChildren = Array.from(childMap.values());
@@ -105,14 +106,16 @@ export default function ParentExaminationResults() {
         const attemptsSnap = await getDocs(collection(db, "jdiExamAttempts")).catch(
           () => ({ docs: [] } as any)
         );
-        const childIds = new Set(loadedChildren.map((c) => c.id));
         const examDocsMap = new Map<string, any>();
 
-        const [jdiSnap, schExamSnap] = await Promise.all([
+        const [jdiSnap, schExamSnap, legacyExamsSnap] = await Promise.all([
           getDocs(collection(db, "jdiExams")).catch(() => ({ docs: [] } as any)),
           getDocs(collection(db, "schoolExams")).catch(() => ({ docs: [] } as any)),
+          getDocs(collection(db, "exams")).catch(() => ({ docs: [] } as any)),
         ]);
-        [...jdiSnap.docs, ...schExamSnap.docs].forEach((d: any) => examDocsMap.set(d.id, d.data()));
+        [...legacyExamsSnap.docs, ...schExamSnap.docs, ...jdiSnap.docs].forEach((d: any) =>
+          examDocsMap.set(d.id, d.data())
+        );
 
         const schoolNameCache = new Map<string, string>();
         const resolveSchoolNameById = async (schId?: string, fallback?: string) => {
@@ -129,34 +132,38 @@ export default function ParentExaminationResults() {
               }
             }
           }
-          return resolvePartnerSchoolName(fallback, "Assigned Partner School");
+          return resolvePartnerSchoolName(fallback, "");
         };
 
-        const foundResults: Result[] = [];
+        const resultsById = new Map<string, Result>();
+        loadedResults.forEach((r) => resultsById.set(r.attemptId, r));
+
         for (const ad of attemptsSnap.docs || []) {
           const a = ad.data();
-          if (childIds.has(a.studentId) && isAttemptResultReleased(a)) {
+          const matchedChild =
+            aliasToChildMap.get(String(a.studentId || "")) ||
+            aliasToChildMap.get(String(a.studentUid || ""));
+          if (matchedChild && isAttemptResultReleased(a)) {
             const exam = examDocsMap.get(a.examId) || {};
-            const child = childMap.get(a.studentId);
             const score = typeof a.score === "number" ? a.score : 0;
             const maxScore = computeExamMaxScore(exam, a);
             const percentage = calculateScorePercentage(score, maxScore);
             const schoolName = await resolveSchoolNameById(
-              a.schoolId || exam.schoolId || child?.schoolId,
-              a.schoolName || exam.schoolName || child?.schoolName
+              a.schoolId || exam.schoolId || matchedChild.schoolId,
+              a.schoolName || exam.schoolName || matchedChild.schoolName
             );
 
-            foundResults.push({
+            resultsById.set(ad.id, {
               attemptId: ad.id,
               examId: a.examId,
-              studentId: a.studentId,
-              studentName: child?.name || a.studentName || "Student",
+              studentId: matchedChild.id,
+              studentName: matchedChild.name || a.studentName || "Student",
               className:
-                normalizeClassName(child?.className || a.className || "") ||
-                child?.className ||
+                normalizeClassName(matchedChild.className || a.className || "") ||
+                matchedChild.className ||
                 a.className ||
                 "",
-              schoolId: a.schoolId || exam.schoolId || child?.schoolId,
+              schoolId: a.schoolId || exam.schoolId || matchedChild.schoolId,
               schoolName,
               title: exam.title || a.examTitle || "Assessment",
               subject: exam.subject || "General",
@@ -166,7 +173,7 @@ export default function ParentExaminationResults() {
               percentage,
               submittedAt: a.submittedAt ? String(a.submittedAt) : undefined,
               releasedAt: a.releasedAt ? String(a.releasedAt) : undefined,
-              feedback: a.feedback || undefined,
+              feedback: a.feedback || a.tutorFeedback || undefined,
               answers: a.answers,
               questions: a.questionsSnapshot || exam.questions || a.questions,
               questionResults: a.questionResults,
@@ -174,8 +181,14 @@ export default function ParentExaminationResults() {
           }
         }
 
-        loadedResults = foundResults;
+        loadedResults = Array.from(resultsById.values()).sort((a, b) =>
+          String(b.releasedAt || b.submittedAt || "").localeCompare(
+            String(a.releasedAt || a.submittedAt || "")
+          )
+        );
       }
+    } catch (fallbackErr) {
+      console.warn("Parent results Firestore merge notice:", fallbackErr);
     }
 
     return { children: loadedChildren, results: loadedResults };

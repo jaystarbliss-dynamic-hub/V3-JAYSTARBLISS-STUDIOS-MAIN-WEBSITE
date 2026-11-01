@@ -3,8 +3,12 @@ import { collection, getDocs, query, where, limit } from 'firebase/firestore';
 import { ExternalLink, Video, Clock, Calendar, Radio, CheckCircle2, UserCheck, Search, Filter } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
 import { auth, db } from '../../lib/firebase';
-import { isStudentClassMatch } from '../../utils/classMatching';
 import { getEffectiveAuth } from '../../utils/impersonation';
+import {
+  doesScheduleMatchStudent,
+  resolveFullStudentEnrollmentContext,
+  validateMeetingLink,
+} from '../../lib/scheduleEngine';
 
 interface LiveSession {
   id: string;
@@ -118,7 +122,12 @@ const StudentLiveClassrooms: React.FC = () => {
           });
         });
 
-        // 2. Process class schedules (combining Netlify API results & direct Firestore data)
+        // 2. Process class schedules using authoritative StudentEnrollmentContext
+        const effective = getEffectiveAuth();
+        const enrollmentCtx = await resolveFullStudentEnrollmentContext(
+          effective.effectiveUid || uid
+        );
+
         const combinedRaw = [
           ...(Array.isArray(netlifySchedules?.schedules) ? netlifySchedules.schedules : []),
           ...schSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
@@ -127,35 +136,8 @@ const StudentLiveClassrooms: React.FC = () => {
         const seenScheduleIds = new Set<string>();
         const studentSchedules = combinedRaw.filter((r: any) => {
           if (!r || !r.id || seenScheduleIds.has(r.id)) return false;
-          if (!r.meetingLink && !r.url) return false;
           seenScheduleIds.add(r.id);
-
-          if (r.studentId && (r.studentId === studentId || r.studentId === uid)) return true;
-
-          const rSchId = (r.schoolId || '').trim();
-          const rSchName = (r.schoolName || '').trim().toLowerCase();
-
-          // 1. School check
-          if (cachedSchoolId || cachedSchoolName) {
-            const isSchoolMatch = (cachedSchoolId && rSchId === cachedSchoolId) ||
-              (cachedSchoolName && rSchName && (rSchName === cachedSchoolName.toLowerCase() || rSchName.includes(cachedSchoolName.toLowerCase()) || cachedSchoolName.toLowerCase().includes(rSchName)));
-            if (!isSchoolMatch) return false;
-          }
-
-          // 2. Class Level strict check
-          const isClassMatch = isStudentClassMatch(cachedClass, r.classLevel, r.classLevels);
-          if (!isClassMatch) return false;
-
-          // 3. Program check
-          if (cachedProgram) {
-            const rProgName = String(r.programName || r.title || '').trim().toLowerCase();
-            const isProgramMatch = !rProgName || rProgName === cachedProgram || rProgName.includes(cachedProgram) || cachedProgram.includes(rProgName);
-            if (!isProgramMatch && r.targetType !== 'ALL') {
-              return false;
-            }
-          }
-
-          return true;
+          return doesScheduleMatchStudent(r, enrollmentCtx);
         });
 
         studentSchedules.forEach((r: any) => {
@@ -435,22 +417,30 @@ const StudentLiveClassrooms: React.FC = () => {
                     {isLive ? '🟢 Room is active right now' : isUpcoming ? '⏳ Scheduled session' : 'Completed session'}
                   </span>
 
-                  {s.url ? (
-                    <a
-                      href={s.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl px-4 text-xs font-bold text-white transition ${
-                        isLive
-                          ? 'bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-900/30'
-                          : 'bg-brand-red hover:bg-red-700'
-                      }`}
-                    >
-                      {isLive ? 'Join Live Room Now' : 'Open Class Room'} <ExternalLink size={13} />
-                    </a>
-                  ) : (
-                    <span className="text-xs text-slate-400">Link pending broadcast</span>
-                  )}
+                  {(() => {
+                    const linkCheck = validateMeetingLink(s.url);
+                    return linkCheck.valid ? (
+                      <a
+                        href={linkCheck.normalizedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl px-4 text-xs font-bold text-white transition ${
+                          isLive
+                            ? 'bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-900/30'
+                            : 'bg-brand-red hover:bg-red-700'
+                        }`}
+                      >
+                        {isLive ? 'Join Live Class Now' : 'Join Class'} <ExternalLink size={13} />
+                      </a>
+                    ) : (
+                      <span
+                        title="Your instructor or administrator has not configured a joining link for this session yet."
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/70 px-3.5 text-xs font-bold text-slate-400 cursor-not-allowed"
+                      >
+                        Link Not Configured
+                      </span>
+                    );
+                  })()}
                 </div>
               </article>
             );

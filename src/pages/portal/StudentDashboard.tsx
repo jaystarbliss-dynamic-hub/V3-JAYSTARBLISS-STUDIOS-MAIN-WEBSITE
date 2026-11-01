@@ -51,6 +51,15 @@ import { getEffectiveAuth } from '../../utils/impersonation';
 import { isStudentClassMatch } from '../../utils/classMatching';
 import { isStudentEligibleForWork, normalizeWorkType } from '../../lib/classes';
 import {
+  doesScheduleMatchStudent,
+  resolveFullStudentEnrollmentContext,
+} from '../../lib/scheduleEngine';
+import {
+  type LinkedLearnerProfile,
+  fetchAssignmentsForLearner,
+  submitUnifiedAssignment,
+} from '../../lib/academicSyncEngine';
+import {
   generateModuleCertificatePdf,
   type ModuleCertificateData,
 } from '../../lib/certificatePdfGenerator';
@@ -519,10 +528,58 @@ export const StudentDashboard: React.FC = () => {
       }
       setDynamicMilestones(milestoneList);
 
-      // 2. Fetch Real Assignments from Firestore & Netlify Functions
+      // 2. Fetch Real Assignments from Unified Academic Sync Engine + Firestore & Netlify Functions
       const assignmentList: DynamicAssignment[] = [];
       const seenAssignments = new Set<string>();
       try {
+        const learnerProfileForSync: LinkedLearnerProfile = {
+          id: currentStudentId || currentUid || 'student',
+          studentUid: currentUid || '',
+          allIds: Array.from(new Set([currentStudentId, currentUid].filter(Boolean) as string[])),
+          fullName: studentRecord.fullName || studentRecord.name || 'Student',
+          username: studentRecord.username,
+          email: studentRecord.email,
+          className: assignedClass || 'Grade 1',
+          schoolId: studentRecord.schoolId || '',
+          schoolAliases: [
+            studentRecord.schoolId,
+            studentRecord.schoolCode,
+            studentRecord.schoolName,
+            studentRecord.school,
+          ]
+            .map((v) => String(v || '').trim())
+            .filter(Boolean),
+          schoolName: studentRecord.schoolName || studentRecord.school || '',
+          programName: resolvedProgramTitle,
+          isSchoolStudent: Boolean(studentRecord.schoolId || studentRecord.schoolName),
+          source: studentRecord.schoolId ? 'students' : 'individualStudents',
+        };
+
+        const syncedList = await fetchAssignmentsForLearner(learnerProfileForSync).catch(() => []);
+        syncedList.forEach((a) => {
+          if (!seenAssignments.has(a.id)) {
+            seenAssignments.add(a.id);
+            assignmentList.push({
+              id: a.id,
+              title: a.title,
+              instructions: a.instructions,
+              tutorName: a.tutorName,
+              studentName: a.studentName,
+              dueDate: a.dueDate || undefined,
+              status: a.status === 'PENDING' || a.status === 'OVERDUE' ? 'PUBLISHED' : a.status,
+              grade: a.grade ?? undefined,
+              feedback: a.feedback || undefined,
+              submissionText: a.submissionText || undefined,
+              submissionUrl: a.submissionUrl || undefined,
+              submittedAt: a.submittedAt || undefined,
+              reviewedAt: a.reviewedAt || undefined,
+              reviewStatus: a.reviewStatus || undefined,
+              resourceUrl: a.resourceUrl || undefined,
+              resourceTitle: a.resourceTitle || undefined,
+            });
+          }
+        });
+
         const token = await authUser?.getIdToken();
         if (token) {
           const assRes = await fetch('/.netlify/functions/academic-assignments', {
@@ -540,39 +597,6 @@ export const StudentDashboard: React.FC = () => {
             }
           }
         }
-
-        const directAssignmentSnaps = await Promise.all([
-          getDocs(query(collection(db, 'assignments'), where('studentId', '==', currentStudentId))).catch(() => ({ docs: [] } as any)),
-          ...(currentUid ? [getDocs(query(collection(db, 'assignments'), where('studentUserId', '==', currentUid))).catch(() => ({ docs: [] } as any))] : []),
-          ...(currentUid ? [getDocs(query(collection(db, 'assignments'), where('userId', '==', currentUid))).catch(() => ({ docs: [] } as any))] : [])
-        ]);
-
-        directAssignmentSnaps.forEach(snap => {
-          snap.docs?.forEach((d: any) => {
-            if (!seenAssignments.has(d.id)) {
-              seenAssignments.add(d.id);
-              const data = d.data();
-              assignmentList.push({
-                id: d.id,
-                title: data.title || 'Assignment Task',
-                instructions: data.instructions || data.description,
-                tutorName: data.tutorName || data.assignedBy,
-                studentName: data.studentName,
-                dueDate: data.dueDate?.toDate ? data.dueDate.toDate().toISOString() : data.dueDate,
-                status: data.status || 'PUBLISHED',
-                grade: data.grade,
-                feedback: data.feedback,
-                submissionText: data.submissionText,
-                submissionUrl: data.submissionUrl,
-                submittedAt: data.submittedAt?.toDate ? data.submittedAt.toDate().toISOString() : data.submittedAt,
-                reviewedAt: data.reviewedAt?.toDate ? data.reviewedAt.toDate().toISOString() : data.reviewedAt,
-                reviewStatus: data.reviewStatus,
-                resourceUrl: data.resourceUrl,
-                resourceTitle: data.resourceTitle
-              });
-            }
-          });
-        });
       } catch (aErr) {
         console.warn('Assignments fetch warning:', aErr);
       }
@@ -822,42 +846,27 @@ export const StudentDashboard: React.FC = () => {
           ...schSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
         ];
 
+        const enrollmentCtx = await resolveFullStudentEnrollmentContext(lookupUid || currentStudentId);
+        if (currentStudentId) enrollmentCtx.ids.add(currentStudentId);
+        if (sEmail) enrollmentCtx.emails.add(sEmail);
+        if (sName) enrollmentCtx.names.add(sName);
+        if (schId && !enrollmentCtx.schoolId) {
+          enrollmentCtx.schoolId = schId;
+          enrollmentCtx.isSchoolStudent = true;
+        }
+        if (schName && !enrollmentCtx.schoolName) {
+          enrollmentCtx.schoolName = schName;
+          enrollmentCtx.isSchoolStudent = true;
+        }
+        if (currentProg) enrollmentCtx.programNames.add(currentProg);
+        if (pId) enrollmentCtx.parentIds.add(String(pId));
+        if (pEmail) enrollmentCtx.parentEmails.add(pEmail);
+
         const seenScheduleIds = new Set<string>();
         const filtered = combinedRaw.filter((r: any) => {
           if (!r || !r.id || seenScheduleIds.has(r.id)) return false;
           seenScheduleIds.add(r.id);
-
-          // Direct student assignment
-          if (r.studentId && (r.studentId === currentStudentId || r.studentId === lookupUid)) return true;
-          if (r.studentEmail && sEmail && r.studentEmail.toLowerCase() === sEmail) return true;
-          if (r.studentName && sName && r.studentName.toLowerCase() === sName) return true;
-          if (pId && r.parentId && r.parentId === pId) return true;
-          if (pEmail && r.parentEmail && r.parentEmail.toLowerCase() === pEmail) return true;
-
-          const rSchId = (r.schoolId || '').trim();
-          const rSchName = (r.schoolName || '').trim().toLowerCase();
-
-          // 1. If student belongs to a school, the schedule MUST belong to their school
-          if (schId || schName) {
-            const isSchoolMatch = (schId && rSchId === schId) ||
-              (schName && rSchName && (rSchName === schName || rSchName.includes(schName) || schName.includes(rSchName)));
-            if (!isSchoolMatch) return false;
-          }
-
-          // 2. Class Level Strict Filtering (e.g. Primary 4A only sees Primary 4A)
-          const isClassMatch = isStudentClassMatch(studentClass, r.classLevel, r.classLevels);
-          if (!isClassMatch) return false;
-
-          // 3. Program matching (if student is enrolled in a program, check match)
-          if (currentProg) {
-            const rProgName = String(r.programName || r.title || '').trim().toLowerCase();
-            const isProgramMatch = !rProgName || rProgName === currentProg || rProgName.includes(currentProg) || currentProg.includes(rProgName);
-            if (!isProgramMatch && r.targetType !== 'ALL') {
-              return false;
-            }
-          }
-
-          return true;
+          return doesScheduleMatchStudent(r, enrollmentCtx);
         });
 
         setStudentSchedules(filtered);

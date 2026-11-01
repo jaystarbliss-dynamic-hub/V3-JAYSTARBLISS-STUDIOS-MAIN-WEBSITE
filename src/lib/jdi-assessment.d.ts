@@ -1,0 +1,303 @@
+export type CanonicalClassName =
+  | "Early Years"
+  | "Grade 1"
+  | "Grade 2"
+  | "Grade 3"
+  | "Grade 4"
+  | "Grade 5"
+  | "Grade 6"
+  | "Grade 7"
+  | "Grade 8"
+  | "Grade 9"
+  | "Grade 10"
+  | "Grade 11"
+  | "Grade 12"
+  | "University (Undergraduate)"
+  | "Graduate (BSc, HND, ND, etc.)";
+
+export const CANONICAL_CLASSES: CanonicalClassName[];
+
+export function normalizeClassName(input: unknown, fallback?: string): string;
+export function isCanonicalClass(input: unknown): boolean;
+export function normalizeClassList(input: unknown): string[];
+export function formatNormalizedClassDisplay(input: unknown, fallback?: string): string;
+export function classesMatch(
+  studentClass: unknown,
+  targetClasses: unknown,
+  options?: { allowEmptyTarget?: boolean }
+): boolean;
+
+export function isAssessmentStudentRole(role: unknown): boolean;
+export function isSchoolAdminRole(role: unknown): boolean;
+export function isTutorRole(role: unknown): boolean;
+export function isPlatformAdminRole(role: unknown): boolean;
+export function canAuthorOrMutateExam(role: unknown): boolean;
+export function canManageExamRecord(
+  examOrOpts: any,
+  callerUid?: string,
+  callerRole?: string,
+  assignedSchoolIds?: string[]
+): boolean;
+export function resolveExamDeletionMode(attemptCount: number): "archive" | "delete";
+export function resolvePartnerSchoolName(...candidates: unknown[]): string;
+export function resolveAttemptQuestions(exam: any, attempt?: any): any[];
+export function computeExamMaxScore(exam: any, attempt?: any): number;
+export function calculateScorePercentage(score: unknown, maxScore: unknown): number;
+export function calculateGradeLetter(percentage: number): string;
+
+export interface ScoreSummary {
+  score: number | null;
+  maxScore: number;
+  percentage: number | null;
+  percentageLabel: string;
+  fractionLabel: string;
+  summaryLabel: string;
+  display: string;
+  grade: string;
+}
+
+export function formatScoreSummary(score: unknown, maxScore: unknown): ScoreSummary;
+
+export interface NormalizedQuestion {
+  id: string;
+  type: "single_choice" | "multiple_choice" | "true_false" | "dropdown" | "short_answer" | "essay";
+  prompt: string;
+  options: Array<{ id: string; text: string }>;
+  correctOptionIds: string[];
+  acceptedAnswers: string[];
+  points: number;
+  required: boolean;
+  explanation?: string;
+}
+
+export function normalizeQuestions(
+  input: unknown,
+  gradingMode?: string
+):
+  | { questions: NormalizedQuestion[]; maxScore: number; error?: never }
+  | { error: string; questions?: never; maxScore?: never };
+
+export function normalizeDeliveryMode(
+  input: unknown,
+  fallbackExam?: Record<string, any> | null
+): "NATIVE" | "EXTERNAL_LINK";
+
+export function validateExternalExamUrl(
+  input: unknown
+): { valid: true; url: string; error?: never } | { valid: false; error: string; url?: never };
+
+export function validateExamCreationPayload(
+  body?: Record<string, any>,
+  existingDoc?: Record<string, any> | null
+):
+  | {
+      deliveryMode: "NATIVE" | "EXTERNAL_LINK";
+      title: string;
+      subject: string;
+      description: string;
+      externalUrl: string;
+      classIds: string[];
+      questions: NormalizedQuestion[];
+      questionCount: number;
+      maxScore: number;
+      durationMinutes: number;
+      gradingMode: "automatic" | "manual";
+      status: string;
+      error?: never;
+    }
+  | { error: string };
+
+export function gradeAnswers(
+  exam: { gradingMode?: string; questions?: Array<any> },
+  answers?: Record<string, any>
+): {
+  score: number;
+  maxScore: number;
+  percentage: number;
+  autoGraded: boolean;
+  questionResults: Array<Record<string, any>>;
+};
+
+export function schoolSafeQuestion(question: Record<string, any>): {
+  id: string;
+  prompt: string;
+  type: string;
+  points: number;
+  options: Array<{ id: string; text: string }>;
+};
+
+export function schoolSafeQuestionResult(result: Record<string, any>): {
+  questionId: string;
+  correct?: boolean;
+  manualReview: boolean;
+  pointsAwarded: number;
+  maxPoints: number;
+};
+
+export function attemptBelongsToLinkedChild(
+  attempt: Record<string, any>,
+  child: { id: string; studentUid: string }
+): boolean;
+
+export function answersForFinalization<T extends Record<string, any>>(
+  currentAnswers?: T,
+  requestedAnswers?: T,
+  deadlinePassed?: boolean
+): T;
+
+export type AcademicWorkType = "ASSIGNMENT" | "ACTIVITY" | "TEST" | "EXAMINATION";
+export const WORK_TYPES: AcademicWorkType[];
+
+export function normalizeWorkType(
+  input: unknown,
+  fallbackObj?: Record<string, any> | null
+): AcademicWorkType;
+
+export function validateWorkTypeTransition(
+  existingRecordOrOpts: Record<string, any> | null | undefined,
+  nextWorkType?: unknown,
+  attemptCount?: number
+): {
+  allowed: boolean;
+  workType?: AcademicWorkType;
+  requiresConfirmation?: boolean;
+  previousWorkType?: AcademicWorkType;
+  requestedWorkType?: AcademicWorkType;
+  reason?: string;
+  error?: string;
+};
+
+export function normalizeRecipientTargets(
+  body?: Record<string, any>,
+  existingDoc?: Record<string, any> | null
+): {
+  recipientMode: "SCHOOL_CLASS" | "PRIVATE_LEARNERS" | "MULTI_TARGET";
+  schoolId: string;
+  targetSchoolIds: string[];
+  schoolIds: string[];
+  classIds: string[];
+  targetClass: string;
+  targetStudentIds: string[];
+};
+
+export function isStudentEligibleForWork(
+  studentOrOpts?: Record<string, any>,
+  workItem?: Record<string, any>
+): boolean;
+
+export interface BulkStudentParsedRow {
+  rowNumber: number;
+  fullName: string;
+  rawClass: string;
+  canonicalClass: string;
+  className: string;
+  isValidClass: boolean;
+  programme: string;
+  programName: string;
+  email: string;
+  username: string;
+  status?: "READY" | "DUPLICATE_EXISTING" | "DUPLICATE_IN_BATCH" | "INVALID";
+  errors?: string[];
+  isValid?: boolean;
+  valid?: boolean;
+}
+
+export function parseBulkStudentText(
+  rawText: string,
+  defaultProgramme?: string
+): BulkStudentParsedRow[];
+
+export function validateBulkStudentRows(
+  rows: Array<Partial<BulkStudentParsedRow>>,
+  existingStudentsOrOpts?: Array<Record<string, any>> | {
+    existingStudents?: Array<Record<string, any>>;
+    existingUsernames?: Iterable<string>;
+    existingEmails?: Iterable<string>;
+  }
+): BulkStudentParsedRow[] & {
+  rows: BulkStudentParsedRow[];
+  validCount: number;
+  invalidCount: number;
+};
+
+export function buildAttendanceRecordKey(params?: {
+  studentId?: string;
+  dateKey?: string;
+  date?: string;
+  scheduleId?: string;
+}): string;
+
+export type AgreementCategory = "PROPOSAL" | "COMMUNICATION" | "CONTRACT";
+export type AgreementStatus =
+  | "DRAFT"
+  | "SHARED"
+  | "UNDER_DISCUSSION"
+  | "REVISION_REQUESTED"
+  | "AGREED"
+  | "SIGNED"
+  | "ACTIVE"
+  | "EXPIRED"
+  | "SUPERSEDED"
+  | "ARCHIVED";
+
+export const AGREEMENT_CATEGORIES: AgreementCategory[];
+export const AGREEMENT_STATUSES: AgreementStatus[];
+
+export function createAgreementVersionSnapshot(
+  agreement: Record<string, any>,
+  actor?: { uid?: string; name?: string }
+): {
+  versionNumber: number;
+  immutable: boolean;
+  title: string;
+  category: AgreementCategory;
+  status: AgreementStatus;
+  contentHtml: string;
+  content: string;
+  effectiveDate: string;
+  expiryDate: string;
+  attachmentUrl: string;
+  summary: string;
+  createdAt: string;
+  createdBy: string;
+  createdByName: string;
+};
+
+export function canAccessAgreement(
+  agreementOrOpts: Record<string, any>,
+  actor?: { uid?: string; role?: string; schoolId?: string }
+): boolean;
+
+export function isAttemptResultReleased(
+  attempt?: Record<string, any> | null
+): boolean;
+
+export function canViewOrPrintAttemptResult(
+  attempt?: Record<string, any> | null,
+  callerRole?: unknown
+): boolean;
+
+export interface WorkTypeLabels {
+  code: AcademicWorkType;
+  workType: AcademicWorkType;
+  singular: "Assignment" | "Activity" | "Test" | "Examination";
+  plural: "Assignments" | "Activities" | "Tests" | "Examinations";
+  lowerSingular: "assignment" | "activity" | "test" | "examination";
+  lowerPlural: "assignments" | "activities" | "tests" | "examinations";
+  articleSingular: "an assignment" | "an activity" | "a test" | "an examination";
+  startLabel: "Start Assignment" | "Start Activity" | "Start Test" | "Start Examination";
+  startCta: "Start Assignment" | "Start Activity" | "Start Test" | "Start Examination";
+  resumeLabel: "Resume Assignment" | "Resume Activity" | "Resume Test" | "Resume Examination";
+  resumeCta: "Resume Assignment" | "Resume Activity" | "Resume Test" | "Resume Examination";
+  submitLabel: "Submit Assignment" | "Submit Activity" | "Submit Test" | "Submit Examination";
+  submitCta: "Submit Assignment" | "Submit Activity" | "Submit Test" | "Submit Examination";
+  unlockAndStartCta: "Unlock & Start Assignment" | "Unlock & Start Activity" | "Unlock & Start Test" | "Unlock & Start Examination";
+  publishCta: "Publish Assignment" | "Publish Activity" | "Publish Test" | "Publish Examination";
+  reportTitle: string;
+}
+
+export function getWorkTypeLabels(
+  input?: unknown,
+  fallbackObj?: Record<string, any> | null
+): WorkTypeLabels;
+

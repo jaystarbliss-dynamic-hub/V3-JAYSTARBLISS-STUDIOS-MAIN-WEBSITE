@@ -39,6 +39,7 @@ import {
   type WorkType,
 } from "../../lib/classes";
 import { ExamListSkeleton } from "../../components/ui/Skeleton";
+import EmbeddedLearningMedia from "../../components/portal/EmbeddedLearningMedia";
 import { getFriendlyErrorMessage, logInternalDiagnostic } from "../../utils/friendlyErrors";
 
 type ExamCard = {
@@ -51,6 +52,8 @@ type ExamCard = {
   isUngradedActivity?: boolean;
   deliveryMode?: "EXTERNAL_LINK" | "NATIVE";
   externalUrl?: string;
+  resourceUrl?: string;
+  videoUrl?: string;
   status: "active" | "upcoming" | "completed";
   durationMinutes: number;
   maxScore?: number;
@@ -64,6 +67,7 @@ type ExamCard = {
   attemptStatus?: string;
   score?: number;
   percentage?: number;
+  feedback?: string;
   releasedAt?: unknown;
   resultReleased?: boolean;
   schoolId?: string;
@@ -304,8 +308,16 @@ export default function StudentExaminations() {
             const data = await response.json().catch(() => ({}));
             if (!data.fallback && Array.isArray(data.exams)) {
               data.exams.forEach((exam: any) => {
+                const attStatus = String(exam.attemptStatus || "").toLowerCase();
+                const isAttemptDone =
+                  attStatus === "submitted" ||
+                  attStatus === "completed" ||
+                  attStatus === "graded" ||
+                  attStatus === "expired" ||
+                  Boolean(exam.releasedAt);
                 examMap.set(String(exam.id), {
                   ...exam,
+                  status: isAttemptDone ? "completed" : exam.status,
                   workType: normalizeWorkType(exam.workType, exam),
                   deliveryMode: normalizeDeliveryMode(exam),
                   externalUrl: String(exam.externalUrl || "").trim(),
@@ -383,7 +395,8 @@ export default function StudentExaminations() {
           const a = ad.data();
           if (
             (currentUid && a.studentUid === currentUid) ||
-            (currentStudentId && a.studentId === currentStudentId)
+            (currentStudentId && a.studentId === currentStudentId) ||
+            (currentUid && a.studentId === currentUid)
           ) {
             const isReleased = isAttemptResultReleased(a);
             const examKey = String(a.examId);
@@ -394,6 +407,7 @@ export default function StudentExaminations() {
                 attemptStatus: a.status,
                 score: isReleased ? a.score : prev?.score,
                 maxScore: a.maxScore ?? prev?.maxScore,
+                feedback: isReleased ? a.feedback || a.tutorFeedback : prev?.feedback,
                 releasedAt: isReleased
                   ? a.releasedAt || a.updatedAt || a.submittedAt || new Date().toISOString()
                   : prev?.releasedAt,
@@ -413,20 +427,30 @@ export default function StudentExaminations() {
           : Number.MAX_SAFE_INTEGER;
         let until = Number.isFinite(rawUntil) ? rawUntil : Number.MAX_SAFE_INTEGER;
 
-        // Guard against accidental AM/PM inversion where Available Until was set earlier than Available From
         if (from > 0 && until < Number.MAX_SAFE_INTEGER && until <= from) {
           const plus12h = until + 12 * 60 * 60 * 1000;
           until = plus12h > from ? plus12h : Number.MAX_SAFE_INTEGER;
         }
 
+        const att = attemptsByExam[exam.id] || {};
+        const existingServerItem = examMap.get(String(exam.id));
+        const effectiveAttemptStatus = String(
+          att.attemptStatus || existingServerItem?.attemptStatus || ""
+        ).toLowerCase();
+        const isAttemptSubmittedOrDone =
+          effectiveAttemptStatus === "submitted" ||
+          effectiveAttemptStatus === "completed" ||
+          effectiveAttemptStatus === "graded" ||
+          effectiveAttemptStatus === "expired" ||
+          Boolean(att.resultReleased || existingServerItem?.releasedAt);
+
         const computedStatus: "active" | "upcoming" | "completed" =
-          exam.status === "completed" || now >= until
+          isAttemptSubmittedOrDone || exam.status === "completed" || now >= until
             ? "completed"
             : now < from || exam.status === "scheduled"
             ? "upcoming"
             : "active";
 
-        const att = attemptsByExam[exam.id] || {};
         const deliveryMode = normalizeDeliveryMode(exam);
         const maxScore = computeExamMaxScore(exam, att);
         const percentage =
@@ -434,7 +458,6 @@ export default function StudentExaminations() {
             ? calculateScorePercentage(att.score, maxScore)
             : undefined;
 
-        const existingServerItem = examMap.get(String(exam.id));
         examMap.set(String(exam.id), {
           id: exam.id,
           title: exam.title || "Assessment",
@@ -445,6 +468,8 @@ export default function StudentExaminations() {
           isUngradedActivity: Boolean(exam.isUngradedActivity),
           deliveryMode,
           externalUrl: String(exam.externalUrl || exam.url || exam.link || "").trim(),
+          resourceUrl: String(exam.resourceUrl || exam.videoUrl || exam.learningVideoUrl || "").trim(),
+          videoUrl: String(exam.videoUrl || exam.learningVideoUrl || "").trim(),
           status: computedStatus,
           durationMinutes:
             deliveryMode === "EXTERNAL_LINK"
@@ -454,7 +479,7 @@ export default function StudentExaminations() {
           questionCount: Array.isArray(exam.questions) ? exam.questions.length : 0,
           seriesName: exam.seriesName,
           courseName: exam.courseName,
-          learningVideoUrl: exam.learningVideoUrl,
+          learningVideoUrl: exam.learningVideoUrl || exam.videoUrl || exam.resourceUrl,
           availableFrom: exam.availableFrom,
           availableUntil: exam.availableUntil,
           schoolId: exam.schoolId,
@@ -464,13 +489,15 @@ export default function StudentExaminations() {
           passcodeHash: exam.passcodeHash,
           questions: exam.questions,
           ...att,
-          ...(existingServerItem?.attemptId ? {
-            attemptId: existingServerItem.attemptId,
-            attemptStatus: existingServerItem.attemptStatus,
-            score: existingServerItem.score,
-            releasedAt: existingServerItem.releasedAt,
-            percentage: existingServerItem.percentage ?? percentage,
-          } : { percentage }),
+          ...(existingServerItem?.attemptId
+            ? {
+                attemptId: existingServerItem.attemptId,
+                attemptStatus: existingServerItem.attemptStatus,
+                score: existingServerItem.score,
+                releasedAt: existingServerItem.releasedAt,
+                percentage: existingServerItem.percentage ?? percentage,
+              }
+            : { percentage }),
         });
       });
 
@@ -658,7 +685,7 @@ export default function StudentExaminations() {
 
       window.location.assign(`/portal/student/exams/${encodeURIComponent(attemptId)}`);
     } catch (error) {
-      logInternalDiagnostic('StudentExaminations::ValidatePasscode', error);
+      logInternalDiagnostic("StudentExaminations::ValidatePasscode", error);
       setMessage({
         id: examId,
         text: getFriendlyErrorMessage(error),
@@ -673,13 +700,13 @@ export default function StudentExaminations() {
     <main className="mx-auto w-full max-w-6xl space-y-5 p-3 sm:p-5 md:p-8 overflow-x-hidden">
       {/* UPCOMING / RECENT ASSESSMENT NOTIFICATIONS BANNER */}
       {notifications.length > 0 && (
-        <section className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 shadow-sm">
+        <section className="rounded-2xl border border-blue-200 dark:border-blue-800/70 bg-blue-50/70 dark:bg-blue-950/30 p-4 shadow-sm">
           <div className="flex items-start gap-3">
-            <Bell className="mt-0.5 text-blue-600 shrink-0" size={18} />
-            <div className="space-y-1 text-xs sm:text-sm text-blue-950 min-w-0">
+            <Bell className="mt-0.5 text-blue-600 dark:text-blue-400 shrink-0" size={18} />
+            <div className="space-y-1 text-xs sm:text-sm text-blue-950 dark:text-blue-100 min-w-0">
               <p className="font-bold">Class Assessment Notices</p>
               {notifications.map((n) => (
-                <p key={n.id} className="text-blue-900 break-words">
+                <p key={n.id} className="text-blue-900 dark:text-blue-200 break-words">
                   • <strong>{n.title}:</strong> {n.message}
                 </p>
               ))}
@@ -689,9 +716,9 @@ export default function StudentExaminations() {
       )}
 
       {/* TABS & REFRESH */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm space-y-4">
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm space-y-4">
         {/* Clean Work-Type Category Tabs */}
-        <div className="flex items-center gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 touch-pan-x">
+        <div className="flex items-center gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-slate-800 touch-pan-x">
           {(
             [
               { id: "ALL", label: "All Assessments" },
@@ -712,51 +739,54 @@ export default function StudentExaminations() {
                 type="button"
                 onClick={() => setWorkTypeTab(wt.id)}
                 className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  active ? "text-[#14284B]" : "text-slate-500 hover:text-slate-800"
+                  active
+                    ? "text-slate-900 dark:text-white"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                 }`}
               >
                 <span>{wt.label}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                   {count}
                 </span>
                 {active && (
-                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-blue-600 dark:bg-blue-400 rounded-full" />
                 )}
               </button>
             );
           })}
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div className="flex flex-wrap items-center gap-2">
             {studentInfo.class && (
-              <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700">
-                Class: <span className="text-blue-700">{studentInfo.class}</span>
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200">
+                Class:{" "}
+                <span className="text-blue-700 dark:text-blue-400">{studentInfo.class}</span>
               </span>
             )}
             <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
-            {(["active", "upcoming", "completed"] as const).map((item) => {
-              const count =
-                item === "active"
-                  ? activeCount
-                  : item === "upcoming"
-                  ? upcomingCount
-                  : exams.length - activeCount - upcomingCount;
-              return (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setTab(item)}
-                  className={`rounded-xl px-2.5 sm:px-4 py-2.5 text-xs sm:text-sm font-bold capitalize transition-colors text-center ${
-                    tab === item
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  }`}
-                >
-                  {item} ({count})
-                </button>
-              );
-            })}
+              {(["active", "upcoming", "completed"] as const).map((item) => {
+                const count =
+                  item === "active"
+                    ? activeCount
+                    : item === "upcoming"
+                    ? upcomingCount
+                    : exams.length - activeCount - upcomingCount;
+                return (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setTab(item)}
+                    className={`rounded-xl px-2.5 sm:px-4 py-2.5 text-xs sm:text-sm font-bold capitalize transition-colors text-center ${
+                      tab === item
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    {item} ({count})
+                  </button>
+                );
+              })}
             </div>
           </div>
           <button
@@ -772,7 +802,7 @@ export default function StudentExaminations() {
         {message?.id === "list" && (
           <div
             role="alert"
-            className="rounded-xl bg-amber-50 p-4 text-sm font-medium text-amber-900 border border-amber-200"
+            className="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 text-sm font-medium text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800"
           >
             {message.text}
           </div>
@@ -781,11 +811,11 @@ export default function StudentExaminations() {
         {/* EMPTY STATE */}
         {!loading && exams.length === 0 && !message && (
           <div className="py-12 sm:py-14 text-center px-3">
-            <BookOpenCheck className="mx-auto mb-3 text-blue-600" size={44} />
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900">
+            <BookOpenCheck className="mx-auto mb-3 text-blue-600 dark:text-blue-400" size={44} />
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
               No Assessments Found For Your Class
             </h2>
-            <p className="mt-1.5 max-w-md mx-auto text-xs sm:text-sm text-slate-600">
+            <p className="mt-1.5 max-w-md mx-auto text-xs sm:text-sm text-slate-600 dark:text-slate-300">
               Assessments are tailored strictly to your specific class level (
               {studentInfo.class || "enrolled class"}). When your tutor assigns an assessment to
               your class, it will appear here.
@@ -800,7 +830,7 @@ export default function StudentExaminations() {
         )}
 
         {filtered.length === 0 && exams.length > 0 && (
-          <p className="py-12 text-center text-sm font-medium text-slate-500">
+          <p className="py-12 text-center text-sm font-medium text-slate-500 dark:text-slate-400">
             There are no <span className="font-bold capitalize">{tab}</span> assessments for your
             class right now.
           </p>
@@ -812,255 +842,287 @@ export default function StudentExaminations() {
         ) : (
           <div className="grid gap-4">
             {filtered.map((exam) => {
-            const isExternal = exam.deliveryMode === "EXTERNAL_LINK";
-            const maxScore = computeExamMaxScore(exam);
-            const isReleased = Boolean(exam.releasedAt || exam.resultReleased);
-            const pct =
-              isReleased && typeof exam.score === "number"
-                ? calculateScorePercentage(exam.score, maxScore)
-                : undefined;
-            const unlockedUrl = unlockedExternalUrls[exam.id];
-            const typeLabels = getWorkTypeLabels(exam.workType, exam);
+              const isExternal = exam.deliveryMode === "EXTERNAL_LINK";
+              const maxScore = computeExamMaxScore(exam);
+              const isReleased = Boolean(exam.releasedAt || exam.resultReleased);
+              const pct =
+                isReleased && typeof exam.score === "number"
+                  ? calculateScorePercentage(exam.score, maxScore)
+                  : undefined;
+              const unlockedUrl = unlockedExternalUrls[exam.id];
+              const typeLabels = getWorkTypeLabels(exam.workType, exam);
+              const mediaUrl =
+                exam.learningVideoUrl || exam.videoUrl || exam.resourceUrl || "";
 
-            return (
-              <article
-                key={exam.id}
-                className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm hover:border-slate-300 transition-all"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-                  <div className="rounded-2xl bg-blue-50 p-3 text-blue-700 shrink-0 self-start">
-                    {isExternal ? <ExternalLink size={26} /> : <BookOpenCheck size={26} />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#B91C1C]">
-                        {typeLabels.singular}
-                      </span>
-                      <h2 className="text-base sm:text-lg font-bold text-slate-900 break-words">
-                        {exam.title}
-                      </h2>
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-bold capitalize ${
-                          exam.status === "active"
-                            ? "bg-emerald-100 text-emerald-800"
-                            : exam.status === "upcoming"
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {exam.status}
-                      </span>
-                      {isExternal && (
-                        <span className="rounded-full bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700">
-                          External Link
+              return (
+                <article
+                  key={exam.id}
+                  className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-4 sm:p-5 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                    <div className="rounded-2xl bg-blue-50 dark:bg-blue-950/60 p-3 text-blue-700 dark:text-blue-400 shrink-0 self-start">
+                      {isExternal ? <ExternalLink size={26} /> : <BookOpenCheck size={26} />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-md bg-red-50 dark:bg-red-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-300">
+                          {typeLabels.singular}
                         </span>
-                      )}
-                    </div>
-
-                    <p className="mt-1 text-xs sm:text-sm font-medium text-slate-600">
-                      {exam.subject}
-                      {!isExternal && maxScore > 0 ? ` · Total Marks: ${maxScore}` : ""}
-                    </p>
-
-                    {exam.description && (
-                      <p className="mt-1.5 text-xs sm:text-sm text-slate-600 leading-relaxed break-words">
-                        {exam.description}
-                      </p>
-                    )}
-
-                    {!isExternal && exam.attemptStatus && (
-                      <div className="mt-2.5 inline-flex flex-wrap items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 border border-slate-200">
-                        <span>
-                          Status:{" "}
-                          <span className="capitalize font-bold text-slate-900">
-                            {isReleased ? "Released" : exam.attemptStatus.replace("_", " ")}
-                          </span>
-                        </span>
-                        {isReleased && exam.score !== undefined ? (
-                          <span className="text-emerald-700 font-bold">
-                            · Official Score: {exam.score} / {maxScore} ({pct}%)
-                          </span>
-                        ) : ["submitted", "expired", "graded"].includes(exam.attemptStatus) ? (
-                          <span className="text-amber-700 font-semibold">
-                            · Awaiting Tutor Release
-                          </span>
-                        ) : null}
-                      </div>
-                    )}
-
-                    <div className="mt-3 flex flex-wrap gap-3 sm:gap-4 text-xs font-semibold text-slate-600">
-                      {(!isExternal || exam.durationMinutes > 0) && (
-                        <span className="inline-flex items-center gap-1.5">
-                          <Clock3 size={15} className="text-slate-400 shrink-0" />
-                          {exam.durationMinutes} minutes
-                        </span>
-                      )}
-                      {exam.availableFrom && (
-                        <span className="inline-flex items-center gap-1.5">
-                          <CalendarDays size={15} className="text-slate-400 shrink-0" />
-                          Available: {new Date(exam.availableFrom).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* ACTION BUTTONS FOR NATIVE ATTEMPTS */}
-                {!isExternal &&
-                  exam.status === "active" &&
-                  exam.attemptStatus === "in_progress" &&
-                  exam.attemptId && (
-                    <div className="mt-4 pt-4 border-t">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          window.location.assign(
-                            `/portal/student/exams/${encodeURIComponent(exam.attemptId!)}`
-                          )
-                        }
-                        className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700"
-                      >
-                        {typeLabels.resumeLabel}
-                        <ArrowRight size={16} />
-                      </button>
-                    </div>
-                  )}
-
-                {!isExternal &&
-                  exam.attemptId &&
-                  ["submitted", "expired", "graded"].includes(exam.attemptStatus || "") && (
-                    <div className="mt-4 pt-4 border-t flex flex-wrap items-center gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          window.location.assign(
-                            `/portal/student/exams/${encodeURIComponent(exam.attemptId!)}`
-                          )
-                        }
-                        className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-blue-600 bg-white px-5 py-2.5 text-sm font-bold text-blue-700 hover:bg-blue-50"
-                      >
-                        {isReleased
-                          ? "View Official Report & Download PDF"
-                          : "View Submission Status"}
-                      </button>
-                      {!isReleased && (
-                        <button
-                          type="button"
-                          disabled
-                          aria-disabled="true"
-                          title="Printing is disabled until your tutor releases the result."
-                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed"
-                        >
-                          <Lock size={15} />
-                          Print Official PDF (Awaiting Tutor Release)
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                {/* EXTERNAL LINK UNLOCKED STATE */}
-                {isExternal && exam.status === "active" && unlockedUrl && (
-                  <div className="mt-4 rounded-2xl bg-emerald-50/80 p-4 sm:p-5 border border-emerald-200 space-y-3">
-                    <div className="flex items-center gap-2 text-sm font-bold text-emerald-900">
-                      <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
-                      Access Verified — Ready to Launch
-                    </div>
-                    <p className="text-xs text-emerald-800">
-                      Your portal access code has been verified. Click the button below to open your{" "}
-                      {typeLabels.lowerSingular} in a new tab.
-                    </p>
-                    <div className="pt-1">
-                      <a
-                        href={unlockedUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 shadow-sm transition-colors"
-                      >
-                        Open {typeLabels.singular}
-                        <ExternalLink size={16} />
-                      </a>
-                    </div>
-                  </div>
-                )}
-
-                {/* PASSCODE ENTRY UNLOCK */}
-                {exam.status === "active" &&
-                  !unlockedUrl &&
-                  !["in_progress", "submitted", "expired", "graded"].includes(
-                    exam.attemptStatus || ""
-                  ) && (
-                    <div className="mt-4 sm:mt-5 rounded-2xl bg-blue-50/70 p-4 sm:p-5 border border-blue-100">
-                      <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                        <LockKeyhole size={18} className="text-blue-700 shrink-0" />
-                        Enter {typeLabels.singular} Passcode
-                      </div>
-                      <p className="mt-1 text-xs text-slate-600">
-                        Enter the passcode provided by your tutor or school coordinator to{" "}
-                        {isExternal
-                          ? `unlock the external ${typeLabels.lowerSingular} link.`
-                          : `unlock and start this ${typeLabels.lowerSingular}.`}
-                      </p>
-                      <div className="mt-3 flex flex-col gap-2.5 sm:flex-row">
-                        <div className="relative flex-1 min-w-0">
-                          <input
-                            aria-label={`Passcode for ${exam.title}`}
-                            autoComplete="off"
-                            value={passcodes[exam.id] || ""}
-                            onChange={(e) =>
-                              setPasscodes((prev) => ({ ...prev, [exam.id]: e.target.value }))
-                            }
-                            type={visible[exam.id] ? "text" : "password"}
-                            maxLength={128}
-                            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 pr-12 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm font-semibold tracking-wider"
-                            placeholder="Enter passcode (e.g. JDI-XXXXXX)"
-                          />
-                          <button
-                            type="button"
-                            aria-label={visible[exam.id] ? "Hide passcode" : "Show passcode"}
-                            onClick={() =>
-                              setVisible((prev) => ({ ...prev, [exam.id]: !prev[exam.id] }))
-                            }
-                            className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600 p-0.5"
-                          >
-                            {visible[exam.id] ? <EyeOff size={18} /> : <Eye size={18} />}
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          disabled={busy === exam.id}
-                          onClick={() => unlock(exam.id)}
-                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm shrink-0"
-                        >
-                          <LockKeyhole size={17} />
-                          {busy === exam.id
-                            ? "Validating…"
-                            : isExternal
-                            ? "Verify Access Code"
-                            : `Unlock & ${typeLabels.startLabel}`}
-                        </button>
-                      </div>
-                      {message?.id === exam.id && (
-                        <p
-                          role="alert"
-                          className={`mt-3 flex items-start gap-2 text-xs font-semibold ${
-                            message.error ? "text-red-700" : "text-emerald-700"
+                        <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words">
+                          {exam.title}
+                        </h2>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-bold capitalize ${
+                            exam.status === "active"
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                              : exam.status === "upcoming"
+                              ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
+                              : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
                           }`}
                         >
-                          <CircleAlert size={16} className="mt-0.5 shrink-0" />
-                          <span>{message.text}</span>
+                          {exam.status}
+                        </span>
+                        {isExternal && (
+                          <span className="rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
+                            External Link
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="mt-1 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300">
+                        {exam.subject}
+                        {!isExternal && maxScore > 0 ? ` · Total Marks: ${maxScore}` : ""}
+                      </p>
+
+                      {exam.description && (
+                        <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap break-words">
+                          {exam.description}
                         </p>
                       )}
-                      <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500">
-                        <ShieldCheck size={14} className="text-blue-600 shrink-0" />
-                        Protected by Jaystarbliss Central CBT Assessment Security.
+
+                      {/* Embedded Video / Learning Material directly in Student Hub Card */}
+                      {mediaUrl && (
+                        <div className="mt-3">
+                          <EmbeddedLearningMedia
+                            url={mediaUrl}
+                            title={`${exam.title} — Learning Resource`}
+                          />
+                        </div>
+                      )}
+
+                      {!isExternal && exam.attemptStatus && (
+                        <div className="mt-2.5 inline-flex flex-wrap items-center gap-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                          <span>
+                            Status:{" "}
+                            <span className="capitalize font-bold text-slate-900 dark:text-white">
+                              {isReleased ? "Released" : exam.attemptStatus.replace("_", " ")}
+                            </span>
+                          </span>
+                          {isReleased && exam.score !== undefined ? (
+                            <span className="text-emerald-700 dark:text-emerald-400 font-bold">
+                              · Official Score: {exam.score} / {maxScore} ({pct}%)
+                            </span>
+                          ) : ["submitted", "expired", "graded"].includes(exam.attemptStatus) ? (
+                            <span className="text-amber-700 dark:text-amber-400 font-semibold">
+                              · Awaiting Tutor Release
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+
+                      {isReleased && exam.feedback && (
+                        <div className="mt-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-800/60 p-3 text-xs text-slate-800 dark:text-slate-200">
+                          <span className="font-bold text-blue-900 dark:text-blue-300 block mb-0.5">
+                            Tutor Feedback:
+                          </span>
+                          {exam.feedback}
+                        </div>
+                      )}
+
+                      <div className="mt-3 flex flex-wrap gap-3 sm:gap-4 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                        {(!isExternal || exam.durationMinutes > 0) && (
+                          <span className="inline-flex items-center gap-1.5">
+                            <Clock3 size={15} className="text-slate-400 shrink-0" />
+                            {exam.durationMinutes} minutes
+                          </span>
+                        )}
+                        {exam.availableFrom && (
+                          <span className="inline-flex items-center gap-1.5">
+                            <CalendarDays size={15} className="text-slate-400 shrink-0" />
+                            Available: {new Date(exam.availableFrom).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ACTION BUTTONS FOR NATIVE ATTEMPTS */}
+                  {!isExternal &&
+                    exam.status === "active" &&
+                    exam.attemptStatus === "in_progress" &&
+                    exam.attemptId && (
+                      <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.location.assign(
+                              `/portal/student/exams/${encodeURIComponent(exam.attemptId!)}`
+                            )
+                          }
+                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700"
+                        >
+                          {typeLabels.resumeLabel}
+                          <ArrowRight size={16} />
+                        </button>
+                      </div>
+                    )}
+
+                  {!isExternal &&
+                    exam.attemptId &&
+                    ["submitted", "expired", "graded"].includes(exam.attemptStatus || "") && (
+                      <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.location.assign(
+                              `/portal/student/exams/${encodeURIComponent(exam.attemptId!)}`
+                            )
+                          }
+                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-blue-600 bg-white dark:bg-slate-800 px-5 py-2.5 text-sm font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-slate-700"
+                        >
+                          {isReleased
+                            ? "View Official Report & Download PDF"
+                            : "View Submission Status"}
+                        </button>
+                        {!isReleased && (
+                          <button
+                            type="button"
+                            disabled
+                            aria-disabled="true"
+                            title="Printing is disabled until your tutor releases the result."
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed"
+                          >
+                            <Lock size={15} />
+                            Print Official PDF (Awaiting Tutor Release)
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                  {/* EXTERNAL LINK UNLOCKED STATE */}
+                  {isExternal && exam.status === "active" && unlockedUrl && (
+                    <div className="mt-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 p-4 sm:p-5 border border-emerald-200 dark:border-emerald-800/70 space-y-3">
+                      <div className="flex items-center gap-2 text-sm font-bold text-emerald-900 dark:text-emerald-200">
+                        <CheckCircle2
+                          size={18}
+                          className="text-emerald-600 dark:text-emerald-400 shrink-0"
+                        />
+                        Access Verified — Ready to Launch
+                      </div>
+                      <p className="text-xs text-emerald-800 dark:text-emerald-300">
+                        Your portal access code has been verified. Click the button below to open
+                        your {typeLabels.lowerSingular} in a new tab.
                       </p>
+                      <div className="pt-1">
+                        <a
+                          href={unlockedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 shadow-sm transition-colors"
+                        >
+                          Open {typeLabels.singular}
+                          <ExternalLink size={16} />
+                        </a>
+                      </div>
                     </div>
                   )}
-              </article>
-            );
-          })}
-        </div>
-      )}
+
+                  {/* PASSCODE ENTRY UNLOCK */}
+                  {exam.status === "active" &&
+                    !unlockedUrl &&
+                    !["in_progress", "submitted", "expired", "graded"].includes(
+                      exam.attemptStatus || ""
+                    ) && (
+                      <div className="mt-4 sm:mt-5 rounded-2xl bg-blue-50/70 dark:bg-blue-950/25 p-4 sm:p-5 border border-blue-100 dark:border-blue-900/50">
+                        <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                          <LockKeyhole
+                            size={18}
+                            className="text-blue-700 dark:text-blue-400 shrink-0"
+                          />
+                          Enter {typeLabels.singular} Passcode
+                        </div>
+                        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                          Enter the passcode provided by your tutor or school coordinator to{" "}
+                          {isExternal
+                            ? `unlock the external ${typeLabels.lowerSingular} link.`
+                            : `unlock and start this ${typeLabels.lowerSingular}.`}
+                        </p>
+                        <div className="mt-3 flex flex-col gap-2.5 sm:flex-row">
+                          <div className="relative flex-1 min-w-0">
+                            <input
+                              aria-label={`Passcode for ${exam.title}`}
+                              autoComplete="off"
+                              value={passcodes[exam.id] || ""}
+                              onChange={(e) =>
+                                setPasscodes((prev) => ({ ...prev, [exam.id]: e.target.value }))
+                              }
+                              type={visible[exam.id] ? "text" : "password"}
+                              maxLength={128}
+                              className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 pr-12 text-slate-900 dark:text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm font-semibold tracking-wider"
+                              placeholder="Enter passcode (e.g. JDI-XXXXXX)"
+                            />
+                            <button
+                              type="button"
+                              aria-label={visible[exam.id] ? "Hide passcode" : "Show passcode"}
+                              onClick={() =>
+                                setVisible((prev) => ({ ...prev, [exam.id]: !prev[exam.id] }))
+                              }
+                              className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                            >
+                              {visible[exam.id] ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={busy === exam.id}
+                            onClick={() => unlock(exam.id)}
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm shrink-0"
+                          >
+                            <LockKeyhole size={17} />
+                            {busy === exam.id
+                              ? "Validating…"
+                              : isExternal
+                              ? "Verify Access Code"
+                              : `Unlock & ${typeLabels.startLabel}`}
+                          </button>
+                        </div>
+                        {message?.id === exam.id && (
+                          <p
+                            role="alert"
+                            className={`mt-3 flex items-start gap-2 text-xs font-semibold ${
+                              message.error
+                                ? "text-red-700 dark:text-red-400"
+                                : "text-emerald-700 dark:text-emerald-400"
+                            }`}
+                          >
+                            <CircleAlert size={16} className="mt-0.5 shrink-0" />
+                            <span>{message.text}</span>
+                          </p>
+                        )}
+                        <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                          <ShieldCheck
+                            size={14}
+                            className="text-blue-600 dark:text-blue-400 shrink-0"
+                          />
+                          Protected by Jaystarbliss Central CBT Assessment Security.
+                        </p>
+                      </div>
+                    )}
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
     </main>
   );

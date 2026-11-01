@@ -513,82 +513,78 @@ html.dark .bg-brand-neutral {
 
 
 /* =========================================================================
-   PORTAL / ADMIN TYPOGRAPHY CONSISTENCY
-   Keep ordinary interface copy on one readable neutral color. Brand colors
-   remain reserved for intentional accents, status indicators and actions.
+   PORTAL & ADMIN DESIGN SYSTEM TOKENS (LIGHT & DARK MODE CONTRAST AUDIT)
+   Preserves natural typographic hierarchy (headings, body, muted subtitles)
+   while guaranteeing WCAG AA+ contrast in both Light Mode and Dark Mode.
    ========================================================================= */
-.dashboard-interface .text-slate-400,
-.dashboard-interface .text-slate-500,
-.dashboard-interface .text-slate-600,
-.dashboard-interface .text-slate-700,
-.dashboard-interface .text-slate-800,
-.dashboard-interface .text-slate-900,
-.dashboard-interface .text-gray-400,
-.dashboard-interface .text-gray-500,
-.dashboard-interface .text-gray-600,
-.dashboard-interface .text-gray-700,
-.dashboard-interface .text-gray-800,
-.dashboard-interface .text-gray-900,
-.admin-schools-command .text-slate-400,
-.admin-schools-command .text-slate-500,
-.admin-schools-command .text-slate-600,
-.admin-schools-command .text-slate-700,
-.admin-schools-command .text-slate-800,
-.admin-schools-command .text-slate-900,
-.admin-schools-command .text-gray-400,
-.admin-schools-command .text-gray-500,
-.admin-schools-command .text-gray-600,
-.admin-schools-command .text-gray-700,
-.admin-schools-command .text-gray-800,
-.admin-schools-command .text-gray-900 {
-  color: #334155 !important;
+:root {
+  --portal-bg-canvas: #F8FAFC;
+  --portal-bg-surface: #FFFFFF;
+  --portal-bg-subtle: #F1F5F9;
+  --portal-border: #E2E8F0;
+  --portal-border-strong: #CBD5E1;
+  --portal-text-heading: #0F172A;
+  --portal-text-body: #334155;
+  --portal-text-muted: #64748B;
+  --portal-primary: #2563EB;
+  --portal-primary-hover: #1D4ED8;
 }
 
-html.dark .dashboard-interface .text-slate-400,
-html.dark .dashboard-interface .text-slate-500,
-html.dark .dashboard-interface .text-slate-600,
-html.dark .dashboard-interface .text-slate-700,
-html.dark .dashboard-interface .text-slate-800,
-html.dark .dashboard-interface .text-slate-900,
-html.dark .dashboard-interface .text-gray-400,
-html.dark .dashboard-interface .text-gray-500,
-html.dark .dashboard-interface .text-gray-600,
-html.dark .dashboard-interface .text-gray-700,
-html.dark .dashboard-interface .text-gray-800,
-html.dark .dashboard-interface .text-gray-900,
-html.dark .admin-schools-command .text-slate-400,
-html.dark .admin-schools-command .text-slate-500,
-html.dark .admin-schools-command .text-slate-600,
-html.dark .admin-schools-command .text-slate-700,
-html.dark .admin-schools-command .text-slate-800,
-html.dark .admin-schools-command .text-slate-900,
-html.dark .admin-schools-command .text-gray-400,
-html.dark .admin-schools-command .text-gray-500,
-html.dark .admin-schools-command .text-gray-600,
-html.dark .admin-schools-command .text-gray-700,
-html.dark .admin-schools-command .text-gray-800,
-html.dark .admin-schools-command .text-gray-900 {
-  color: #E2E8F0 !important;
+html.dark {
+  --portal-bg-canvas: #0B1120;
+  --portal-bg-surface: #0F172A;
+  --portal-bg-subtle: #1E293B;
+  --portal-border: #1E293B;
+  --portal-border-strong: #334155;
+  --portal-text-heading: #F8FAFC;
+  --portal-text-body: #E2E8F0;
+  --portal-text-muted: #94A3B8;
+  --portal-primary: #3B82F6;
+  --portal-primary-hover: #2563EB;
 }
 
-/* Prevent the neutral copy rule from flattening intentional action text. */
-.dashboard-interface .text-white,
-.admin-schools-command .text-white,
-.dashboard-interface .text-brand-red,
-.admin-schools-command .text-brand-red,
-.dashboard-interface .text-emerald-600,
-.dashboard-interface .text-emerald-700,
-.dashboard-interface .text-amber-600,
-.dashboard-interface .text-amber-700,
-.dashboard-interface .text-red-600,
-.dashboard-interface .text-red-700,
-.admin-schools-command .text-emerald-600,
-.admin-schools-command .text-emerald-700,
-.admin-schools-command .text-amber-600,
-.admin-schools-command .text-amber-700,
-.admin-schools-command .text-red-600,
-.admin-schools-command .text-red-700 {
-  color: revert-layer !important;
+/* Guarantee readable minimum contrast for muted helper text in Light Mode */
+html:not(.dark) :is(.dashboard-interface, .admin-schools-command) .text-slate-400 {
+  color: #64748B;
+}
+
+html:not(.dark) :is(.dashboard-interface, .admin-schools-command) .text-slate-500 {
+  color: #475569;
+}
+
+/* Guarantee readable minimum contrast for dark text classes when inside Dark Mode */
+html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-900:not([class*="dark:text-"]) {
+  color: #F8FAFC;
+}
+
+html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-800:not([class*="dark:text-"]) {
+  color: #F1F5F9;
+}
+
+html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-700:not([class*="dark:text-"]) {
+  color: #E2E8F0;
+}
+
+html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-600:not([class*="dark:text-"]) {
+  color: #CBD5E1;
+}
+
+html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-500:not([class*="dark:text-"]) {
+  color: #94A3B8;
+}
+
+/* Wireframe-consistent interactive form inputs and selects */
+:is(.dashboard-interface, .admin-schools-command) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select, textarea) {
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.35rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+:is(.dashboard-interface, .admin-schools-command) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select, textarea):focus {
+  outline: none;
+  border-color: #2563EB;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
 }
 
 

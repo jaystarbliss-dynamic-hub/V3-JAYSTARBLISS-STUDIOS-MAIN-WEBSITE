@@ -14,6 +14,7 @@ import { CANONICAL_CLASSES, formatNormalizedClassDisplay } from '../../lib/class
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
 import { fetchAcademicStudentsFallback } from '../../lib/academicFallback';
 import { getEffectiveAuth } from '../../utils/impersonation';
+import { claimGlobalUsername, ensureUniqueGeneratedUsername } from '../../lib/usernameRegistry';
 
 type Props = { role: 'staff' | 'school' };
 type Student = { 
@@ -296,11 +297,10 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
       }
 
       if (!credentials) {
-        let username = String(student.username || '').trim().toLowerCase();
-        if (!username) {
-          const base = String(student.fullName || student.studentName || 'student').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'student';
-          username = `${base}${Math.floor(100 + Math.random() * 900)}`;
-        }
+        const linkedUid = String((student as any).firebaseUid || (student as any).userId || '').trim();
+        const rawCandidate = String(student.username || '').trim().toLowerCase() ||
+          `${String(student.fullName || student.studentName || 'student').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'student'}${Math.floor(100 + Math.random() * 900)}`;
+        const username = await ensureUniqueGeneratedUsername(rawCandidate, [student.id, linkedUid]);
 
         const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         let p1 = '';
@@ -335,7 +335,6 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
 
         const { setDoc, doc, addDoc, collection } = await import('firebase/firestore');
         const standbyDb = getStandbyFirestore();
-        const linkedUid = String((student as any).firebaseUid || (student as any).userId || '').trim();
         await Promise.all([
           setDoc(doc(db, 'individualStudents', student.id), updatePayload, { merge: true }),
           setDoc(doc(db, 'students', student.id), updatePayload, { merge: true }),
@@ -343,6 +342,12 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
           setDoc(doc(standbyDb, 'individualStudents', student.id), updatePayload, { merge: true }).catch(() => null),
           setDoc(doc(standbyDb, 'students', student.id), updatePayload, { merge: true }).catch(() => null),
           ...(linkedUid ? [setDoc(doc(standbyDb, 'users', linkedUid), updatePayload, { merge: true }).catch(() => null)] : []),
+          claimGlobalUsername(username, {
+            uid: linkedUid || student.id,
+            docId: student.id,
+            role: 'STUDENT',
+            name: String(student.fullName || student.studentName || 'Student'),
+          }),
         ]);
 
         await addDoc(collection(db, 'activityLogs'), {

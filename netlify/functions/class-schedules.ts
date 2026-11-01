@@ -110,7 +110,10 @@ const resolveStudentIdentity = async (uid: string, decoded: any, user: any) => {
   const ids = new Set<string>([uid]);
   const emails = new Set<string>();
   const schoolIds = new Set<string>();
+  const schoolNames = new Set<string>();
   const classesForStudent = new Set<string>();
+  const programIds = new Set<string>();
+  const programNames = new Set<string>();
 
   const emailValues = [user.email, decoded?.email].filter(Boolean).map(normalize);
   emailValues.forEach(email => emails.add(email));
@@ -130,9 +133,23 @@ const resolveStudentIdentity = async (uid: string, decoded: any, user: any) => {
     [data.schoolId].forEach(v => {
       if (v) schoolIds.add(String(v));
     });
+    [data.schoolName, data.school].forEach(v => {
+      if (v) schoolNames.add(normalize(v));
+    });
     [data.class, data.grade, data.classLevel, data.year, data.level].forEach(v => {
       if (v) classesForStudent.add(normalize(v));
     });
+    [data.programId, data.assignedProgramId, data.programmeId].forEach(v => {
+      if (v) programIds.add(normalize(v));
+    });
+    [data.programName, data.programmeName, data.program, data.plan, data.track, data.programTitle].forEach(v => {
+      if (v) programNames.add(normalize(v));
+    });
+    if (Array.isArray(data.subjects)) {
+      data.subjects.forEach((s: any) => {
+        if (typeof s === 'string' && s.trim()) programNames.add(normalize(s));
+      });
+    }
   };
 
   const lookups: Promise<any>[] = [];
@@ -147,9 +164,12 @@ const resolveStudentIdentity = async (uid: string, decoded: any, user: any) => {
   snapshots.forEach(snapshot => snapshot?.docs?.forEach((doc: any) => absorb(doc)));
 
   if (user.schoolId) schoolIds.add(String(user.schoolId));
+  if (user.schoolName) schoolNames.add(normalize(user.schoolName));
   [user.class, user.grade, user.classLevel].forEach(v => { if (v) classesForStudent.add(normalize(v)); });
+  [user.programId].forEach(v => { if (v) programIds.add(normalize(v)); });
+  [user.programName, user.plan, user.track].forEach(v => { if (v) programNames.add(normalize(v)); });
 
-  return { ids, emails, schoolIds, classes: classesForStudent };
+  return { ids, emails, schoolIds, schoolNames, classes: classesForStudent, programIds, programNames };
 };
 
 const loadRecords = async () => {
@@ -189,24 +209,51 @@ export const handler: Handler = async event => {
       } else if (role === 'STUDENT') {
         const identity = await resolveStudentIdentity(uid, decoded, user);
         records = records.filter((r: any) => {
+          const target = normalize(r.targetType);
           const recordStudentId = String(r.studentId || '').trim();
           const recordStudentEmail = normalize(r.studentEmail);
-          const directStudentMatch = r.targetType === 'STUDENT' && (
-            (recordStudentId && identity.ids.has(recordStudentId)) ||
-            (recordStudentEmail && identity.emails.has(recordStudentEmail))
-          );
-          if (directStudentMatch) return true;
+          const isPrivateTarget = ['student', 'individual', 'private', 'parent'].includes(target) || Boolean(recordStudentId);
+
+          if (isPrivateTarget && !r.schoolId) {
+            return (
+              (recordStudentId && identity.ids.has(recordStudentId)) ||
+              (recordStudentEmail && identity.emails.has(recordStudentEmail))
+            );
+          }
+
+          // School-based schedule: private students must never inherit school schedules
+          if (identity.schoolIds.size === 0 && identity.schoolNames.size === 0) return false;
 
           const recordSchoolId = String(r.schoolId || '').trim();
-          if (!recordSchoolId || !identity.schoolIds.has(recordSchoolId)) return false;
+          const recordSchoolName = normalize(r.schoolName);
+          const schoolMatch =
+            (recordSchoolId && identity.schoolIds.has(recordSchoolId)) ||
+            (recordSchoolName && identity.schoolNames.has(recordSchoolName));
+          if (!schoolMatch) return false;
+
+          // Program check: only students enrolled in the matching program at that school see it
+          const rProgId = normalize(r.programId || r.programmeId);
+          const rProgName = normalize(r.programName || r.programmeName);
+          if ((rProgId || rProgName) && (identity.programIds.size > 0 || identity.programNames.size > 0)) {
+            let progOk = false;
+            if (rProgId && identity.programIds.has(rProgId)) progOk = true;
+            if (rProgName && identity.programNames.has(rProgName)) progOk = true;
+            if (!progOk && rProgName) {
+              for (const enrolledProg of identity.programNames) {
+                if (enrolledProg.includes(rProgName) || rProgName.includes(enrolledProg)) {
+                  progOk = true;
+                  break;
+                }
+              }
+            }
+            if (!progOk) return false;
+          }
 
           const recordClasses = Array.isArray(r.classLevels)
             ? r.classLevels.map((value: any) => normalize(value))
-            : r.classLevel ? [normalize(r.classLevel)] : [];
+            : r.classLevel && normalize(r.classLevel) !== 'all classes' ? [normalize(r.classLevel)] : [];
 
-          // A school-wide schedule is visible to the student's school. A class-specific
-          // schedule is visible only when the student's current class is included.
-          if (!recordClasses.length) return true;
+          if (!recordClasses.length || identity.classes.size === 0) return true;
           return recordClasses.some((level: string) => identity.classes.has(level));
         });
       } else if (role === 'PARENT') {
@@ -216,8 +263,8 @@ export const handler: Handler = async event => {
         const scope = await resolveTutorScope(uid, user, identity);
         records = records.filter((r: any) => {
           if (canTutorAccessRecord(r, identity)) return true;
-          if (String(r.targetType || '').toUpperCase() === 'SCHOOL' && scope.schoolIds.has(String(r.schoolId || ''))) return true;
-          if (String(r.targetType || '').toUpperCase() === 'STUDENT' && scope.studentIds.has(String(r.studentId || ''))) return true;
+          if (r.schoolId && scope.schoolIds.has(String(r.schoolId || ''))) return true;
+          if (r.studentId && scope.studentIds.has(String(r.studentId || ''))) return true;
           return false;
         });
       } else if (isAdmin(role)) {

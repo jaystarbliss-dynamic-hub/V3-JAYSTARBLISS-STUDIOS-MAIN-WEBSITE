@@ -3,7 +3,10 @@ import {
   Banknote, CheckCircle2, CreditCard, Download, 
   Loader2, RefreshCw, ShieldCheck, Wallet, X, 
   Building2, Smartphone, BookOpen, 
-  School, Check, Bell, UserCheck
+  School, Check, Bell, UserCheck,
+  ChevronDown, ChevronRight, ChevronUp,
+  CheckSquare, Square, MinusSquare, User, Users, Sparkles,
+  Filter, Layers, ArrowRight, Clock, AlertCircle
 } from 'lucide-react';
 import { billingGet, billingPost, dateLabel, feeFromBase, formatNaira } from '../../lib/billing';
 import { useToast } from '../../contexts/ToastContext';
@@ -15,6 +18,7 @@ import { FintechWithdrawalModal } from '../../components/portal/FintechWithdrawa
 import { auth, db } from '../../lib/firebase';
 import { collection, addDoc, serverTimestamp, getDocs, getDoc, doc, query, where, limit } from 'firebase/firestore';
 import { getEffectiveAuth, isMasqueradingActive } from '../../utils/impersonation';
+import { resolveParentLinkedChildren } from '../../lib/academicSyncEngine';
 
 export type BillingCenterRole = 'student' | 'parent' | 'staff' | 'school';
 type PaymentRecord = Record<string, any> & { id: string };
@@ -65,6 +69,12 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card'); 
   const [showCheckout, setShowCheckout] = useState(false); 
   const [paying, setPaying] = useState(false);
+
+  // Parent hierarchical progressive payment states
+  const [selectedFeeItemIds, setSelectedFeeItemIds] = useState<string[]>([]);
+  const [expandedChildIds, setExpandedChildIds] = useState<string[]>([]);
+  const [parentFeeFilter, setParentFeeFilter] = useState<'all' | 'due' | 'paid'>('all');
+  const [showParentCheckoutModal, setShowParentCheckoutModal] = useState(false);
 
   // Staff wallet & Fintech modals
   const [withdrawalAmount, setWithdrawalAmount] = useState(''); 
@@ -130,7 +140,9 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   const load = async () => { 
     setLoading(true); 
     try { 
-      const schoolParam = sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || localStorage.getItem('jaystar_cached_school_id') || '';
+      // Strictly prevent passing schoolParam when role is parent or student
+      const rawSchoolParam = sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || localStorage.getItem('jaystar_cached_school_id') || '';
+      const schoolParam = (role === 'school' || role === 'staff') ? rawSchoolParam : '';
       const endpoint = 'billing-data' + (schoolParam ? `?schoolId=${encodeURIComponent(schoolParam)}` : '');
       const result = await billingGet<any>(endpoint);
       const currentUser = auth.currentUser;
@@ -196,16 +208,23 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
       let mergedPayments = Array.isArray(result.payments) ? [...result.payments] : [];
       if (currentUser && mergedPayments.length === 0) {
         try {
-          const effectiveSchoolId = schoolParam || result.schoolInfo?.id || currentUser.uid;
-          const [snap1, snap2, snap3] = await Promise.all([
-            getDocs(query(collection(db, 'payments'), where('schoolId', '==', effectiveSchoolId))),
-            getDocs(query(collection(db, 'payments'), where('userId', '==', currentUser.uid))),
-            currentUser.email ? getDocs(query(collection(db, 'payments'), where('email', '==', currentUser.email))) : Promise.resolve(null)
-          ]);
+          const paymentQueries: Promise<any>[] = [
+            getDocs(query(collection(db, 'payments'), where('userId', '==', currentUser.uid)))
+          ];
+          if (role === 'school' && (schoolParam || result.schoolInfo?.id)) {
+            paymentQueries.push(getDocs(query(collection(db, 'payments'), where('schoolId', '==', schoolParam || result.schoolInfo?.id))));
+          }
+          if (role === 'parent') {
+            paymentQueries.push(getDocs(query(collection(db, 'payments'), where('parentId', '==', currentUser.uid))));
+          }
+          if (currentUser.email) {
+            paymentQueries.push(getDocs(query(collection(db, 'payments'), where('email', '==', currentUser.email))));
+          }
+          const snaps = await Promise.all(paymentQueries);
           const map = new Map<string, any>();
-          [snap1, snap2, snap3].forEach(snap => {
+          snaps.forEach(snap => {
             if (!snap) return;
-            snap.docs.forEach(d => {
+            snap.docs.forEach((d: any) => {
               if (!map.has(d.id)) {
                 const docData = d.data();
                 map.set(d.id, {
@@ -224,27 +243,69 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
         }
       }
 
-      // If parent and students list is empty, lookup children from Firestore
+      // STRICT DATA ISOLATION FOR PARENT ROLE
+      // Strictly resolve parent-child relationships and completely filter out any unrelated students
       if (role === 'parent' && currentUser) {
-        const pEmail = (currentUser.email || '').toLowerCase();
+        const pEmail = (currentUser.email || '').toLowerCase().trim();
         const pUid = currentUser.uid;
         try {
-          const [indivSnap, studSnap] = await Promise.all([
-            getDocs(query(collection(db, 'individualStudents'), limit(150))).catch(() => ({ docs: [] } as any)),
-            getDocs(query(collection(db, 'students'), limit(150))).catch(() => ({ docs: [] } as any))
-          ]);
-          const childMap = new Map<string, any>();
-          (result.students || []).forEach((s: any) => childMap.set(s.id, s));
-          [...indivSnap.docs, ...studSnap.docs].forEach(d => {
-            const data = d.data();
-            const matches = data.parentId === pUid || data.userId === pUid || (pEmail && String(data.parentEmail || '').toLowerCase() === pEmail);
-            if (matches && !childMap.has(d.id)) {
-              childMap.set(d.id, { id: d.id, ...data });
+          const linkedLearners = await resolveParentLinkedChildren(pUid, pEmail || undefined);
+          const verifiedIdSet = new Set<string>();
+          linkedLearners.forEach(l => {
+            verifiedIdSet.add(l.id);
+            l.allIds.forEach(id => verifiedIdSet.add(id));
+          });
+
+          // Strictly filter students from server response
+          const sanitizedStudents = (result.students || []).filter((s: any) => {
+            const matchesParentId = s.parentId === pUid || s.parentUid === pUid;
+            const matchesParentEmail = pEmail && String(s.parentEmail || '').toLowerCase().trim() === pEmail;
+            const matchesVerifiedId = verifiedIdSet.has(s.id);
+            return matchesParentId || matchesParentEmail || matchesVerifiedId;
+          });
+
+          // Add any linked learners missing from result.students
+          const existingIds = new Set(sanitizedStudents.map((s: any) => s.id));
+          linkedLearners.forEach(learner => {
+            if (!existingIds.has(learner.id)) {
+              sanitizedStudents.push({
+                id: learner.id,
+                fullName: learner.fullName,
+                studentName: learner.fullName,
+                username: learner.username,
+                class: learner.className,
+                programName: learner.programName,
+                track: learner.programName,
+                subjects: learner.subjects,
+                tutorId: learner.tutorId,
+                tutorName: learner.tutorName,
+                parentId: pUid,
+                parentEmail: pEmail
+              });
+              existingIds.add(learner.id);
             }
           });
-          result.students = Array.from(childMap.values());
+
+          result.students = sanitizedStudents;
+          const allowedStudentIds = new Set(sanitizedStudents.map((s: any) => s.id));
+
+          // Strictly filter payments to only this parent and their linked children
+          mergedPayments = mergedPayments.filter((p: any) => {
+            const isUser = p.userId === pUid || p.parentId === pUid;
+            const isEmail = pEmail && (String(p.email || '').toLowerCase() === pEmail || String(p.payerEmail || '').toLowerCase() === pEmail);
+            const isChild = p.studentId && allowedStudentIds.has(p.studentId);
+            return isUser || isEmail || isChild;
+          });
+
+          // Filter fee items if returned from backend
+          if (Array.isArray(result.feeItems)) {
+            result.feeItems = result.feeItems.filter((fi: any) => allowedStudentIds.has(fi.childId));
+          }
+
+          // Expand all children cards by default
+          setExpandedChildIds(sanitizedStudents.map((s: any) => s.id));
         } catch (cErr) {
-          console.warn('Parent children lookup fallback notice:', cErr);
+          console.warn('Parent verified children sync notice:', cErr);
         }
       }
 
@@ -384,6 +445,255 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   }, [data.payments]);
 
   const dueDate = dueDateFor(payments[0]);
+
+  // -------------------------------------------------------------
+  // PARENT HIERARCHICAL BILLING LOGIC & DATA DERIVATION
+  // -------------------------------------------------------------
+  const parentFeeItems = useMemo<any[]>(() => {
+    if (role !== 'parent') return [];
+    if (Array.isArray(data.feeItems) && data.feeItems.length > 0) {
+      const validStudentIds = new Set((data.students || []).map((s: any) => s.id));
+      return data.feeItems.filter((fi: any) => validStudentIds.has(fi.childId));
+    }
+    const items: any[] = [];
+    const nowMs = Date.now();
+    const fourWeeksMs = 28 * 24 * 60 * 60 * 1000;
+    (data.students || []).forEach((child: any) => {
+      const childName = child.fullName || child.studentName || child.name || 'Student';
+      const childPlan = child.plan || child.track || child.programName || 'Academy Track';
+      const childFee = Number(child.tuitionFee || child.fee || child.amount || 35000);
+      const tutorId = String(child.tutorId || child.staffId || child.assignedTutorId || child.assignedStaffId || 'lead_tutor');
+      const tutorName = String(child.tutorName || child.assignedTutorName || child.mentorName || 'Assigned Academy Tutor');
+
+      if (Array.isArray(child.enrolledPrograms) && child.enrolledPrograms.length > 0) {
+        child.enrolledPrograms.forEach((ep: any, idx: number) => {
+          const progId = String(ep.id || ep.programId || `prog_${idx}`);
+          const progName = String(ep.name || ep.programName || ep.title || childPlan);
+          const progAmt = Number(ep.fee || ep.amount || ep.tuitionFee || Math.round(childFee / child.enrolledPrograms.length));
+          const progTutorId = String(ep.tutorId || tutorId);
+          const progTutorName = String(ep.tutorName || tutorName);
+          const isPaid = (payments || []).some((p: any) => {
+            return p.studentId === child.id && (nowMs - new Date(p.paidAt || p.createdAt || 0).getTime() < fourWeeksMs);
+          });
+          items.push({
+            id: `${child.id}::${progTutorId}::${progId}`,
+            childId: child.id,
+            childName,
+            childUsername: child.username,
+            childClass: child.class || child.grade || 'Standard Track',
+            tutorId: progTutorId,
+            tutorName: progTutorName,
+            programId: progId,
+            programName: progName,
+            amount: progAmt > 0 ? progAmt : 15000,
+            status: isPaid ? 'PAID' : 'DUE',
+            cycle: 'monthly'
+          });
+        });
+      } else if (Array.isArray(child.subjects) && child.subjects.length > 1) {
+        const perSubj = Math.round(childFee / child.subjects.length);
+        child.subjects.forEach((subj: string, idx: number) => {
+          const progId = `subj_${idx}_${subj.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+          const isPaid = (payments || []).some((p: any) => {
+            return p.studentId === child.id && (nowMs - new Date(p.paidAt || p.createdAt || 0).getTime() < fourWeeksMs);
+          });
+          items.push({
+            id: `${child.id}::${tutorId}::${progId}`,
+            childId: child.id,
+            childName,
+            childUsername: child.username,
+            childClass: child.class || child.grade || 'Standard Track',
+            tutorId,
+            tutorName,
+            programId: progId,
+            programName: subj,
+            amount: perSubj > 0 ? perSubj : 15000,
+            status: isPaid ? 'PAID' : 'DUE',
+            cycle: 'monthly'
+          });
+        });
+      } else {
+        const isPaid = (payments || []).some((p: any) => {
+          return p.studentId === child.id && (nowMs - new Date(p.paidAt || p.createdAt || 0).getTime() < fourWeeksMs);
+        });
+        items.push({
+          id: `${child.id}::${tutorId}::core_program`,
+          childId: child.id,
+          childName,
+          childUsername: child.username,
+          childClass: child.class || child.grade || 'Standard Track',
+          tutorId,
+          tutorName,
+          programId: 'core_program',
+          programName: childPlan,
+          amount: childFee > 0 ? childFee : 35000,
+          status: isPaid ? 'PAID' : 'DUE',
+          cycle: 'monthly'
+        });
+      }
+    });
+    return items;
+  }, [role, data.feeItems, data.students, payments]);
+
+  // Hierarchical grouping: Child -> Tutor -> Programs
+  const childGroups = useMemo(() => {
+    const map = new Map<string, {
+      childId: string;
+      childName: string;
+      childUsername?: string;
+      childClass?: string;
+      tutors: Map<string, { tutorId: string; tutorName: string; programs: any[] }>;
+    }>();
+
+    parentFeeItems.forEach(item => {
+      if (!map.has(item.childId)) {
+        map.set(item.childId, {
+          childId: item.childId,
+          childName: item.childName,
+          childUsername: item.childUsername,
+          childClass: item.childClass,
+          tutors: new Map()
+        });
+      }
+      const cEntry = map.get(item.childId)!;
+      if (!cEntry.tutors.has(item.tutorId)) {
+        cEntry.tutors.set(item.tutorId, {
+          tutorId: item.tutorId,
+          tutorName: item.tutorName,
+          programs: []
+        });
+      }
+      cEntry.tutors.get(item.tutorId)!.programs.push(item);
+    });
+
+    return Array.from(map.values()).map(c => {
+      const tutors = Array.from(c.tutors.values()).map(t => ({
+        tutorId: t.tutorId,
+        tutorName: t.tutorName,
+        programs: t.programs,
+        totalAmount: t.programs.reduce((acc, p) => acc + p.amount, 0),
+        dueAmount: t.programs.filter(p => p.status === 'DUE').reduce((acc, p) => acc + p.amount, 0)
+      }));
+      const allPrograms = tutors.flatMap(t => t.programs);
+      return {
+        childId: c.childId,
+        childName: c.childName,
+        childUsername: c.childUsername,
+        childClass: c.childClass,
+        tutors,
+        allPrograms,
+        totalTuition: allPrograms.reduce((acc, p) => acc + p.amount, 0),
+        totalDue: allPrograms.filter(p => p.status === 'DUE').reduce((acc, p) => acc + p.amount, 0),
+        allPaid: allPrograms.every(p => p.status === 'PAID')
+      };
+    });
+  }, [parentFeeItems]);
+
+  const selectedItems = useMemo(() => {
+    return parentFeeItems.filter(item => selectedFeeItemIds.includes(item.id));
+  }, [parentFeeItems, selectedFeeItemIds]);
+
+  const selectedBaseTotal = useMemo(() => {
+    return selectedItems.reduce((acc, item) => acc + item.amount, 0);
+  }, [selectedItems]);
+
+  const selectedChargePreview = useMemo(() => {
+    return feeFromBase(selectedBaseTotal, feePolicy);
+  }, [selectedBaseTotal, feePolicy]);
+
+  const toggleProgram = (progId: string) => {
+    setSelectedFeeItemIds(prev => 
+      prev.includes(progId) ? prev.filter(id => id !== progId) : [...prev, progId]
+    );
+  };
+
+  const toggleTutor = (programs: any[]) => {
+    const progIds = programs.map(p => p.id);
+    const allSelected = progIds.every(id => selectedFeeItemIds.includes(id));
+    if (allSelected) {
+      setSelectedFeeItemIds(prev => prev.filter(id => !progIds.includes(id)));
+    } else {
+      setSelectedFeeItemIds(prev => Array.from(new Set([...prev, ...progIds])));
+    }
+  };
+
+  const toggleChild = (programs: any[]) => {
+    const progIds = programs.map(p => p.id);
+    const allSelected = progIds.every(id => selectedFeeItemIds.includes(id));
+    if (allSelected) {
+      setSelectedFeeItemIds(prev => prev.filter(id => !progIds.includes(id)));
+    } else {
+      setSelectedFeeItemIds(prev => Array.from(new Set([...prev, ...progIds])));
+    }
+  };
+
+  const selectAllDue = () => {
+    const dueIds = parentFeeItems.filter(i => i.status === 'DUE').map(i => i.id);
+    setSelectedFeeItemIds(dueIds);
+  };
+
+  const selectAllPrograms = () => {
+    setSelectedFeeItemIds(parentFeeItems.map(i => i.id));
+  };
+
+  const clearSelection = () => {
+    setSelectedFeeItemIds([]);
+  };
+
+  const toggleExpandChild = (childId: string) => {
+    setExpandedChildIds(prev => 
+      prev.includes(childId) ? prev.filter(id => id !== childId) : [...prev, childId]
+    );
+  };
+
+  const processParentMultiPayment = async (event?: React.FormEvent) => {
+    if (event) event.preventDefault();
+    if (isMasqueradingActive()) {
+      toast.error('Payment authorization is disabled in Superadmin Impersonation Mode.');
+      return;
+    }
+    if (selectedItems.length === 0) {
+      toast.error('Please select at least one program or tuition item to pay.');
+      return;
+    }
+    setPaying(true);
+    try {
+      const payload = {
+        role: 'parent',
+        paymentMethod,
+        teachingMode: teachingMode || 'Multi-Program Curriculum Delivery',
+        selectedItems: selectedItems.map(i => ({
+          id: i.id,
+          childId: i.childId,
+          childName: i.childName,
+          tutorId: i.tutorId,
+          tutorName: i.tutorName,
+          programId: i.programId,
+          programName: i.programName,
+          amount: i.amount
+        })),
+        amount: selectedBaseTotal,
+        planName: `Tuition Settlement: ${new Set(selectedItems.map(i => i.childName)).size} Learners (${selectedItems.length} Programs)`
+      };
+
+      const result = await billingPost<any>('paystack-initialize', payload);
+      if (result?.authorizationUrl) {
+        if (result.authorizationUrl.startsWith('http://') || result.authorizationUrl.startsWith('https://')) {
+          window.location.assign(result.authorizationUrl);
+        } else {
+          window.location.href = result.authorizationUrl;
+        }
+      } else {
+        toast.success('Payment recorded successfully.');
+        await load();
+        setShowParentCheckoutModal(false);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to initialize checkout.');
+    } finally {
+      setPaying(false);
+    }
+  };
 
   // Start checkout handler
   const startCheckout = (opts?: { plan?: Plan; studentId?: string; planName?: string }) => {
@@ -994,108 +1304,357 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
         </div>
       )}
 
-      {/* Parent / Student Plan & Child Tuition Settlement Section */}
-      {role !== 'staff' && (
+      {/* Parent Hierarchical Progressive Payment & Student Plan Section */}
+      {role === 'parent' ? (
         <div className="space-y-6">
-          {/* Linked Children Tuition Cards for Parents */}
-          {role === 'parent' && data.students && data.students.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
-              <div className="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    <UserCheck className="text-brand-red" size={20} />
-                    <span>Linked Children &amp; Tuition Accounts ({data.students.length})</span>
+          {/* Section Header & Bulk Action Toolbar */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <span className="w-8 h-8 rounded-xl bg-brand-red/10 text-brand-red flex items-center justify-center">
+                    <UserCheck size={18} />
+                  </span>
+                  <h2 className="text-xl font-black text-slate-900 dark:text-white">
+                    Parent Tuition &amp; Flexible Billing ({childGroups.length} {childGroups.length === 1 ? 'Learner' : 'Learners'})
                   </h2>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Settle tuition directly for your linked students or fund their ongoing learning cycles.
-                  </p>
                 </div>
+                <p className="mt-1 text-xs text-slate-500 max-w-2xl leading-relaxed">
+                  Select and pay tuition at any level: individual program tracks, specific instructors, or settle all child tuition accounts simultaneously.
+                </p>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {data.students.map((child: any) => {
-                  const childName = child.fullName || child.studentName || child.name || 'Student';
-                  const childPlan = child.plan || child.track || child.programName || 'Academy Track';
-                  const childClass = child.class || child.grade || 'Standard Track';
-                  const matchedPlan = standardPlans.find(p => 
-                    p.name.toLowerCase() === childPlan.toLowerCase() || 
-                    childPlan.toLowerCase().includes(p.name.toLowerCase())
-                  ) || standardPlans[0];
-                  const childFee = Number(child.tuitionFee || child.fee || matchedPlan?.baseAmount || 35000);
-                  const effectivePlan = matchedPlan ? { ...matchedPlan, baseAmount: childFee } : { id: 'parent_custom_tuition', name: childPlan, baseAmount: childFee, durationWeeks: 4, teachingModes: ['Standard Delivery'], description: 'Assigned Academy Tuition', active: true, role: 'parent' };
+              {/* Action Toolbar */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 lg:pt-0">
+                <button
+                  type="button"
+                  onClick={selectAllDue}
+                  className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 dark:text-amber-200 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Clock size={13} />
+                  <span>Select All Due</span>
+                </button>
 
-                  return (
-                    <article key={child.id} className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 p-5 flex flex-col justify-between hover:border-brand-red/40 transition-all shadow-xs">
-                      <div>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-9 h-9 rounded-full bg-brand-red text-white font-black text-xs flex items-center justify-center shrink-0">
-                              {childName.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="min-w-0">
-                              <h3 className="font-black text-sm text-slate-900 dark:text-white truncate">{childName}</h3>
-                              <p className="text-[11px] text-slate-500 truncate">@{child.username || 'student'}</p>
-                            </div>
-                          </div>
-                          <span className="shrink-0 rounded-md bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-300">
-                            {child.status || 'Active'}
-                          </span>
+                <button
+                  type="button"
+                  onClick={selectAllPrograms}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckSquare size={13} />
+                  <span>Select All</span>
+                </button>
+
+                {selectedFeeItemIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearSelection}
+                    className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 dark:text-rose-300 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <X size={13} />
+                    <span>Clear ({selectedFeeItemIds.length})</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (expandedChildIds.length === childGroups.length) {
+                      setExpandedChildIds([]);
+                    } else {
+                      setExpandedChildIds(childGroups.map(c => c.childId));
+                    }
+                  }}
+                  className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Layers size={13} />
+                  <span>{expandedChildIds.length === childGroups.length ? 'Collapse All' : 'Expand All'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setParentFeeFilter('all')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                    parentFeeFilter === 'all'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  All Items ({parentFeeItems.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setParentFeeFilter('due')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                    parentFeeFilter === 'due'
+                      ? 'bg-white dark:bg-slate-700 text-amber-700 dark:text-amber-300 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-amber-600'
+                  }`}
+                >
+                  Payment Due ({parentFeeItems.filter(i => i.status === 'DUE').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setParentFeeFilter('paid')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                    parentFeeFilter === 'paid'
+                      ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-emerald-600'
+                  }`}
+                >
+                  Paid &amp; Active ({parentFeeItems.filter(i => i.status === 'PAID').length})
+                </button>
+              </div>
+
+              {selectedItems.length > 0 && (
+                <div className="text-xs text-slate-500 flex items-center gap-2">
+                  <span className="font-bold text-slate-900 dark:text-white">{selectedItems.length}</span> program{selectedItems.length > 1 ? 's' : ''} selected across <span className="font-bold text-slate-900 dark:text-white">{new Set(selectedItems.map(i => i.childName)).size}</span> child(ren):
+                  <strong className="font-mono font-black text-brand-red">{formatNaira(selectedBaseTotal)}</strong>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* LEVEL 1: Child Cards & Hierarchy */}
+          {childGroups.length > 0 ? (
+            <div className="space-y-4">
+              {childGroups.map(child => {
+                const isExpanded = expandedChildIds.includes(child.childId);
+                const filteredPrograms = child.allPrograms.filter(prog => {
+                  if (parentFeeFilter === 'due') return prog.status === 'DUE';
+                  if (parentFeeFilter === 'paid') return prog.status === 'PAID';
+                  return true;
+                });
+
+                if (filteredPrograms.length === 0 && parentFeeFilter !== 'all') {
+                  return null;
+                }
+
+                const childProgIds = filteredPrograms.map(p => p.id);
+                const allSelected = childProgIds.length > 0 && childProgIds.every(id => selectedFeeItemIds.includes(id));
+                const someSelected = childProgIds.some(id => selectedFeeItemIds.includes(id)) && !allSelected;
+
+                return (
+                  <div 
+                    key={child.childId} 
+                    className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700"
+                  >
+                    {/* LEVEL 1: Child Header */}
+                    <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-950/30 border-b border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Child Checkbox */}
+                        <button
+                          type="button"
+                          onClick={() => toggleChild(filteredPrograms)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800 text-brand-red transition-colors shrink-0 cursor-pointer"
+                          title={allSelected ? "Deselect child's programs" : "Select all child's programs"}
+                          aria-label={`Toggle all programs for ${child.childName}`}
+                        >
+                          {allSelected ? (
+                            <CheckSquare size={20} className="text-brand-red" />
+                          ) : someSelected ? (
+                            <MinusSquare size={20} className="text-brand-red" />
+                          ) : (
+                            <Square size={20} className="text-slate-400 dark:text-slate-500" />
+                          )}
+                        </button>
+
+                        {/* Child Avatar */}
+                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-brand-red to-red-700 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-xs">
+                          {child.childName.charAt(0).toUpperCase()}
                         </div>
 
-                        <div className="mt-3.5 space-y-1.5 text-xs">
-                          <div className="flex items-center justify-between text-slate-500">
-                            <span>Track:</span>
-                            <strong className="text-slate-800 dark:text-slate-200 font-bold truncate max-w-[150px]">{childPlan}</strong>
+                        {/* Child Identity */}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-black text-base text-slate-900 dark:text-white truncate">
+                              {child.childName}
+                            </h3>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                              {child.childClass || 'Standard Cohort'}
+                            </span>
+                            {child.allPaid ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 inline-flex items-center gap-1">
+                                <CheckCircle2 size={11} /> All Paid
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 inline-flex items-center gap-1">
+                                <Clock size={11} /> {formatNaira(child.totalDue)} Due
+                              </span>
+                            )}
                           </div>
-                          <div className="flex items-center justify-between text-slate-500">
-                            <span>Cohort:</span>
-                            <strong className="text-slate-800 dark:text-slate-200">{childClass}</strong>
-                          </div>
-                          {child.tutorName && (
-                            <div className="flex items-center justify-between text-slate-500">
-                              <span>Mentor:</span>
-                              <strong className="text-slate-800 dark:text-slate-200 truncate max-w-[150px]">{child.tutorName}</strong>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between text-slate-500 pt-1 border-t border-slate-200/60 dark:border-slate-800">
-                            <span>Tuition Fee:</span>
-                            <strong className="text-brand-red font-mono font-black">{formatNaira(childFee)}</strong>
-                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            @{child.childUsername || 'student'} • {child.allPrograms.length} active learning track{child.allPrograms.length > 1 ? 's' : ''}
+                          </p>
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        disabled={isMasqueradingActive()}
-                        onClick={() => startCheckout({ 
-                          studentId: child.id, 
-                          plan: effectivePlan,
-                          planName: childPlan 
+                      {/* Right side: Amount & Expand button */}
+                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200/60 dark:border-slate-800">
+                        <div className="text-left sm:text-right">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Tuition Fee</span>
+                          <strong className="text-sm font-mono font-black text-slate-900 dark:text-white">
+                            {formatNaira(child.totalTuition)}
+                          </strong>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => toggleExpandChild(child.childId)}
+                          className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <span>{isExpanded ? 'Hide Details' : 'View Tutors & Programs'}</span>
+                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* EXPANDABLE SECTION: Level 2 (Tutors) & Level 3 (Programs) */}
+                    {isExpanded && (
+                      <div className="p-4 sm:p-6 space-y-5 bg-white dark:bg-slate-900">
+                        {child.tutors.map(tutor => {
+                          const tutorFilteredPrograms = tutor.programs.filter(prog => {
+                            if (parentFeeFilter === 'due') return prog.status === 'DUE';
+                            if (parentFeeFilter === 'paid') return prog.status === 'PAID';
+                            return true;
+                          });
+
+                          if (tutorFilteredPrograms.length === 0 && parentFeeFilter !== 'all') {
+                            return null;
+                          }
+
+                          const tutorProgIds = tutorFilteredPrograms.map(p => p.id);
+                          const tutorAllSelected = tutorProgIds.length > 0 && tutorProgIds.every(id => selectedFeeItemIds.includes(id));
+                          const tutorSomeSelected = tutorProgIds.some(id => selectedFeeItemIds.includes(id)) && !tutorAllSelected;
+
+                          return (
+                            <div 
+                              key={tutor.tutorId} 
+                              className="rounded-2xl border border-slate-200/70 dark:border-slate-800/80 bg-slate-50/40 dark:bg-slate-950/20 p-4"
+                            >
+                              {/* LEVEL 2: Tutor Group Header */}
+                              <div className="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-slate-200/60 dark:border-slate-800">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleTutor(tutorFilteredPrograms)}
+                                    className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800 text-brand-red transition-colors shrink-0 cursor-pointer"
+                                    title={tutorAllSelected ? "Deselect tutor's programs" : "Select all programs under this tutor"}
+                                  >
+                                    {tutorAllSelected ? (
+                                      <CheckSquare size={17} className="text-brand-red" />
+                                    ) : tutorSomeSelected ? (
+                                      <MinusSquare size={17} className="text-brand-red" />
+                                    ) : (
+                                      <Square size={17} className="text-slate-400 dark:text-slate-500" />
+                                    )}
+                                  </button>
+
+                                  <div className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">
+                                    <User size={14} />
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 truncate">
+                                      Instructor: {tutor.tutorName}
+                                    </h4>
+                                    <span className="text-[11px] text-slate-500">
+                                      {tutorFilteredPrograms.length} assigned program track{tutorFilteredPrograms.length > 1 ? 's' : ''}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="text-right shrink-0">
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Tutor Subtotal</span>
+                                  <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+                                    {formatNaira(tutor.totalAmount)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* LEVEL 3: Programs under this Tutor */}
+                              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                                {tutorFilteredPrograms.map(prog => {
+                                  const isSelected = selectedFeeItemIds.includes(prog.id);
+                                  const isPaid = prog.status === 'PAID';
+
+                                  return (
+                                    <div
+                                      key={prog.id}
+                                      onClick={() => toggleProgram(prog.id)}
+                                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                                        isSelected
+                                          ? 'border-brand-red bg-red-50/40 dark:bg-red-950/20 shadow-xs'
+                                          : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
+                                      }`}
+                                    >
+                                      <div>
+                                        <div className="flex items-start justify-between gap-2 mb-2">
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            <span className="text-brand-red shrink-0">
+                                              {isSelected ? <CheckSquare size={16} /> : <Square size={16} className="text-slate-400" />}
+                                            </span>
+                                            <h5 className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                                              {prog.programName}
+                                            </h5>
+                                          </div>
+                                          {isPaid ? (
+                                            <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 shrink-0">
+                                              Settled
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 shrink-0">
+                                              Due
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
+                                          {prog.cycle || 'Monthly'} cycle • Mentor support included
+                                        </p>
+                                      </div>
+
+                                      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                                        <span className="text-slate-400 text-[10px] uppercase font-bold">Payable</span>
+                                        <strong className="font-mono font-black text-brand-red">
+                                          {formatNaira(prog.amount)}
+                                        </strong>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
                         })}
-                        className={`mt-4 min-h-10 w-full rounded-xl px-4 text-xs font-black shadow-xs transition-all inline-flex items-center justify-center gap-1.5 ${
-                          isMasqueradingActive()
-                            ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
-                            : 'bg-brand-red hover:bg-red-700 text-white cursor-pointer'
-                        }`}
-                      >
-                        <CreditCard size={13} />
-                        <span>{isMasqueradingActive() ? 'Disabled in Impersonation' : `Settle Tuition (${formatNaira(childFee)})`}</span>
-                      </button>
-                    </article>
-                  );
-                })}
-              </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center space-y-2 shadow-xs">
+              <CreditCard size={32} className="mx-auto text-slate-400" />
+              <h3 className="text-sm font-black text-slate-900 dark:text-white">No active tuition accounts found</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Once your child's enrollment is registered and approved by the academy admissions desk, customized tuition and learning schedules will appear here.
+              </p>
             </div>
           )}
 
           {/* Pending Enrollment Requests for Parents */}
-          {role === 'parent' && data.enrollments && data.enrollments.length > 0 && (
+          {data.enrollments && data.enrollments.length > 0 && (
             <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
                 <div>
-                  <h2 className="text-base font-black text-slate-900 dark:text-white">
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
                     Pending Enrollment Requests ({data.enrollments.length})
-                  </h2>
+                  </h3>
                   <p className="text-xs text-slate-500">
                     Settle tuition online for children currently awaiting admissions review.
                   </p>
@@ -1116,7 +1675,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                         plan: standardPlans.find(p => p.name === req.plan) || standardPlans[0],
                         planName: req.plan 
                       })}
-                      className="px-4 py-2 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold transition-all shrink-0"
+                      className="px-4 py-2 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold transition-all shrink-0 cursor-pointer"
                     >
                       Pay for {req.studentName ? req.studentName.split(' ')[0] : 'Child'}
                     </button>
@@ -1126,17 +1685,174 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
             </div>
           )}
 
-          {/* Dynamic Academy Learning Tracks from Database */}
-          {standardPlans.length > 0 ? (
+          {/* LEVEL 4: STICKY FLOATING PAYMENT CHECKOUT DRAWER */}
+          {selectedItems.length > 0 && (
+            <div className="sticky bottom-4 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-2 border-brand-red/40 rounded-3xl p-4 sm:p-5 shadow-2xl transition-all">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-black bg-brand-red text-white">
+                      {selectedItems.length} {selectedItems.length === 1 ? 'Program' : 'Programs'} Selected
+                    </span>
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      across {new Set(selectedItems.map(i => i.childName)).size} {new Set(selectedItems.map(i => i.childName)).size === 1 ? 'Child' : 'Children'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 truncate max-w-xl">
+                    {selectedItems.map(i => `${i.childName} (${i.programName})`).join(' • ')}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800">
+                  <div className="text-left md:text-right">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                      Selected Total
+                    </span>
+                    <strong className="text-lg font-mono font-black text-brand-red">
+                      {formatNaira(selectedBaseTotal)}
+                    </strong>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isMasqueradingActive() || paying}
+                    onClick={() => setShowParentCheckoutModal(true)}
+                    className="min-h-12 px-6 rounded-2xl bg-brand-red hover:bg-red-700 disabled:opacity-50 text-white font-black text-xs md:text-sm shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    <CreditCard size={16} />
+                    <span>Review &amp; Pay ({formatNaira(selectedBaseTotal)})</span>
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* PARENT ITEMIZED CHECKOUT MODAL */}
+          {showParentCheckoutModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
+              <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 p-6 md:p-8 shadow-2xl border border-slate-200 dark:border-slate-800">
+                <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-brand-red">Direct Paystack Settlement</p>
+                    <h3 className="mt-1 text-xl font-black text-slate-900 dark:text-white">Review Selected Tuition Items</h3>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowParentCheckoutModal(false)} 
+                    className="min-h-9 min-w-9 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="mt-5 space-y-4">
+                  {/* Itemized Table */}
+                  <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold uppercase text-[10px]">
+                        <tr>
+                          <th className="p-3">Learner</th>
+                          <th className="p-3">Program &amp; Instructor</th>
+                          <th className="p-3 text-right">Fee</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {selectedItems.map(item => (
+                          <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                            <td className="p-3 font-bold text-slate-900 dark:text-white">
+                              {item.childName}
+                            </td>
+                            <td className="p-3 text-slate-600 dark:text-slate-300">
+                              <span className="font-semibold">{item.programName}</span>
+                              <span className="block text-[11px] text-slate-400">Mentor: {item.tutorName}</span>
+                            </td>
+                            <td className="p-3 text-right font-mono font-bold text-slate-900 dark:text-white">
+                              {formatNaira(item.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Financial Breakdown */}
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/60 dark:border-slate-800 space-y-2 text-xs">
+                    <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+                      <span>Base Tuition Subtotal:</span>
+                      <strong className="font-mono text-slate-900 dark:text-white">{formatNaira(selectedBaseTotal)}</strong>
+                    </div>
+                    <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+                      <span>Est. Paystack Processing Fee:</span>
+                      <strong className="font-mono text-slate-900 dark:text-white">{formatNaira(selectedChargePreview.transactionFee)}</strong>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800 text-sm">
+                      <span className="font-black text-slate-900 dark:text-white">Grand Total Payable:</span>
+                      <strong className="font-mono font-black text-brand-red text-base">{formatNaira(selectedChargePreview.totalAmount)}</strong>
+                    </div>
+                  </div>
+
+                  {/* Payment Method Selector */}
+                  <div>
+                    <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Payment Method</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['card', 'bank_transfer', 'opay'] as PaymentMethod[]).map(method => (
+                        <button 
+                          key={method} 
+                          type="button" 
+                          onClick={() => setPaymentMethod(method)} 
+                          className={`min-h-14 rounded-xl border p-2 text-xs font-bold transition-all cursor-pointer ${
+                            paymentMethod === method 
+                              ? 'border-brand-red bg-red-50 text-brand-red dark:bg-red-950/20' 
+                              : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                          }`}
+                        >
+                          {method === 'card' ? <CreditCard className="mx-auto mb-1" size={16} /> : method === 'bank_transfer' ? <Building2 className="mx-auto mb-1" size={16} /> : <Smartphone className="mx-auto mb-1" size={16} />}
+                          {methodLabel(method)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Checkout Button */}
+                  <button 
+                    disabled={paying || isMasqueradingActive()} 
+                    type="button" 
+                    onClick={() => void processParentMultiPayment()}
+                    className="min-h-12 w-full rounded-2xl bg-brand-red hover:bg-red-700 disabled:opacity-50 px-5 text-xs md:text-sm font-black text-white transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {paying ? (
+                      <>
+                        <Loader2 className="animate-spin" size={18} />
+                        <span>Initializing Paystack Checkout...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck size={18} />
+                        <span>Pay {formatNaira(selectedChargePreview.totalAmount)} with {methodLabel(paymentMethod)}</span>
+                      </>
+                    )}
+                  </button>
+
+                  <p className="text-[11px] text-center text-slate-400">
+                    Secured by 256-bit encryption. Payment will update only the exact selected program records.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Independent Student View */
+        <div className="space-y-6">
+          {standardPlans.length > 0 && (
             <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
               <div className="mb-5">
-                <h2 className="text-xl font-black text-slate-900 dark:text-white">
-                  {role === 'parent' ? 'Published Academy Learning Tracks & Programs' : 'Available Learning Programs'}
-                </h2>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white">
+                  Available Learning Programs
+                </h3>
                 <p className="mt-1 text-xs text-slate-500">
-                  {role === 'parent'
-                    ? 'Active curriculum tracks and technology programs configured directly in the academy database.'
-                    : 'Select your enrolled curriculum track to proceed with tuition settlement.'}
+                  Select your enrolled curriculum track to proceed with tuition settlement.
                 </p>
               </div>
 
@@ -1150,7 +1866,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="flex items-center gap-2">
-                              <h3 className="font-black text-slate-900 dark:text-white text-base">{plan.name}</h3>
+                              <h4 className="font-black text-slate-900 dark:text-white text-base">{plan.name}</h4>
                             </div>
                             {plan.description && (
                               <p className="mt-1 text-xs leading-5 text-slate-500">{plan.description}</p>
@@ -1200,16 +1916,6 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                 })}
               </div>
             </div>
-          ) : (
-            role === 'parent' && (!data.students || data.students.length === 0) && (
-              <div className="rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center space-y-2 shadow-xs">
-                <CreditCard size={32} className="mx-auto text-slate-400" />
-                <h3 className="text-sm font-black text-slate-900 dark:text-white">No active tuition plans or linked children</h3>
-                <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  Once your child's enrollment is registered and approved by the admissions desk, customized tuition and payment schedules will appear here.
-                </p>
-              </div>
-            )
           )}
         </div>
       )}

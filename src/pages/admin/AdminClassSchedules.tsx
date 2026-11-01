@@ -3,10 +3,11 @@ import {
   CalendarDays, CheckCircle2, Clock3, Edit3, Loader2, Plus, 
   RefreshCw, School, Users, User, Trash2, XCircle, Search,
   Eye, Calendar, AlertTriangle, Check, Layers,
-  Copy, ChevronDown, ChevronRight, Split, ChevronUp
+  Copy, ChevronDown, ChevronRight, Split, ChevronUp,
+  Video, ExternalLink, Link2
 } from 'lucide-react';
 import SEO from '../../components/ui/SEO';
-import { db } from '../../lib/firebase';
+import { db, auth } from '../../lib/firebase';
 import { 
   collection, getDocs, doc, updateDoc, deleteDoc, 
   query, where, writeBatch, serverTimestamp 
@@ -15,6 +16,13 @@ import { useToast } from '../../contexts/ToastContext';
 import { resolveRealName, formatTutorDropdownLabel } from '../../utils/userNames';
 import { CANONICAL_CLASSES, normalizeClassList, normalizeClassName } from '../../lib/classes';
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
+import {
+  validateMeetingLink,
+  updateScheduleMeetingLink,
+  loadSchedulingDirectory,
+  addMinutesToTime,
+  calculateDurationMinutes,
+} from '../../lib/scheduleEngine';
 
 const CLASS_OPTIONS: string[] = [...CANONICAL_CLASSES];
 
@@ -68,6 +76,14 @@ interface IndividualItem {
   name: string;
   email: string;
   track?: string;
+  enrolledPrograms?: string[];
+  className?: string;
+  parentId?: string;
+  parentName?: string;
+  parentEmail?: string;
+  tutorId?: string;
+  tutorName?: string;
+  studentType?: 'independent' | 'parent_enrolled';
 }
 
 interface ScheduleOccurrence {
@@ -232,6 +248,16 @@ const AdminClassSchedules: React.FC = () => {
   const [schools, setSchools] = useState<SchoolItem[]>([]);
   const [parents, setParents] = useState<ParentItem[]>([]);
   const [individuals, setIndividuals] = useState<IndividualItem[]>([]);
+  const [studioPrograms, setStudioPrograms] = useState<string[]>([
+    'Coding for Kids',
+    'Scratch Programming & Game Design',
+    'Python & Data Science',
+    'Full-Stack Web Development',
+    'Robotics & Embedded IoT',
+    'AI Responsibility & Digital Literacy',
+    'Digital Literacy',
+    'UI/UX & Product Design',
+  ]);
   const [groups, setGroups] = useState<ScheduleGroup[]>([]);
   const [tutors, setTutors] = useState<Array<{ id: string; name: string; email: string; qualification?: string }>>([]);
   const [loading, setLoading] = useState(true);
@@ -241,6 +267,9 @@ const AdminClassSchedules: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<ScheduleGroup | null>(null);
+  const [linkModalGroup, setLinkModalGroup] = useState<ScheduleGroup | null>(null);
+  const [linkModalUrl, setLinkModalUrl] = useState<string>('');
+  const [linkModalSaving, setLinkModalSaving] = useState<boolean>(false);
 
   // Accordion state: which timetable groups are expanded to show full table
   const [expandedGroupIds, setExpandedGroupIds] = useState<Record<string, boolean>>({});
@@ -397,16 +426,29 @@ const AdminClassSchedules: React.FC = () => {
 
       setTutors(Array.from(tutorMap.values()).sort((a, b) => a.name.localeCompare(b.name)));
 
-      // 1. Process Schools
-      const loadedSchools = schoolSnap.docs.map((d: any) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: String(data.name || data.schoolName || data.institutionName || d.id),
-          code: data.code || data.schoolCode,
-          programs: Array.isArray(data.programs) ? data.programs : []
-        };
-      }).sort((a: SchoolItem, b: SchoolItem) => a.name.localeCompare(b.name));
+      // 1. Process Schools & Directory via loadSchedulingDirectory
+      const dirInfo = await loadSchedulingDirectory({
+        role: 'admin',
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || '',
+      }).catch(() => null);
+
+      if (dirInfo?.studioPrograms?.length) {
+        setStudioPrograms(dirInfo.studioPrograms);
+      }
+
+      const loadedSchools = (dirInfo?.schools?.length
+        ? dirInfo.schools
+        : schoolSnap.docs.map((d: any) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              name: String(data.name || data.schoolName || data.institutionName || d.id),
+              code: data.code || data.schoolCode,
+              programs: Array.isArray(data.programs) ? data.programs : [],
+            };
+          })
+      ).sort((a: SchoolItem, b: SchoolItem) => a.name.localeCompare(b.name));
       setSchools(loadedSchools);
 
       // 2. Process Parents and their Children
@@ -464,20 +506,44 @@ const AdminClassSchedules: React.FC = () => {
 
       setParents(Array.from(parentMap.values()).sort((a, b) => a.name.localeCompare(b.name)));
 
-      // 3. Process Independent Students
-      const indivList: IndividualItem[] = [];
-      indivSnap.docs.forEach((d: any) => {
-        const s = d.data();
-        if (!s.schoolId && !s.parentId && !s.parentEmail) {
-          indivList.push({
-            id: d.id,
-            name: s.fullName || s.studentName || s.username || 'Scholar',
-            email: s.email || '',
-            track: s.track || s.plan || 'Independent Tech Track'
-          });
-        }
-      });
-      setIndividuals(indivList.sort((a, b) => a.name.localeCompare(b.name)));
+      // 3. Process All Private Students (both Independent Scholars & Parent-Enrolled Private Students)
+      if (dirInfo?.privateStudents?.length) {
+        setIndividuals(
+          dirInfo.privateStudents.map((ps) => ({
+            id: ps.id,
+            name: ps.name,
+            email: ps.email,
+            track: ps.primaryProgram,
+            enrolledPrograms: ps.enrolledPrograms,
+            className: ps.className,
+            parentId: ps.parentId,
+            parentName: ps.parentName,
+            parentEmail: ps.parentEmail,
+            tutorId: ps.tutorId,
+            tutorName: ps.tutorName,
+            studentType: ps.studentType,
+          }))
+        );
+      } else {
+        const indivList: IndividualItem[] = [];
+        indivSnap.docs.forEach((d: any) => {
+          const s = d.data();
+          if (!s.schoolId) {
+            indivList.push({
+              id: d.id,
+              name: s.fullName || s.studentName || s.username || 'Scholar',
+              email: s.email || '',
+              track: s.programName || s.track || s.plan || 'Coding for Kids',
+              enrolledPrograms: [s.programName || s.track || s.plan || 'Coding for Kids'].filter(Boolean),
+              className: s.class || s.grade || 'Grade 1',
+              parentId: s.parentId || '',
+              parentEmail: s.parentEmail || '',
+              studentType: s.parentId || s.parentEmail ? 'parent_enrolled' : 'independent',
+            });
+          }
+        });
+        setIndividuals(indivList.sort((a, b) => a.name.localeCompare(b.name)));
+      }
 
       // 4. Process Class Schedules occurrences and group them (normalizing and deduplicating all class labels)
       const rawOccurrences: ScheduleOccurrence[] = schedSnap.docs.map((d: any) => {
@@ -855,7 +921,14 @@ const AdminClassSchedules: React.FC = () => {
       return toast.error('Please select a parent account.');
     }
     if (form.targetType === 'individual' && !form.studentId) {
-      return toast.error('Please select an independent student.');
+      return toast.error('Please select a private student.');
+    }
+
+    if (form.meetingLink.trim()) {
+      const linkValidation = validateMeetingLink(form.meetingLink);
+      if (!linkValidation.valid) {
+        return toast.error(linkValidation.error || 'Please enter a valid online meeting URL.');
+      }
     }
 
     setSaving(true);
@@ -926,17 +999,20 @@ const AdminClassSchedules: React.FC = () => {
               // ONE single document ID per slot on that date (NO duplicate rows!)
               const occId = `${scheduleGroupId}-w${w}-${dayEntry.dayName.slice(0, 3)}-slot${sIdx}`;
 
+              const linkInfo = validateMeetingLink(form.meetingLink);
+              const cleanMeetingUrl = form.meetingLink.trim() ? linkInfo.normalizedUrl : '';
+
               newOccDocs.push({
                 id: occId,
                 data: {
                   id: occId,
                   scheduleGroupId,
                   title: form.title || form.programName || 'Robotics & Web Lab',
-                  programId: form.programId || '',
-                  programName: form.programName || form.title || '',
+                  programId: form.programId || `prog-${(form.programName || form.title || 'general').toLowerCase().replace(/\s+/g, '-')}`,
+                  programName: form.programName || form.title || 'Coding for Kids',
                   tutorId: form.tutorId || '',
                   tutorName: form.tutorName || '',
-                  meetingLink: form.meetingLink || '',
+                  meetingLink: cleanMeetingUrl,
                   date: dateStr,
                   dayOfWeek: dayEntry.dayName,
                   startTime: slot.startTime,
@@ -961,17 +1037,19 @@ const AdminClassSchedules: React.FC = () => {
             }
           } else if (form.targetType === 'parent') {
             const occId = `${scheduleGroupId}-w${w}-${dayEntry.dayName.slice(0, 3)}`;
+            const linkInfo = validateMeetingLink(form.meetingLink);
+            const cleanMeetingUrl = form.meetingLink.trim() ? linkInfo.normalizedUrl : '';
             newOccDocs.push({
               id: occId,
               data: {
                 id: occId,
                 scheduleGroupId,
-                title: form.title || 'Cadet Coding Class',
-                programId: form.programId || '',
-                programName: form.programName || form.title || '',
+                title: form.title || form.programName || 'Cadet Coding Class',
+                programId: form.programId || `prog-${(form.programName || form.title || 'coding').toLowerCase().replace(/\s+/g, '-')}`,
+                programName: form.programName || form.title || 'Coding for Kids',
                 tutorId: form.tutorId || '',
                 tutorName: form.tutorName || '',
-                meetingLink: form.meetingLink || '',
+                meetingLink: cleanMeetingUrl,
                 date: dateStr,
                 dayOfWeek: dayEntry.dayName,
                 startTime: dayEntry.startTime,
@@ -992,19 +1070,21 @@ const AdminClassSchedules: React.FC = () => {
               }
             });
           } else {
-            // Independent Scholar
+            // Private Student (Independent or Parent-Enrolled)
             const occId = `${scheduleGroupId}-w${w}-${dayEntry.dayName.slice(0, 3)}`;
+            const linkInfo = validateMeetingLink(form.meetingLink);
+            const cleanMeetingUrl = form.meetingLink.trim() ? linkInfo.normalizedUrl : '';
             newOccDocs.push({
               id: occId,
               data: {
                 id: occId,
                 scheduleGroupId,
-                title: form.title || 'Independent Scholar Session',
-                programId: form.programId || '',
-                programName: form.programName || form.title || '',
-                tutorId: form.tutorId || '',
-                tutorName: form.tutorName || '',
-                meetingLink: form.meetingLink || '',
+                title: form.title || form.programName || 'Private Student Session',
+                programId: form.programId || `prog-${(form.programName || form.title || 'coding').toLowerCase().replace(/\s+/g, '-')}`,
+                programName: form.programName || selectedIndiv?.track || form.title || 'Coding for Kids',
+                tutorId: form.tutorId || selectedIndiv?.tutorId || '',
+                tutorName: form.tutorName || selectedIndiv?.tutorName || '',
+                meetingLink: cleanMeetingUrl,
                 date: dateStr,
                 dayOfWeek: dayEntry.dayName,
                 startTime: dayEntry.startTime,
@@ -1014,8 +1094,12 @@ const AdminClassSchedules: React.FC = () => {
                 status: 'SCHEDULED',
                 targetType: 'individual',
                 studentId: form.studentId || '',
-                studentName: selectedIndiv?.name || 'Scholar',
+                studentName: selectedIndiv?.name || 'Private Student',
                 studentEmail: selectedIndiv?.email || '',
+                parentId: selectedIndiv?.parentId || '',
+                parentName: selectedIndiv?.parentName || '',
+                parentEmail: selectedIndiv?.parentEmail || '',
+                classLevel: selectedIndiv?.className || 'Grade 1',
                 daySchedules: form.daySchedules,
                 occurrenceIndex: w + 1,
                 occurrenceTotal: numWeeks,
@@ -1407,24 +1491,30 @@ const AdminClassSchedules: React.FC = () => {
                     School Programme Track
                   </label>
                   <select
-                    value={form.programId || ''}
+                    value={form.programName || form.programId || ''}
                     onChange={e => {
                       const selSchool = schools.find(s => s.id === form.schoolId);
-                      const selProg = selSchool?.programs?.find(p => p.id === e.target.value);
+                      const selProg = selSchool?.programs?.find(p => p.name === e.target.value || p.id === e.target.value);
+                      const nextName = selProg?.name || e.target.value;
                       setForm({
                         ...form,
-                        programId: e.target.value,
-                        programName: selProg?.name || (e.target.value ? e.target.value : ''),
-                        title: selProg?.name || form.title,
+                        programId: selProg?.id || (nextName ? `prog-${nextName.toLowerCase().replace(/\s+/g, '-')}` : ''),
+                        programName: nextName,
+                        title: nextName || form.title,
                         tutorName: selProg?.assignedTutors?.[0]?.tutorName || form.tutorName
                       });
                     }}
                     className={inputClass}
                   >
-                    <option value="">-- General / Custom Schedule --</option>
+                    <option value="">-- Select School Program --</option>
                     {(schools.find(s => s.id === form.schoolId)?.programs || []).map(p => (
-                      <option key={p.id} value={p.id}>{p.name} {p.level ? `(${p.level})` : ''}</option>
+                      <option key={p.id} value={p.name}>{p.name} {p.level ? `(${p.level})` : ''}</option>
                     ))}
+                    {studioPrograms
+                      .filter(sp => !(schools.find(s => s.id === form.schoolId)?.programs || []).some(p => p.name === sp))
+                      .map(sp => (
+                        <option key={sp} value={sp}>{sp}</option>
+                      ))}
                   </select>
                 </div>
 
@@ -1540,21 +1630,74 @@ const AdminClassSchedules: React.FC = () => {
             )}
 
             {form.targetType === 'individual' && (
-              <div className="md:col-span-2">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                  Select Independent Scholar
-                </label>
-                <select
-                  value={form.studentId}
-                  onChange={e => setForm({ ...form, studentId: e.target.value })}
-                  className={inputClass}
-                >
-                  <option value="">Select scholar...</option>
-                  {individuals.map(i => (
-                    <option key={i.id} value={i.id}>{i.name} ({i.email}) • {i.track}</option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Select Private Student
+                  </label>
+                  <select
+                    value={form.studentId}
+                    onChange={e => {
+                      const selStudent = individuals.find(i => i.id === e.target.value);
+                      const defaultProg = selStudent?.track || selStudent?.enrolledPrograms?.[0] || form.programName || 'Coding for Kids';
+                      setForm({
+                        ...form,
+                        studentId: e.target.value,
+                        programName: defaultProg,
+                        programId: `prog-${defaultProg.toLowerCase().replace(/\s+/g, '-')}`,
+                        title: selStudent ? `${defaultProg} – ${selStudent.name}` : form.title,
+                        tutorId: selStudent?.tutorId || form.tutorId,
+                        tutorName: selStudent?.tutorName || form.tutorName,
+                      });
+                    }}
+                    className={inputClass}
+                  >
+                    <option value="">Select private student...</option>
+                    {individuals.map(i => (
+                      <option key={i.id} value={i.id}>
+                        {i.name} ({i.className || 'Grade 1'} • {i.studentType === 'parent_enrolled' ? `Parent: ${i.parentName || i.parentEmail || 'Family'}` : 'Independent'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Student&apos;s Enrolled Program
+                  </label>
+                  {(() => {
+                    const selStudent = individuals.find(i => i.id === form.studentId);
+                    const progChoices = Array.from(
+                      new Set([
+                        ...(selStudent?.enrolledPrograms || []),
+                        ...(selStudent?.track ? [selStudent.track] : []),
+                        ...studioPrograms,
+                      ])
+                    );
+                    return (
+                      <select
+                        value={form.programName || selStudent?.track || 'Coding for Kids'}
+                        onChange={e => {
+                          const nextProg = e.target.value;
+                          setForm({
+                            ...form,
+                            programName: nextProg,
+                            programId: `prog-${nextProg.toLowerCase().replace(/\s+/g, '-')}`,
+                            title: selStudent ? `${nextProg} – ${selStudent.name}` : nextProg,
+                          });
+                        }}
+                        className={inputClass}
+                      >
+                        {progChoices.map(p => (
+                          <option key={p} value={p}>
+                            {p} {selStudent?.enrolledPrograms?.includes(p) ? '(Enrolled)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  })()}
+                </div>
+              </>
             )}
 
             {/* General Details */}
@@ -1626,15 +1769,26 @@ const AdminClassSchedules: React.FC = () => {
 
             <div>
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                Virtual Room / Meeting Link (Optional)
+                Virtual Room / Meeting Link (Online Classroom URL)
               </label>
               <input
-                type="url"
+                type="text"
                 value={form.meetingLink}
                 onChange={e => setForm({ ...form, meetingLink: e.target.value })}
                 className={inputClass}
-                placeholder="https://meet.google.com/..."
+                placeholder="https://meet.google.com/... or https://zoom.us/j/..."
               />
+              {form.meetingLink.trim() && (
+                validateMeetingLink(form.meetingLink).valid ? (
+                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 mt-1">
+                    <CheckCircle2 size={12} /> Valid {validateMeetingLink(form.meetingLink).platform} link — Join Class button active
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-bold text-rose-600 flex items-center gap-1 mt-1">
+                    <AlertTriangle size={12} /> {validateMeetingLink(form.meetingLink).error}
+                  </span>
+                )
+              )}
             </div>
           </div>
 
@@ -1735,8 +1889,8 @@ const AdminClassSchedules: React.FC = () => {
               </div>
             </div>
 
-            {/* Start Date & Weeks (With Timezone Neutral Date Display) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            {/* Start Date, Recurrence Mode & Weeks */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
               <div>
                 <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
                   First Class Start Date (Week 1 Anchor)
@@ -1757,6 +1911,20 @@ const AdminClassSchedules: React.FC = () => {
 
               <div>
                 <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Schedule Frequency
+                </label>
+                <select
+                  value={form.recurring ? 'recurring' : 'single'}
+                  onChange={e => setForm({ ...form, recurring: e.target.value === 'recurring', weeks: e.target.value === 'recurring' ? (Number(form.weeks) > 1 ? form.weeks : '12') : '1' })}
+                  className={inputClass}
+                >
+                  <option value="recurring">Recurring Weekly Timetable</option>
+                  <option value="single">Single Class Session (1 Date)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
                   Term Length (Weeks)
                 </label>
                 <div className="flex items-center gap-2">
@@ -1764,9 +1932,10 @@ const AdminClassSchedules: React.FC = () => {
                     type="number"
                     min="1"
                     max="52"
-                    value={form.weeks}
+                    disabled={!form.recurring}
+                    value={form.recurring ? form.weeks : '1'}
                     onChange={e => setForm({ ...form, weeks: e.target.value })}
-                    className={inputClass}
+                    className={`${inputClass} disabled:opacity-50`}
                   />
                   <span className="text-xs text-slate-500 font-bold shrink-0">weeks</span>
                 </div>
@@ -2011,16 +2180,21 @@ const AdminClassSchedules: React.FC = () => {
                     </h3>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                      <span><strong>Program:</strong> {g.programName || g.title}</span>
                       <span><strong>Instructor:</strong> {g.tutorName || 'Assigned Faculty Mentor'}</span>
-                      {firstOcc?.meetingLink && (
+                      {validateMeetingLink(firstOcc?.meetingLink).valid ? (
                         <a
-                          href={firstOcc.meetingLink}
+                          href={validateMeetingLink(firstOcc?.meetingLink).normalizedUrl}
                           target="_blank"
-                          rel="noreferrer"
-                          className="text-sky-600 font-bold hover:underline"
+                          rel="noopener noreferrer"
+                          className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline inline-flex items-center gap-1"
                         >
-                          Virtual Room Link
+                          <Video size={12} /> {validateMeetingLink(firstOcc?.meetingLink).platform} Active <ExternalLink size={11} />
                         </a>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400 font-semibold inline-flex items-center gap-1">
+                          <Link2 size={12} /> Meeting link not configured
+                        </span>
                       )}
                       {isSchool && g.classLevels && g.classLevels.length > 0 && (
                         <span><strong>Classes:</strong> {g.classLevels.join(', ')}</span>
@@ -2030,6 +2204,31 @@ const AdminClassSchedules: React.FC = () => {
 
                   {/* Actions & Expand Timetable Button */}
                   <div className="flex flex-wrap items-center gap-2 shrink-0 self-end lg:self-center">
+                    {validateMeetingLink(firstOcc?.meetingLink).valid && (
+                      <a
+                        href={validateMeetingLink(firstOcc?.meetingLink).normalizedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="min-h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black inline-flex items-center gap-1.5 shadow-xs"
+                      >
+                        <Video size={13} />
+                        <span>Join Class</span>
+                        <ExternalLink size={11} />
+                      </a>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLinkModalGroup(g);
+                        setLinkModalUrl(firstOcc?.meetingLink || '');
+                      }}
+                      className="min-h-9 px-3 rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/70 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-xs font-black inline-flex items-center gap-1.5 hover:bg-sky-100 cursor-pointer"
+                    >
+                      <Link2 size={13} />
+                      <span>{validateMeetingLink(firstOcc?.meetingLink).valid ? 'Update Link' : 'Set Class Link'}</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => toggleGroupExpansion(g.scheduleGroupId)}
@@ -2518,6 +2717,102 @@ const AdminClassSchedules: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* MODAL: SERIES MEETING LINK CONFIGURATION */}
+      {linkModalGroup && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <form
+            onSubmit={async e => {
+              e.preventDefault();
+              if (!linkModalGroup) return;
+              setLinkModalSaving(true);
+              try {
+                const firstId = linkModalGroup.occurrences[0]?.id || linkModalGroup.scheduleGroupId;
+                const count = await updateScheduleMeetingLink({
+                  scheduleId: firstId,
+                  scheduleGroupId: linkModalGroup.scheduleGroupId,
+                  meetingLink: linkModalUrl,
+                  applyToSeries: true,
+                  actorUid: auth.currentUser?.uid || 'admin',
+                  actorName: auth.currentUser?.displayName || 'Administrator',
+                  actorRole: 'ADMIN',
+                });
+                toast.success(`Meeting link updated across ${count} session(s) and synced to student portals.`);
+                setLinkModalGroup(null);
+                await load();
+              } catch (err: any) {
+                toast.error(err?.message || 'Unable to update meeting link.');
+              } finally {
+                setLinkModalSaving(false);
+              }
+            }}
+            className="bg-white dark:bg-[#0c1220] rounded-3xl p-5 sm:p-6 max-w-md w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 text-slate-900 dark:text-white"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider font-black text-sky-600">
+                  Online Classroom Configuration
+                </p>
+                <h3 className="font-black text-base text-slate-900 dark:text-white">
+                  Configure Class Joining Link
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {linkModalGroup.title} • {linkModalGroup.schoolName || linkModalGroup.studentName || linkModalGroup.parentName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLinkModalGroup(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600"
+              >
+                <XCircle size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                Meeting Link URL (Google Meet, Zoom, Microsoft Teams, etc.)
+              </label>
+              <input
+                type="text"
+                value={linkModalUrl}
+                onChange={e => setLinkModalUrl(e.target.value)}
+                placeholder="https://meet.google.com/..."
+                className={inputClass}
+              />
+              {linkModalUrl.trim() && (
+                validateMeetingLink(linkModalUrl).valid ? (
+                  <p className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Valid {validateMeetingLink(linkModalUrl).platform} URL — Join Class button will be active for all enrolled students.
+                  </p>
+                ) : (
+                  <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1">
+                    <AlertTriangle size={12} /> {validateMeetingLink(linkModalUrl).error}
+                  </p>
+                )
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setLinkModalGroup(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={linkModalSaving}
+                className="px-5 py-2 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-black inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                {linkModalSaving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                <span>Save Link Across Series</span>
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

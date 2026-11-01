@@ -7,20 +7,105 @@ import { SearchProvider } from "./contexts/SearchContext";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import PageLoader from "./components/ui/PageLoader";
 import AuditActivityTracker from "./components/ui/AuditActivityTracker";
-import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from "react-router-dom";
-import { AnimatePresence } from "motion/react";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import PageTransition from "./components/ui/PageTransition";
-import Home from "./pages/Home"; import About from "./pages/About"; import Programs from "./pages/Programs"; import ProgramDetails from "./pages/ProgramDetails"; import Services from "./pages/Services"; import ServiceDetails from "./pages/ServiceDetails"; import Portfolio from "./pages/Portfolio"; import Contact from "./pages/Contact"; import ProjectRequest from "./pages/ProjectRequest"; import SchoolPartnership from "./pages/SchoolPartnershipV2"; import TutorApplication from "./pages/TutorApplication"; import FAQ from "./pages/FAQ"; import FindTutor from "./pages/FindTutor"; import SecurePortalLogin from "./pages/SecurePortalLogin"; import Register from "./pages/Register"; import Resources from "./pages/Resources"; import Blog from "./pages/Blog"; import BlogPostDetails from "./pages/BlogPostDetails";
+import Home from "./pages/Home";
 import { NotificationProvider } from "./contexts/NotificationContext";
 import { NotificationDrawer } from "./components/notifications/NotificationDrawer";
-import ScrollToTop from "./components/ScrollToTop"; import GlassRippleListener from "./components/ui/GlassRippleListener"; import MarqueeBanner from "./components/ui/MarqueeBanner";
+import ScrollToTop from "./components/ScrollToTop";
+import GlassRippleListener from "./components/ui/GlassRippleListener";
+import MarqueeBanner from "./components/ui/MarqueeBanner";
 import AdminImpersonationBanner from "./components/common/AdminImpersonationBanner";
 import { FloatingWhatsApp } from "./components/ui/FloatingWhatsApp";
-const MagicParticles = lazy(() => import("./pages/MagicParticles")); const PortalLayout = lazy(() => import("./components/portal/PortalLayout")); const PortalHomeWithBilling = lazy(() => import("./pages/portal/PortalHomeWithBilling")); const BillingCenter = lazy(() => import("./pages/portal/BillingCenter")); const AssignmentCenter = lazy(() => import("./pages/portal/AssignmentCenter")); const MilestoneCenter = lazy(() => import("./pages/portal/MilestoneCenter")); const AssessmentCenter = lazy(() => import("./pages/portal/AssessmentCenter")); const ParentExaminationResults = lazy(() => import("./pages/portal/ParentExaminationResults")); const StudentExaminations = lazy(() => import("./pages/portal/StudentExaminations")); const ExaminationHistory = lazy(() => import("./pages/portal/ExaminationHistory")); const SchoolExaminationOverview = lazy(() => import("./pages/portal/SchoolExaminationOverview")); const TutorExaminations = lazy(() => import("./pages/portal/TutorExaminations")); const StudentExamAttempt = lazy(() => import("./pages/portal/StudentExamAttempt")); const ResourceLibrary = lazy(() => import("./pages/portal/ResourceLibrary")); const PortalCourses = lazy(() => import("./pages/portal/PortalCourses")); const PortalLiveClasses = lazy(() => import("./pages/portal/PortalLiveClasses")); const PortalCalendar = lazy(() => import("./pages/portal/PortalCalendar")); const PortalSettings = lazy(() => import("./pages/portal/PortalSettings")); const StaffStudentWorkspace = lazy(() => import("./pages/portal/StaffStudentWorkspace")); const StudentCredentialCenter = lazy(() => import("./pages/portal/StudentCredentialCenter")); const SchoolDashboard = lazy(() => import("./pages/portal/SchoolDashboard")); const SchoolLearnerInsights = lazy(() => import("./pages/portal/SchoolLearnerInsights")); const StudentAchievements = lazy(() => import("./pages/portal/StudentAchievements")); const StudentLiveClassrooms = lazy(() => import("./pages/portal/StudentLiveClassrooms")); const SchoolRoster = lazy(() => import("./pages/portal/SchoolRoster")); const SchoolStudentOnboarding = lazy(() => import("./pages/portal/SchoolStudentOnboardingV2")); const TutorSubjects = lazy(() => import("./pages/portal/TutorSubjects")); const PortalSupport = lazy(() => import("./pages/portal/PortalSupport")); const AgreementsCenter = lazy(() => import("./pages/portal/AgreementsCenter"));
-const AdminLayout = lazy(() => import("./components/admin/AdminLayout")); const AdminClassSchedules = lazy(() => import("./pages/admin/AdminClassSchedules")); const ProtectedRoute = lazy(() => import("./components/admin/ProtectedRoute")); const AdminPages = lazy(() => import("./pages/admin/AdminPages")); const AdminPageForm = lazy(() => import("./pages/admin/AdminPageForm")); const AdminUsers = lazy(() => import("./pages/admin/AdminUsers")); const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard")); const AdminPrograms = lazy(() => import("./pages/admin/AdminPrograms")); const AdminProgramForm = lazy(() => import("./pages/admin/AdminProgramForm")); const AdminServices = lazy(() => import("./pages/admin/AdminServices")); const AdminServiceForm = lazy(() => import("./pages/admin/AdminServiceForm")); const AdminBlog = lazy(() => import("./pages/admin/AdminBlog")); const AdminBlogForm = lazy(() => import("./pages/admin/AdminBlogForm")); const AdminPortfolio = lazy(() => import("./pages/admin/AdminPortfolio")); const AdminPortfolioForm = lazy(() => import("./pages/admin/AdminPortfolioForm")); const AdminKidsProjects = lazy(() => import("./pages/admin/AdminKidsProjects")); const AdminInquiries = lazy(() => import("./pages/admin/AdminInquiries")); const AdminApprovals = lazy(() => import("./pages/admin/AdminApprovals")); const AdminSettings = lazy(() => import("./pages/admin/AdminSettings")); const AdminStudents = lazy(() => import("./pages/admin/AdminStudents")); const AdminParents = lazy(() => import("./pages/admin/AdminParents")); const AdminStaff = lazy(() => import("./pages/admin/AdminStaff")); const AdminSchools = lazy(() => import("./pages/admin/AdminSchools")); const AdminSchoolOnboarding = lazy(() => import("./pages/admin/AdminSchoolOnboarding")); const AdminResources = lazy(() => import("./pages/admin/AdminResources")); const AdminNotifications = lazy(() => import("./pages/admin/AdminNotifications")); const AdminActivityLogs = lazy(() => import("./pages/admin/AdminActivityLogs")); const AdminBilling = lazy(() => import("./pages/admin/AdminBilling")); const AdminReports = lazy(() => import("./pages/admin/AdminReports")); const AdminTutorSubjects = lazy(() => import("./pages/admin/AdminTutorSubjects"));
+
+const About = lazy(() => import("./pages/About"));
+const Programs = lazy(() => import("./pages/Programs"));
+const ProgramDetails = lazy(() => import("./pages/ProgramDetails"));
+const Services = lazy(() => import("./pages/Services"));
+const ServiceDetails = lazy(() => import("./pages/ServiceDetails"));
+const Portfolio = lazy(() => import("./pages/Portfolio"));
+const Contact = lazy(() => import("./pages/Contact"));
+const ProjectRequest = lazy(() => import("./pages/ProjectRequest"));
+const SchoolPartnership = lazy(() => import("./pages/SchoolPartnershipV2"));
+const TutorApplication = lazy(() => import("./pages/TutorApplication"));
+const FAQ = lazy(() => import("./pages/FAQ"));
+const FindTutor = lazy(() => import("./pages/FindTutor"));
+const SecurePortalLogin = lazy(() => import("./pages/SecurePortalLogin"));
+const Register = lazy(() => import("./pages/Register"));
+const Resources = lazy(() => import("./pages/Resources"));
+const Blog = lazy(() => import("./pages/Blog"));
+const BlogPostDetails = lazy(() => import("./pages/BlogPostDetails"));
+
+const MagicParticles = lazy(() => import("./pages/MagicParticles"));
+const PortalLayout = lazy(() => import("./components/portal/PortalLayout"));
+const PortalHomeWithBilling = lazy(() => import("./pages/portal/PortalHomeWithBilling"));
+const BillingCenter = lazy(() => import("./pages/portal/BillingCenter"));
+const AssignmentCenter = lazy(() => import("./pages/portal/AssignmentCenter"));
+const MilestoneCenter = lazy(() => import("./pages/portal/MilestoneCenter"));
+const AssessmentCenter = lazy(() => import("./pages/portal/AssessmentCenter"));
+const ParentExaminationResults = lazy(() => import("./pages/portal/ParentExaminationResults"));
+const StudentExaminations = lazy(() => import("./pages/portal/StudentExaminations"));
+const ExaminationHistory = lazy(() => import("./pages/portal/ExaminationHistory"));
+const SchoolExaminationOverview = lazy(() => import("./pages/portal/SchoolExaminationOverview"));
+const TutorExaminations = lazy(() => import("./pages/portal/TutorExaminations"));
+const StudentExamAttempt = lazy(() => import("./pages/portal/StudentExamAttempt"));
+const ResourceLibrary = lazy(() => import("./pages/portal/ResourceLibrary"));
+const PortalCourses = lazy(() => import("./pages/portal/PortalCourses"));
+const PortalLiveClasses = lazy(() => import("./pages/portal/PortalLiveClasses"));
+const PortalCalendar = lazy(() => import("./pages/portal/PortalCalendar"));
+const PortalSettings = lazy(() => import("./pages/portal/PortalSettings"));
+const StaffStudentWorkspace = lazy(() => import("./pages/portal/StaffStudentWorkspace"));
+const StudentCredentialCenter = lazy(() => import("./pages/portal/StudentCredentialCenter"));
+const SchoolDashboard = lazy(() => import("./pages/portal/SchoolDashboard"));
+const SchoolLearnerInsights = lazy(() => import("./pages/portal/SchoolLearnerInsights"));
+const StudentAchievements = lazy(() => import("./pages/portal/StudentAchievements"));
+const StudentLiveClassrooms = lazy(() => import("./pages/portal/StudentLiveClassrooms"));
+const SchoolRoster = lazy(() => import("./pages/portal/SchoolRoster"));
+const SchoolStudentOnboarding = lazy(() => import("./pages/portal/SchoolStudentOnboardingV2"));
+const TutorSubjects = lazy(() => import("./pages/portal/TutorSubjects"));
+const PortalSupport = lazy(() => import("./pages/portal/PortalSupport"));
+const AgreementsCenter = lazy(() => import("./pages/portal/AgreementsCenter"));
+
+const AdminLayout = lazy(() => import("./components/admin/AdminLayout"));
+const AdminClassSchedules = lazy(() => import("./pages/admin/AdminClassSchedules"));
+const ProtectedRoute = lazy(() => import("./components/admin/ProtectedRoute"));
+const AdminPages = lazy(() => import("./pages/admin/AdminPages"));
+const AdminPageForm = lazy(() => import("./pages/admin/AdminPageForm"));
+const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
+const AdminPrograms = lazy(() => import("./pages/admin/AdminPrograms"));
+const AdminProgramForm = lazy(() => import("./pages/admin/AdminProgramForm"));
+const AdminServices = lazy(() => import("./pages/admin/AdminServices"));
+const AdminServiceForm = lazy(() => import("./pages/admin/AdminServiceForm"));
+const AdminBlog = lazy(() => import("./pages/admin/AdminBlog"));
+const AdminBlogForm = lazy(() => import("./pages/admin/AdminBlogForm"));
+const AdminPortfolio = lazy(() => import("./pages/admin/AdminPortfolio"));
+const AdminPortfolioForm = lazy(() => import("./pages/admin/AdminPortfolioForm"));
+const AdminKidsProjects = lazy(() => import("./pages/admin/AdminKidsProjects"));
+const AdminInquiries = lazy(() => import("./pages/admin/AdminInquiries"));
+const AdminApprovals = lazy(() => import("./pages/admin/AdminApprovals"));
+const AdminSettings = lazy(() => import("./pages/admin/AdminSettings"));
+const AdminStudents = lazy(() => import("./pages/admin/AdminStudents"));
+const AdminParents = lazy(() => import("./pages/admin/AdminParents"));
+const AdminStaff = lazy(() => import("./pages/admin/AdminStaff"));
+const AdminSchools = lazy(() => import("./pages/admin/AdminSchools"));
+const AdminSchoolOnboarding = lazy(() => import("./pages/admin/AdminSchoolOnboarding"));
+const AdminResources = lazy(() => import("./pages/admin/AdminResources"));
+const AdminNotifications = lazy(() => import("./pages/admin/AdminNotifications"));
+const AdminActivityLogs = lazy(() => import("./pages/admin/AdminActivityLogs"));
+const AdminBilling = lazy(() => import("./pages/admin/AdminBilling"));
+const AdminReports = lazy(() => import("./pages/admin/AdminReports"));
+const AdminTutorSubjects = lazy(() => import("./pages/admin/AdminTutorSubjects"));
 const StudentEdgeClub = lazy(() => import("./pages/portal/StudentEdgeClub"));
 const PortalWireframesShowcase = lazy(() => import("./pages/PortalWireframesShowcase"));
-const StudentBillingGate = () => sessionStorage.getItem('studentRegistrationType') === 'individual' ? <BillingCenter role="student" /> : <Navigate to="/portal/student" replace />;
+
+const StudentBillingGate = () =>
+  sessionStorage.getItem("studentRegistrationType") === "individual" ? (
+    <BillingCenter role="student" />
+  ) : (
+    <Navigate to="/portal/student" replace />
+  );
+
 const LazyFallback = () => {
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center p-8 text-center" role="status" aria-live="polite">
@@ -29,13 +114,187 @@ const LazyFallback = () => {
     </div>
   );
 };
-function AnimatedRoutes() { const location = useLocation(); return <AnimatePresence mode="wait" initial={false}><Routes location={location} key={location.pathname}>
-<Route path="/" element={<PageTransition><Home /></PageTransition>} /><Route path="/wireframes" element={<Suspense fallback={<LazyFallback />}><PortalWireframesShowcase /></Suspense>} /><Route path="/about" element={<PageTransition><About /></PageTransition>} /><Route path="/programs" element={<PageTransition><Programs /></PageTransition>} /><Route path="/programs/:slug" element={<PageTransition><ProgramDetails /></PageTransition>} /><Route path="/services" element={<PageTransition><Services /></PageTransition>} /><Route path="/services/:slug" element={<PageTransition><ServiceDetails /></PageTransition>} /><Route path="/portfolio" element={<PageTransition><Portfolio /></PageTransition>} /><Route path="/magic-particles" element={<Suspense fallback={<LazyFallback />}><MagicParticles /></Suspense>} /><Route path="/kids-zone/magic" element={<Suspense fallback={<LazyFallback />}><MagicParticles /></Suspense>} /><Route path="/contact" element={<PageTransition><Contact /></PageTransition>} /><Route path="/support" element={<PageTransition><Suspense fallback={<LazyFallback />}><PortalSupport /></Suspense></PageTransition>} /><Route path="/resources" element={<PageTransition><Resources /></PageTransition>} /><Route path="/blog" element={<PageTransition><Blog /></PageTransition>} /><Route path="/blog/:slug" element={<PageTransition><BlogPostDetails /></PageTransition>} /><Route path="/project-request" element={<PageTransition><ProjectRequest /></PageTransition>} /><Route path="/school-partnership" element={<PageTransition><SchoolPartnership /></PageTransition>} /><Route path="/tutors" element={<PageTransition><FindTutor /></PageTransition>} /><Route path="/find-tutor" element={<PageTransition><FindTutor /></PageTransition>} /><Route path="/tutor-application" element={<PageTransition><TutorApplication /></PageTransition>} /><Route path="/faq" element={<PageTransition><FAQ /></PageTransition>} /><Route path="/portal" element={<PageTransition><SecurePortalLogin /></PageTransition>} /><Route path="/register" element={<PageTransition><Register /></PageTransition>} />
-<Route path="/portal/student" element={<Suspense fallback={<LazyFallback />}><ProtectedRoute allowedRoles={['STUDENT', 'INDIVIDUAL_STUDENT', 'INDIVIDUALSTUDENT']} redirectPath="/portal"><PortalLayout /></ProtectedRoute></Suspense>}><Route index element={<Suspense fallback={<LazyFallback />}><PortalHomeWithBilling role="student" /></Suspense>} /><Route path="resources" element={<Suspense fallback={<LazyFallback />}><ResourceLibrary role="student" /></Suspense>} /><Route path="achievements" element={<Suspense fallback={<LazyFallback />}><StudentAchievements /></Suspense>} /><Route path="live-classrooms" element={<Suspense fallback={<LazyFallback />}><StudentLiveClassrooms /></Suspense>} /><Route path="live-classes" element={<Suspense fallback={<LazyFallback />}><StudentLiveClassrooms /></Suspense>} /><Route path="calendar" element={<Suspense fallback={<LazyFallback />}><PortalCalendar /></Suspense>} /> <Route path="schedules" element={<Suspense fallback={<LazyFallback />}><PortalCalendar /></Suspense>} /><Route path="courses" element={<Suspense fallback={<LazyFallback />}><PortalCourses /></Suspense>} /> <Route path="edge-club" element={<Suspense fallback={<LazyFallback />}><StudentEdgeClub /></Suspense>} /><Route path="assignments" element={<Suspense fallback={<LazyFallback />}><AssignmentCenter role="student" /></Suspense>} /><Route path="milestones" element={<Suspense fallback={<LazyFallback />}><MilestoneCenter role="student" /></Suspense>} /><Route path="assessments" element={<Suspense fallback={<LazyFallback />}><StudentExaminations /></Suspense>} /> <Route path="exams" element={<Suspense fallback={<LazyFallback />}><StudentExaminations /></Suspense>} /><Route path="exams/:attemptId" element={<Suspense fallback={<LazyFallback />}><StudentExamAttempt /></Suspense>} /><Route path="payments" element={<Suspense fallback={<LazyFallback />}><StudentBillingGate /></Suspense>} /><Route path="support" element={<Suspense fallback={<LazyFallback />}><PortalSupport /></Suspense>} /><Route path="settings" element={<Suspense fallback={<LazyFallback />}><PortalSettings /></Suspense>} /></Route>
-<Route path="/portal/staff" element={<Suspense fallback={<LazyFallback />}><ProtectedRoute allowedRoles={['TUTOR', 'STAFF', 'INSTRUCTOR']} redirectPath="/portal"><PortalLayout /></ProtectedRoute></Suspense>}><Route index element={<Suspense fallback={<LazyFallback />}><PortalHomeWithBilling role="staff" /></Suspense>} /><Route path="students" element={<Suspense fallback={<LazyFallback />}><PortalHomeWithBilling role="staff" /></Suspense>} /><Route path="resources" element={<Suspense fallback={<LazyFallback />}><ResourceLibrary role="staff" /></Suspense>} /><Route path="subjects" element={<Suspense fallback={<LazyFallback />}><TutorSubjects /></Suspense>} /><Route path="classes" element={<Suspense fallback={<LazyFallback />}><PortalLiveClasses /></Suspense>} /><Route path="students/:studentId" element={<Suspense fallback={<LazyFallback />}><StaffStudentWorkspace /></Suspense>} /><Route path="student/:studentId" element={<Suspense fallback={<LazyFallback />}><StaffStudentWorkspace /></Suspense>} /><Route path="credentials" element={<Suspense fallback={<LazyFallback />}><StudentCredentialCenter role="staff" /></Suspense>} /><Route path="assignments" element={<Suspense fallback={<LazyFallback />}><AssignmentCenter role="staff" /></Suspense>} /><Route path="milestones" element={<Suspense fallback={<LazyFallback />}><MilestoneCenter role="staff" /></Suspense>} /><Route path="assessments" element={<Suspense fallback={<LazyFallback />}><TutorExaminations /></Suspense>} /> <Route path="exams" element={<Suspense fallback={<LazyFallback />}><TutorExaminations /></Suspense>} /><Route path="exam-history" element={<Suspense fallback={<LazyFallback />}><ExaminationHistory mode="history" /></Suspense>} /><Route path="exam-authoring" element={<Suspense fallback={<LazyFallback />}><TutorExaminations /></Suspense>} /><Route path="agreements" element={<Suspense fallback={<LazyFallback />}><AgreementsCenter role="staff" /></Suspense>} /><Route path="calendar" element={<Suspense fallback={<LazyFallback />}><PortalCalendar /></Suspense>} /><Route path="payments" element={<Suspense fallback={<LazyFallback />}><BillingCenter role="staff" /></Suspense>} /><Route path="support" element={<Suspense fallback={<LazyFallback />}><PortalSupport /></Suspense>} /><Route path="settings" element={<Suspense fallback={<LazyFallback />}><PortalSettings /></Suspense>} /></Route>
-<Route path="/portal/parent" element={<Suspense fallback={<LazyFallback />}><ProtectedRoute allowedRoles={['PARENT']} redirectPath="/portal"><PortalLayout /></ProtectedRoute></Suspense>}><Route index element={<Suspense fallback={<LazyFallback />}><PortalHomeWithBilling role="parent" /></Suspense>} /><Route path="resources" element={<Suspense fallback={<LazyFallback />}><ResourceLibrary role="parent" /></Suspense>} /><Route path="assignments" element={<Suspense fallback={<LazyFallback />}><AssignmentCenter role="parent" /></Suspense>} /><Route path="milestones" element={<Suspense fallback={<LazyFallback />}><MilestoneCenter role="parent" /></Suspense>} /><Route path="assessments" element={<Suspense fallback={<LazyFallback />}><AssessmentCenter role="parent" /></Suspense>} /><Route path="examinations" element={<Suspense fallback={<LazyFallback />}><ParentExaminationResults /></Suspense>} /><Route path="agreements" element={<Suspense fallback={<LazyFallback />}><AgreementsCenter role="parent" /></Suspense>} /><Route path="calendar" element={<Suspense fallback={<LazyFallback />}><PortalCalendar /></Suspense>} /> <Route path="schedules" element={<Suspense fallback={<LazyFallback />}><PortalCalendar /></Suspense>} /><Route path="payments" element={<Suspense fallback={<LazyFallback />}><BillingCenter role="parent" /></Suspense>} /><Route path="support" element={<Suspense fallback={<LazyFallback />}><PortalSupport /></Suspense>} /><Route path="settings" element={<Suspense fallback={<LazyFallback />}><PortalSettings /></Suspense>} /></Route>
-<Route path="/portal/school" element={<Suspense fallback={<LazyFallback />}><ProtectedRoute allowedRoles={['SCHOOL', 'SCHOOL_ADMIN']} redirectPath="/portal"><PortalLayout /></ProtectedRoute></Suspense>}><Route index element={<Suspense fallback={<LazyFallback />}><PortalHomeWithBilling role="school" /></Suspense>} /><Route path="roster" element={<Suspense fallback={<LazyFallback />}><SchoolRoster /></Suspense>} /><Route path="learner-progress" element={<Suspense fallback={<LazyFallback />}><SchoolLearnerInsights /></Suspense>} /><Route path="onboard-student" element={<Suspense fallback={<LazyFallback />}><SchoolStudentOnboarding /></Suspense>} /><Route path="credentials" element={<Suspense fallback={<LazyFallback />}><StudentCredentialCenter role="school" /></Suspense>} /><Route path="exams" element={<Suspense fallback={<LazyFallback />}><SchoolExaminationOverview /></Suspense>} /> <Route path="exam-history" element={<Suspense fallback={<LazyFallback />}><ExaminationHistory mode="history" /></Suspense>} /><Route path="agreements" element={<Suspense fallback={<LazyFallback />}><AgreementsCenter role="school" /></Suspense>} /><Route path="links" element={<Suspense fallback={<LazyFallback />}><SchoolDashboard initialTab="links" /></Suspense>} /><Route path="schedules" element={<Suspense fallback={<LazyFallback />}><SchoolDashboard initialTab="schedules" /></Suspense>} /><Route path="partnership" element={<Suspense fallback={<LazyFallback />}><SchoolDashboard initialTab="partnership" /></Suspense>} /><Route path="resources" element={<Suspense fallback={<LazyFallback />}><ResourceLibrary role="school" /></Suspense>} /><Route path="assignments" element={<Navigate to="/portal/school/learner-progress" replace />} /><Route path="milestones" element={<Navigate to="/portal/school/learner-progress" replace />} /><Route path="assessments" element={<Suspense fallback={<LazyFallback />}><SchoolLearnerInsights /></Suspense>} /><Route path="calendar" element={<Suspense fallback={<LazyFallback />}><PortalCalendar /></Suspense>} /><Route path="payments" element={<Suspense fallback={<LazyFallback />}><BillingCenter role="school" /></Suspense>} /><Route path="support" element={<Suspense fallback={<LazyFallback />}><PortalSupport /></Suspense>} /><Route path="settings" element={<Suspense fallback={<LazyFallback />}><PortalSettings /></Suspense>} /></Route>
-<Route path="/admin/login" element={<Navigate to="/portal" replace />} /><Route path="/admin" element={<Suspense fallback={<LazyFallback />}><ProtectedRoute><AdminLayout /></ProtectedRoute></Suspense>}><Route index element={<Suspense fallback={<LazyFallback />}><AdminDashboard /></Suspense>} /><Route path="schedules" element={<Suspense fallback={<LazyFallback />}><AdminClassSchedules /></Suspense>} /> <Route path="examinations" element={<Suspense fallback={<LazyFallback />}><TutorExaminations /></Suspense>} /><Route path="examination-history" element={<Suspense fallback={<LazyFallback />}><ExaminationHistory mode="history" /></Suspense>} /><Route path="agreements" element={<Suspense fallback={<LazyFallback />}><AgreementsCenter role="admin" /></Suspense>} /><Route path="billing" element={<Suspense fallback={<LazyFallback />}><AdminBilling /></Suspense>} /><Route path="reports" element={<Suspense fallback={<LazyFallback />}><AdminReports /></Suspense>} /><Route path="programs" element={<Suspense fallback={<LazyFallback />}><AdminPrograms /></Suspense>} /><Route path="programs/new" element={<Suspense fallback={<LazyFallback />}><AdminProgramForm /></Suspense>} /><Route path="programs/:id" element={<Suspense fallback={<LazyFallback />}><AdminProgramForm /></Suspense>} /><Route path="services" element={<Suspense fallback={<LazyFallback />}><AdminServices /></Suspense>} /><Route path="services/new" element={<Suspense fallback={<LazyFallback />}><AdminServiceForm /></Suspense>} /><Route path="services/:id" element={<Suspense fallback={<LazyFallback />}><AdminServiceForm /></Suspense>} /><Route path="blog" element={<Suspense fallback={<LazyFallback />}><AdminBlog /></Suspense>} /><Route path="blog/new" element={<Suspense fallback={<LazyFallback />}><AdminBlogForm /></Suspense>} /><Route path="blog/:id" element={<Suspense fallback={<LazyFallback />}><AdminBlogForm /></Suspense>} /><Route path="portfolio" element={<Suspense fallback={<LazyFallback />}><AdminPortfolio /></Suspense>} /><Route path="portfolio/new" element={<Suspense fallback={<LazyFallback />}><AdminPortfolioForm /></Suspense>} /><Route path="portfolio/:id" element={<Suspense fallback={<LazyFallback />}><AdminPortfolioForm /></Suspense>} /><Route path="kids-projects" element={<Suspense fallback={<LazyFallback />}><AdminKidsProjects /></Suspense>} /><Route path="inquiries" element={<Suspense fallback={<LazyFallback />}><AdminInquiries /></Suspense>} /><Route path="approvals" element={<Suspense fallback={<LazyFallback />}><AdminApprovals /></Suspense>} /><Route path="users" element={<Suspense fallback={<LazyFallback />}><AdminUsers /></Suspense>} /><Route path="pages" element={<Suspense fallback={<LazyFallback />}><AdminPages /></Suspense>} /><Route path="pages/new" element={<Suspense fallback={<LazyFallback />}><AdminPageForm /></Suspense>} /><Route path="pages/:id" element={<Suspense fallback={<LazyFallback />}><AdminPageForm /></Suspense>} /><Route path="students" element={<Suspense fallback={<LazyFallback />}><AdminStudents /></Suspense>} /><Route path="parents" element={<Suspense fallback={<LazyFallback />}><AdminParents /></Suspense>} /><Route path="staff" element={<Suspense fallback={<LazyFallback />}><AdminStaff /></Suspense>} /><Route path="tutor-subjects" element={<Suspense fallback={<LazyFallback />}><AdminTutorSubjects /></Suspense>} /><Route path="schools" element={<Suspense fallback={<LazyFallback />}><AdminSchools /></Suspense>} /><Route path="schools/onboard" element={<Suspense fallback={<LazyFallback />}><AdminSchoolOnboarding /></Suspense>} /><Route path="resources" element={<Suspense fallback={<LazyFallback />}><AdminResources /></Suspense>} /><Route path="notifications" element={<Suspense fallback={<LazyFallback />}><AdminNotifications /></Suspense>} /><Route path="activity" element={<Suspense fallback={<LazyFallback />}><AdminActivityLogs /></Suspense>} /><Route path="support" element={<Suspense fallback={<LazyFallback />}><PortalSupport /></Suspense>} /><Route path="settings" element={<Suspense fallback={<LazyFallback />}><AdminSettings /></Suspense>} /></Route>
-</Routes></AnimatePresence>; }
-function App() { return <ErrorBoundary><ThemeProvider><ToastProvider><SessionTimeoutProvider><Router><NotificationProvider><MetaTagsProvider><SearchProvider><AdminImpersonationBanner /><PageLoader /><ScrollToTop /><GlassRippleListener /><AuditActivityTracker /><AnimatedRoutes /><NotificationDrawer /><MarqueeBanner /><FloatingWhatsApp /></SearchProvider></MetaTagsProvider></NotificationProvider></Router></SessionTimeoutProvider></ToastProvider></ThemeProvider></ErrorBoundary>; }
+
+function AnimatedRoutes() {
+  return (
+    <Suspense fallback={<LazyFallback />}>
+      <Routes>
+        <Route path="/" element={<PageTransition><Home /></PageTransition>} />
+        <Route path="/wireframes" element={<PortalWireframesShowcase />} />
+        <Route path="/about" element={<PageTransition><About /></PageTransition>} />
+        <Route path="/programs" element={<PageTransition><Programs /></PageTransition>} />
+        <Route path="/programs/:slug" element={<PageTransition><ProgramDetails /></PageTransition>} />
+        <Route path="/services" element={<PageTransition><Services /></PageTransition>} />
+        <Route path="/services/:slug" element={<PageTransition><ServiceDetails /></PageTransition>} />
+        <Route path="/portfolio" element={<PageTransition><Portfolio /></PageTransition>} />
+        <Route path="/magic-particles" element={<MagicParticles />} />
+        <Route path="/kids-zone/magic" element={<MagicParticles />} />
+        <Route path="/contact" element={<PageTransition><Contact /></PageTransition>} />
+        <Route path="/support" element={<PageTransition><PortalSupport /></PageTransition>} />
+        <Route path="/resources" element={<PageTransition><Resources /></PageTransition>} />
+        <Route path="/blog" element={<PageTransition><Blog /></PageTransition>} />
+        <Route path="/blog/:slug" element={<PageTransition><BlogPostDetails /></PageTransition>} />
+        <Route path="/project-request" element={<PageTransition><ProjectRequest /></PageTransition>} />
+        <Route path="/school-partnership" element={<PageTransition><SchoolPartnership /></PageTransition>} />
+        <Route path="/tutors" element={<PageTransition><FindTutor /></PageTransition>} />
+        <Route path="/find-tutor" element={<PageTransition><FindTutor /></PageTransition>} />
+        <Route path="/tutor-application" element={<PageTransition><TutorApplication /></PageTransition>} />
+        <Route path="/faq" element={<PageTransition><FAQ /></PageTransition>} />
+        <Route path="/portal" element={<PageTransition><SecurePortalLogin /></PageTransition>} />
+        <Route path="/register" element={<PageTransition><Register /></PageTransition>} />
+
+        <Route path="/portal/student" element={<ProtectedRoute allowedRoles={['STUDENT', 'INDIVIDUAL_STUDENT', 'INDIVIDUALSTUDENT']} redirectPath="/portal"><PortalLayout /></ProtectedRoute>}>
+          <Route index element={<PortalHomeWithBilling role="student" />} />
+          <Route path="resources" element={<ResourceLibrary role="student" />} />
+          <Route path="achievements" element={<StudentAchievements />} />
+          <Route path="live-classrooms" element={<StudentLiveClassrooms />} />
+          <Route path="live-classes" element={<StudentLiveClassrooms />} />
+          <Route path="calendar" element={<PortalCalendar />} />
+          <Route path="schedules" element={<PortalCalendar />} />
+          <Route path="courses" element={<PortalCourses />} />
+          <Route path="edge-club" element={<StudentEdgeClub />} />
+          <Route path="assignments" element={<AssignmentCenter role="student" />} />
+          <Route path="milestones" element={<MilestoneCenter role="student" />} />
+          <Route path="assessments" element={<StudentExaminations />} />
+          <Route path="exams" element={<StudentExaminations />} />
+          <Route path="exams/:attemptId" element={<StudentExamAttempt />} />
+          <Route path="payments" element={<StudentBillingGate />} />
+          <Route path="support" element={<PortalSupport />} />
+          <Route path="settings" element={<PortalSettings />} />
+        </Route>
+
+        <Route path="/portal/staff" element={<ProtectedRoute allowedRoles={['TUTOR', 'STAFF', 'INSTRUCTOR']} redirectPath="/portal"><PortalLayout /></ProtectedRoute>}>
+          <Route index element={<PortalHomeWithBilling role="staff" />} />
+          <Route path="students" element={<PortalHomeWithBilling role="staff" />} />
+          <Route path="resources" element={<ResourceLibrary role="staff" />} />
+          <Route path="subjects" element={<TutorSubjects />} />
+          <Route path="classes" element={<PortalLiveClasses />} />
+          <Route path="students/:studentId" element={<StaffStudentWorkspace />} />
+          <Route path="student/:studentId" element={<StaffStudentWorkspace />} />
+          <Route path="credentials" element={<StudentCredentialCenter role="staff" />} />
+          <Route path="assignments" element={<AssignmentCenter role="staff" />} />
+          <Route path="milestones" element={<MilestoneCenter role="staff" />} />
+          <Route path="assessments" element={<TutorExaminations />} />
+          <Route path="exams" element={<TutorExaminations />} />
+          <Route path="exam-history" element={<ExaminationHistory mode="history" />} />
+          <Route path="exam-authoring" element={<TutorExaminations />} />
+          <Route path="agreements" element={<AgreementsCenter role="staff" />} />
+          <Route path="calendar" element={<PortalCalendar />} />
+          <Route path="payments" element={<BillingCenter role="staff" />} />
+          <Route path="support" element={<PortalSupport />} />
+          <Route path="settings" element={<PortalSettings />} />
+        </Route>
+
+        <Route path="/portal/parent" element={<ProtectedRoute allowedRoles={['PARENT']} redirectPath="/portal"><PortalLayout /></ProtectedRoute>}>
+          <Route index element={<PortalHomeWithBilling role="parent" />} />
+          <Route path="resources" element={<ResourceLibrary role="parent" />} />
+          <Route path="assignments" element={<AssignmentCenter role="parent" />} />
+          <Route path="milestones" element={<MilestoneCenter role="parent" />} />
+          <Route path="assessments" element={<AssessmentCenter role="parent" />} />
+          <Route path="examinations" element={<ParentExaminationResults />} />
+          <Route path="agreements" element={<AgreementsCenter role="parent" />} />
+          <Route path="calendar" element={<PortalCalendar />} />
+          <Route path="schedules" element={<PortalCalendar />} />
+          <Route path="payments" element={<BillingCenter role="parent" />} />
+          <Route path="support" element={<PortalSupport />} />
+          <Route path="settings" element={<PortalSettings />} />
+        </Route>
+
+        <Route path="/portal/school" element={<ProtectedRoute allowedRoles={['SCHOOL', 'SCHOOL_ADMIN']} redirectPath="/portal"><PortalLayout /></ProtectedRoute>}>
+          <Route index element={<PortalHomeWithBilling role="school" />} />
+          <Route path="roster" element={<SchoolRoster />} />
+          <Route path="learner-progress" element={<SchoolLearnerInsights />} />
+          <Route path="onboard-student" element={<SchoolStudentOnboarding />} />
+          <Route path="credentials" element={<StudentCredentialCenter role="school" />} />
+          <Route path="exams" element={<SchoolExaminationOverview />} />
+          <Route path="exam-history" element={<ExaminationHistory mode="history" />} />
+          <Route path="agreements" element={<AgreementsCenter role="school" />} />
+          <Route path="links" element={<SchoolDashboard initialTab="links" />} />
+          <Route path="schedules" element={<SchoolDashboard initialTab="schedules" />} />
+          <Route path="partnership" element={<SchoolDashboard initialTab="partnership" />} />
+          <Route path="resources" element={<ResourceLibrary role="school" />} />
+          <Route path="assignments" element={<Navigate to="/portal/school/learner-progress" replace />} />
+          <Route path="milestones" element={<Navigate to="/portal/school/learner-progress" replace />} />
+          <Route path="assessments" element={<SchoolLearnerInsights />} />
+          <Route path="calendar" element={<PortalCalendar />} />
+          <Route path="payments" element={<BillingCenter role="school" />} />
+          <Route path="support" element={<PortalSupport />} />
+          <Route path="settings" element={<PortalSettings />} />
+        </Route>
+
+        <Route path="/admin/login" element={<Navigate to="/portal" replace />} />
+        <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
+          <Route index element={<AdminDashboard />} />
+          <Route path="schedules" element={<AdminClassSchedules />} />
+          <Route path="examinations" element={<TutorExaminations />} />
+          <Route path="examination-history" element={<ExaminationHistory mode="history" />} />
+          <Route path="agreements" element={<AgreementsCenter role="admin" />} />
+          <Route path="billing" element={<AdminBilling />} />
+          <Route path="reports" element={<AdminReports />} />
+          <Route path="programs" element={<AdminPrograms />} />
+          <Route path="programs/new" element={<AdminProgramForm />} />
+          <Route path="programs/:id" element={<AdminProgramForm />} />
+          <Route path="services" element={<AdminServices />} />
+          <Route path="services/new" element={<AdminServiceForm />} />
+          <Route path="services/:id" element={<AdminServiceForm />} />
+          <Route path="blog" element={<AdminBlog />} />
+          <Route path="blog/new" element={<AdminBlogForm />} />
+          <Route path="blog/:id" element={<AdminBlogForm />} />
+          <Route path="portfolio" element={<AdminPortfolio />} />
+          <Route path="portfolio/new" element={<AdminPortfolioForm />} />
+          <Route path="portfolio/:id" element={<AdminPortfolioForm />} />
+          <Route path="kids-projects" element={<AdminKidsProjects />} />
+          <Route path="inquiries" element={<AdminInquiries />} />
+          <Route path="approvals" element={<AdminApprovals />} />
+          <Route path="users" element={<AdminUsers />} />
+          <Route path="pages" element={<AdminPages />} />
+          <Route path="pages/new" element={<AdminPageForm />} />
+          <Route path="pages/:id" element={<AdminPageForm />} />
+          <Route path="students" element={<AdminStudents />} />
+          <Route path="parents" element={<AdminParents />} />
+          <Route path="staff" element={<AdminStaff />} />
+          <Route path="tutor-subjects" element={<AdminTutorSubjects />} />
+          <Route path="schools" element={<AdminSchools />} />
+          <Route path="schools/onboard" element={<AdminSchoolOnboarding />} />
+          <Route path="resources" element={<AdminResources />} />
+          <Route path="notifications" element={<AdminNotifications />} />
+          <Route path="activity" element={<AdminActivityLogs />} />
+          <Route path="support" element={<PortalSupport />} />
+          <Route path="settings" element={<AdminSettings />} />
+        </Route>
+      </Routes>
+    </Suspense>
+  );
+}
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <ThemeProvider>
+        <ToastProvider>
+          <SessionTimeoutProvider>
+            <Router>
+              <NotificationProvider>
+                <MetaTagsProvider>
+                  <SearchProvider>
+                    <AdminImpersonationBanner />
+                    <PageLoader />
+                    <ScrollToTop />
+                    <GlassRippleListener />
+                    <AuditActivityTracker />
+                    <AnimatedRoutes />
+                    <NotificationDrawer />
+                    <MarqueeBanner />
+                    <FloatingWhatsApp />
+                  </SearchProvider>
+                </MetaTagsProvider>
+              </NotificationProvider>
+            </Router>
+          </SessionTimeoutProvider>
+        </ToastProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
+  );
+}
+
 export default App;

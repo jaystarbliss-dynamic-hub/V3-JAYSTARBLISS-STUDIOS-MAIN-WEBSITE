@@ -2,13 +2,93 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const SELF_UNREGISTER_SW_SCRIPT = `
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      } catch (e) {}
+      try {
+        await self.registration.unregister();
+      } catch (e) {}
+      try {
+        const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of clientsList) {
+          client.navigate(client.url);
+        }
+      } catch (e) {}
+    })()
+  );
+});
+`;
+
+const STALE_ASSET_RECOVERY_SCRIPT = `
+(async () => {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch (e) {}
+  import('/src/main.tsx').catch(() => {
+    window.location.reload();
+  });
+})();
+`;
+
 function netlifyDevFunctionsPlugin() {
   return {
     name: 'netlify-dev-functions-fallback',
     configureServer(server: any) {
       server.middlewares.use((req: any, res: any, next: any) => {
-        if (req.url && (req.url.startsWith('/.netlify/functions/') || req.url.startsWith('/api/'))) {
-          const url = req.url.split('?')[0];
+        const rawUrl = req.url || '';
+        const url = rawUrl.split('?')[0];
+
+        // 1. Prevent stale Service Workers or cached dist/index.html asset requests from blanking the dev preview
+        if (url === '/sw.js' || url === '/registerSW.js' || url.startsWith('/workbox-')) {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+          res.end(SELF_UNREGISTER_SW_SCRIPT);
+          return;
+        }
+
+        if (url.startsWith('/assets/') && url.endsWith('.js')) {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+          if (url.includes('/assets/index-')) {
+            res.end(STALE_ASSET_RECOVERY_SCRIPT);
+          } else {
+            res.end('export default {};');
+          }
+          return;
+        }
+
+        if (url.startsWith('/assets/') && url.endsWith('.css')) {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'text/css; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+          res.end('/* dev fallback */');
+          return;
+        }
+
+        // 2. Local fallback for Netlify functions & API endpoints in Vite dev server
+        if (
+          (url.startsWith('/.netlify/functions/') || url.startsWith('/api/')) &&
+          !url.startsWith('/api/_lib/') &&
+          !url.endsWith('.js') &&
+          !url.endsWith('.ts')
+        ) {
           res.setHeader('Content-Type', 'application/json');
           if (url.includes('class-schedules')) {
             res.statusCode = 200;
@@ -72,7 +152,12 @@ export default defineConfig({
     react(),
     netlifyDevFunctionsPlugin(),
     VitePWA({
+      selfDestroying: true,
+      injectRegister: null,
       registerType: 'autoUpdate',
+      devOptions: {
+        enabled: false
+      },
       includeAssets: [
         'favicon.ico',
         'favicon.svg',
@@ -139,54 +224,6 @@ export default defineConfig({
             type: 'image/png'
           }
         ]
-      },
-      workbox: {
-        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,json,woff2,ttf}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'gstatic-fonts-cache',
-              expiration: {
-                maxEntries: 20,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
-            urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'jsdelivr-cdn-cache',
-              expiration: {
-                maxEntries: 20,
-                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          }
-        ]
       }
     })
   ],
@@ -215,7 +252,7 @@ export default defineConfig({
     port: 3000,
     host: '0.0.0.0',
     allowedHosts: true,
-    hmr: true
+    hmr: false
   },
   preview: {
     port: 3000,

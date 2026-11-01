@@ -16,6 +16,7 @@ import {
 import { resolveRealName, formatTutorDropdownLabel } from '../../utils/userNames';
 import { CANONICAL_CLASSES, formatNormalizedClassDisplay, normalizeClassName } from '../../lib/classes';
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
+import { checkUsernameAvailability, claimGlobalUsername, normalizeUsername } from '../../lib/usernameRegistry';
 
 export interface AssignedStudentTutor {
   tutorId: string;
@@ -578,7 +579,21 @@ const AdminStudents: React.FC = () => {
     setSaving(true);
     try {
       const subjectsArray = form.subjects.split(',').map(s => s.trim()).filter(Boolean);
-      const cleanUsername = form.username.trim().toLowerCase().replace(/\s+/g, '');
+      const cleanUsername = normalizeUsername(form.username);
+      if (cleanUsername.length < 3 || cleanUsername.length > 30) {
+        toast.error('Username must be between 3 and 30 characters.');
+        setSaving(false);
+        return;
+      }
+
+      // Enforce global username uniqueness across the entire portal
+      const usernameCheck = await checkUsernameAvailability(cleanUsername);
+      if (!usernameCheck.available) {
+        toast.error(usernameCheck.reason || `The username "${cleanUsername}" is already taken. Please pick another username.`);
+        setSaving(false);
+        return;
+      }
+
       const generatedCode = form.accessCode.trim().toUpperCase() || `CADET-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
 
       // 1. Try server backend endpoint if available
@@ -603,6 +618,13 @@ const AdminStudents: React.FC = () => {
 
         if (resp.ok) {
           const result = await resp.json();
+          await claimGlobalUsername(cleanUsername, {
+            uid: result.student?.id || cleanUsername,
+            docId: result.student?.id || cleanUsername,
+            role: 'STUDENT',
+            email: form.email.trim().toLowerCase(),
+            name: form.fullName.trim(),
+          });
           setCredentials({
             fullName: result.student.fullName,
             username: result.credentials.username,
@@ -651,6 +673,8 @@ const AdminStudents: React.FC = () => {
         parentId: form.studentType === 'parent' ? form.parentId : null,
         parentName: form.studentType === 'parent' ? (parentObj?.name || null) : null,
         parentEmail: form.studentType === 'parent' ? (parentObj?.email || null) : null,
+        isIndependent: form.studentType === 'personal',
+        registrationType: form.studentType === 'parent' ? 'parent' : form.studentType === 'school' ? 'school' : 'individual',
         tutorId: form.tutorId || null,
         tutorName: tutorObj?.name || null,
         tutorEmail: tutorObj?.email || null,
@@ -678,6 +702,10 @@ const AdminStudents: React.FC = () => {
         role: 'STUDENT',
         schoolId: form.studentType === 'school' ? form.schoolId : null,
         schoolName: form.studentType === 'school' ? (schoolObj?.name || form.schoolId) : null,
+        parentId: form.studentType === 'parent' ? form.parentId : null,
+        parentEmail: form.studentType === 'parent' ? (parentObj?.email || null) : null,
+        isIndependent: form.studentType === 'personal',
+        registrationType: form.studentType === 'parent' ? 'parent' : form.studentType === 'school' ? 'school' : 'individual',
         class: canonicalStudentClass,
         grade: canonicalStudentClass,
         accessCode: generatedCode,
@@ -695,6 +723,13 @@ const AdminStudents: React.FC = () => {
         setDoc(doc(standbyDb, 'individualStudents', studentDocRef.id), payload, { merge: true }).catch(() => null),
         setDoc(doc(standbyDb, 'students', studentDocRef.id), payload, { merge: true }).catch(() => null),
         setDoc(doc(standbyDb, 'users', studentDocRef.id), userDocPayload, { merge: true }).catch(() => null),
+        claimGlobalUsername(cleanUsername, {
+          uid: studentDocRef.id,
+          docId: studentDocRef.id,
+          role: 'STUDENT',
+          email: form.email.trim().toLowerCase(),
+          name: form.fullName.trim(),
+        }),
       ]);
 
       setCredentials({

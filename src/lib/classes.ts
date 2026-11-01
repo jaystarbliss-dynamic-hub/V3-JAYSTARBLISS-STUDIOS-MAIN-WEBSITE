@@ -34,7 +34,7 @@ import {
   canViewOrPrintAttemptResult as sharedCanViewOrPrintAttemptResult,
   getWorkTypeLabels as sharedGetWorkTypeLabels,
   type WorkTypeLabels as SharedWorkTypeLabels,
-} from '../../api/_lib/jdi-assessment.js';
+} from './jdi-assessment.js';
 
 export type AcademicWorkType = 'ASSIGNMENT' | 'ACTIVITY' | 'TEST' | 'EXAMINATION';
 export type WorkType = AcademicWorkType;

@@ -28,6 +28,7 @@ import CyberLiquidButton from '../components/portal/CyberLiquidButton';
 import ThreeOctagonLogo from '../components/portal/ThreeOctagonLogo';
 import portalWallpaper from '../assets/jdi login bg.png';
 import './Portal.css';
+import { reconcileParentAndChildrenAccount } from '../lib/usernameRegistry';
 
 type Role = 'school' | 'student' | 'parent' | 'staff';
 type LoginMode = 'institute' | 'client';
@@ -35,9 +36,12 @@ type LoginMode = 'institute' | 'client';
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-function studentAuthEmail(username: string): string {
+function studentAuthEmail(username: string, docId?: string): string {
   const clean = username.toLowerCase().replace(/[^a-z0-9]/g, '') || 'std';
-  return `student_${clean}@jaystarbliss-studios.firebaseapp.com`;
+  const suffix = String(docId || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(-8);
+  return suffix
+    ? `student_${clean}_${suffix}@jaystarbliss-studios.firebaseapp.com`
+    : `student_${clean}@jaystarbliss-studios.firebaseapp.com`;
 }
 
 function deriveStudentAuthPassword(code: string): string {
@@ -282,7 +286,7 @@ const Portal: React.FC = () => {
     }
 
     const effectiveUsername = (sdata?.username || rawInput).toLowerCase().replace(/^@/, '').replace(/\s+/g, '');
-    const authEmailToUse = isRealEmail ? rawInput.toLowerCase() : studentAuthEmail(effectiveUsername);
+    const authEmailToUse = isRealEmail ? rawInput.toLowerCase() : studentAuthEmail(effectiveUsername, sdoc?.id);
     const authPassword = deriveStudentAuthPassword(code.toUpperCase());
 
     let firebaseUid = '';
@@ -500,7 +504,7 @@ const Portal: React.FC = () => {
           const enteredCode = code.trim().toUpperCase();
           if (storedCode === enteredCode || sdata.accessCode === code || sdata.passcode === code) {
             const effectiveUsername = (sdata.username || cleanUsername || 'cadet').toLowerCase();
-            const authEmailToUse = sdata.email || studentAuthEmail(effectiveUsername);
+            const authEmailToUse = sdata.email || studentAuthEmail(effectiveUsername, sdoc?.id);
             const authPassword = deriveStudentAuthPassword(code.toUpperCase());
             let firebaseUid = '';
 
@@ -690,10 +694,17 @@ const Portal: React.FC = () => {
       // Check if user is a registered parent before applying tutor fallback
       let isVerifiedParent = detectedRole === 'PARENT';
       try {
-        const pDoc = await getDoc(doc(db, 'parents', user.uid)).catch(() => null);
-        if (pDoc?.exists()) {
+        const reconciled = await reconcileParentAndChildrenAccount(user.uid, user.email, detectedName);
+        if (reconciled.isParent) {
           isVerifiedParent = true;
-          if (pDoc.data()?.name || pDoc.data()?.fullName) detectedName = pDoc.data()?.name || pDoc.data()?.fullName;
+          if (reconciled.parentName) detectedName = reconciled.parentName;
+        }
+        if (!isVerifiedParent) {
+          const pDoc = await getDoc(doc(db, 'parents', user.uid)).catch(() => null);
+          if (pDoc?.exists()) {
+            isVerifiedParent = true;
+            if (pDoc.data()?.name || pDoc.data()?.fullName) detectedName = pDoc.data()?.name || pDoc.data()?.fullName;
+          }
         }
         if (!isVerifiedParent && user.email) {
           const childSnap = await getDocs(query(collection(db, 'individualStudents'), where('parentEmail', '==', user.email.toLowerCase()), limit(1))).catch(() => null);

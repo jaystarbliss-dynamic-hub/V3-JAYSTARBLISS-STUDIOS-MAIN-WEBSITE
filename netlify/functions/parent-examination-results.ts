@@ -34,35 +34,35 @@ const nameOf = (student: any) =>
 const blocked = (value: unknown) =>
   ["DISABLED", "SUSPENDED", "BANNED"].includes(String(value || "").trim().toUpperCase());
 
-async function linkedChildren(parentUid: string) {
+async function linkedChildren(parentUid: string, parentEmail?: string) {
   const found = new Map<
     string,
     { id: string; name: string; className: string; schoolId: string; schoolName: string; studentUid: string; source: string }
   >();
-  const ambiguousIds = new Set<string>();
+  const registerDoc = (doc: any, collectionName: string) => {
+    const data = doc.data();
+    const existing = found.get(doc.id);
+    const rawClass = String(data.className || data.class || data.grade || data.classLevel || existing?.className || "");
+    found.set(doc.id, {
+      id: doc.id,
+      name: nameOf(data) !== "Learner" ? nameOf(data) : existing?.name || "Learner",
+      className: normalizeClassName(rawClass) || rawClass,
+      schoolId: String(data.schoolId || data.school_id || existing?.schoolId || ""),
+      schoolName: resolvePartnerSchoolName(data.schoolName, existing?.schoolName),
+      studentUid: String(data.firebaseUid || data.userId || data.uid || existing?.studentUid || "").trim(),
+      source: collectionName,
+    });
+  };
   for (const collectionName of ["individualStudents", "students"]) {
     for (const field of ["parentId", "guardianId", "parentUid", "parentUserId", "parentFirebaseUid"]) {
       const snap = await adminDb.collection(collectionName).where(field, "==", parentUid).limit(100).get();
-      snap.forEach(doc => {
-        const data = doc.data();
-        if (ambiguousIds.has(doc.id)) return;
-        const existing = found.get(doc.id);
-        if (existing && existing.source !== collectionName) {
-          found.delete(doc.id);
-          ambiguousIds.add(doc.id);
-          return;
-        }
-        const rawClass = String(data.className || data.class || data.grade || data.classLevel || "");
-        found.set(doc.id, {
-          id: doc.id,
-          name: nameOf(data),
-          className: normalizeClassName(rawClass) || rawClass,
-          schoolId: String(data.schoolId || data.school_id || ""),
-          schoolName: resolvePartnerSchoolName(data.schoolName),
-          studentUid: String(data.firebaseUid || data.userId || data.uid || "").trim(),
-          source: collectionName,
-        });
-      });
+      snap.forEach(doc => registerDoc(doc, collectionName));
+    }
+    if (parentEmail) {
+      for (const field of ["parentEmail", "guardianEmail"]) {
+        const snap = await adminDb.collection(collectionName).where(field, "==", parentEmail.toLowerCase()).limit(100).get();
+        snap.forEach(doc => registerDoc(doc, collectionName));
+      }
     }
   }
   return found;
@@ -89,18 +89,26 @@ export const handler: Handler = async event => {
       return json(403, { error: "This account is not active." });
     }
 
-    const children = await linkedChildren(decoded.uid);
+    const parentEmail = String(decoded.email || user.email || "").toLowerCase().trim();
+    const children = await linkedChildren(decoded.uid, parentEmail);
     if (!children.size) return json(200, { children: [], results: [] });
 
     const attemptsById = new Map<string, any>();
     for (const [childId, child] of children.entries()) {
-      if (!child.studentUid) continue;
-      const snap = await adminDb.collection("jdiExamAttempts").where("studentId", "==", childId).limit(200).get();
-      snap.forEach(doc => {
+      const snapById = await adminDb.collection("jdiExamAttempts").where("studentId", "==", childId).limit(200).get();
+      snapById.forEach(doc => {
         const attempt = doc.data();
-        if (!attempt.releasedAt || !attemptBelongsToLinkedChild(attempt, child)) return;
-        attemptsById.set(doc.id, { id: doc.id, ...attempt });
+        if (!attempt.releasedAt && !attempt.resultReleased && attempt.status !== "graded") return;
+        attemptsById.set(doc.id, { id: doc.id, ...attempt, resolvedChildId: childId });
       });
+      if (child.studentUid && child.studentUid !== childId) {
+        const snapByUid = await adminDb.collection("jdiExamAttempts").where("studentUid", "==", child.studentUid).limit(200).get();
+        snapByUid.forEach(doc => {
+          const attempt = doc.data();
+          if (!attempt.releasedAt && !attempt.resultReleased && attempt.status !== "graded") return;
+          attemptsById.set(doc.id, { id: doc.id, ...attempt, resolvedChildId: childId });
+        });
+      }
     }
 
     const schoolNameCache = new Map<string, string>();
@@ -108,10 +116,13 @@ export const handler: Handler = async event => {
       [...attemptsById.values()].map(async attempt => {
         const examId = String(attempt.examId || "");
         if (!examId) return null;
-        const examSnap = await adminDb.collection("jdiExams").doc(examId).get();
+        let examSnap = await adminDb.collection("jdiExams").doc(examId).get();
+        if (!examSnap.exists) {
+          examSnap = await adminDb.collection("schoolExams").doc(examId).get();
+        }
         if (!examSnap.exists) return null;
         const exam = examSnap.data() || {};
-        const child = children.get(String(attempt.studentId));
+        const child = children.get(String(attempt.resolvedChildId || attempt.studentId));
         if (!child) return null;
 
         const schoolId = String(attempt.schoolId || exam.schoolId || child.schoolId || "").trim();

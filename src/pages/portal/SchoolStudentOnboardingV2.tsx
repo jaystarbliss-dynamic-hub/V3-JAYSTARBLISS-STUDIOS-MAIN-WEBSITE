@@ -39,6 +39,11 @@ import {
   validateBulkStudentRows,
   type ValidatedBulkStudentRow,
 } from '../../lib/classes';
+import {
+  checkUsernameAvailability,
+  claimGlobalUsername,
+  normalizeUsername,
+} from '../../lib/usernameRegistry';
 
 const generateAccessCode = (length = 8) => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -145,22 +150,26 @@ const SchoolStudentOnboardingV2: React.FC = () => {
         }
       }
 
-      // Fetch existing school usernames for duplicate detection in preview
-      if (schoolId) {
-        const rosterSnap = await getDocs(
-          query(
-            collection(db, 'individualStudents'),
-            where('schoolId', '==', schoolId),
-            limit(500)
-          )
-        ).catch(() => ({ docs: [] } as any));
-        const unameList: string[] = [];
-        rosterSnap.docs?.forEach((d: any) => {
-          const u = String(d.data()?.username || '').trim().toLowerCase();
-          if (u) unameList.push(u);
-        });
-        setExistingUsernames(unameList);
-      }
+      // Fetch global existing usernames across collections for duplicate detection in preview
+      const [rosterSnap, usersSnap, globalUsernamesSnap] = await Promise.all([
+        getDocs(query(collection(db, 'individualStudents'), limit(500))).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(db, 'users'), limit(500))).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(db, 'usernames'), limit(500))).catch(() => ({ docs: [] } as any)),
+      ]);
+      const unameSet = new Set<string>();
+      rosterSnap.docs?.forEach((d: any) => {
+        const u = normalizeUsername(String(d.data()?.username || ''));
+        if (u) unameSet.add(u);
+      });
+      usersSnap.docs?.forEach((d: any) => {
+        const u = normalizeUsername(String(d.data()?.username || ''));
+        if (u) unameSet.add(u);
+      });
+      globalUsernamesSnap.docs?.forEach((d: any) => {
+        const u = normalizeUsername(d.id || String(d.data()?.username || ''));
+        if (u) unameSet.add(u);
+      });
+      setExistingUsernames(Array.from(unameSet));
 
       setSchoolInfo({ id: schoolId, name: detectedSchoolName || 'Partner School' });
       setPrograms(list);
@@ -182,13 +191,23 @@ const SchoolStudentOnboardingV2: React.FC = () => {
       return toast.error('Your school session has expired.');
     }
     const trimmedName = form.fullName.trim();
-    const cleanUsername = form.username.toLowerCase().replace(/\s+/g, '').trim();
+    const cleanUsername = normalizeUsername(form.username);
     if (!trimmedName || !cleanUsername || !form.class) {
       return toast.error('Complete the required student fields.');
     }
 
     setSaving(true);
     try {
+      // Enforce global username uniqueness across the entire portal
+      const usernameCheck = await checkUsernameAvailability(cleanUsername);
+      if (!usernameCheck.available) {
+        setSaving(false);
+        return toast.error(
+          usernameCheck.reason ||
+            `The username "${cleanUsername}" is already taken. Please pick another username.`
+        );
+      }
+
       const program = programs.find((p) => p.id === form.programId);
       const programName = program?.name || program?.title || 'General School Programme';
       let issuedCredentials: { username: string; accessCode: string; portal: string } | null =
@@ -225,9 +244,9 @@ const SchoolStudentOnboardingV2: React.FC = () => {
         }
       }
 
+      const studentId = `sch_${cleanUsername}_${Date.now().toString(36)}`;
       // 2. Direct Firestore fallback
       if (!issuedCredentials) {
-        const studentId = `sch_${cleanUsername}_${Date.now().toString(36)}`;
         const accessCode = generateAccessCode();
         const targetSchoolId =
           schoolInfo.id ||
@@ -276,35 +295,38 @@ const SchoolStudentOnboardingV2: React.FC = () => {
         };
 
         const standbyDb = getStandbyFirestore();
-        // Also check if an older record with the same username already exists in this school so its code is updated too
-        const existingSameUserIds = new Set<string>([studentId]);
-        try {
-          const [existingIndSnap, existingStdSnap] = await Promise.all([
-            getDocs(query(collection(db, 'individualStudents'), where('username', '==', cleanUsername), limit(5))),
-            getDocs(query(collection(db, 'students'), where('username', '==', cleanUsername), limit(5))),
-          ]);
-          for (const d of [...existingIndSnap.docs, ...existingStdSnap.docs]) {
-            const dData = d.data() || {};
-            if (!targetSchoolId || !dData.schoolId || dData.schoolId === targetSchoolId) {
-              existingSameUserIds.add(d.id);
-            }
-          }
-        } catch {
-          // Non-fatal lookup
-        }
-
-        const writeOps: Promise<any>[] = [];
-        for (const targetDocId of existingSameUserIds) {
+        const writeOps: Promise<any>[] = [
+          setDoc(doc(db, 'individualStudents', studentId), studentRecord, { merge: true }),
+          setDoc(doc(db, 'students', studentId), studentRecord, { merge: true }),
+          setDoc(
+            doc(db, 'users', studentId),
+            {
+              uid: studentId,
+              studentDocId: studentId,
+              name: trimmedName,
+              fullName: trimmedName,
+              username: cleanUsername,
+              role: 'STUDENT',
+              schoolId: targetSchoolId,
+              schoolName: targetSchoolName,
+              class: canonicalClass,
+              grade: canonicalClass,
+              accessCode,
+              accessCodeHash,
+              portalAccessEnabled: true,
+              accountStatus: 'ACTIVE',
+              status: 'ACTIVE',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          ),
+        ];
+        if (standbyDb) {
           writeOps.push(
-            setDoc(doc(db, 'individualStudents', targetDocId), studentRecord, { merge: true }),
-            setDoc(doc(db, 'students', targetDocId), studentRecord, { merge: true })
+            setDoc(doc(standbyDb, 'individualStudents', studentId), studentRecord, { merge: true }).catch(() => undefined),
+            setDoc(doc(standbyDb, 'students', studentId), studentRecord, { merge: true }).catch(() => undefined)
           );
-          if (standbyDb) {
-            writeOps.push(
-              setDoc(doc(standbyDb, 'individualStudents', targetDocId), studentRecord, { merge: true }).catch(() => undefined),
-              setDoc(doc(standbyDb, 'students', targetDocId), studentRecord, { merge: true }).catch(() => undefined)
-            );
-          }
         }
         await Promise.all(writeOps);
 
@@ -336,6 +358,14 @@ const SchoolStudentOnboardingV2: React.FC = () => {
           portal: '/portal/student',
         };
       }
+
+      await claimGlobalUsername(cleanUsername, {
+        uid: studentId,
+        docId: studentId,
+        role: 'STUDENT',
+        email: form.email.trim().toLowerCase(),
+        name: trimmedName,
+      });
 
       setCredentials(issuedCredentials);
       setForm({
@@ -453,20 +483,22 @@ const SchoolStudentOnboardingV2: React.FC = () => {
         const seenU = new Set(existingUsernames.map((u) => u.toLowerCase()));
 
         for (const row of activePreviewRows) {
-          if (seenU.has(row.username.toLowerCase())) {
+          const cleanRowU = normalizeUsername(row.username);
+          const globalCheck = await checkUsernameAvailability(cleanRowU);
+          if (seenU.has(cleanRowU) || !globalCheck.available) {
             localOutcomes.push({
               rowNumber: row.rowNumber,
               fullName: row.fullName,
-              username: row.username,
+              username: cleanRowU,
               className: row.className,
               programName: row.programName,
               status: 'SKIPPED_DUPLICATE',
-              errors: [`Username "${row.username}" already exists.`],
+              errors: [`Username "${cleanRowU}" is already taken across the portal.`],
             });
             continue;
           }
           try {
-            const studentId = `sch_${row.username}_${Date.now().toString(36)}_${row.rowNumber}`;
+            const studentId = `sch_${cleanRowU}_${Date.now().toString(36)}_${row.rowNumber}`;
             const suppliedCode = String((row as any).accessCode || '').trim().toUpperCase();
             const accessCode = suppliedCode || generateAccessCode();
             let accessCodeHash = '';
@@ -484,7 +516,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
               fullName: row.fullName,
               studentName: row.fullName,
               name: row.fullName,
-              username: row.username,
+              username: cleanRowU,
               accessCode,
               passcode: accessCode,
               code: accessCode,
@@ -516,12 +548,19 @@ const SchoolStudentOnboardingV2: React.FC = () => {
               );
             }
             await Promise.all(rowWrites);
+            await claimGlobalUsername(cleanRowU, {
+              uid: studentId,
+              docId: studentId,
+              role: 'STUDENT',
+              email: row.email || '',
+              name: row.fullName,
+            });
 
-            seenU.add(row.username.toLowerCase());
+            seenU.add(cleanRowU);
             localOutcomes.push({
               rowNumber: row.rowNumber,
               fullName: row.fullName,
-              username: row.username,
+              username: cleanRowU,
               className: row.className,
               programName: row.programName,
               accessCode,
@@ -607,12 +646,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
   };
   const print = () => {
     if (!credentials) return;
-    const w = window.open('', '_blank', 'noopener,noreferrer');
-    if (!w) return toast.error('Allow pop-ups to print.');
-    w.document.write(
-      `<html><head><title>Student Access</title><style>body{font-family:Arial;padding:48px}.card{max-width:560px;border:2px solid #b91c1c;border-radius:20px;padding:32px}.label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.08em}.value{font-size:22px;font-weight:800;margin:6px 0 20px}</style></head><body><div class="card"><h1>Jaystarbliss Studios</h1><h2>Student Portal Access</h2><div class="label">Username</div><div class="value">${credentials.username}</div><div class="label">Access Code</div><div class="value">${credentials.accessCode}</div><div class="label">Portal</div><div class="value">${window.location.origin}${credentials.portal}</div></div><script>window.onload=()=>window.print()</script></body></html>`
-    );
-    w.document.close();
+    window.print();
   };
 
   return (

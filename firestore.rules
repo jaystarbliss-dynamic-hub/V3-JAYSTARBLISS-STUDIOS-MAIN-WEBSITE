@@ -229,6 +229,11 @@ service cloud.firestore {
       allow create, delete: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth();
       allow update: if true;
     }
+    match /assignmentSubmissions/{submissionId} {
+      allow read: if true;
+      allow create, update: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth() || true;
+      allow delete: if isAnyAdmin() || isStaffOrTutor();
+    }
     match /certificates/{certId} {
       allow read: if true;
       allow write: if isAnyAdmin() || isStaffOrTutor() || isAuth();

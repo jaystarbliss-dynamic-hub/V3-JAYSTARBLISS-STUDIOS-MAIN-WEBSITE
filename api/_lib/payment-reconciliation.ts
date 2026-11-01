@@ -169,6 +169,8 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
       schoolId: role === "school" ? schoolId || userId : schoolId || null,
       studentId: studentId || null,
       studentName: studentName || null,
+      studentIds: Array.isArray(metadata.studentIds) ? metadata.studentIds : (studentId ? [studentId] : []),
+      selectedItems: Array.isArray(metadata.selectedItems) ? metadata.selectedItems : null,
       tutorId: tutorId || null,
       tutorName: null,
       tutorEmail: null,
@@ -202,7 +204,7 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
       createdAt: new Date(),
       verifiedAt: new Date(),
       verifiedBy: verifiedUserId ? "portal_return" : "paystack_webhook",
-      walletCredited: Boolean(tutorId)
+      walletCredited: Boolean(tutorId || (Array.isArray(metadata.selectedItems) && metadata.selectedItems.some((i: any) => i.tutorId)))
     };
 
     if (tutorId) {
@@ -248,6 +250,30 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
           updatedAt: new Date().toISOString()
         }
       }, { merge: true });
+
+      // Update student document(s) for linked children to reflect active paid status
+      const targetStudentIds = Array.isArray(metadata.studentIds) ? metadata.studentIds : (studentId ? [studentId] : []);
+      for (const targetSid of targetStudentIds) {
+        if (!targetSid) continue;
+        const indRef = adminDb.collection("individualStudents").doc(targetSid);
+        const stdRef = adminDb.collection("students").doc(targetSid);
+        transaction.set(indRef, {
+          paymentStatus: "PAID",
+          status: "ACTIVE",
+          lastPaymentReference: reference,
+          lastPaidAt: paidAt.toISOString(),
+          paidThrough: paidThrough.toISOString(),
+          nextDueDate: paidThrough.toISOString()
+        }, { merge: true });
+        transaction.set(stdRef, {
+          paymentStatus: "PAID",
+          status: "ACTIVE",
+          lastPaymentReference: reference,
+          lastPaidAt: paidAt.toISOString(),
+          paidThrough: paidThrough.toISOString(),
+          nextDueDate: paidThrough.toISOString()
+        }, { merge: true });
+      }
     }
 
     if (enrollmentRef) transaction.set(enrollmentRef, {
@@ -270,7 +296,26 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
       updatedAt: new Date()
     }, { merge: true });
 
-    if (tutorId) transaction.set(adminDb.collection("staffWallets").doc(tutorId), { availableBalance: FieldValue.increment(plan.baseAmount), lifetimeEarned: FieldValue.increment(plan.baseAmount), updatedAt: new Date() }, { merge: true });
+    if (Array.isArray(metadata.selectedItems) && metadata.selectedItems.length > 0) {
+      // Credit each respective tutor according to their allocated program fees
+      const tutorAmounts = new Map<string, number>();
+      for (const item of metadata.selectedItems) {
+        const itemTid = asString(item.tutorId);
+        const itemAmt = Number(item.amount || 0);
+        if (itemTid && itemTid !== "lead_tutor" && itemAmt > 0) {
+          tutorAmounts.set(itemTid, (tutorAmounts.get(itemTid) || 0) + itemAmt);
+        }
+      }
+      for (const [tid, totalForTutor] of tutorAmounts.entries()) {
+        transaction.set(adminDb.collection("staffWallets").doc(tid), {
+          availableBalance: FieldValue.increment(totalForTutor),
+          lifetimeEarned: FieldValue.increment(totalForTutor),
+          updatedAt: new Date()
+        }, { merge: true });
+      }
+    } else if (tutorId) {
+      transaction.set(adminDb.collection("staffWallets").doc(tutorId), { availableBalance: FieldValue.increment(plan.baseAmount), lifetimeEarned: FieldValue.increment(plan.baseAmount), updatedAt: new Date() }, { merge: true });
+    }
   });
 
   if (!created) return { created: false, payment: null };

@@ -19,6 +19,7 @@ import { useToast } from '../contexts/ToastContext';
 import { JaystarblissIcon } from '../components/common/JaystarblissLogo';
 import portalWallpaper from '../assets/jdi login bg.png';
 import { getFriendlyErrorMessage, logInternalDiagnostic } from '../utils/friendlyErrors';
+import { reconcileParentAndChildrenAccount } from '../lib/usernameRegistry';
 import './Portal.css';
 import './SecurePortalTheme.css';
 
@@ -709,10 +710,17 @@ const SecurePortalLogin: React.FC = () => {
     let isVerifiedParent = initialRoleUpper === 'PARENT';
     let parentName = data.fullName || data.name || user.displayName || '';
     try {
-      const parentDoc = await getDoc(doc(db, 'parents', user.uid)).catch(() => null);
-      if (parentDoc?.exists()) {
+      const reconciled = await reconcileParentAndChildrenAccount(user.uid, email, parentName);
+      if (reconciled.isParent) {
         isVerifiedParent = true;
-        parentName = parentName || parentDoc.data()?.fullName || parentDoc.data()?.name || '';
+        parentName = reconciled.parentName || parentName;
+      }
+      if (!isVerifiedParent) {
+        const parentDoc = await getDoc(doc(db, 'parents', user.uid)).catch(() => null);
+        if (parentDoc?.exists()) {
+          isVerifiedParent = true;
+          parentName = parentName || parentDoc.data()?.fullName || parentDoc.data()?.name || '';
+        }
       }
       if (!isVerifiedParent && email) {
         const legacyParentSnap = await getDocs(query(collection(db, 'users'), where('email', '==', email), limit(5))).catch(() => null);

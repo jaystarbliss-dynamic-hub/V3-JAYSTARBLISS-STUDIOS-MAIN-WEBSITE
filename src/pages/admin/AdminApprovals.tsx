@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, doc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, limit, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, addDoc, updateDoc, getDocs, limit, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
 import { 
   CheckCircle2, XCircle, Clock, ExternalLink, Award, 
   Calendar, Phone, Mail, Eye, ChevronDown, Search, Loader2, X,
@@ -11,6 +11,7 @@ import SEO from '../../components/ui/SEO';
 import { StudentEnrollmentApprovalModal } from '../../components/admin/StudentEnrollmentApprovalModal';
 import { resolveRealName } from '../../utils/userNames';
 import { formatNormalizedClassDisplay, normalizeClassName } from '../../lib/classes';
+import { claimGlobalUsername, ensureUniqueGeneratedUsername } from '../../lib/usernameRegistry';
 
 const AdminApprovals: React.FC = () => {
   const { toast } = useToast();
@@ -85,11 +86,12 @@ const AdminApprovals: React.FC = () => {
     try {
       const accessCode = generateAccessCode();
       const subjects = Array.isArray(req.subjects) ? req.subjects : (req.subjects || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+      const uniqueUsername = await ensureUniqueGeneratedUsername(makeUniqueUsername(req.name, req.email, req.id));
       
       const canonicalStudentClass = normalizeClassName(req.class || req.grade, 'Grade 7');
-      await addDoc(collection(db, 'students'), {
+      const stdDoc = await addDoc(collection(db, 'students'), {
         fullName: req.name,
-        username: makeUniqueUsername(req.name, req.email, req.id),
+        username: uniqueUsername,
         email: (req.email || '').toLowerCase(),
         phone: req.phone || '',
         parentPhone: req.parentPhone || '',
@@ -97,28 +99,43 @@ const AdminApprovals: React.FC = () => {
         grade: canonicalStudentClass,
         accessCode,
         parentId: req.parentId || null,
+        isIndependent: !req.parentId,
+        registrationType: req.parentId ? 'parent' : 'individual',
         subjects,
         registeredAt: serverTimestamp()
       });
 
-      await addDoc(collection(db, 'individualStudents'), {
+      await setDoc(doc(db, 'individualStudents', stdDoc.id), {
         fullName: req.name,
-        username: makeUniqueUsername(req.name, req.email, req.id),
+        username: uniqueUsername,
         email: (req.email || '').toLowerCase(),
+        class: canonicalStudentClass,
+        grade: canonicalStudentClass,
         accessCode,
         subjects,
         status: 'ACTIVE',
         parentId: req.parentId || null,
         parentEmail: req.parentEmail || req.email || '',
+        isIndependent: !req.parentId,
+        registrationType: req.parentId ? 'parent' : 'individual',
         createdAt: serverTimestamp()
+      }, { merge: true });
+
+      await claimGlobalUsername(uniqueUsername, {
+        uid: stdDoc.id,
+        docId: stdDoc.id,
+        role: 'STUDENT',
+        email: (req.email || '').toLowerCase(),
+        name: req.name,
       });
 
       await updateDoc(doc(db, 'student_requests', req.id), {
         status: 'approved',
+        username: uniqueUsername,
         accessCode,
         approvedAt: serverTimestamp()
       });
-      toast.success(`Student Approved! Access code: ${accessCode}`);
+      toast.success(`Student Approved! Username: ${uniqueUsername} | Access code: ${accessCode}`);
     } catch (e: any) {
       toast.error('Error: ' + e.message);
     } finally {
@@ -133,8 +150,8 @@ const AdminApprovals: React.FC = () => {
 
     try {
       const accessCode = generateAccessCode();
-      const username = makeUniqueUsername(studentName, req.parentEmail || '', req.id);
       const studentRecordId = `enr_${req.id}`;
+      const username = await ensureUniqueGeneratedUsername(makeUniqueUsername(studentName, req.parentEmail || '', req.id), [studentRecordId]);
       const subjects = Array.isArray(req.subjects)
         ? req.subjects.filter((subject: unknown): subject is string => typeof subject === 'string' && Boolean(subject.trim()))
         : String(req.subjects || '').split(',').map((subject: string) => subject.trim()).filter(Boolean);
@@ -148,6 +165,8 @@ const AdminApprovals: React.FC = () => {
         parentId,
         parentEmail,
         parentName: req.parentName || '',
+        isIndependent: false,
+        registrationType: 'parent',
         subjects,
         plan: req.plan || '',
         grade: normalizeClassName(req.class || req.grade || req.studentClass || req.studentAge, 'Grade 1'),
@@ -165,6 +184,13 @@ const AdminApprovals: React.FC = () => {
           ...sharedStudentRecord,
           firebaseUid: null,
         }, { merge: true }),
+        claimGlobalUsername(username, {
+          uid: studentRecordId,
+          docId: studentRecordId,
+          role: 'STUDENT',
+          email: req.studentEmail || parentEmail,
+          name: studentName,
+        }),
       ]);
 
       await updateDoc(doc(db, 'enrollment_requests', req.id), {
@@ -218,32 +244,32 @@ const AdminApprovals: React.FC = () => {
         createdAt: serverTimestamp()
       }, { merge: true });
 
-      // 2. Look up existing user account by email to update role directly
+      // 2. Look up existing user account by email to update role ONLY if not already a PARENT or SCHOOL
       let matchedUserId = '';
       if (cleanEmail) {
         try {
           const userQuery = query(collection(db, 'users'), where('email', '==', cleanEmail), limit(1));
           const userSnap = await getDocs(userQuery);
           if (!userSnap.empty) {
-            matchedUserId = userSnap.docs[0].id;
-            await setDoc(doc(db, 'users', matchedUserId), {
-              role: 'staff',
-              name: tutorRealName,
-              fullName: tutorRealName,
-              accountStatus: 'ACTIVE',
-              status: 'ACTIVE',
-              updatedAt: serverTimestamp()
-            }, { merge: true });
+            const existingUserDoc = userSnap.docs[0];
+            const existingRoleUpper = String(existingUserDoc.data()?.role || '').toUpperCase();
+            if (existingRoleUpper !== 'PARENT' && existingRoleUpper !== 'SCHOOL') {
+              matchedUserId = existingUserDoc.id;
+              await setDoc(doc(db, 'users', matchedUserId), {
+                role: 'staff',
+                name: tutorRealName,
+                fullName: tutorRealName,
+                accountStatus: 'ACTIVE',
+                status: 'ACTIVE',
+                updatedAt: serverTimestamp()
+              }, { merge: true });
 
-            // Also mirror tutor document under the user's primary UID
-            await setDoc(doc(db, 'tutors', matchedUserId), {
-              ...tutorPayload,
-              userId: matchedUserId,
-              firebaseUid: matchedUserId
-            }, { merge: true });
-
-            // Clean up any stale parent record to avoid role conflict
-            await deleteDoc(doc(db, 'parents', matchedUserId)).catch(() => null);
+              await setDoc(doc(db, 'tutors', matchedUserId), {
+                ...tutorPayload,
+                userId: matchedUserId,
+                firebaseUid: matchedUserId
+              }, { merge: true });
+            }
           }
         } catch (uErr) {
           console.warn('User profile sync notice:', uErr);

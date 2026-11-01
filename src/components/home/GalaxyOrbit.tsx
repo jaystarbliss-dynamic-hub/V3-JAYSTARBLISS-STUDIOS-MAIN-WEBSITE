@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
-import LogoGlobe from "./LogoGlobe";
+import React, { useEffect, useRef, Suspense, lazy } from 'react';
 import { Code, Monitor, Music, Paintbrush, Megaphone, Lightbulb } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+
+const LogoGlobe = lazy(() => import("./LogoGlobe"));
 
 const GalaxyOrbit: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -164,7 +165,9 @@ const GalaxyOrbit: React.FC = () => {
       <div ref={roRef} className="orbit-path path-outer" />
       
       <div className="z-20 relative flex items-center justify-center" onDoubleClick={() => navigate('/portal')}>
-        <LogoGlobe />
+        <Suspense fallback={<div className="w-48 h-48 md:w-56 md:h-56 rounded-full bg-brand-red/15 border border-brand-red/30 animate-pulse" />}>
+          <LogoGlobe />
+        </Suspense>
       </div>
 
       {/* PLANETS */}

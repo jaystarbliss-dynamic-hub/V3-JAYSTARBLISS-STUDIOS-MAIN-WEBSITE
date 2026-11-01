@@ -398,15 +398,238 @@ export const handler: Handler = async event => {
 
     // Parent Role
     if (role === "parent") {
-      const [payments, enrollments, students, notificationSnap] = await Promise.all([
-        docs("payments", "parentId", decoded.uid, 100),
-        docs("enrollment_requests", "parentId", decoded.uid, 100),
-        Promise.all([
-          docs("individualStudents", "parentId", decoded.uid, 100),
-          docs("students", "parentId", decoded.uid, 100)
-        ]).then(([a, b]) => [...a, ...b].map(safeStudent)),
-        adminDb.collection("notifications").where("recipientId", "==", decoded.uid).limit(25).get()
+      const parentUid = decoded.uid;
+      const parentEmail = (decoded.email || (user as any).email || "").toLowerCase().trim();
+
+      // Read parent profile from both users and parents collections for explicit child IDs
+      const explicitChildIds = new Set<string>();
+      const [userSnap, parentProfileSnap] = await Promise.all([
+        adminDb.collection("users").doc(parentUid).get().catch(() => null),
+        adminDb.collection("parents").doc(parentUid).get().catch(() => null)
       ]);
+
+      const harvestChildIds = (data: any) => {
+        if (!data) return;
+        const arr = [
+          ...(Array.isArray(data.children) ? data.children : []),
+          ...(Array.isArray(data.linkedStudentIds) ? data.linkedStudentIds : []),
+          ...(Array.isArray(data.studentIds) ? data.studentIds : [])
+        ];
+        arr.forEach(item => {
+          const cid = String(item && typeof item === "object" ? item.id || item.studentId : item || "").trim();
+          if (cid) explicitChildIds.add(cid);
+        });
+      };
+      harvestChildIds(userSnap?.exists ? userSnap.data() : null);
+      harvestChildIds(parentProfileSnap?.exists ? parentProfileSnap.data() : null);
+
+      // Query individualStudents and students strictly by parentUid and parentEmail
+      const childQueries: Promise<any>[] = [
+        adminDb.collection("individualStudents").where("parentId", "==", parentUid).limit(100).get().catch(() => ({ docs: [] })),
+        adminDb.collection("individualStudents").where("parentUid", "==", parentUid).limit(100).get().catch(() => ({ docs: [] })),
+        adminDb.collection("students").where("parentId", "==", parentUid).limit(100).get().catch(() => ({ docs: [] })),
+        adminDb.collection("students").where("parentUid", "==", parentUid).limit(100).get().catch(() => ({ docs: [] })),
+        adminDb.collection("enrollment_requests").where("parentId", "==", parentUid).limit(100).get().catch(() => ({ docs: [] }))
+      ];
+
+      if (parentEmail) {
+        childQueries.push(
+          adminDb.collection("individualStudents").where("parentEmail", "==", parentEmail).limit(100).get().catch(() => ({ docs: [] })),
+          adminDb.collection("students").where("parentEmail", "==", parentEmail).limit(100).get().catch(() => ({ docs: [] })),
+          adminDb.collection("enrollment_requests").where("parentEmail", "==", parentEmail).limit(100).get().catch(() => ({ docs: [] }))
+        );
+      }
+
+      // Explicit child ID lookups
+      if (explicitChildIds.size > 0) {
+        Array.from(explicitChildIds).forEach(cid => {
+          childQueries.push(
+            adminDb.collection("individualStudents").doc(cid).get().then(snap => snap.exists ? { docs: [snap] } : { docs: [] }).catch(() => ({ docs: [] })),
+            adminDb.collection("students").doc(cid).get().then(snap => snap.exists ? { docs: [snap] } : { docs: [] }).catch(() => ({ docs: [] }))
+          );
+        });
+      }
+
+      const [childSnapsResult, notificationSnap] = await Promise.all([
+        Promise.all(childQueries),
+        adminDb.collection("notifications").where("recipientId", "==", parentUid).limit(25).get().catch(() => ({ docs: [] }))
+      ]);
+
+      const verifiedStudentMap = new Map<string, any>();
+      const enrollmentRequestsMap = new Map<string, any>();
+
+      childSnapsResult.forEach((snap: any) => {
+        if (!snap?.docs) return;
+        snap.docs.forEach((d: any) => {
+          const docData = plain(d.data()) || {};
+          const colName = d.ref?.parent?.id || "";
+          
+          if (colName === "enrollment_requests") {
+            // Verify enrollment belongs to this parent
+            const erParentId = String(docData.parentId || docData.parentUid || "").trim();
+            const erParentEmail = String(docData.parentEmail || "").toLowerCase().trim();
+            if (erParentId === parentUid || (parentEmail && erParentEmail === parentEmail)) {
+              enrollmentRequestsMap.set(d.id, { id: d.id, ...docData });
+            }
+            return;
+          }
+
+          // Strict security check for student records: MUST belong to this parent!
+          const sParentId = String(docData.parentId || docData.parentUid || docData.parentUserId || docData.guardianId || "").trim();
+          const sParentEmail = String(docData.parentEmail || docData.guardianEmail || "").toLowerCase().trim();
+          const isExplicit = explicitChildIds.has(d.id) || explicitChildIds.has(String(docData.studentDocId || ""));
+
+          const isVerified = (sParentId && sParentId === parentUid) || 
+                             (parentEmail && sParentEmail && sParentEmail === parentEmail) || 
+                             isExplicit;
+
+          if (isVerified) {
+            const canonicalId = String(docData.studentDocId || d.id);
+            if (!verifiedStudentMap.has(canonicalId)) {
+              verifiedStudentMap.set(canonicalId, safeStudent({ id: d.id, ...docData }));
+            }
+          }
+        });
+      });
+
+      const verifiedStudents = Array.from(verifiedStudentMap.values());
+      const verifiedStudentIds = verifiedStudents.map(s => s.id);
+      const enrollments = Array.from(enrollmentRequestsMap.values());
+
+      // Fetch payments belonging strictly to this parent or their verified children
+      const paymentQueries = [
+        adminDb.collection("payments").where("parentId", "==", parentUid).limit(100).get().catch(() => ({ docs: [] })),
+        adminDb.collection("payments").where("userId", "==", parentUid).limit(100).get().catch(() => ({ docs: [] }))
+      ];
+
+      if (parentEmail) {
+        paymentQueries.push(
+          adminDb.collection("payments").where("email", "==", parentEmail).limit(100).get().catch(() => ({ docs: [] })),
+          adminDb.collection("payments").where("payerEmail", "==", parentEmail).limit(100).get().catch(() => ({ docs: [] }))
+        );
+      }
+
+      if (verifiedStudentIds.length > 0) {
+        // Query payments for verified student IDs in chunks of 10
+        for (let i = 0; i < verifiedStudentIds.length; i += 10) {
+          const chunk = verifiedStudentIds.slice(i, i + 10);
+          paymentQueries.push(
+            adminDb.collection("payments").where("studentId", "in", chunk).limit(100).get().catch(() => ({ docs: [] }))
+          );
+        }
+      }
+
+      const paymentSnaps = await Promise.all(paymentQueries);
+      const paymentMap = new Map<string, any>();
+      paymentSnaps.forEach(snap => {
+        if (!snap?.docs) return;
+        snap.docs.forEach((d: any) => {
+          if (!paymentMap.has(d.id)) {
+            paymentMap.set(d.id, { id: d.id, ...plain(d.data()) });
+          }
+        });
+      });
+
+      const payments = Array.from(paymentMap.values()).sort(
+        (a, b) => new Date(b.paidAt || b.createdAt || 0).getTime() - new Date(a.paidAt || a.createdAt || 0).getTime()
+      );
+
+      // Build structured hierarchical fee items per verified child
+      const feeItems: any[] = [];
+      const nowMs = Date.now();
+      const fourWeeksMs = 28 * 24 * 60 * 60 * 1000;
+
+      verifiedStudents.forEach(child => {
+        const childName = child.fullName || child.studentName || child.name || "Student";
+        const childPlan = child.plan || child.track || child.programName || "Academy Track";
+        const childFee = Number(child.tuitionFee || child.fee || child.amount || 35000);
+        const childTutorId = String(child.tutorId || child.staffId || child.assignedTutorId || child.assignedStaffId || child.instructorId || "lead_tutor").trim();
+        const childTutorName = String(child.tutorName || child.assignedTutorName || child.mentorName || "Assigned Academy Tutor").trim();
+
+        // Check if child has multi-program breakdown in enrolledPrograms, programs, or tutorAssignments
+        if (Array.isArray(child.enrolledPrograms) && child.enrolledPrograms.length > 0) {
+          child.enrolledPrograms.forEach((ep: any, index: number) => {
+            const progId = String(ep.id || ep.programId || `prog_${index}`);
+            const progName = String(ep.name || ep.programName || ep.title || childPlan);
+            const progAmount = Number(ep.fee || ep.amount || ep.tuitionFee || Math.round(childFee / child.enrolledPrograms.length));
+            const progTutorId = String(ep.tutorId || childTutorId);
+            const progTutorName = String(ep.tutorName || childTutorName);
+
+            // Determine paid status
+            const hasMatchingPaid = payments.some(p => {
+              const matchesStudent = p.studentId === child.id;
+              const matchesProg = !p.planName || p.planName.toLowerCase().includes(progName.toLowerCase()) || p.planId === progId;
+              const paidTime = new Date(p.paidAt || p.createdAt || 0).getTime();
+              return matchesStudent && matchesProg && (nowMs - paidTime < fourWeeksMs);
+            });
+
+            feeItems.push({
+              id: `${child.id}::${progTutorId}::${progId}`,
+              childId: child.id,
+              childName,
+              childUsername: child.username,
+              childClass: child.class || child.grade || "Standard Track",
+              tutorId: progTutorId,
+              tutorName: progTutorName,
+              programId: progId,
+              programName: progName,
+              amount: progAmount > 0 ? progAmount : 15000,
+              status: (ep.status === "PAID" || hasMatchingPaid) ? "PAID" : "DUE",
+              cycle: ep.cycle || "monthly"
+            });
+          });
+        } else if (Array.isArray(child.subjects) && child.subjects.length > 1) {
+          // Multiple subjects listed: itemize each subject
+          const perSubjectFee = Math.round(childFee / child.subjects.length);
+          child.subjects.forEach((subj: string, index: number) => {
+            const progId = `subj_${index}_${subj.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+            const progName = String(subj).trim();
+
+            const hasMatchingPaid = payments.some(p => {
+              const matchesStudent = p.studentId === child.id;
+              const paidTime = new Date(p.paidAt || p.createdAt || 0).getTime();
+              return matchesStudent && (nowMs - paidTime < fourWeeksMs);
+            });
+
+            feeItems.push({
+              id: `${child.id}::${childTutorId}::${progId}`,
+              childId: child.id,
+              childName,
+              childUsername: child.username,
+              childClass: child.class || child.grade || "Standard Track",
+              tutorId: childTutorId,
+              tutorName: childTutorName,
+              programId: progId,
+              programName: progName,
+              amount: perSubjectFee > 0 ? perSubjectFee : 15000,
+              status: hasMatchingPaid ? "PAID" : "DUE",
+              cycle: "monthly"
+            });
+          });
+        } else {
+          // Single program item
+          const hasMatchingPaid = payments.some(p => {
+            const matchesStudent = p.studentId === child.id;
+            const paidTime = new Date(p.paidAt || p.createdAt || 0).getTime();
+            return matchesStudent && (nowMs - paidTime < fourWeeksMs);
+          });
+
+          feeItems.push({
+            id: `${child.id}::${childTutorId}::core_program`,
+            childId: child.id,
+            childName,
+            childUsername: child.username,
+            childClass: child.class || child.grade || "Standard Track",
+            tutorId: childTutorId,
+            tutorName: childTutorName,
+            programId: "core_program",
+            programName: childPlan,
+            amount: childFee > 0 ? childFee : 35000,
+            status: hasMatchingPaid ? "PAID" : "DUE",
+            cycle: "monthly"
+          });
+        }
+      });
 
       return {
         statusCode: 200,
@@ -418,7 +641,8 @@ export const handler: Handler = async event => {
           payments,
           billingSummary: billingSummary(payments),
           enrollments,
-          students,
+          students: verifiedStudents,
+          feeItems,
           notifications: notificationSnap.docs.map(doc => ({ id: doc.id, ...plain(doc.data()) }))
         })
       };

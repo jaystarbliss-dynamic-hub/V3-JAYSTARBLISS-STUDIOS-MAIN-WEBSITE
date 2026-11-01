@@ -4,13 +4,34 @@ import { calculateCustomerCharge, getFeePolicy, getPaymentConfig, getUserRecord,
 
 const token = (event: any) => { const header = event.headers?.authorization || event.headers?.Authorization || ""; return header.startsWith("Bearer ") ? header.slice(7) : ""; };
 const json = (statusCode: number, body: Record<string, unknown>) => ({ statusCode, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify(body) });
-const findStudent = async (studentId: string, ownerId: string, ownerType: "parent" | "school") => {
+const findStudent = async (studentId: string, ownerId: string, ownerType: "parent" | "school", userEmail?: string) => {
   if (!studentId) return null;
+  const parentEmailNorm = String(userEmail || "").toLowerCase().trim();
   for (const name of ["individualStudents", "students"]) {
     const snap = await adminDb.collection(name).doc(studentId).get();
     if (!snap.exists) continue;
     const student = snap.data() || {};
-    const owned = ownerType === "parent" ? String(student.parentId || "") === ownerId : String(student.schoolId || "") === ownerId;
+    let owned = false;
+    if (ownerType === "parent") {
+      const sParentId = String(student.parentId || student.parentUid || student.parentUserId || "");
+      const sParentEmail = String(student.parentEmail || student.guardianEmail || "").toLowerCase().trim();
+      owned = (sParentId && sParentId === ownerId) || (parentEmailNorm && sParentEmail === parentEmailNorm);
+      if (!owned) {
+        // Also check parent doc in users / parents collections
+        const [uSnap, pSnap] = await Promise.all([
+          adminDb.collection("users").doc(ownerId).get().catch(() => null),
+          adminDb.collection("parents").doc(ownerId).get().catch(() => null)
+        ]);
+        const checkChildren = (d: any) => {
+          if (!d) return false;
+          const list = [...(Array.isArray(d.children) ? d.children : []), ...(Array.isArray(d.linkedStudentIds) ? d.linkedStudentIds : [])];
+          return list.some((it: any) => String(it && typeof it === "object" ? it.id || it.studentId : it) === studentId);
+        };
+        owned = checkChildren(uSnap?.exists ? uSnap.data() : null) || checkChildren(pSnap?.exists ? pSnap.data() : null);
+      }
+    } else {
+      owned = String(student.schoolId || "") === ownerId;
+    }
     if (!owned) throw new Error("STUDENT_OWNER_MISMATCH");
     return { id: snap.id, ...student };
   }
@@ -47,14 +68,44 @@ export const handler: Handler = async (event) => {
       studentId = studentId || String(enrollment.studentId || "").trim();
     }
 
+    // Multi-item hierarchical tuition checkout for parents
+    let multiItems: any[] = [];
+    if (actualRole === "parent" && Array.isArray(body.selectedItems) && body.selectedItems.length > 0) {
+      multiItems = body.selectedItems;
+      for (const item of multiItems) {
+        const cId = String(item.childId || "").trim();
+        if (cId) {
+          await findStudent(cId, decoded.uid, "parent", decoded.email);
+        }
+      }
+      const sumAmount = multiItems.reduce((acc, item) => acc + Number(item.amount || 0), 0);
+      const uniqueChildNames = Array.from(new Set(multiItems.map((i: any) => i.childName).filter(Boolean)));
+      const compositeName = body.planName || (uniqueChildNames.length > 0 
+        ? `Tuition: ${uniqueChildNames.join(", ")} (${multiItems.length} Program${multiItems.length > 1 ? 's' : ''})`
+        : `Tuition Settlement (${multiItems.length} Items)`);
+      
+      plan = {
+        id: "parent_multi_tuition",
+        name: compositeName,
+        baseAmount: sumAmount,
+        durationWeeks: 4,
+        teachingModes: ["Standard Delivery", "Hybrid / Physical"],
+        role: "student",
+        active: true
+      };
+      planId = plan.id;
+    }
+
     // Resolve the selected child before applying any parent billing configuration.
     // For parent payments, the approved child's tuitionFee/fee is the authoritative
     // amount whenever it exists. This prevents a stale parent-level billing record
     // (for example ₦45,000) from replacing an approved child fee (for example ₦35,000).
-    if (actualRole === "parent" && studentId) student = await findStudent(studentId, decoded.uid, "parent");
+    if (actualRole === "parent" && studentId && multiItems.length === 0) {
+      student = await findStudent(studentId, decoded.uid, "parent", decoded.email);
+    }
 
     const customAmount = Number(body.amount || body.customAmount || 0);
-    let plan = config.plans[planId];
+    if (!plan) plan = config.plans[planId];
 
     let assignedBilling = (user as any).billing || null;
     let schoolDocData: any = null;
@@ -68,7 +119,7 @@ export const handler: Handler = async (event) => {
     }
 
     // Parent billing is child-specific when the selected student has an approved fee.
-    if (actualRole === "parent" && student) {
+    if (actualRole === "parent" && student && multiItems.length === 0) {
       const childAmount = Number(student.tuitionFee ?? student.fee ?? student.amount ?? 0);
       if (childAmount > 0) {
         assignedBilling = {
@@ -84,7 +135,7 @@ export const handler: Handler = async (event) => {
 
     // If the parent is paying an enrollment request before the student record exists,
     // use the amount recorded on the request when available.
-    if (actualRole === "parent" && !student && enrollment) {
+    if (actualRole === "parent" && !student && enrollment && multiItems.length === 0) {
       const enrollmentAmount = Number(enrollment.tuitionFee ?? enrollment.fee ?? enrollment.amount ?? 0);
       if (enrollmentAmount > 0) {
         assignedBilling = {
@@ -100,7 +151,7 @@ export const handler: Handler = async (event) => {
 
     // Admin-assigned billing remains authoritative for records without a child-specific
     // approved fee. Client custom amounts are accepted only when explicitly permitted.
-    if (assignedBilling && Number(assignedBilling.baseAmount) > 0 && assignedBilling.status !== "DISABLED") {
+    if (!multiItems.length && assignedBilling && Number(assignedBilling.baseAmount) > 0 && assignedBilling.status !== "DISABLED") {
       const cycle = String(assignedBilling.cycle || body.cycle || "monthly").toLowerCase();
       const baseAmt = customAmount > 0 && Boolean(body.allowCustomAmount) ? customAmount : Number(assignedBilling.baseAmount);
       plan = {
@@ -132,7 +183,7 @@ export const handler: Handler = async (event) => {
     if (!plan) return json(400, { error: "The selected payment plan or fee is unavailable." });
     if (actualRole === "school" && plan.role !== "school" && !customAmount && !assignedBilling) return json(400, { error: "Please select a school payment plan." });
     if (actualRole !== "school" && plan.role !== "student" && !customAmount && !assignedBilling) return json(400, { error: "Please select a parent/student payment plan." });
-    if (actualRole === "parent" && !studentId && !enrollmentRequestId && !customAmount && !assignedBilling) return json(400, { error: "Select the child this parent payment is for." });
+    if (actualRole === "parent" && !studentId && !enrollmentRequestId && !customAmount && !assignedBilling && multiItems.length === 0) return json(400, { error: "Select the child or program this parent payment is for." });
 
     if (actualRole === "school") {
       const schoolId = String((user as any).schoolId || decoded.uid);
@@ -183,13 +234,15 @@ export const handler: Handler = async (event) => {
           estimatedCustomerTotal: chargePreview.totalAmount,
           durationWeeks,
           teachingMode,
-          studentId: studentId || null,
-          studentName: student?.fullName || student?.studentName || enrollment?.studentName || null,
-          tutorId: tutorId || null,
+          studentId: studentId || (multiItems.length > 0 ? multiItems[0].childId : null),
+          studentName: student?.fullName || student?.studentName || enrollment?.studentName || (multiItems.length > 0 ? Array.from(new Set(multiItems.map(i => i.childName))).join(", ") : null),
+          tutorId: tutorId || (multiItems.length > 0 ? multiItems[0].tutorId : null),
+          selectedItems: multiItems.length > 0 ? multiItems : null,
+          studentIds: multiItems.length > 0 ? Array.from(new Set(multiItems.map(i => i.childId))) : (studentId ? [studentId] : []),
           enrollmentRequestId: enrollmentRequestId || null,
           schoolId: schoolId || null,
           paymentMethod,
-          paymentSource: String(body.paymentSource || "This Quarter's Escrow Account")
+          paymentSource: String(body.paymentSource || "Parent Account Settlement")
         }
       })
     });

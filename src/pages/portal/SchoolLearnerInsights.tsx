@@ -5,6 +5,7 @@ import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/
 import { auth, db, getClientDatabases } from '../../lib/firebase';
 import { getEffectiveAuth } from '../../utils/impersonation';
 import { computeExamMaxScore, formatScoreSummary, isAttemptResultReleased, normalizeClassName, normalizeWorkType, resolvePartnerSchoolName } from '../../lib/classes';
+import { fetchAssignmentsForLearner, type LinkedLearnerProfile } from '../../lib/academicSyncEngine';
 import SEO from '../../components/ui/SEO';
 
 import { MetricGridSkeleton, RosterListSkeleton, DocumentReaderSkeleton } from '../../components/ui/Skeleton';
@@ -166,9 +167,25 @@ const clientFallbackApi = async (studentId?: string) => {
   const learner = rosterMap.get(studentId) || roster[0];
   if (!learner) throw new Error('That learner does not belong to your school.');
 
-  const [assessmentSnap, assignmentSnap, attendanceSnap, examAttempts] = await Promise.all([
+  const learnerSyncProfile: LinkedLearnerProfile = {
+    id: learner.id,
+    studentUid: learner.studentUid || '',
+    allIds: Array.from(new Set([learner.id, learner.studentUid].filter(Boolean) as string[])),
+    fullName: learner.fullName,
+    username: learner.username,
+    email: learner.email,
+    className: learner.className,
+    schoolId: resolvedSchoolId,
+    schoolAliases,
+    schoolName: schoolName || 'School',
+    programName: learner.track || '',
+    isSchoolStudent: true,
+    source: 'students',
+  };
+
+  const [assessmentSnap, unifiedAssignments, attendanceSnap, examAttempts] = await Promise.all([
     getDocs(query(collection(db, 'academic_assessments'), where('studentId', '==', studentId), limit(200))).catch(() => null),
-    getDocs(query(collection(db, 'assignments'), where('studentId', '==', studentId), limit(200))).catch(() => null),
+    fetchAssignmentsForLearner(learnerSyncProfile).catch(() => []),
     getDocs(query(collection(db, 'attendance'), where('studentId', '==', studentId), limit(300))).catch(() => null),
     getDocs(query(collection(db, 'jdiExamAttempts'), where('studentId', '==', studentId), limit(300))).catch(() => null),
   ]);
@@ -178,20 +195,17 @@ const clientFallbackApi = async (studentId?: string) => {
     return { id: d.id, title: String(a.title || 'Assessment'), subject: String(a.subject || 'General'), assessmentType: String(a.assessmentType || 'OTHER'), score: typeof a.score === 'number' ? a.score : null, feedback: String(a.feedback || ''), createdAt: asIso(a.createdAt), updatedAt: asIso(a.updatedAt) };
   }).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
 
-  const assignments: AssignmentItem[] = (assignmentSnap?.docs || []).map(d => {
-    const a = d.data() || {};
-    return {
-      id: d.id,
-      title: String(a.title || 'Assignment'),
-      subject: String(a.subject || a.track || 'General'),
-      status: String(a.status || 'ASSIGNED'),
-      grade: typeof a.grade === 'number' ? a.grade : typeof a.score === 'number' ? a.score : null,
-      maxPoints: typeof a.maxPoints === 'number' ? a.maxPoints : 100,
-      dueDate: asIso(a.dueDate),
-      submittedAt: asIso(a.submittedAt || a.updatedAt),
-      feedback: String(a.feedback || '')
-    };
-  }).sort((a, b) => String(b.submittedAt || b.dueDate || '').localeCompare(String(a.submittedAt || a.dueDate || '')));
+  const assignments: AssignmentItem[] = unifiedAssignments.map(a => ({
+    id: a.id,
+    title: a.title || 'Assignment',
+    subject: a.subject || a.programName || 'General',
+    status: a.status,
+    grade: typeof a.grade === 'number' ? a.grade : null,
+    maxPoints: a.maxMarks || 100,
+    dueDate: a.dueDate || null,
+    submittedAt: a.submittedAt || null,
+    feedback: a.feedback || ''
+  }));
 
   const attendance: Attendance[] = (attendanceSnap?.docs || []).map(d => {
     const a = d.data() || {};

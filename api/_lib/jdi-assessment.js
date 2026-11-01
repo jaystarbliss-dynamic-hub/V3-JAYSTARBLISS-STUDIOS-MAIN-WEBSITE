@@ -448,12 +448,20 @@ export function normalizeQuestions(input, gradingMode = "automatic") {
     const raw = input[index];
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { error: "Each question must be an object." };
     const id = String(raw.id || `q${index + 1}`).trim();
-    const prompt = String(raw.prompt || "").trim();
-    const type = String(raw.type || "single_choice");
-    const points = Number(raw.points ?? 1);
+    const prompt = String(raw.prompt || raw.title || "").trim();
+    const type = String(raw.type || "single_choice").trim();
+    const isResourceBlock = type === "learning_resource";
+    const defaultPoints = isResourceBlock ? 0 : 1;
+    const rawPoints = raw.points !== undefined && raw.points !== null && raw.points !== "" ? Number(raw.points) : defaultPoints;
+    const points = isResourceBlock ? 0 : rawPoints;
     if (!id || id.length > 120 || ids.has(id)) return { error: "Question IDs must be unique and no longer than 120 characters." };
     if (!prompt || prompt.length > 5000 || !TYPES.has(type)) return { error: "Each question needs valid text and a supported question type." };
-    if (!Number.isFinite(points) || points <= 0 || points > 1000) return { error: "Question marks must be greater than 0 and at most 1000." };
+    if (!Number.isFinite(points) || (isResourceBlock ? points < 0 : points < 0) || points > 1000) {
+      return { error: "Question marks must be between 0 and 1000." };
+    }
+    if (!isResourceBlock && points <= 0 && raw.submissionMethod !== "none") {
+      return { error: "Question marks must be greater than 0 and at most 1000." };
+    }
     ids.add(id);
 
     const options = Array.isArray(raw.options) ? raw.options : [];
@@ -493,6 +501,26 @@ export function normalizeQuestions(input, gradingMode = "automatic") {
           ),
         ].slice(0, 20)
       : [];
+
+    const resourceUrl = String(raw.resourceUrl || raw.videoUrl || "").trim().slice(0, 2000);
+    const submissionMethod = String(
+      raw.submissionMethod ||
+        (type === "link_submission"
+          ? "link"
+          : type === "file_submission"
+          ? "file"
+          : type === "practical_task"
+          ? "both"
+          : type === "learning_resource"
+          ? "none"
+          : "text")
+    ).trim();
+    const acceptedFileTypes = String(raw.acceptedFileTypes || ".pdf,.png,.jpg,.jpeg,.zip,.sb3,.py,.html,.docx,.pptx")
+      .trim()
+      .slice(0, 400);
+    const maxFileSizeMb = Math.max(1, Math.min(25, Number(raw.maxFileSizeMb || 10) || 10));
+    const deliverableInstructions = String(raw.deliverableInstructions || raw.instructions || "").trim().slice(0, 3000);
+
     questions.push({
       id,
       type,
@@ -501,8 +529,17 @@ export function normalizeQuestions(input, gradingMode = "automatic") {
       correctOptionIds: OBJECTIVE.has(type) ? correctOptionIds : [],
       acceptedAnswers: type === "short_answer" ? acceptedAnswers : [],
       points: Number(points.toFixed(2)),
-      required: raw.required !== false,
+      required: isResourceBlock ? false : raw.required !== false,
       ...(raw.explanation ? { explanation: String(raw.explanation).trim().slice(0, 2000) } : {}),
+      ...(resourceUrl ? { resourceUrl, videoUrl: resourceUrl } : {}),
+      ...(MANUAL_DELIVERABLE_TYPES.has(type) || isResourceBlock
+        ? {
+            submissionMethod,
+            acceptedFileTypes,
+            maxFileSizeMb,
+            ...(deliverableInstructions ? { deliverableInstructions } : {}),
+          }
+        : {}),
     });
   }
   const maxScore = Number(questions.reduce((sum, q) => sum + Number(q.points || 0), 0).toFixed(2));
@@ -564,7 +601,7 @@ export function validateExternalExamUrl(input) {
 
 /**
  * Validates examination creation/update payload for both EXTERNAL_LINK and NATIVE modes.
- * External-link examinations do not require duration, native questions, answer keys, or grading settings.
+ * Supports task-only practical assignments without requiring conventional question-and-answer fields.
  */
 export function validateExamCreationPayload(body = {}, existingDoc = null) {
   const deliveryMode = normalizeDeliveryMode(body.deliveryMode, body.deliveryMode ? existingDoc : body || existingDoc);
@@ -573,6 +610,13 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
   const description = String(body.description ?? body.instructions ?? existingDoc?.description ?? existingDoc?.instructions ?? "")
     .trim()
     .slice(0, 5000);
+  const resourceUrl = String(body.resourceUrl ?? body.videoUrl ?? existingDoc?.resourceUrl ?? existingDoc?.videoUrl ?? "")
+    .trim()
+    .slice(0, 2000);
+  const submissionFormat = String(body.submissionFormat ?? body.submissionMethod ?? existingDoc?.submissionFormat ?? "")
+    .trim()
+    .toLowerCase();
+  const isTaskOnlyAssignment = Boolean(body.isTaskOnlyAssignment ?? existingDoc?.isTaskOnlyAssignment);
   const rawStatus = String(body.status || "").trim().toLowerCase();
   const status =
     rawStatus === "published"
@@ -610,6 +654,7 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
       title,
       subject,
       description,
+      ...(resourceUrl ? { resourceUrl, videoUrl: resourceUrl } : {}),
       externalUrl: urlCheck.url,
       classIds,
       questions: [],
@@ -627,8 +672,34 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
     return { error: "Provide a whole-number duration from 1 to 300 minutes." };
   }
 
-  const rawQuestions = Array.isArray(body.questions) ? body.questions : [];
+  let rawQuestions = Array.isArray(body.questions) ? body.questions : [];
   const gradingMode = body.gradingMode === "manual" ? "manual" : "automatic";
+
+  // Synthesize a structured deliverable block when the tutor configures a Practical Task-Only assignment
+  // without conventional question-and-answer fields.
+  if (rawQuestions.length === 0 && (isTaskOnlyAssignment || ["link", "file", "both", "none", "text"].includes(submissionFormat))) {
+    const taskPoints = Math.max(0, Math.min(1000, Number(body.maxScore ?? existingDoc?.maxScore ?? (submissionFormat === "none" ? 0 : 20)) || 0));
+    const autoType =
+      submissionFormat === "link"
+        ? "link_submission"
+        : submissionFormat === "file"
+        ? "file_submission"
+        : submissionFormat === "none"
+        ? "learning_resource"
+        : "practical_task";
+    rawQuestions = [
+      {
+        id: "q_deliverable_1",
+        type: autoType,
+        prompt: description || title,
+        points: autoType === "learning_resource" ? 0 : Math.max(1, taskPoints),
+        submissionMethod: submissionFormat || "both",
+        resourceUrl,
+        videoUrl: resourceUrl,
+        required: autoType !== "learning_resource",
+      },
+    ];
+  }
 
   // Allow empty questions list only when saving as draft
   if (rawQuestions.length === 0 && status === "draft") {
@@ -637,6 +708,9 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
       title,
       subject,
       description,
+      ...(resourceUrl ? { resourceUrl, videoUrl: resourceUrl } : {}),
+      ...(submissionFormat ? { submissionFormat } : {}),
+      ...(isTaskOnlyAssignment ? { isTaskOnlyAssignment: true } : {}),
       externalUrl: String(body.externalUrl ?? existingDoc?.externalUrl ?? "").trim(),
       classIds,
       questions: [],
@@ -649,7 +723,7 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
   }
 
   if (rawQuestions.length === 0) {
-    return { error: "At least 1 valid question is required before publishing a native examination." };
+    return { error: "At least 1 valid question or assignment task block is required before publishing." };
   }
 
   const normalized = normalizeQuestions(rawQuestions, gradingMode);
@@ -660,6 +734,9 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
     title,
     subject,
     description,
+    ...(resourceUrl ? { resourceUrl, videoUrl: resourceUrl } : {}),
+    ...(submissionFormat ? { submissionFormat } : {}),
+    ...(isTaskOnlyAssignment ? { isTaskOnlyAssignment: true } : {}),
     externalUrl: String(body.externalUrl ?? existingDoc?.externalUrl ?? "").trim(),
     classIds,
     questions: normalized.questions,
@@ -678,14 +755,27 @@ export function gradeAnswers(exam, answers = {}) {
   const questionResults = [];
   const questions = Array.isArray(exam?.questions) ? exam.questions : [];
   for (const question of questions) {
+    const qType = String(question.type || "single_choice");
     const answer = answers?.[question.id];
     let correct = false;
     let manualReview = false;
     let pointsAwarded = 0;
-    if (exam?.gradingMode === "manual") {
+
+    if (qType === "learning_resource") {
+      questionResults.push({
+        questionId: question.id,
+        ...(answer === undefined ? {} : { answer }),
+        manualReview: false,
+        pointsAwarded: 0,
+        maxPoints: 0,
+      });
+      continue;
+    }
+
+    if (exam?.gradingMode === "manual" || MANUAL_DELIVERABLE_TYPES.has(qType)) {
       autoGraded = false;
       manualReview = true;
-    } else if (OBJECTIVE.has(String(question.type))) {
+    } else if (OBJECTIVE.has(qType)) {
       const expected = [...new Set((Array.isArray(question.correctOptionIds) ? question.correctOptionIds : []).map(String))].sort();
       const actual = [...new Set((Array.isArray(answer) ? answer : [String(answer ?? "")]).map(String).filter(Boolean))].sort();
       if (!expected.length) {
@@ -694,7 +784,7 @@ export function gradeAnswers(exam, answers = {}) {
       } else {
         correct = expected.length === actual.length && expected.every((value, index) => value === actual[index]);
       }
-    } else if (question.type === "short_answer" && Array.isArray(question.acceptedAnswers) && question.acceptedAnswers.length) {
+    } else if (qType === "short_answer" && Array.isArray(question.acceptedAnswers) && question.acceptedAnswers.length) {
       const normalize = value => String(value ?? "").trim().toLocaleLowerCase();
       correct = question.acceptedAnswers.some(value => normalize(value) === normalize(answer));
     } else {
@@ -720,19 +810,32 @@ export function gradeAnswers(exam, answers = {}) {
   return { score: finalScore, maxScore: finalMaxScore, percentage, autoGraded, questionResults };
 }
 
-/** Safe projections for school-level reporting; never include answer keys or submitted response text. */
+/** Safe projections for school-level and student-attempt delivery; never include answer keys. */
 export function schoolSafeQuestion(question) {
   return {
     id: String(question?.id || ""),
     prompt: String(question?.prompt || ""),
     type: String(question?.type || ""),
-    points: Math.max(0, Math.min(1000, Number(question?.points ?? 1) || 0)),
+    points: Math.max(0, Math.min(1000, Number(question?.points ?? (question?.type === "learning_resource" ? 0 : 1)) || 0)),
+    required: question?.type === "learning_resource" ? false : question?.required !== false,
     options: Array.isArray(question?.options)
       ? question.options.map(option => ({
           id: String(option?.id || ""),
           text: String(option?.text || ""),
         }))
       : [],
+    ...(question?.resourceUrl || question?.videoUrl
+      ? {
+          resourceUrl: String(question.resourceUrl || question.videoUrl),
+          videoUrl: String(question.videoUrl || question.resourceUrl),
+        }
+      : {}),
+    ...(question?.submissionMethod ? { submissionMethod: String(question.submissionMethod) } : {}),
+    ...(question?.acceptedFileTypes ? { acceptedFileTypes: String(question.acceptedFileTypes) } : {}),
+    ...(question?.maxFileSizeMb ? { maxFileSizeMb: Number(question.maxFileSizeMb) } : {}),
+    ...(question?.deliverableInstructions
+      ? { deliverableInstructions: String(question.deliverableInstructions) }
+      : {}),
   };
 }
 

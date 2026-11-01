@@ -32,6 +32,11 @@ const SUBJECTS = [
 ];
 
 import { CANONICAL_CLASSES, normalizeClassName } from '../lib/classes';
+import {
+  checkUsernameAvailability,
+  claimGlobalUsername,
+  normalizeUsername,
+} from '../lib/usernameRegistry';
 
 const STUDENT_CLASSES: string[] = [...CANONICAL_CLASSES];
 
@@ -78,6 +83,9 @@ const Register: React.FC = () => {
 
   // Common Fields
   const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
+  const [usernameEdited, setUsernameEdited] = useState(false);
+  const [checkingUsername, setCheckingUsername] = useState(false);
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
@@ -188,6 +196,11 @@ const Register: React.FC = () => {
         setError('Please enter your full name.');
         return false;
       }
+      const cleanUname = normalizeUsername(username || email.split('@')[0] || fullName);
+      if (!cleanUname || cleanUname.length < 3) {
+        setError('Please choose a valid username (at least 3 characters).');
+        return false;
+      }
       if (!email.trim() || !/\S+@\S+\.\S+/.test(email)) {
         setError('Please enter a valid email address.');
         return false;
@@ -231,6 +244,11 @@ const Register: React.FC = () => {
     }
 
     if (stepKey === 'security') {
+      const cleanUname = normalizeUsername(username || email.split('@')[0] || fullName);
+      if (!cleanUname || cleanUname.length < 3) {
+        setError('Please enter a valid username (at least 3 characters).');
+        return false;
+      }
       if (password.length < 8) {
         setError('Password must be at least 8 characters long.');
         return false;
@@ -249,8 +267,24 @@ const Register: React.FC = () => {
     return true;
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (!validateCurrentStep()) return;
+    if (steps[currentStepIndex].key === 'basic') {
+      const candidateUname = normalizeUsername(username || email.split('@')[0] || fullName);
+      setCheckingUsername(true);
+      try {
+        const availability = await checkUsernameAvailability(candidateUname);
+        if (!availability.available) {
+          const msg = availability.reason || `The username "@${candidateUname}" is already taken. Please pick another username.`;
+          setError(msg);
+          toast.error(msg);
+          return;
+        }
+        setUsername(availability.cleanUsername);
+      } finally {
+        setCheckingUsername(false);
+      }
+    }
     setSlideDirection('forward');
     setCurrentStepIndex(prev => Math.min(prev + 1, steps.length - 1));
   };
@@ -283,6 +317,16 @@ const Register: React.FC = () => {
     setError('');
     setSuccess('');
 
+    const cleanUname = normalizeUsername(username || email.split('@')[0] || fullName);
+    const unameCheck = await checkUsernameAvailability(cleanUname);
+    if (!unameCheck.available) {
+      const msg = unameCheck.reason || `The username "@${cleanUname}" is already taken. Please pick another username.`;
+      setError(msg);
+      toast.error(msg);
+      setLoading(false);
+      return;
+    }
+
     if (mode === 'parent') {
       try {
         const cred = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
@@ -301,10 +345,16 @@ const Register: React.FC = () => {
         }
         
         const data = {
+          uid: cred.user.uid,
           name: fullName.trim(),
+          fullName: fullName.trim(),
+          username: unameCheck.cleanUsername,
           email: email.trim().toLowerCase(),
           phone: phone.trim(),
           role: finalRole,
+          isParent: true,
+          accountStatus: 'ACTIVE',
+          status: 'ACTIVE',
           childrenCount,
           preferredTracks: selectedSubjects,
           notes: parentNotes.trim(),
@@ -315,6 +365,12 @@ const Register: React.FC = () => {
         
         await setDoc(doc(db, 'parents', cred.user.uid), data);
         await setDoc(doc(db, 'users', cred.user.uid), data);
+        await claimGlobalUsername(unameCheck.cleanUsername, {
+          ownerId: cred.user.uid,
+          role: 'PARENT',
+          fullName: fullName.trim(),
+          email: email.trim().toLowerCase(),
+        });
         await notifyAdminsOfRegistration(cred.user);
         
         sessionStorage.setItem('userId', cred.user.uid);
@@ -347,7 +403,11 @@ const Register: React.FC = () => {
 
         const normalizedStudentClass = normalizeClassName(studentClass, 'Grade 7');
         const data = {
+          uid: cred.user.uid,
+          studentDocId: cred.user.uid,
           name: fullName.trim(),
+          fullName: fullName.trim(),
+          username: unameCheck.cleanUsername,
           email: email.trim().toLowerCase(),
           phone: phone.trim(),
           dateOfBirth,
@@ -356,15 +416,25 @@ const Register: React.FC = () => {
           class: normalizedStudentClass,
           grade: normalizedStudentClass,
           isIndependent: true,
+          registrationType: 'individual',
+          studentType: 'personal',
           subjects: selectedSubjects,
           goals: studentGoals.trim(),
-          status: 'active',
+          status: 'ACTIVE',
+          accountStatus: 'ACTIVE',
           emailVerified: false,
           createdAt: serverTimestamp()
         };
 
         await setDoc(doc(db, 'students', cred.user.uid), data);
+        await setDoc(doc(db, 'individualStudents', cred.user.uid), data);
         await setDoc(doc(db, 'users', cred.user.uid), data);
+        await claimGlobalUsername(unameCheck.cleanUsername, {
+          ownerId: cred.user.uid,
+          role: 'STUDENT',
+          fullName: fullName.trim(),
+          email: email.trim().toLowerCase(),
+        });
         await notifyAdminsOfRegistration(cred.user);
 
         // Also add reference request for admin audit
@@ -377,6 +447,7 @@ const Register: React.FC = () => {
         sessionStorage.setItem('userRole', 'student');
         sessionStorage.setItem('userEmail', email.trim().toLowerCase());
         sessionStorage.setItem('userName', fullName.trim());
+        sessionStorage.setItem('studentUsername', unameCheck.cleanUsername);
 
         setSuccess('Student account created successfully! Welcome to your learning portal.');
         toast.success('Student account created! Redirecting to student hub...');
@@ -410,6 +481,7 @@ const Register: React.FC = () => {
               uid: tutorUid,
               name: cleanName,
               fullName: cleanName,
+              username: unameCheck.cleanUsername,
               email: cleanEmail,
               phone: phone.trim(),
               role: 'STAFF',
@@ -422,6 +494,7 @@ const Register: React.FC = () => {
               uid: tutorUid,
               name: cleanName,
               fullName: cleanName,
+              username: unameCheck.cleanUsername,
               email: cleanEmail,
               phone: phone.trim(),
               location: location.trim(),
@@ -438,6 +511,12 @@ const Register: React.FC = () => {
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             }, { merge: true }).catch(() => null);
+            await claimGlobalUsername(unameCheck.cleanUsername, {
+              ownerId: tutorUid,
+              role: 'STAFF',
+              fullName: cleanName,
+              email: cleanEmail,
+            });
           } catch (authErr: any) {
             if (authErr?.code !== 'auth/email-already-in-use') {
               console.warn('Tutor auth account creation notice:', authErr);
@@ -448,6 +527,7 @@ const Register: React.FC = () => {
         // Submit tutor application for admin review
         await addDoc(collection(db, 'tutor_applications'), {
           ...(tutorUid ? { uid: tutorUid, userId: tutorUid } : {}),
+          username: unameCheck.cleanUsername,
           name: cleanName,
           email: cleanEmail,
           phone: phone.trim(),
@@ -641,11 +721,40 @@ const Register: React.FC = () => {
                     type="text" 
                     required 
                     value={fullName} 
-                    onChange={e => setFullName(e.target.value)} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      setFullName(val);
+                      if (!usernameEdited) {
+                        setUsername(normalizeUsername(val));
+                      }
+                    }} 
                     placeholder="e.g. Adebayo Ogunlesi" 
                     className="w-full bg-white/10 border border-white/20 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:border-brand-red"
                   />
                 </div>
+              </div>
+
+              <div className="field">
+                <label className="text-xs font-bold text-slate-300 block mb-1.5">
+                  Unique Portal Username
+                </label>
+                <div className="input-wrap relative flex items-center">
+                  <span className="input-icon absolute left-3 text-slate-400 font-mono text-xs font-bold">@</span>
+                  <input 
+                    type="text" 
+                    required 
+                    value={username} 
+                    onChange={e => {
+                      setUsernameEdited(true);
+                      setUsername(normalizeUsername(e.target.value));
+                    }} 
+                    placeholder="e.g. adebayo_ogunlesi" 
+                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-9 pr-3 py-2.5 text-sm font-mono text-white placeholder:text-slate-400 focus:outline-none focus:border-brand-red"
+                  />
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Must be unique across the entire portal. Lowercase letters, numbers, dots, and underscores.
+                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -657,7 +766,13 @@ const Register: React.FC = () => {
                       type="email" 
                       required 
                       value={email} 
-                      onChange={e => setEmail(e.target.value)} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        setEmail(val);
+                        if (!usernameEdited && !fullName.trim() && val.includes('@')) {
+                          setUsername(normalizeUsername(val.split('@')[0]));
+                        }
+                      }} 
                       placeholder="you@example.com" 
                       className="w-full bg-white/10 border border-white/20 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:border-brand-red"
                     />
@@ -738,10 +853,11 @@ const Register: React.FC = () => {
               <div className="pt-3">
                 <button
                   type="button"
-                  onClick={handleNext}
-                  className="w-full inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand-red text-white text-xs font-black uppercase tracking-wider hover:bg-red-700 shadow-md transition-all"
+                  disabled={checkingUsername}
+                  onClick={() => void handleNext()}
+                  className="w-full inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand-red text-white text-xs font-black uppercase tracking-wider hover:bg-red-700 shadow-md transition-all disabled:opacity-50"
                 >
-                  Continue to Step 03 <ArrowRight size={14} />
+                  {checkingUsername ? 'Verifying Username Availability…' : <>Continue to Step 03 <ArrowRight size={14} /></>}
                 </button>
               </div>
             </div>
@@ -1008,6 +1124,10 @@ const Register: React.FC = () => {
                     <strong className="text-white">{fullName}</strong>
                   </div>
                   <div>
+                    <span className="text-slate-400 block text-[10px]">Username</span>
+                    <strong className="text-emerald-400 font-mono">@{username}</strong>
+                  </div>
+                  <div>
                     <span className="text-slate-400 block text-[10px]">Email</span>
                     <strong className="text-white truncate block">{email}</strong>
                   </div>
@@ -1015,10 +1135,25 @@ const Register: React.FC = () => {
                     <span className="text-slate-400 block text-[10px]">Phone</span>
                     <strong className="text-white">{phone}</strong>
                   </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px]">Selected Tracks</span>
-                    <strong className="text-white">{selectedSubjects.length} tracks</strong>
-                  </div>
+                </div>
+              </div>
+
+              {/* Confirm Unique Username when setting password */}
+              <div className="field">
+                <label className="text-xs font-bold text-slate-300 block mb-1.5">Confirm Unique Username</label>
+                <div className="input-wrap relative flex items-center">
+                  <span className="input-icon absolute left-3 text-slate-400 font-mono text-xs font-bold">@</span>
+                  <input 
+                    type="text" 
+                    required 
+                    value={username} 
+                    onChange={e => {
+                      setUsernameEdited(true);
+                      setUsername(normalizeUsername(e.target.value));
+                    }} 
+                    placeholder="Choose a unique username" 
+                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-9 pr-3 py-2.5 text-sm font-mono text-white placeholder:text-slate-400 focus:outline-none focus:border-brand-red"
+                  />
                 </div>
               </div>
 

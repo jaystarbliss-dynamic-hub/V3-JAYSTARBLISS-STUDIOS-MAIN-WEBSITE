@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { User, Lock, Moon, Sun, Bell, Save, Contrast, KeyRound, RefreshCw, CheckCircle2, AlertCircle, Smartphone, MessageCircle } from 'lucide-react';
 import { auth, db } from '../../lib/firebase';
 import { sendEmailVerification, updateProfile, updateEmail } from 'firebase/auth';
-import { collection, doc, getDocs, getDoc, limit, query, updateDoc, where } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToast } from '../../contexts/ToastContext';
 import ChangePasswordModal from '../../components/portal/ChangePasswordModal';
 import SEO from '../../components/ui/SEO';
+import { checkUsernameAvailability, claimGlobalUsername, normalizeUsername } from '../../lib/usernameRegistry';
 
 type SettingsTab = 'profile' | 'appearance' | 'security' | 'notifications';
 
@@ -39,6 +40,8 @@ export const PortalSettings: React.FC = () => {
     setEmail(user.email || '');
     setEmailVerified(user.emailVerified);
     setFullName(user.displayName || sessionStorage.getItem('userName') || '');
+    const cachedUsername = sessionStorage.getItem('studentUsername') || '';
+    if (cachedUsername) setUsername(normalizeUsername(cachedUsername));
 
     const loadUserDoc = async () => {
       try {
@@ -46,7 +49,7 @@ export const PortalSettings: React.FC = () => {
         if (!snap.exists()) return;
         const data = snap.data();
         if (data.name) setFullName(String(data.name));
-        if (data.username) setUsername(String(data.username));
+        if (data.username) setUsername(normalizeUsername(String(data.username)));
         if (data.phone) setPhone(String(data.phone));
         if (data.whatsapp || data.whatsappContact) setWhatsapp(String(data.whatsapp || data.whatsappContact));
       } catch (error) {
@@ -69,12 +72,24 @@ export const PortalSettings: React.FC = () => {
     setSavingProfile(true);
     try {
       const cleanName = fullName.trim();
-      const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+      const cleanUsername = normalizeUsername(username);
       const cleanEmail = email.trim().toLowerCase();
       const cleanPhone = phone.trim();
       const cleanWhatsapp = whatsapp.trim();
       if (!cleanName || !cleanEmail) throw new Error('Full name and email are required.');
-      if (role === 'student' && (cleanUsername.length < 3 || cleanUsername.length > 30)) throw new Error('Student username must be 3–30 characters.');
+      if (role === 'student' && (cleanUsername.length < 3 || cleanUsername.length > 30)) {
+        throw new Error('Student username must be 3–30 characters.');
+      }
+
+      const studentDocId = sessionStorage.getItem('studentDocId') || localStorage.getItem('jaystar_cached_student_doc_id') || '';
+      const schoolId = sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || (role === 'school' ? user.uid : '');
+
+      if (cleanUsername) {
+        const check = await checkUsernameAvailability(cleanUsername, [user.uid, studentDocId, schoolId]);
+        if (!check.available) {
+          throw new Error(check.reason || `The username "${cleanUsername}" is already taken. Please pick another username.`);
+        }
+      }
 
       await updateProfile(user, { displayName: cleanName });
       sessionStorage.setItem('userName', cleanName);
@@ -89,20 +104,17 @@ export const PortalSettings: React.FC = () => {
         }
       }
 
-      if (role === 'student') {
-        const studentDocId = sessionStorage.getItem('studentDocId') || '';
+      if (role === 'student' && cleanUsername) {
         if (studentDocId) {
-          const duplicate = await getDocs(query(collection(db, 'individualStudents'), where('username', '==', cleanUsername), limit(1)));
-          if (!duplicate.empty && duplicate.docs[0].id !== studentDocId) throw new Error('That username is already in use. Please choose another.');
           await updateDoc(doc(db, 'individualStudents', studentDocId), { username: cleanUsername, updatedAt: new Date().toISOString() }).catch(() => undefined);
           await updateDoc(doc(db, 'students', studentDocId), { username: cleanUsername, updatedAt: new Date().toISOString() }).catch(() => undefined);
-          sessionStorage.setItem('studentUsername', cleanUsername);
         }
+        sessionStorage.setItem('studentUsername', cleanUsername);
       }
 
       await updateDoc(doc(db, 'users', user.uid), {
         name: cleanName,
-        username: role === 'student' ? cleanUsername : undefined,
+        ...(cleanUsername ? { username: cleanUsername } : {}),
         email: cleanEmail,
         phone: cleanPhone,
         whatsapp: cleanWhatsapp,
@@ -110,12 +122,22 @@ export const PortalSettings: React.FC = () => {
         updatedAt: new Date().toISOString()
       });
 
-      const schoolId = sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || (role === 'school' ? user.uid : '');
+      if (cleanUsername) {
+        await claimGlobalUsername(cleanUsername, {
+          uid: user.uid,
+          docId: studentDocId || schoolId || user.uid,
+          role: role.toUpperCase(),
+          email: cleanEmail,
+          name: cleanName,
+        });
+      }
+
       if (schoolId) {
         await updateDoc(doc(db, 'schools', schoolId), {
           contactEmail: cleanEmail,
           email: cleanEmail,
           contactName: cleanName,
+          ...(cleanUsername ? { username: cleanUsername } : {}),
           phone: cleanPhone,
           whatsapp: cleanWhatsapp,
           updatedAt: new Date().toISOString()

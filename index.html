@@ -120,7 +120,36 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="root"></div>
+    <script>
+      (function () {
+        try {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+              regs.forEach(function (reg) {
+                reg.unregister();
+              });
+            }).catch(function () {});
+          }
+          if ('caches' in window) {
+            caches.keys().then(function (keys) {
+              keys.forEach(function (key) {
+                if (key.indexOf('workbox') !== -1 || key.indexOf('precache') !== -1) {
+                  caches.delete(key);
+                }
+              });
+            }).catch(function () {});
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <div id="root">
+      <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0f172a;color:#f8fafc;font-family:'Poppins',system-ui,sans-serif;padding:24px;text-align:center;">
+        <div style="width:40px;height:40px;border-radius:9999px;border:3px solid rgba(223,70,39,0.25);border-top-color:#df4627;animation:jb-spin 0.8s linear infinite;margin-bottom:14px;"></div>
+        <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#f8fafc;">Jaystarbliss Studios</div>
+        <div style="font-size:12px;color:#94a3b8;margin-top:4px;">Loading interactive workspace…</div>
+        <style>@keyframes jb-spin { to { transform: rotate(360deg); } }</style>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

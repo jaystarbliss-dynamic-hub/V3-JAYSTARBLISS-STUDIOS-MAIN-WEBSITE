@@ -5,6 +5,7 @@ import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, limit, 
 import { auth, db } from '../../lib/firebase';
 import { Loader2 } from 'lucide-react';
 import ChangePasswordModal from '../portal/ChangePasswordModal';
+import { reconcileParentAndChildrenAccount } from '../../lib/usernameRegistry';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -117,9 +118,29 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
           }
         }
 
-        // Direct self-heal for staff / tutor accounts ONLY if user is not already a Parent, Student, School, or Admin
+        // Direct self-heal for Parent accounts & parent-child links (prevents parents from ever being routed to a tutor/staff account)
         const cachedRole = (sessionStorage.getItem('userRole') || localStorage.getItem('jaystar_cached_user_role') || '').toLowerCase();
-        const existingRoleUpper = String(userSnap.data()?.role || '').toUpperCase();
+        let existingRoleUpper = String(userSnap.data()?.role || '').toUpperCase();
+
+        if (!adminRoles.includes(existingRoleUpper) && !['SCHOOL', 'SCHOOL_ADMIN', 'STUDENT', 'INDIVIDUAL_STUDENT'].includes(existingRoleUpper)) {
+          try {
+            const parentReconcile = await reconcileParentAndChildrenAccount(
+              currentUser.uid,
+              currentUser.email,
+              userSnap.data()?.fullName || userSnap.data()?.name || currentUser.displayName
+            );
+            if (parentReconcile.isParent) {
+              existingRoleUpper = 'PARENT';
+              sessionStorage.setItem('userRole', 'parent');
+              localStorage.setItem('jaystar_cached_user_role', 'parent');
+              userSnap = await getDoc(doc(db, 'users', currentUser.uid)).catch(() => userSnap);
+            }
+          } catch (pErr) {
+            console.warn('Parent reconciliation check notice:', pErr);
+          }
+        }
+
+        // Direct self-heal for staff / tutor accounts ONLY if user is not already a Parent, Student, School, or Admin
         const isProtectedNonStaffRole =
           adminRoles.includes(existingRoleUpper) ||
           ['PARENT', 'STUDENT', 'INDIVIDUAL_STUDENT', 'SCHOOL', 'SCHOOL_ADMIN'].includes(existingRoleUpper);
@@ -272,11 +293,17 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
                 ]));
                 for (const colName of ['individualStudents', 'students'] as const) {
                   for (const variant of usernameVariants) {
-                    const q = query(collection(db, colName), where('username', '==', variant), limit(1));
+                    const q = query(collection(db, colName), where('username', '==', variant), limit(5));
                     const snap = await getDocs(q);
                     if (!snap.empty) {
-                      matchedStudentDoc = { id: snap.docs[0].id, collectionName: colName, data: snap.docs[0].data() };
-                      break;
+                      const safeDoc = snap.docs.find(d => {
+                        const dUid = String(d.data()?.firebaseUid || d.data()?.userId || '').trim();
+                        return !dUid || dUid === currentUser.uid;
+                      });
+                      if (safeDoc) {
+                        matchedStudentDoc = { id: safeDoc.id, collectionName: colName, data: safeDoc.data() };
+                        break;
+                      }
                     }
                   }
                   if (matchedStudentDoc) break;

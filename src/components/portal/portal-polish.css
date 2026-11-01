@@ -70,28 +70,35 @@
 
 .dark .btn-portal-secondary,
 .dark .portal-btn-secondary {
-  background-color: #243246 !important;
+  background-color: #1E293B !important;
   color: #F8FAFC !important;
-  border-color: #42526A !important;
+  border-color: #334155 !important;
 }
 
 .dark .btn-portal-secondary:hover:not(:disabled),
 .dark .portal-btn-secondary:hover:not(:disabled) {
-  background-color: #2B394D !important;
-  border-color: #64748B !important;
+  background-color: #334155 !important;
+  border-color: #475569 !important;
 }
 
-/* Light & dark portal interface styling */
-.dark .dashboard-interface .pro-surface {
-  background-color: #2b394d !important;
-  border-color: #42526a !important;
+/* Light & dark portal interface styling — keep cards, canvas, and action buttons clearly distinct */
+.dashboard-interface .pro-surface {
+  background-color: #FFFFFF;
+  border-color: #E2E8F0;
 }
-.dark .dashboard-interface .bg-slate-900 { background-color: #2b394d !important; }
-.dark .dashboard-interface .bg-slate-950 { background-color: #243246 !important; }
-.dark .dashboard-interface .bg-\[\#0B0F17\] { background-color: #243246 !important; }
-.dark .dashboard-interface .text-slate-900 { color: #f8fafc !important; }
-.dark .dashboard-interface .text-slate-800 { color: #f1f5f9 !important; }
-.dark .dashboard-interface .text-slate-700 { color: #e2e8f0 !important; }
+
+.dark .dashboard-interface .pro-surface {
+  background-color: #0F172A !important;
+  border-color: #1E293B !important;
+}
+
+/* Ensure dark buttons inside dark cards stand out with crisp contrast */
+.dark .dashboard-interface button.bg-slate-900:not([class*="dark:bg-"]),
+.dark .dashboard-interface a.bg-slate-900:not([class*="dark:bg-"]) {
+  background-color: #2563EB !important;
+  color: #FFFFFF !important;
+  border-color: #3B82F6 !important;
+}
 
 /* Mobile viewport scaling & squeeze prevention rules (< 640px) */
 @media (max-width: 639px) {
