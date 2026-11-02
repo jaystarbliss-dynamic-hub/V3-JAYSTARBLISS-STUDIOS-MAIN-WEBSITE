@@ -530,8 +530,8 @@ export const handler: Handler = async event => {
       const body = JSON.parse(event.body || "{}");
       const examId = String(body.examId || "").trim();
       const passcode = String(body.passcode || "").trim();
-      if (!examId || !passcode || passcode.length > 128) {
-        return json(400, { error: "Enter the assessment passcode." });
+      if (!examId) {
+        return json(400, { error: "Assessment ID is required." });
       }
       const student = await getStudent(c.uid, c.user);
       if (!student) return json(403, { error: "This account is not assigned to a student record." });
@@ -542,8 +542,19 @@ export const handler: Handler = async event => {
         ref = adminDb.collection("schoolExams").doc(examId);
         examSnap = await ref.get();
       }
-      if (!examSnap.exists) return json(403, { error: "The passcode could not be validated for this assessment." });
+      if (!examSnap.exists) return json(403, { error: "The assessment details could not be found." });
       const exam = examSnap.data() || {};
+
+      const workType = normalizeWorkType(exam.workType, exam);
+      // Phase 2 Access Control Policy:
+      // TESTS & EXAMINATIONS require access code if one is set.
+      // ASSIGNMENTS & ACTIVITIES do NOT require an access code!
+      const requiresCode = (workType === "TEST" || workType === "EXAMINATION") && Boolean(exam.passcode || exam.passcodeHash);
+
+      if (requiresCode && !passcode) {
+        return json(400, { error: `Enter the passcode to access this ${workType.toLowerCase()}.` });
+      }
+
       const now = Date.now();
       const rawFrom = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
       const from = Number.isFinite(rawFrom) ? rawFrom : 0;
@@ -586,45 +597,51 @@ export const handler: Handler = async event => {
         (!Number.isFinite(from) || now >= from) &&
         (!Number.isFinite(until) || now < until);
 
-      const validHash = typeof exam.passcodeHash === "string" && typeof exam.passcodeSalt === "string";
-      const candidateUpper = validHash ? hashCode(exam.passcodeSalt, passcode) : "";
-      const candidateExact = validHash ? hashLegacyExact(exam.passcodeSalt, passcode) : "";
-      const hashMatched =
-        validHash &&
-        (constantEqual(candidateUpper, exam.passcodeHash) || constantEqual(candidateExact, exam.passcodeHash));
-      const directMatched =
-        !validHash &&
-        typeof exam.passcode === "string" &&
-        exam.passcode.trim().toUpperCase() === passcode.toUpperCase();
-      const validCode = hashMatched || directMatched;
-
-      const throttleRef = adminDb.collection("jdiPasscodeAttempts").doc(c.uid + "_" + examId);
-      const throttleDecision = await adminDb.runTransaction(async tx => {
-        const snap = await tx.get(throttleRef);
-        const data = snap.data() || {};
-        const nowMs = Date.now();
-        const oldStart = Number(data.windowStart || 0);
-        const count = nowMs - oldStart > 15 * 60 * 1000 ? 0 : Number(data.failedCount || 0);
-        if (count >= 5) return { blocked: true };
-        if (!validCode) {
-          tx.set(
-            throttleRef,
-            {
-              windowStart: count === 0 ? nowMs : oldStart || nowMs,
-              failedCount: count + 1,
-              updatedAt: FieldValue.serverTimestamp(),
-            },
-            { merge: true }
-          );
-        } else if (assigned && active && snap.exists) {
-          tx.delete(throttleRef);
-        }
-        return { blocked: false };
-      });
-
-      if (throttleDecision.blocked) {
-        return json(429, { error: "Too many incorrect attempts. Wait 15 minutes before trying again." });
+      let validCode = !requiresCode;
+      if (requiresCode) {
+        const validHash = typeof exam.passcodeHash === "string" && typeof exam.passcodeSalt === "string";
+        const candidateUpper = validHash ? hashCode(exam.passcodeSalt, passcode) : "";
+        const candidateExact = validHash ? hashLegacyExact(exam.passcodeSalt, passcode) : "";
+        const hashMatched =
+          validHash &&
+          (constantEqual(candidateUpper, exam.passcodeHash) || constantEqual(candidateExact, exam.passcodeHash));
+        const directMatched =
+          !validHash &&
+          typeof exam.passcode === "string" &&
+          exam.passcode.trim().toUpperCase() === passcode.toUpperCase();
+        validCode = hashMatched || directMatched;
       }
+
+      if (requiresCode) {
+        const throttleRef = adminDb.collection("jdiPasscodeAttempts").doc(c.uid + "_" + examId);
+        const throttleDecision = await adminDb.runTransaction(async tx => {
+          const snap = await tx.get(throttleRef);
+          const data = snap.data() || {};
+          const nowMs = Date.now();
+          const oldStart = Number(data.windowStart || 0);
+          const count = nowMs - oldStart > 15 * 60 * 1000 ? 0 : Number(data.failedCount || 0);
+          if (count >= 5) return { blocked: true };
+          if (!validCode) {
+            tx.set(
+              throttleRef,
+              {
+                windowStart: count === 0 ? nowMs : oldStart || nowMs,
+                failedCount: count + 1,
+                updatedAt: FieldValue.serverTimestamp(),
+              },
+              { merge: true }
+            );
+          } else if (assigned && active && snap.exists) {
+            tx.delete(throttleRef);
+          }
+          return { blocked: false };
+        });
+
+        if (throttleDecision.blocked) {
+          return json(429, { error: "Too many incorrect attempts. Wait 15 minutes before trying again." });
+        }
+      }
+
       if (!assigned || !active || !validCode) {
         return json(403, { error: "The passcode could not be validated for this assessment." });
       }

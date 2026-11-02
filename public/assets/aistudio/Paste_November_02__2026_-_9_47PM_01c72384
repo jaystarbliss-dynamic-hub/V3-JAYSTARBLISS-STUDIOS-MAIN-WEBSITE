@@ -1,0 +1,966 @@
+# JAYSTARBLISS STUDIOS — MASTER PORTAL STABILISATION & FUNCTIONALITY COMPLETION PLAN
+
+## PROJECT OBJECTIVE
+
+Conduct a comprehensive audit, repair and stabilisation of the existing Jaystarbliss Studios educational portal.
+
+This is not a request to rebuild the application or replace existing functionality.
+
+The primary objective is to identify why previously working assessment features stopped working, repair their underlying causes, complete the outstanding functionality, strengthen access control and verify every major workflow.
+
+The existing application, its database structure, existing scripts, working fallbacks, UI components and established workflows must be treated as the starting point.
+
+**Do not introduce unnecessary architectural changes. Do not remove working functionality to make a new implementation easier.**
+
+---
+
+# PHASE 0 — ESTABLISH THE CORRECT SOURCE OF TRUTH
+
+Before making any changes:
+
+1. Inspect the entire currently connected project.
+2. Identify its actual repository, branch and latest commit.
+3. Confirm that the source code corresponds to the live Jaystarbliss Studios portal and the student assessment URL structure.
+4. Identify all application entry points, dashboard files, route handlers, JavaScript modules, Firebase initialisation files, Cloud Functions, Firestore collections, security rules and configuration files.
+5. Identify any files or modules that are duplicated, deprecated or no longer referenced.
+6. Establish how the different portals communicate with Firebase.
+
+IMPORTANT:
+
+If the currently checked-out repository does not contain the assessment interface shown in the supplied screenshot, locate the actual current implementation in the Google AI Studio workspace or its associated repository.
+
+Do not attempt to fix an older or unrelated assessment implementation.
+
+The working application must remain the source of truth.
+
+## Create a dependency and workflow map
+
+Document the relationships between:
+
+- Super Admin dashboard.
+- Sub-admin dashboards.
+- Tutor portal.
+- School Administrator portal.
+- School Student portal.
+- Individual Student portal.
+- Parent portal.
+- Assessment creation and management.
+- Student assessment attempts.
+- Assessment submissions.
+- Assessment grading and result release.
+- Attendance management.
+- Notifications.
+- Tutor-parent agreements.
+- Firebase Authentication.
+- Cloud Firestore.
+- Cloud Functions, where applicable.
+
+Identify shared scripts, reusable functions and dependencies that could cause one portal's changes to affect another.
+
+Inspect the Git history and compare the last known working assessment implementation with the current implementation.
+
+Pay particular attention to changes made around the assessment section.
+
+---
+
+# PHASE 1 — CRITICAL ASSESSMENT REGRESSION INVESTIGATION
+
+## Priority: P0
+
+This is the most important part of the project.
+
+The assessment submission system previously worked correctly.
+
+Students could manually submit their assessments. When the timer reached zero, the assessment automatically expired, closed and submitted on behalf of the student.
+
+The system also had fallback mechanisms and confirmation messages.
+
+These behaviours must be restored.
+
+Do not discard the existing implementation and create an unrelated replacement without first identifying the regression.
+
+## 1.1 Investigate the JavaScript error
+
+The supplied screenshot shows:
+
+`MANUAL_DELIVERABLE_TYPES is not defined`
+
+Investigate:
+
+- Every reference to `MANUAL_DELIVERABLE_TYPES`.
+- Where the constant or equivalent configuration is supposed to be declared.
+- Whether it was renamed, deleted or moved.
+- Whether its import or export is missing.
+- Whether the script that defines it loads before the assessment script.
+- Whether an older module is still referencing a removed variable.
+- Whether a script error prevents other assessment event listeners from registering.
+- Whether SPA navigation or dynamic script loading causes the declaration to become unavailable.
+
+Fix the actual cause.
+
+Do not merely suppress the error or create an arbitrary empty constant.
+
+Preserve all existing manual-deliverable functionality and supported deliverable types.
+
+## 1.2 Investigate manual submission
+
+Trace the complete manual submission process:
+
+1. Student opens an assessment.
+2. Student answers questions.
+3. Answers are saved.
+4. Student selects Submit.
+5. Confirmation is requested where appropriate.
+6. Submission is processed.
+7. Final answers are persisted.
+8. Attempt status becomes submitted.
+9. Submission timestamp is recorded.
+10. Student receives the appropriate confirmation.
+11. Grading and result-release processes continue.
+
+Inspect the actual form submission handler, button event, asynchronous operations, validation logic and Firebase writes.
+
+Check for:
+
+- Incorrect button types.
+- Missing event listeners.
+- Broken form IDs.
+- Event propagation issues.
+- Incorrect disabled-button logic.
+- Unhandled promises.
+- Failed Firestore writes.
+- Permission errors.
+- Incorrect assessment status checks.
+- Duplicate event listeners.
+- Incorrect assessment identifiers.
+- Race conditions.
+- JavaScript errors occurring before the submission handler executes.
+
+Restore the original functionality without introducing duplicate submission mechanisms.
+
+## 1.3 Restore automatic submission at timeout
+
+The previous automatic submission mechanism must continue working.
+
+When the assessment timer reaches zero:
+
+- The assessment must expire.
+- The student must no longer be able to modify answers.
+- The latest saved answers must be collected.
+- The assessment must automatically submit on the student's behalf.
+- The attempt must be marked as submitted or expired-submitted according to the existing data model.
+- The submission time and reason must be recorded.
+- The student must see the appropriate expiry and submission confirmation.
+- Grading must proceed where applicable.
+
+The assessment must not remain open indefinitely after the countdown reaches zero.
+
+The timer reaching zero must trigger a real submission process, not merely change the displayed countdown.
+
+Use the existing fallback mechanisms wherever possible.
+
+If the student's internet connection is interrupted, implement safe recovery so that an attempt can be finalised without creating duplicate submissions or losing saved answers.
+
+## 1.4 Make submission reliable
+
+Use an authoritative server-side assessment deadline and a safe, idempotent submission operation.
+
+The operation must:
+
+- Prevent duplicate submissions.
+- Handle simultaneous manual submission and timeout.
+- Protect already-submitted attempts.
+- Preserve the last confirmed answers.
+- Record server timestamps.
+- Handle network and database errors.
+- Return a clear success or failure result.
+
+The interface must not display a successful submission message before the submission has actually been persisted.
+
+Saving progress and submitting an assessment must remain two different operations.
+
+## 1.5 Preserve existing fallback messages
+
+Find and preserve the messages already used by the application, including messages indicating:
+
+- Assessment submitted successfully.
+- Time expired.
+- Assessment automatically submitted.
+- Progress saved.
+- Submission failed and can be retried, where recovery is possible.
+
+Do not unnecessarily rewrite existing student-facing messages.
+
+## 1.6 Important regression scenario
+
+Reproduce the supplied screenshot scenario:
+
+- Student has answered 100 out of 100 questions.
+- Timer reaches 00:00.
+- Progress is already saved.
+- The student remains on the assessment screen.
+
+The corrected system must automatically finalise that attempt, close the assessment and show a confirmation.
+
+Also test when fewer than all questions have been answered.
+
+---
+
+# PHASE 2 — ASSESSMENT TYPES AND ACCESS CONTROL
+
+## Priority: P0
+
+Implement the following assessment access policy exactly.
+
+| Assessment type | Requires access code | Access policy |
+|---|---|---|
+| Tests | YES | Access code required |
+| Examinations | YES | Access code required |
+| Assignments | NO | Can be taken without an access code |
+| Activities | NO | Can be taken without an access code |
+
+Rules:
+
+1. Only tests and examinations require assessment access codes.
+2. Assignments and activities must never display an unnecessary access-code prompt.
+3. Students should be able to access assignments and activities without entering a code.
+4. Preserve their existing availability and publication workflow.
+5. Do not confuse school registration codes or other portal access codes with assessment access codes.
+6. Access-code verification must be properly secured. Never expose confidential assessment codes or answer keys in publicly readable documents.
+7. Where an access code is required, enforce validation before the student enters the test or examination.
+
+Do not apply password protection indiscriminately to every assessment type.
+
+---
+
+# PHASE 3 — ASSESSMENT AUTO-RELEASE AND AUTOMATIC GRADING
+
+## Priority: P1
+
+This functionality has already been introduced into the portal.
+
+The task is to inspect, preserve, repair and complete it, not to remove it or create a duplicate.
+
+## 3.1 Auto-release configuration
+
+Tutors must be able to configure an assessment for automatic release.
+
+The setting must be visible and functional in the tutor's assessment creation and editing interface.
+
+When enabled:
+
+- The configured release date/time must be saved.
+- The tutor must be able to see the automatic-release configuration.
+- The saved assessment must correctly reflect its release status.
+- The assessment must become available to its intended students at the configured time.
+- Release must not depend on the tutor manually opening the portal at that time.
+- Students must see the assessment when it becomes available.
+
+Inspect the existing implementation before deciding how to repair its scheduling mechanism.
+
+Do not replace a working auto-release implementation unnecessarily.
+
+## 3.2 Automatic grading
+
+When a tutor enables automatic grading:
+
+- Grade eligible questions automatically after submission.
+- Calculate the student's score correctly.
+- Preserve the grading result.
+- Respect the configured result-release setting.
+- Make results available to students immediately when the assessment is released, provided automatic grading has completed.
+
+Students should not unnecessarily wait for tutors to manually publish automatically graded results.
+
+Manual-deliverable assessments must retain their manual review process. Do not automatically award grades for deliverables that require tutor evaluation.
+
+## 3.3 Separate grading and release states
+
+Ensure that grading completion and result publication are not treated as the same operation.
+
+An assessment may be:
+
+- Submitted but not graded.
+- Automatically graded but awaiting configured release.
+- Manually graded and awaiting tutor release.
+- Graded and released.
+
+Preserve the existing data model wherever possible.
+
+---
+
+# PHASE 4 — EXTRA ASSESSMENT TIME
+
+## Priority: P1
+
+Tutors must be able to grant students additional time while an assessment is active.
+
+Implement or repair the existing:
+
+**ADD TIME +10**
+
+functionality.
+
+Expected behaviour:
+
+1. Tutor opens an active assessment or the relevant student attempt.
+2. Tutor selects Add Time +10.
+3. The student's assessment deadline is extended by 10 minutes.
+4. The student interface receives the updated deadline.
+5. The displayed countdown updates immediately.
+6. The student sees a clear extra-time badge.
+7. The badge shows the actual extra time granted.
+8. The assessment is not accidentally restarted or reset.
+
+For example:
+
+Original time: 30 minutes.
+
+Tutor grants +10 minutes.
+
+New time allocation: 40 minutes.
+
+The student must see that the additional 10 minutes have been granted.
+
+Record:
+
+- Student ID.
+- Assessment ID.
+- Tutor ID.
+- Original deadline.
+- Additional time granted.
+- Updated deadline.
+- Timestamp of the extension.
+
+Only authorised tutors or administrators should be able to grant additional time.
+
+Prevent a student from modifying their own deadline.
+
+Multiple extensions must work correctly without resetting or corrupting the countdown.
+
+The browser countdown and authoritative server deadline must remain synchronised.
+
+---
+
+# PHASE 5 — PASSING SCORE, ACCURACY THRESHOLD AND RETAKES
+
+## Priority: P1
+
+Tutors must be able to configure a minimum accuracy score or passing threshold for automatically graded assessments.
+
+For example:
+
+A tutor configures a minimum score of 70%.
+
+| Student score | Outcome |
+|---|---|
+| 90% | Passed |
+| 80% | Passed |
+| 70% | Passed |
+| 65% | Retake required |
+| 40% | Retake required |
+
+The tutor must be able to configure this threshold when creating or editing an automatically graded assessment.
+
+Expected functionality:
+
+1. Save the minimum passing score.
+2. Calculate the student's actual score.
+3. Compare the result against the configured threshold.
+4. Mark successful attempts as passed.
+5. Mark unsuccessful attempts as requiring a retake.
+6. Provide an appropriate retake action to the student.
+7. Preserve all previous attempts.
+
+**CRITICAL: A retake must never erase the student's previous attempt history.**
+
+Every attempt must remain independently accessible to authorised users.
+
+Preserve:
+
+- Original answers.
+- Original score.
+- Submission timestamp.
+- Grading information.
+- Retake status.
+- Subsequent answers and scores.
+- Attempt number.
+
+A new attempt must create a new record or version according to the existing data model.
+
+Do not overwrite the previous attempt.
+
+This threshold should apply to automatically graded assessments, not automatically force manual-deliverable assessments through a grading process they are not designed for.
+
+---
+
+# PHASE 6 — ATTENDANCE MANAGEMENT
+
+## Priority: P1
+
+Implement a consistent attendance system across the relevant portals.
+
+Attendance must be recorded by authorised tutors or administrators and displayed according to the user's relationship with the student.
+
+## 6.1 Attendance visibility
+
+| Role | What they can see |
+|---|---|
+| Super Admin | All students' attendance |
+| School Admin | All attendance records belonging to their school |
+| School Student | Their own attendance |
+| Individual Student | Their own attendance |
+| Parent | Attendance records of their enrolled children |
+| Tutor | Attendance records for their assigned students/classes |
+| Other Sub-admins | Only attendance access specifically granted to their role |
+
+## 6.2 Attendance modification permissions
+
+Only authorised administrators and tutors should be able to modify attendance records.
+
+Students must not be able to change their attendance.
+
+Parents must not be able to change attendance.
+
+School Students must only have read access to their own attendance records.
+
+School Admins must be restricted to their school's records.
+
+Tutors must be restricted to their assigned students or classes.
+
+## 6.3 Attendance records
+
+Allow authorised users to:
+
+- Mark attendance.
+- Update attendance status.
+- Correct incorrectly recorded attendance.
+- View historical attendance.
+- Identify who recorded attendance.
+- See when attendance was recorded.
+- Review attendance corrections.
+
+Preserve an audit trail of previous values and corrections.
+
+Parents and students should see attendance records without being presented with administrative modification controls.
+
+## 6.4 School isolation
+
+A School Admin must never be able to view another school's students' attendance.
+
+A School Student must never see another student's attendance.
+
+Enforce these restrictions in Firestore security rules and the relevant backend operations, not merely by filtering the displayed interface.
+
+---
+
+# PHASE 7 — ADMINISTRATOR HIERARCHY AND ROLE-BASED ACCESS CONTROL
+
+## Priority: P0
+
+The administrative system needs a proper hierarchy.
+
+The Super Admin must have unrestricted access to all legitimate administrative functions.
+
+Other administrators must only have access to the functions assigned to their respective roles.
+
+## 7.1 Super Admin
+
+The Super Admin must be able to:
+
+- Access every administrative module.
+- View all relevant records.
+- Manage users.
+- Manage administrators.
+- Manage tutors.
+- Manage schools.
+- Manage students.
+- Manage parents.
+- Manage assessments.
+- Manage attendance.
+- Manage notifications.
+- Access financial records.
+- Manage system configuration.
+- Manage role permissions.
+- Access system-wide activity logs.
+
+The Super Admin must not be restricted by ordinary sub-admin permissions.
+
+## 7.2 Sub-admins
+
+Sub-admins must receive specific permissions.
+
+Examples of manageable permission categories:
+
+- Content management.
+- Academic administration.
+- Student administration.
+- School administration.
+- Financial administration.
+- Tutor administration.
+- Notification management.
+- Reporting.
+- Other existing administrative responsibilities.
+
+A sub-admin must only see the dashboard tabs relevant to their assigned responsibilities.
+
+They must not see unrelated administrative tabs or have access to restricted operations.
+
+The permission system should be configurable by the Super Admin.
+
+## 7.3 Other roles
+
+Preserve the existing tutor, school administrator, parent and student roles.
+
+Their access should be limited by their responsibilities and relationships.
+
+A tutor sees their assigned students, classes and schools.
+
+A School Admin sees their own school's information.
+
+A parent sees their enrolled children.
+
+A student sees their own records.
+
+## 7.4 Backend permission enforcement
+
+This requirement is especially important.
+
+Hiding a navigation tab does not provide security.
+
+Every protected operation must be checked independently through appropriate backend logic and Firestore security rules.
+
+Investigate and prevent:
+
+- Privilege escalation.
+- Users modifying their own roles.
+- Unauthorised direct database reads.
+- Unauthorised direct database writes.
+- Cross-school data exposure.
+- Access to restricted administrative routes.
+- Unauthorised assessment or attendance modifications.
+
+Use the existing authentication and role system as the starting point.
+
+Do not create conflicting role definitions across different portal files.
+
+---
+
+# PHASE 8 — TUTOR NOTIFICATIONS
+
+## Priority: P2
+
+Tutors must be able to send notifications to:
+
+1. Their assigned students.
+2. Their assigned schools.
+
+This functionality must respect tutor assignments.
+
+## Expected workflow
+
+Tutors should be able to:
+
+- Compose a notification.
+- Provide a title.
+- Provide a message.
+- Select assigned students.
+- Select an assigned school or eligible school audience.
+- Send the notification.
+- View notification history.
+- See delivery or read status where supported.
+
+Notifications should be visible in the appropriate student or school portal.
+
+The system must verify that the tutor is authorised to contact each selected recipient.
+
+A tutor must not be able to send arbitrary system-wide notifications or target unrelated schools.
+
+Preserve the existing notification system and its unread indicators.
+
+---
+
+# PHASE 9 — TUTOR-PARENT AGREEMENT WORKFLOW
+
+## Priority: P2
+
+Implement the administrative agreement workflow described in the project requirements.
+
+Expected process:
+
+1. An administrator negotiates an arrangement on behalf of a tutor.
+2. The proposed agreement is submitted to the tutor for confirmation.
+3. The tutor reviews and accepts or rejects the proposed terms.
+4. Once confirmed by the tutor, the agreement is communicated to the parent.
+5. The parent reviews and accepts or rejects the agreement.
+6. The agreement becomes final when the required parties have confirmed.
+
+Suggested agreement states:
+
+- Draft.
+- Awaiting Tutor Confirmation.
+- Rejected by Tutor.
+- Awaiting Parent Confirmation.
+- Rejected by Parent.
+- Accepted.
+- Cancelled.
+
+Both tutor and parent should be able to review the final agreed terms.
+
+Maintain an agreement history, including who confirmed each stage and when.
+
+Do not represent an agreement as confirmed by both parties when only one party has approved it.
+
+Use the existing communication mechanisms where possible.
+
+---
+
+# PHASE 10 — FIRESTORE, DATABASE AND SYSTEM SECURITY AUDIT
+
+## Priority: P0
+
+Conduct a full review of the Firebase implementation.
+
+Inspect:
+
+- Authentication.
+- Firestore security rules.
+- Firestore document structures.
+- Collection naming.
+- Role fields.
+- Student-to-parent relationships.
+- Tutor-to-student assignments.
+- School-to-student relationships.
+- Assessment data.
+- Assessment attempts.
+- Grading records.
+- Attendance records.
+- Notification records.
+- Cloud Functions.
+- Firebase deployment configuration.
+
+## Security requirements
+
+1. Students must never read or modify another student's private assessment attempts.
+2. Parents must only access their own children's records.
+3. Tutors must only access their assigned students and authorised schools.
+4. School Admins must only access records belonging to their schools.
+5. Sub-admin permissions must be enforced at database and backend level.
+6. Only authorised roles can alter assessment settings.
+7. Only authorised roles can extend assessment time.
+8. Only authorised roles can change attendance.
+9. Assessment access codes must not be publicly readable.
+10. Assessment answer keys must not be exposed before permitted release.
+11. A student must not be able to modify their own role.
+12. Retakes must not expose or overwrite previous attempts.
+
+Review every collection involved in these workflows.
+
+Use Firebase Emulator Suite or an equivalent isolated test environment to validate Firestore rules.
+
+Do not weaken existing security rules to make a feature work.
+
+Do not deploy untested security-rule changes directly to production.
+
+---
+
+# PHASE 11 — COMPREHENSIVE REGRESSION TESTING
+
+## Priority: P0
+
+Testing is mandatory.
+
+Do not declare the project complete merely because the pages load or the console appears clear.
+
+Test actual operations using representative accounts for every role.
+
+## A. Assessment submission tests
+
+- Student submits an assessment manually.
+- Student completes all questions and submits.
+- Student submits with unanswered questions.
+- Timer reaches zero.
+- Automatic submission occurs.
+- Assessment closes.
+- Student receives confirmation.
+- Progress is preserved.
+- Browser refresh does not destroy saved answers.
+- Duplicate submissions are prevented.
+- Network interruptions are handled safely.
+- Already submitted assessments cannot be submitted again.
+- No assessment remains indefinitely open after expiration.
+
+## B. Assessment access tests
+
+- Test requires an access code.
+- Examination requires an access code.
+- Correct access code works.
+- Incorrect access code is rejected.
+- Assignment does not require an access code.
+- Activity does not require an access code.
+
+## C. Auto-release and grading tests
+
+- Tutor enables auto-release.
+- Saved auto-release setting remains visible.
+- Assessment releases at the configured time.
+- Students can access it after release.
+- Automatic grading works.
+- Automatically graded results become visible immediately after the configured release.
+- Manual grading remains subject to tutor review.
+- Result release is not accidentally blocked by an unrelated assessment state.
+
+## D. Extra-time tests
+
+- Tutor grants +10 minutes.
+- Deadline actually increases.
+- Student timer updates.
+- Extra-time badge displays the correct amount.
+- Multiple extensions work.
+- Timer still expires correctly after the extension.
+- Unauthorised users cannot grant additional time.
+
+## E. Passing score and retake tests
+
+- Tutor sets a minimum score.
+- Student passes.
+- Student fails.
+- Retake-required status appears.
+- Student can start a new attempt.
+- Previous attempt remains intact.
+- Previous answers and scores remain accessible.
+- Attempt history displays correctly.
+
+## F. Attendance tests
+
+Test each of the following independently:
+
+- Super Admin.
+- Sub-admin with attendance permissions.
+- Tutor.
+- School Admin.
+- School Student.
+- Individual Student.
+- Parent.
+
+Verify both permitted and forbidden actions.
+
+In particular:
+
+- Parents can see their children's attendance but cannot edit it.
+- Students can see their own attendance but cannot edit it.
+- School Admins see all their school's attendance.
+- School Students only see their own school's attendance record.
+- Tutors can modify attendance for assigned students.
+- Unassigned tutors cannot modify unrelated attendance.
+
+## G. Administrator permission tests
+
+Test every existing administrative role.
+
+Verify:
+
+- Appropriate tabs are visible.
+- Unauthorised tabs are hidden.
+- Direct URL access is rejected where appropriate.
+- Restricted Firestore reads are denied.
+- Restricted Firestore writes are denied.
+- Sub-admins cannot promote themselves.
+- Super Admin retains full legitimate access.
+
+## H. Notification tests
+
+- Tutor sends to assigned student.
+- Tutor sends to assigned school.
+- Unassigned student cannot be targeted.
+- Unassigned school cannot be targeted.
+- Student receives notification.
+- Notification read status works.
+- Notification history remains available.
+
+## I. Agreement tests
+
+- Admin proposes an agreement.
+- Tutor receives it.
+- Tutor confirms.
+- Parent receives the confirmed terms.
+- Parent confirms.
+- Final agreement status is accurate.
+- Rejection is handled correctly.
+- History is retained.
+
+---
+
+# PHASE 12 — IMPLEMENTATION ORDER
+
+Work in controlled phases.
+
+### Milestone 1: Audit and regression diagnosis
+
+Establish the correct project and identify the exact cause of the assessment failure.
+
+Deliver a list of affected files, broken functions, dependencies and required repairs.
+
+### Milestone 2: Restore assessment functionality
+
+Resolve the undefined variable.
+
+Repair manual submission.
+
+Restore automatic timeout submission.
+
+Restore assessment closure and confirmation messages.
+
+Verify answer persistence.
+
+### Milestone 3: Complete assessment functionality
+
+Repair access-code classification.
+
+Verify auto-release.
+
+Verify automatic grading.
+
+Implement the additional-time functionality.
+
+Implement minimum passing score and retakes.
+
+### Milestone 4: Attendance and role hierarchy
+
+Implement attendance visibility and editing permissions.
+
+Implement the Super Admin and sub-admin hierarchy.
+
+Enforce all restrictions at the backend level.
+
+### Milestone 5: Notifications and agreements
+
+Complete tutor notification functionality.
+
+Implement the tutor-parent agreement workflow.
+
+### Milestone 6: Security and regression testing
+
+Validate Firestore rules.
+
+Test all roles.
+
+Test all critical workflows.
+
+Test all important failure scenarios.
+
+### Milestone 7: Final system verification
+
+Run the application end to end.
+
+Check desktop and mobile layouts.
+
+Review browser console errors.
+
+Review Firebase errors.
+
+Verify database persistence.
+
+Verify that all previously functioning features still work.
+
+Prepare a final report.
+
+---
+
+# STRICT IMPLEMENTATION RULES
+
+These rules must be respected throughout the project.
+
+1. Do not rebuild the portal from scratch.
+2. Do not replace working assessment scripts without understanding them.
+3. Do not remove existing fallback functionality.
+4. Do not introduce duplicate assessment engines.
+5. Do not create a separate attendance implementation for each portal when shared logic can be safely reused.
+6. Do not hardcode permissions only in the frontend.
+7. Do not expose assessment answers or access codes.
+8. Do not erase previous assessment attempts.
+9. Do not allow the countdown to expire without finalising the assessment.
+10. Do not silently swallow JavaScript or Firebase errors.
+11. Do not introduce unnecessary dependencies.
+12. Do not perform an unsolicited visual redesign.
+13. Preserve the existing brand identity and portal experience.
+14. Preserve existing records and database compatibility.
+15. Maintain backward compatibility with existing data wherever possible.
+16. Do not remove functionality simply because it is difficult to repair.
+17. Never claim that something works without actually testing it.
+18. Do not deploy unverified changes to the production environment.
+
+When an existing implementation is functional but incomplete, extend it rather than replacing it.
+
+When an existing implementation is broken, identify its root cause and make the smallest reliable repair that addresses the problem.
+
+---
+
+# FINAL ACCEPTANCE CRITERIA
+
+The project must not be declared complete until all of the following are satisfied:
+
+- [ ] The actual live assessment source has been identified.
+- [ ] The MANUAL_DELIVERABLE_TYPES error is resolved at its source.
+- [ ] Manual assessment submission works.
+- [ ] Automatic submission at timer expiry works.
+- [ ] Assessments close correctly after submission.
+- [ ] Existing student confirmation messages work.
+- [ ] Answers remain safely persisted.
+- [ ] Tests and examinations require access codes.
+- [ ] Activities and assignments do not require access codes.
+- [ ] Tutor-configured auto-release works.
+- [ ] Automatic grading works.
+- [ ] Released automatic scores are immediately visible.
+- [ ] Tutors can grant additional time.
+- [ ] The student timer reflects additional time correctly.
+- [ ] The extra-time badge displays the correct value.
+- [ ] Tutors can configure minimum passing scores.
+- [ ] Retakes preserve previous attempt histories.
+- [ ] Parents and students can view appropriate attendance records.
+- [ ] School Admins can view attendance across their own schools.
+- [ ] Tutors and authorised administrators can modify attendance.
+- [ ] Super Admin has complete administrative access.
+- [ ] Sub-admins are restricted to their assigned responsibilities.
+- [ ] Backend permissions are enforced.
+- [ ] Tutors can notify assigned students and schools.
+- [ ] Tutor-parent agreement workflows function correctly.
+- [ ] No unauthorised cross-school data access exists.
+- [ ] No critical JavaScript runtime errors remain.
+- [ ] No critical Firebase permission errors remain.
+- [ ] All regression tests pass.
+- [ ] Existing unrelated portal functionality remains intact.
+
+# FINAL DELIVERY REPORT
+
+At completion, provide a factual engineering report containing:
+
+**1. Root cause analysis**
+Explain precisely why the previously functioning assessment submission and timeout mechanisms stopped working.
+
+**2. Files modified**
+List every modified file and what was changed.
+
+**3. Database and security changes**
+Identify any modified Firestore collections, schemas, indexes, rules or Cloud Functions.
+
+**4. Functionality completed**
+List the implemented and repaired features.
+
+**5. Test results**
+Provide actual test results for every critical workflow and role.
+
+**6. Remaining issues**
+Identify anything that could not be completed, including the reason.
+
+**7. Deployment status**
+Clearly distinguish code that has been repaired and tested from code that has actually been deployed.
+
+**8. Final release assessment**
+State whether the portal is ready for production based on the tests performed.
+
+The mission is to leave Jaystarbliss Studios with a reliable, secure and fully functional educational portal.
+
+Do not settle for making the errors disappear.
+
+Restore the existing working behaviour, complete the requirements and verify the entire system.

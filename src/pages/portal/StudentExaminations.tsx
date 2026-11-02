@@ -13,6 +13,7 @@ import {
   ExternalLink,
   CheckCircle2,
   Lock,
+  Play,
 } from "lucide-react";
 import { auth, db, getAllClientDatabases } from "../../lib/firebase";
 import {
@@ -564,9 +565,15 @@ export default function StudentExaminations() {
   };
 
   // Validate Passcode & Begin Assessment or Unlock External Link
-  const unlock = async (examId: string) => {
-    const inputPasscode = (passcodes[examId] || "").trim();
-    if (!inputPasscode) {
+  const unlock = async (examId: string, overridePasscode?: string) => {
+    const targetExam = exams.find((e) => e.id === examId);
+    const normalizedType = normalizeWorkType(targetExam?.workType, targetExam);
+    const requiresCode =
+      (normalizedType === "TEST" || normalizedType === "EXAMINATION") &&
+      Boolean(targetExam?.passcode || targetExam?.passcodeHash);
+
+    const inputPasscode = overridePasscode !== undefined ? overridePasscode : (passcodes[examId] || "").trim();
+    if (requiresCode && !inputPasscode) {
       setMessage({
         id: examId,
         text: "Please enter the assessment passcode provided by your tutor.",
@@ -578,7 +585,6 @@ export default function StudentExaminations() {
     setMessage(null);
 
     try {
-      const targetExam = exams.find((e) => e.id === examId);
       const isExternalExam = targetExam?.deliveryMode === "EXTERNAL_LINK";
 
       let attemptId = "";
@@ -610,18 +616,20 @@ export default function StudentExaminations() {
       if (!attemptId && !unlockedExternalUrl) {
         if (!targetExam) throw new Error("Assessment details could not be found.");
 
-        const cleanInput = inputPasscode.trim().toUpperCase();
-        const inputHash = await computeHash(inputPasscode.trim());
+        if (requiresCode) {
+          const cleanInput = inputPasscode.trim().toUpperCase();
+          const inputHash = await computeHash(inputPasscode.trim());
 
-        const storedPlain = String(targetExam.passcode || "").trim().toUpperCase();
-        const storedHash = String(targetExam.passcodeHash || "").trim().toLowerCase();
+          const storedPlain = String(targetExam.passcode || "").trim().toUpperCase();
+          const storedHash = String(targetExam.passcodeHash || "").trim().toLowerCase();
 
-        const isValid =
-          (storedPlain && storedPlain === cleanInput) || (storedHash && storedHash === inputHash);
-        if (!isValid) {
-          throw new Error(
-            "Invalid assessment passcode. Please contact your tutor or school coordinator."
-          );
+          const isValid =
+            (storedPlain && storedPlain === cleanInput) || (storedHash && storedHash === inputHash);
+          if (!isValid) {
+            throw new Error(
+              "Invalid assessment passcode. Please contact your tutor or school coordinator."
+            );
+          }
         }
 
         if (isExternalExam) {
@@ -1037,85 +1045,141 @@ export default function StudentExaminations() {
                     </div>
                   )}
 
-                  {/* PASSCODE ENTRY UNLOCK */}
+                  {/* ATTEMPT / ACCESS UNLOCK SECTION */}
                   {exam.status === "active" &&
                     !unlockedUrl &&
                     !["in_progress", "submitted", "expired", "graded"].includes(
                       exam.attemptStatus || ""
                     ) && (
                       <div className="mt-4 sm:mt-5 rounded-2xl bg-blue-50/70 dark:bg-blue-950/25 p-4 sm:p-5 border border-blue-100 dark:border-blue-900/50">
-                        <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                          <LockKeyhole
-                            size={18}
-                            className="text-blue-700 dark:text-blue-400 shrink-0"
-                          />
-                          Enter {typeLabels.singular} Passcode
-                        </div>
-                        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                          Enter the passcode provided by your tutor or school coordinator to{" "}
-                          {isExternal
-                            ? `unlock the external ${typeLabels.lowerSingular} link.`
-                            : `unlock and start this ${typeLabels.lowerSingular}.`}
-                        </p>
-                        <div className="mt-3 flex flex-col gap-2.5 sm:flex-row">
-                          <div className="relative flex-1 min-w-0">
-                            <input
-                              aria-label={`Passcode for ${exam.title}`}
-                              autoComplete="off"
-                              value={passcodes[exam.id] || ""}
-                              onChange={(e) =>
-                                setPasscodes((prev) => ({ ...prev, [exam.id]: e.target.value }))
-                              }
-                              type={visible[exam.id] ? "text" : "password"}
-                              maxLength={128}
-                              className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 pr-12 text-slate-900 dark:text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm font-semibold tracking-wider"
-                              placeholder="Enter passcode (e.g. JDI-XXXXXX)"
-                            />
-                            <button
-                              type="button"
-                              aria-label={visible[exam.id] ? "Hide passcode" : "Show passcode"}
-                              onClick={() =>
-                                setVisible((prev) => ({ ...prev, [exam.id]: !prev[exam.id] }))
-                              }
-                              className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
-                            >
-                              {visible[exam.id] ? <EyeOff size={18} /> : <Eye size={18} />}
-                            </button>
-                          </div>
-                          <button
-                            type="button"
-                            disabled={busy === exam.id}
-                            onClick={() => unlock(exam.id)}
-                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm shrink-0"
-                          >
-                            <LockKeyhole size={17} />
-                            {busy === exam.id
-                              ? "Validating…"
-                              : isExternal
-                              ? "Verify Access Code"
-                              : `Unlock & ${typeLabels.startLabel}`}
-                          </button>
-                        </div>
-                        {message?.id === exam.id && (
-                          <p
-                            role="alert"
-                            className={`mt-3 flex items-start gap-2 text-xs font-semibold ${
-                              message.error
-                                ? "text-red-700 dark:text-red-400"
-                                : "text-emerald-700 dark:text-emerald-400"
-                            }`}
-                          >
-                            <CircleAlert size={16} className="mt-0.5 shrink-0" />
-                            <span>{message.text}</span>
-                          </p>
-                        )}
-                        <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-                          <ShieldCheck
-                            size={14}
-                            className="text-blue-600 dark:text-blue-400 shrink-0"
-                          />
-                          Protected by Jaystarbliss Central CBT Assessment Security.
-                        </p>
+                        {(() => {
+                          const normalizedType = normalizeWorkType(exam.workType, exam);
+                          const requiresCode =
+                            (normalizedType === "TEST" || normalizedType === "EXAMINATION") &&
+                            Boolean(exam.passcode || exam.passcodeHash);
+
+                          if (!requiresCode) {
+                            return (
+                              <div className="space-y-3">
+                                <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                                  <Play size={18} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                                  Ready to Begin {typeLabels.singular}
+                                </div>
+                                <p className="text-xs text-slate-600 dark:text-slate-300">
+                                  {isExternal
+                                    ? `Click below to launch your external ${typeLabels.lowerSingular}.`
+                                    : `This ${typeLabels.lowerSingular} is open and ready. Click below to start your attempt.`}
+                                </p>
+                                <div>
+                                  <button
+                                    type="button"
+                                    disabled={busy === exam.id}
+                                    onClick={() => unlock(exam.id, "")}
+                                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm cursor-pointer"
+                                  >
+                                    <Play size={17} />
+                                    {busy === exam.id
+                                      ? "Starting…"
+                                      : isExternal
+                                      ? `Open ${typeLabels.singular}`
+                                      : `Start ${typeLabels.singular}`}
+                                    <ArrowRight size={16} />
+                                  </button>
+                                </div>
+                                {message?.id === exam.id && (
+                                  <p
+                                    role="alert"
+                                    className={`mt-2 flex items-start gap-2 text-xs font-semibold ${
+                                      message.error
+                                        ? "text-red-700 dark:text-red-400"
+                                        : "text-emerald-700 dark:text-emerald-400"
+                                    }`}
+                                  >
+                                    <CircleAlert size={16} className="mt-0.5 shrink-0" />
+                                    <span>{message.text}</span>
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <>
+                              <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                                <LockKeyhole
+                                  size={18}
+                                  className="text-blue-700 dark:text-blue-400 shrink-0"
+                                />
+                                Enter {typeLabels.singular} Passcode
+                              </div>
+                              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                                Enter the passcode provided by your tutor or school coordinator to{" "}
+                                {isExternal
+                                  ? `unlock the external ${typeLabels.lowerSingular} link.`
+                                  : `unlock and start this ${typeLabels.lowerSingular}.`}
+                              </p>
+                              <div className="mt-3 flex flex-col gap-2.5 sm:flex-row">
+                                <div className="relative flex-1 min-w-0">
+                                  <input
+                                    aria-label={`Passcode for ${exam.title}`}
+                                    autoComplete="off"
+                                    value={passcodes[exam.id] || ""}
+                                    onChange={(e) =>
+                                      setPasscodes((prev) => ({ ...prev, [exam.id]: e.target.value }))
+                                    }
+                                    type={visible[exam.id] ? "text" : "password"}
+                                    maxLength={128}
+                                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 pr-12 text-slate-900 dark:text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm font-semibold tracking-wider"
+                                    placeholder="Enter passcode (e.g. JDI-XXXXXX)"
+                                  />
+                                  <button
+                                    type="button"
+                                    aria-label={visible[exam.id] ? "Hide passcode" : "Show passcode"}
+                                    onClick={() =>
+                                      setVisible((prev) => ({ ...prev, [exam.id]: !prev[exam.id] }))
+                                    }
+                                    className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                                  >
+                                    {visible[exam.id] ? <EyeOff size={18} /> : <Eye size={18} />}
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={busy === exam.id}
+                                  onClick={() => unlock(exam.id)}
+                                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm shrink-0 cursor-pointer"
+                                >
+                                  <LockKeyhole size={17} />
+                                  {busy === exam.id
+                                    ? "Validating…"
+                                    : isExternal
+                                    ? "Verify Access Code"
+                                    : `Unlock & ${typeLabels.startLabel}`}
+                                </button>
+                              </div>
+                              {message?.id === exam.id && (
+                                <p
+                                  role="alert"
+                                  className={`mt-3 flex items-start gap-2 text-xs font-semibold ${
+                                    message.error
+                                      ? "text-red-700 dark:text-red-400"
+                                      : "text-emerald-700 dark:text-emerald-400"
+                                  }`}
+                                >
+                                  <CircleAlert size={16} className="mt-0.5 shrink-0" />
+                                  <span>{message.text}</span>
+                                </p>
+                              )}
+                              <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                <ShieldCheck
+                                  size={14}
+                                  className="text-blue-600 dark:text-blue-400 shrink-0"
+                                />
+                                Protected by Jaystarbliss Central CBT Assessment Security.
+                              </p>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
                 </article>

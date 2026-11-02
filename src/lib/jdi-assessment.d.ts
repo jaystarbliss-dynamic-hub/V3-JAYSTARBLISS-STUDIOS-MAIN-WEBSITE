@@ -15,6 +15,9 @@ export type CanonicalClassName =
   | "University (Undergraduate)"
   | "Graduate (BSc, HND, ND, etc.)";
 
+export const OBJECTIVE: Set<string>;
+export const MANUAL_DELIVERABLE_TYPES: Set<string>;
+export const TYPES: Set<string>;
 export const CANONICAL_CLASSES: CanonicalClassName[];
 
 export function normalizeClassName(input: unknown, fallback?: string): string;

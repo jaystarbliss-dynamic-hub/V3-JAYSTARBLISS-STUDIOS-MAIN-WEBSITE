@@ -3,8 +3,20 @@
  * helpers shared by request handlers, frontend utilities, and automated tests.
  * Keeping one implementation prevents score, denominator, or class-matching drift.
  */
-const OBJECTIVE = new Set(["single_choice", "multiple_choice", "true_false", "dropdown"]);
-const TYPES = new Set([...OBJECTIVE, "short_answer", "essay"]);
+export const OBJECTIVE = new Set(["single_choice", "multiple_choice", "true_false", "dropdown"]);
+export const MANUAL_DELIVERABLE_TYPES = new Set([
+  "practical_task",
+  "link_submission",
+  "file_submission",
+  "essay",
+  "long_answer",
+]);
+export const TYPES = new Set([
+  ...OBJECTIVE,
+  ...MANUAL_DELIVERABLE_TYPES,
+  "short_answer",
+  "learning_resource",
+]);
 
 export const CANONICAL_CLASSES = [
   "Early Years",
@@ -1449,9 +1461,20 @@ export function canAccessAgreement(agreementOrOpts = {}, actorArg = {}) {
 // ASSESSMENT RESULT RELEASE & PRINTING AUTHORIZATION
 // ============================================================================
 
-export function isAttemptResultReleased(attempt = {}) {
+export function isAttemptResultReleased(attempt = {}, exam = {}) {
   if (!attempt || typeof attempt !== "object") return false;
-  return Boolean(attempt.releasedAt || attempt.resultReleased === true);
+  if (attempt.releasedAt || attempt.resultReleased === true) return true;
+
+  const autoReleaseAt = attempt.autoReleaseAt || exam.autoReleaseAt || exam.autoReleaseDate;
+  if (autoReleaseAt) {
+    const relTime = new Date(autoReleaseAt).getTime();
+    if (!isNaN(relTime) && Date.now() >= relTime) return true;
+  }
+  if (attempt.autoRelease === true || exam.autoRelease === true) {
+    const status = String(attempt.status || "").toLowerCase();
+    if (["submitted", "expired", "graded"].includes(status)) return true;
+  }
+  return false;
 }
 
 export function canViewOrPrintAttemptResult(attempt = {}, callerRole = "") {

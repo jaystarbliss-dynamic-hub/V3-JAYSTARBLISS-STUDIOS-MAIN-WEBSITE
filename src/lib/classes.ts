@@ -33,8 +33,11 @@ import {
   isAttemptResultReleased as sharedIsAttemptResultReleased,
   canViewOrPrintAttemptResult as sharedCanViewOrPrintAttemptResult,
   getWorkTypeLabels as sharedGetWorkTypeLabels,
+  MANUAL_DELIVERABLE_TYPES as SHARED_MANUAL_DELIVERABLE_TYPES,
   type WorkTypeLabels as SharedWorkTypeLabels,
 } from './jdi-assessment.js';
+
+export const MANUAL_DELIVERABLE_TYPES = SHARED_MANUAL_DELIVERABLE_TYPES;
 
 export type AcademicWorkType = 'ASSIGNMENT' | 'ACTIVITY' | 'TEST' | 'EXAMINATION';
 export type WorkType = AcademicWorkType;
