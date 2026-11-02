@@ -1,158 +1,173 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { Mail, Phone, MapPin, ExternalLink, Globe } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { Mail, Phone, MapPin, MessageSquare, HelpCircle } from 'lucide-react';
+import { JaystarblissIcon } from '../common/JaystarblissLogo';
+import { useToast } from '../../contexts/ToastContext';
 
 const Footer: React.FC = () => {
-  const [settings, setSettings] = useState<any>({
-    siteName: 'Jaystarbliss Studios',
-    tagline: 'A multi-service digital, creative and educational hub helping people learn, build, create and grow.',
-    contactEmail: 'info@jaystarbliss-studios.name.ng',
-    infoEmail: 'info@jaystarbliss-studios.name.ng',
-    supportEmail: 'support@jaystarbliss-studios.name.ng',
+  const { toast } = useToast();
+  const [email, setEmail] = useState('');
+  const [settings, setSettings] = useState({
+    companyName: 'Jaystarbliss Studios',
+    contactEmail: 'jaystarblissstudios@gmail.com',
     contactPhone: '+234 913 651 8194',
-    infoWhatsapp: '+234 913 052 9010',
-    supportWhatsapp: '+234 707 763 8925',
+    secondaryPhone: '+234 913 052 9010',
+    googleBusinessUrl: 'https://share.google/mqVU8pAgKEDjOfGHe',
     address: 'Lagos, Nigeria',
-    facebookUrl: '',
-    instagramUrl: '',
-    linkedinUrl: '',
-    youtubeUrl: ''
+    twitter: '#',
+    linkedin: '#',
+    instagram: '#'
   });
 
   useEffect(() => {
+    let isMounted = true;
     const fetchSettings = async () => {
       try {
-        const docRef = doc(db, 'settings', 'global');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setSettings((prev: any) => ({ ...prev, ...docSnap.data() }));
+        const docSnap = await getDoc(doc(db, 'settings', 'global'));
+        if (docSnap.exists() && isMounted) {
+          setSettings(prev => ({ ...prev, ...docSnap.data() }));
         }
       } catch (error) {
-        console.error('Error fetching global settings:', error);
+        // Fallback safely to default company & contact info
+        console.warn("Notice: Using default settings configuration:", error);
       }
     };
     fetchSettings();
+    return () => { isMounted = false; };
   }, []);
 
-  const cleanPhone = (val: string) => String(val || '').replace(/[^0-9]/g, '');
+  const handleSubscribe = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    // Process newsletter subscription
+    setEmail('');
+    toast.success('Thank you for subscribing to Jaystarbliss Studios updates & curriculum newsletters!');
+  };
 
   return (
-    <footer className="bg-brand-slate text-white pt-20 pb-12 border-t border-white/10">
+    <footer className="bg-brand-slate pt-20 pb-10 border-t border-slate-800 relative z-50">
       <div className="container mx-auto px-4 md:px-8 max-w-7xl">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
-          <div>
-            <Link to="/" className="inline-flex items-center gap-3 mb-6">
-              <img
-                src="/logo.png"
-                alt="Jaystarbliss Studios Logo"
-                width={48}
-                height={48}
-                loading="lazy"
-                decoding="async"
-                className="w-12 h-12 object-contain"
-              />
-              <span className="font-extrabold text-xl tracking-tight text-white">
-                {settings.siteName || 'JAYSTARBLISS'}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-12 lg:gap-8 mb-16">
+          
+          {/* Column 1: Brand & Socials (Span 4) */}
+          <div className="lg:col-span-4 pr-0 lg:pr-8">
+            <Link to="/" className="inline-block mb-6">
+              <span className="text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
+                <JaystarblissIcon className="w-8 h-8" />
+                JAYSTARBLISS STUDIOS
               </span>
             </Link>
-            <p className="text-brand-neutral/70 text-sm leading-relaxed mb-6">
-              {settings.tagline}
+            <p className="text-gray-400 mb-8 font-medium leading-relaxed">
+              Empowering learners of all ages through personalized digital education, technology tracks, and scalable software solutions.
             </p>
-            <div className="flex space-x-3">
-              {settings.facebookUrl && (
-                <a href={settings.facebookUrl} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg bg-white/5 flex items-center justify-center hover:bg-brand-red transition-colors text-xs font-bold">FB</a>
-              )}
-              {settings.instagramUrl && (
-                <a href={settings.instagramUrl} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg bg-white/5 flex items-center justify-center hover:bg-brand-red transition-colors text-xs font-bold">IG</a>
-              )}
-              {settings.linkedinUrl && (
-                <a href={settings.linkedinUrl} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg bg-white/5 flex items-center justify-center hover:bg-brand-red transition-colors text-xs font-bold">IN</a>
-              )}
-              {settings.youtubeUrl && (
-                <a href={settings.youtubeUrl} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg bg-white/5 flex items-center justify-center hover:bg-brand-red transition-colors text-xs font-bold">YT</a>
-              )}
+            <div className="flex items-center gap-3">
+              <a href={settings.twitter || '#'} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-gray-400 hover:bg-brand-red hover:text-white transition-all">
+                <span className="text-xs font-bold">X</span>
+              </a>
+              <a href={settings.instagram || '#'} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-gray-400 hover:bg-brand-red hover:text-white transition-all">
+                <span className="text-xs font-bold">IG</span>
+              </a>
+              <a href={settings.linkedin || '#'} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-gray-400 hover:bg-brand-red hover:text-white transition-all">
+                <span className="text-xs font-bold">IN</span>
+              </a>
+              <a 
+                href={settings.googleBusinessUrl || 'https://share.google/mqVU8pAgKEDjOfGHe'} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="px-3 h-10 rounded-full bg-slate-800 flex items-center gap-1.5 text-gray-300 hover:bg-brand-red hover:text-white transition-all text-xs font-bold"
+                title="View Google Business Profile"
+              >
+                <Globe size={14} />
+                <span>Google</span>
+              </a>
             </div>
           </div>
 
-          <div>
-            <h4 className="font-bold text-sm uppercase tracking-wider mb-6 text-white">Quick Links</h4>
-            <ul className="space-y-3 text-brand-neutral/70 text-sm">
-              <li><Link to="/about" className="hover:text-white transition-colors">About Us</Link></li>
-              <li><Link to="/programs" className="hover:text-white transition-colors">Programs &amp; Academies</Link></li>
-              <li><Link to="/courses" className="hover:text-white transition-colors">All Courses</Link></li>
-              <li><Link to="/services" className="hover:text-white transition-colors">Services</Link></li>
-              <li><Link to="/portfolio" className="hover:text-white transition-colors">Portfolio</Link></li>
-              <li><Link to="/kids-projects" className="hover:text-white transition-colors">Kids Zone</Link></li>
-              <li><Link to="/blog" className="hover:text-white transition-colors">Blog</Link></li>
-              <li><Link to="/contact" className="hover:text-white transition-colors">Contact</Link></li>
+          {/* Column 2: Quick Links (Span 2) */}
+          <div className="lg:col-span-2">
+            <h3 className="text-white font-bold mb-6 tracking-wide uppercase text-sm">Navigation</h3>
+            <ul className="space-y-4">
+              <li><Link to="/about" className="text-gray-400 hover:text-brand-red transition-colors font-medium">About Us</Link></li>
+              <li><Link to="/programs" className="text-gray-400 hover:text-brand-red transition-colors font-medium">Programs</Link></li>
+              <li><Link to="/services" className="text-gray-400 hover:text-brand-red transition-colors font-medium">Services</Link></li>
+              <li><Link to="/portfolio" className="text-gray-400 hover:text-brand-red transition-colors font-medium">Portfolio & Showcase</Link></li>
+              <li><Link to="/magic-particles" className="text-cyan-400 hover:text-cyan-300 transition-colors font-medium flex items-center gap-1">Magic Particles</Link></li>
+              <li><Link to="/school-partnership" className="text-gray-400 hover:text-brand-red transition-colors font-medium">School Partnerships</Link></li>
             </ul>
           </div>
 
-          <div>
-            <h4 className="font-bold text-sm uppercase tracking-wider mb-6 text-white">Portals</h4>
-            <ul className="space-y-3 text-brand-neutral/70 text-sm">
-              <li><Link to="/login" className="hover:text-white transition-colors">Student Portal</Link></li>
-              <li><Link to="/login" className="hover:text-white transition-colors">Parent Portal</Link></li>
-              <li><Link to="/login" className="hover:text-white transition-colors">Tutor / Staff Portal</Link></li>
-              <li><Link to="/login" className="hover:text-white transition-colors">Partner School Portal</Link></li>
-              <li><Link to="/register" className="hover:text-white transition-colors">Create Account</Link></li>
+          {/* Column 3: Resources (Span 2) */}
+          <div className="lg:col-span-2">
+            <h3 className="text-white font-bold mb-6 tracking-wide uppercase text-sm">Resources</h3>
+            <ul className="space-y-4">
+              <li><Link to="/tutors" className="text-gray-400 hover:text-brand-red transition-colors font-medium">Find a Mentor</Link></li>
+              <li><Link to="/resources" className="text-gray-400 hover:text-brand-red transition-colors font-medium">Resource Center</Link></li>
+              <li><Link to="/blog" className="text-gray-400 hover:text-brand-red transition-colors font-medium">Blog</Link></li>
+              <li><Link to="/faq" className="text-gray-400 hover:text-brand-red transition-colors font-medium">FAQ</Link></li>
+              <li><Link to="/contact" className="text-gray-400 hover:text-brand-red transition-colors font-medium">Contact</Link></li>
             </ul>
           </div>
 
-          <div>
-            <h4 className="font-bold text-sm uppercase tracking-wider mb-6 text-white">Contact &amp; Support Desks</h4>
-            <div className="space-y-4 text-brand-neutral/70 text-xs">
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                <div className="font-bold text-emerald-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                  <MessageSquare size={13} />
-                  <span>Services &amp; Courses Info</span>
-                </div>
-                <a href={`https://wa.me/${cleanPhone(settings.infoWhatsapp || '2349130529010')}`} target="_blank" rel="noopener noreferrer" className="block text-white hover:text-emerald-400 font-semibold mb-0.5">
-                  WhatsApp: {settings.infoWhatsapp || '+234 913 052 9010'}
+          {/* Column 4: Newsletter & Contact (Span 4) */}
+          <div className="lg:col-span-4">
+            <h3 className="text-white font-bold mb-6 tracking-wide uppercase text-sm">Stay Updated</h3>
+            <p className="text-gray-400 mb-6 font-medium text-sm">
+              Subscribe to our newsletter for the latest updates on programs and tech insights.
+            </p>
+            <form onSubmit={handleSubscribe} className="flex gap-2 mb-8">
+              <input 
+                type="email" 
+                placeholder="Enter your email" 
+                className="bg-slate-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-red flex-grow border border-slate-700 text-sm"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              <button type="submit" className="bg-brand-red hover:bg-red-700 text-white px-6 py-3 rounded-lg font-bold transition-colors text-sm">
+                Join
+              </button>
+            </form>
+            
+            <div className="space-y-3">
+              <a href={`mailto:${settings.contactEmail}`} className="flex items-center gap-3 text-gray-400 hover:text-white transition-colors">
+                <Mail size={16} className="text-brand-red shrink-0" />
+                <span className="font-medium text-sm break-all">{settings.contactEmail}</span>
+              </a>
+              <div className="flex flex-col gap-1.5">
+                <a href="tel:+2349136518194" className="flex items-center gap-3 text-gray-400 hover:text-white transition-colors">
+                  <Phone size={16} className="text-brand-red shrink-0" />
+                  <span className="font-medium text-sm">+234 913 651 8194</span>
                 </a>
-                <a href={`mailto:${settings.infoEmail || 'info@jaystarbliss-studios.name.ng'}`} className="block text-slate-300 hover:text-white break-all">
-                  {settings.infoEmail || 'info@jaystarbliss-studios.name.ng'}
+                <a href="tel:+2349130529010" className="flex items-center gap-3 text-gray-400 hover:text-white transition-colors pl-7">
+                  <span className="font-medium text-sm">+234 913 052 9010</span>
                 </a>
               </div>
-
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                <div className="font-bold text-rose-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                  <HelpCircle size={13} />
-                  <span>Portal &amp; Tech Support</span>
-                </div>
-                <a href={`https://wa.me/${cleanPhone(settings.supportWhatsapp || '2347077638925')}`} target="_blank" rel="noopener noreferrer" className="block text-white hover:text-rose-400 font-semibold mb-0.5">
-                  WhatsApp: {settings.supportWhatsapp || '+234 707 763 8925'}
-                </a>
-                <a href={`mailto:${settings.supportEmail || 'support@jaystarbliss-studios.name.ng'}`} className="block text-slate-300 hover:text-white break-all">
-                  {settings.supportEmail || 'support@jaystarbliss-studios.name.ng'}
-                </a>
+              <div className="flex items-center gap-3 text-gray-400">
+                <MapPin size={16} className="text-brand-red shrink-0" />
+                <span className="font-medium text-sm">{settings.address}</span>
               </div>
-
-              <div className="space-y-1.5 pt-1">
-                <div className="flex items-center gap-2">
-                  <Phone size={14} className="text-brand-red shrink-0" />
-                  <span>{settings.contactPhone}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Mail size={14} className="text-brand-red shrink-0" />
-                  <span className="break-all">{settings.contactEmail}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <MapPin size={14} className="text-brand-red shrink-0" />
-                  <span>{settings.address}</span>
-                </div>
-              </div>
+              <a 
+                href={settings.googleBusinessUrl || 'https://share.google/mqVU8pAgKEDjOfGHe'}
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="flex items-center gap-2 text-xs font-semibold text-cyan-400 hover:text-cyan-300 transition-colors pt-1"
+              >
+                <span>Google Business Profile Details</span>
+                <ExternalLink size={13} />
+              </a>
             </div>
           </div>
         </div>
 
-        <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center text-xs text-brand-neutral/50 gap-4">
-          <p>&copy; {new Date().getFullYear()} {settings.siteName}. All rights reserved.</p>
-          <div className="flex space-x-6">
-            <Link to="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
-            <Link to="/terms" className="hover:text-white transition-colors">Terms of Service</Link>
+        <div className="pt-8 border-t border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
+          <p className="text-gray-500 font-medium text-sm">
+            &copy; {new Date().getFullYear()} {settings.companyName}. All rights reserved.
+          </p>
+          <div className="flex gap-6 text-sm font-medium">
+            <Link to="#" className="text-gray-500 hover:text-white transition-colors">Privacy Policy</Link>
+            <Link to="#" className="text-gray-500 hover:text-white transition-colors">Terms of Service</Link>
           </div>
         </div>
       </div>

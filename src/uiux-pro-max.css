@@ -1,58 +1,221 @@
-/* ==========================================================================
-   UI/UX PRO MAX — DESIGN SYSTEM TOKENS & UTILITIES
-   ========================================================================== */
-
 :root {
-  --font-display: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-sans: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
-  --surface-primary: #f8fafc;
-  --surface-elevated: #ffffff;
-  --surface-glass: rgba(255, 255, 255, 0.78);
-  --border-subtle: rgba(148, 163, 184, 0.22);
-  --border-focus: rgba(239, 68, 68, 0.45);
-  --shadow-ambient: 0 10px 30px -10px rgba(15, 23, 42, 0.06), 0 4px 12px -2px rgba(15, 23, 42, 0.03);
-  --shadow-hover: 0 20px 40px -12px rgba(15, 23, 42, 0.12), 0 8px 16px -4px rgba(15, 23, 42, 0.05);
+  /* Core Brand & Neutral Tokens */
+  --jb-brand-slate: #1e293b;
+  --jb-brand-red: #b91c1c;
+  --jb-brand-neutral: #f8fafc;
+  --jb-surface: #ffffff;
+  --jb-surface-muted: #f1f5f9;
+  --jb-text: #0f172a;
+  --jb-text-muted: #64748b;
+  --jb-border: #e2e8f0;
+  --jb-focus: #0284c7;
+
+  /* Semantic Status Tokens */
+  --jb-status-success: #16a34a;
+  --jb-status-success-bg: #dcfce7;
+  --jb-status-warning: #d97706;
+  --jb-status-warning-bg: #fef3c7;
+  --jb-status-danger: #dc2626;
+  --jb-status-danger-bg: #fee2e2;
+  --jb-status-info: #2563eb;
+  --jb-status-info-bg: #dbeafe;
+
+  /* Elevation & Shadows */
+  --jb-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --jb-shadow-md: 0 4px 12px rgba(15, 23, 42, 0.05);
+  --jb-shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.08);
+
+  /* Spacing Scale & Control Heights */
+  --jb-space-1: 0.5rem;
+  --jb-space-2: 0.75rem;
+  --jb-space-3: 1rem;
+  --jb-space-4: 1.5rem;
+  --jb-space-5: 2rem;
+  --jb-space-6: 3rem;
+  --jb-header-height: 3.5rem;
+  --jb-touch-target: 2.75rem;
+
+  /* Radii & Z-Index Layers */
+  --jb-radius-sm: 0.75rem;
+  --jb-radius-md: 1rem;
+  --jb-radius-lg: 1.25rem;
+  --jb-z-sticky: 20;
+  --jb-z-sidebar: 30;
+  --jb-z-drawer: 50;
+  --jb-z-modal: 60;
 }
 
-.dark {
-  --surface-primary: #070b14;
-  --surface-elevated: #0f172a;
-  --surface-glass: rgba(15, 23, 42, 0.75);
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-focus: rgba(239, 68, 68, 0.5);
-  --shadow-ambient: 0 12px 32px -8px rgba(0, 0, 0, 0.45), 0 4px 12px -2px rgba(0, 0, 0, 0.3);
-  --shadow-hover: 0 24px 48px -12px rgba(0, 0, 0, 0.65), 0 8px 20px -4px rgba(0, 0, 0, 0.4);
+html.dark {
+  --jb-surface: #111827;
+  --jb-surface-muted: #1e293b;
+  --jb-text: #f8fafc;
+  --jb-text-muted: #94a3b8;
+  --jb-border: rgba(255, 255, 255, 0.08);
+  --jb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --jb-shadow-md: 0 6px 16px rgba(0, 0, 0, 0.35);
+  --jb-shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.45);
 }
 
-.pro-bento-card {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-ambient);
-  border-radius: 1.25rem;
-  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s ease;
+/* Enforce tabular numerals on dashboard metrics, tables, and counters */
+.dashboard-interface td,
+.portal-interface td,
+.dashboard-interface .font-mono,
+.portal-interface .font-mono,
+.dashboard-interface [class*="text-2xl"],
+.dashboard-interface [class*="text-3xl"],
+.portal-interface [class*="text-2xl"],
+.portal-interface [class*="text-3xl"] {
+  font-variant-numeric: tabular-nums;
 }
 
-.pro-bento-card:hover {
+:where(a, button, input, select, textarea, [role='button'], [tabindex]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--jb-focus) 82%, white);
+  outline-offset: 2px;
+}
+
+:where(button, a, [role='button']) {
+  touch-action: manipulation;
+}
+
+.dashboard-interface :where(button, a:not(.text-only-action)) {
+  min-height: 44px;
+}
+
+.dashboard-interface,
+.portal-interface {
+  min-width: 0;
+}
+
+.dashboard-interface > *,
+.portal-interface > * {
+  min-width: 0;
+}
+
+.dashboard-interface .pro-surface,
+.portal-interface .pro-surface {
+  border-color: var(--jb-border);
+  box-shadow: var(--jb-shadow-sm), var(--jb-shadow-md);
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 180ms ease;
+}
+
+.dashboard-interface .pro-surface:hover,
+.portal-interface .pro-surface:hover {
+  box-shadow: var(--jb-shadow-sm), var(--jb-shadow-lg);
+}
+
+.dashboard-interface .pro-interactive:hover,
+.portal-interface .pro-interactive:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-hover);
 }
 
-.pro-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.25rem 0.625rem;
-  border-radius: 9999px;
+.dashboard-interface h1,
+.dashboard-interface h2,
+.dashboard-interface h3,
+.portal-interface h1,
+.portal-interface h2,
+.portal-interface h3 {
+  text-wrap: balance;
+}
+
+.dashboard-interface p,
+.dashboard-interface span,
+.dashboard-interface label,
+.portal-interface p,
+.portal-interface span,
+.portal-interface label {
+  overflow-wrap: anywhere;
+}
+
+.dashboard-interface .text-\[11px\],
+.portal-interface .text-\[11px\] {
+  letter-spacing: 0.055em;
+}
+
+.dashboard-interface .recharts-responsive-container,
+.dashboard-interface .recharts-wrapper,
+.portal-interface .recharts-responsive-container,
+.portal-interface .recharts-wrapper {
+  min-width: 0;
+}
+
+.dashboard-interface table,
+.portal-interface table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.dashboard-interface th,
+.portal-interface th {
   font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  line-height: 1rem;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
+  font-weight: 700;
 }
 
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
+.dashboard-interface :where(a, button),
+.portal-interface :where(a, button) {
+  -webkit-tap-highlight-color: transparent;
 }
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+
+/* Shared dashboard panel treatment for legacy Tailwind-heavy surfaces. */
+.dashboard-interface > :where(div[class*='rounded-2xl'][class*='border']),
+.portal-interface > :where(div[class*='rounded-2xl'][class*='border']) {
+  border-color: var(--jb-border);
+  box-shadow: var(--jb-shadow-sm), var(--jb-shadow-md);
+}
+
+/* Prefer wrapping over clipping essential labels on cards and chips. */
+.dashboard-interface :where(.whitespace-nowrap),
+.portal-interface :where(.whitespace-nowrap) {
+  max-width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .dashboard-interface .pro-interactive:hover,
+  .portal-interface .pro-interactive:hover {
+    transform: none;
+  }
+}
+
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .dashboard-interface,
+  .portal-interface {
+    gap: 1rem;
+  }
+
+  .dashboard-interface .pro-surface,
+  .portal-interface .pro-surface {
+    border-radius: var(--jb-radius-md);
+  }
+}
+
+@supports (padding: max(0px)) {
+  [data-mobile-nav='true'],
+  .mobile-bottom-nav {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
 }
