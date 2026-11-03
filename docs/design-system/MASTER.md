@@ -361,3 +361,47 @@ Before accepting a screen:
 - Is prototype data clearly labelled?
 
 **Decision:** This document governs new interface work. Individual screens may extend it, but should not independently redefine colour, typography, spacing, motion or interaction patterns.
+
+
+---
+
+## 13. Figma design file and handoff
+
+**Editable Figma file:** https://www.figma.com/design/gK1M6Dv3FGiNFxhbpKT1kk/Jaystarbliss-Studios-Product-Design-System-Experience
+
+This Figma file is the visual companion to this master specification.
+
+### File structure
+
+The file uses three pages to fit the current Figma Starter plan:
+1. `00 — Foundations`: editable brand palette specimen and typography samples.
+2. `01 — Components`: reusable Button and Status component sets, plus a Metric Card component and instances.
+3. `02 — Product Screens`: six editable, composed experiences:
+   - Public website homepage
+   - Student — My Learning
+   - Parent — Family Learning
+   - Tutor & Staff — Teaching Studio
+   - School Admin — School Command
+   - Super Admin — Platform Command
+
+### Editable foundations
+
+The file contains 79 Figma variables across four collections:
+- `JB / Color / Light` — 28 colour variables.
+- `JB / Color / Dark` — 28 colour variables.
+- `JB / Spacing & Radius` — 18 numeric variables.
+- `JB / Motion` — 5 timing variables.
+
+It also contains 10 Plus Jakarta Sans text styles and 3 shadow/effect styles.
+
+### Component inventory
+
+- Button component set: Primary, Secondary and Tertiary.
+- Status component set: Success, Warning, Info and Danger.
+- Metric Card component: label, value and context text properties.
+
+### Prototype data and design status
+
+All dashboard names, figures, activity and learner records are illustrative. They are not connected to Firebase or live portal accounts. The compositions are intended for design review and iteration, not as evidence that the operational dashboards have already been implemented.
+
+The Figma Starter plan currently limits this file to three pages and one mode per variable collection. Light and dark colour values are therefore kept in separate collections. This preserves both token sets without requiring an account upgrade.
