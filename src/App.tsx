@@ -98,6 +98,7 @@ const AdminReports = lazy(() => import("./pages/admin/AdminReports"));
 const AdminTutorSubjects = lazy(() => import("./pages/admin/AdminTutorSubjects"));
 const StudentEdgeClub = lazy(() => import("./pages/portal/StudentEdgeClub"));
 const PortalWireframesShowcase = lazy(() => import("./pages/PortalWireframesShowcase"));
+const DesignPreview = lazy(() => import("./pages/DesignPreview"));
 
 const StudentBillingGate = () =>
   sessionStorage.getItem("studentRegistrationType") === "individual" ? (
@@ -121,6 +122,7 @@ function AnimatedRoutes() {
       <Routes>
         <Route path="/" element={<PageTransition><Home /></PageTransition>} />
         <Route path="/wireframes" element={<PortalWireframesShowcase />} />
+        <Route path="/design-preview" element={<DesignPreview />} />
         <Route path="/about" element={<PageTransition><About /></PageTransition>} />
         <Route path="/programs" element={<PageTransition><Programs /></PageTransition>} />
         <Route path="/programs/:slug" element={<PageTransition><ProgramDetails /></PageTransition>} />
