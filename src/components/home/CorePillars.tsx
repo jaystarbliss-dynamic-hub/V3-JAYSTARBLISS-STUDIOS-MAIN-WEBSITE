@@ -55,7 +55,7 @@ const CorePillars: React.FC = () => {
   });
 
   return (
-    <section className="py-24 bg-white dark:bg-slate-900 dark:border-slate-800 border-t border-gray-100">
+    <section className="jb-home-section jb-home-pillars py-24 bg-white dark:bg-slate-900 dark:border-slate-800 border-t border-gray-100">
       <div className="container mx-auto px-4 md:px-8 max-w-7xl">
         <Reveal className="text-center max-w-3xl mx-auto mb-16">
           <h2 className="text-3xl md:text-5xl font-extrabold text-brand-slate dark:text-white mb-6 tracking-tight">

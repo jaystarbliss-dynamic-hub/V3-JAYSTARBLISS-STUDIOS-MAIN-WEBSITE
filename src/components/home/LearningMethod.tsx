@@ -29,7 +29,7 @@ const LearningMethod: React.FC = () => {
   ];
 
   return (
-    <section className="py-24 bg-white dark:bg-slate-900 dark:border-slate-800 border-t border-gray-100">
+    <section className="jb-home-section jb-home-learning py-24 bg-white dark:bg-slate-900 dark:border-slate-800 border-t border-gray-100">
       <div className="container mx-auto px-4 md:px-8 max-w-7xl">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 items-center">
           <Reveal className="lg:col-span-5">

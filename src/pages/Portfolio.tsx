@@ -105,7 +105,7 @@ const Portfolio: React.FC = () => {
       />
 
       {/* Cinematic Portfolio Showcase Hero */}
-      <div className="bg-[#080b14] text-white pt-24 pb-16 lg:pt-28 lg:pb-24 relative overflow-hidden">
+      <div className="jb-public-banner jb-portfolio-banner bg-[#080b14] text-white pt-24 pb-16 lg:pt-28 lg:pb-24 relative overflow-hidden">
         <img
           src={pageHeaderImages.portfolio}
           alt=""

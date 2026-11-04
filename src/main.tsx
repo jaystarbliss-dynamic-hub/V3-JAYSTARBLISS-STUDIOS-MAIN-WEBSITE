@@ -3,7 +3,9 @@ import type { ErrorInfo, ReactNode } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+import './components/portal/workspace-ui.css';
 import './uiux-pro-max.css';
+import './mobile-refinement.css';
 
 interface RootErrorBoundaryProps {
   children: ReactNode;

@@ -1,0 +1,701 @@
+/* Jaystarbliss Studios — responsive refinement
+   Keeps the current brand palette, page content and component behaviour.
+   Mobile-specific composition is handled here rather than by global shrinking. */
+
+.jb-marketing-home {
+  width: 100%;
+  min-width: 0;
+  overflow: clip;
+}
+
+.jb-home-section {
+  scroll-margin-top: 5rem;
+}
+
+.jb-marketing-home .glass-card {
+  border-color: rgba(226, 232, 240, 0.82);
+  box-shadow: 0 8px 26px rgba(15, 23, 42, 0.045);
+}
+
+.dark .jb-marketing-home .glass-card {
+  border-color: rgba(255, 255, 255, 0.085);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+.jb-marketing-home :where(a, button) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.jb-marketing-home :where(a, button):focus-visible,
+.jb-mobile-nav-drawer :where(a, button):focus-visible {
+  outline: 2px solid #06b6d4;
+  outline-offset: 3px;
+}
+
+/* Main-site mobile navigation */
+.jb-mobile-nav-drawer {
+  height: 100dvh;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(185, 28, 28, 0.075), transparent 22rem),
+    rgba(248, 250, 252, 0.98);
+}
+
+.dark .jb-mobile-nav-drawer {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(185, 28, 28, 0.16), transparent 22rem),
+    rgba(2, 6, 23, 0.98);
+}
+
+.jb-mobile-nav-header {
+  min-height: 64px;
+  padding-inline: max(1rem, env(safe-area-inset-left));
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.jb-mobile-nav-body {
+  min-height: 0;
+  padding: 1rem 1rem 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.jb-mobile-nav-body nav {
+  gap: 0.25rem;
+}
+
+.jb-mobile-nav-body nav > a,
+.jb-mobile-nav-body nav > div > button {
+  min-height: 46px;
+  padding-block: 0.7rem;
+  font-size: 0.94rem;
+}
+
+.jb-mobile-nav-body nav > div > div {
+  border-radius: 0.9rem;
+}
+
+.jb-mobile-nav-actions {
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  padding-inline: max(1rem, env(safe-area-inset-left));
+  padding-bottom: max(0.85rem, env(safe-area-inset-bottom));
+  box-shadow: 0 -10px 26px rgba(15, 23, 42, 0.045);
+}
+
+.jb-mobile-nav-actions a {
+  min-width: 0;
+  min-height: 46px;
+  padding: 0.65rem 0.45rem;
+  font-size: 0.66rem;
+  line-height: 1.25;
+  letter-spacing: 0.045em;
+}
+
+/* Portal mobile drawer: active section opens; other groups stay compact. */
+.portal-mobile-drawer {
+  height: 100dvh;
+  padding-top: max(0.85rem, env(safe-area-inset-top));
+  padding-bottom: max(0.85rem, env(safe-area-inset-bottom));
+}
+
+.portal-mobile-drawer-nav {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.65rem;
+}
+
+.portal-mobile-drawer-nav .portal-nav-group > button {
+  min-height: 42px;
+  text-align: left;
+}
+
+.portal-mobile-drawer-footer {
+  background: rgba(255, 255, 255, 0.94);
+  padding-bottom: 0.15rem;
+}
+
+.dark .portal-mobile-drawer-footer {
+  background: rgba(20, 40, 75, 0.96);
+}
+
+/* Fine mobile composition for the existing homepage */
+@media (max-width: 767px) {
+  .jb-marketing-home > section {
+    padding-top: clamp(2.75rem, 8vw, 3.75rem) !important;
+    padding-bottom: clamp(2.75rem, 8vw, 3.75rem) !important;
+  }
+
+  .jb-marketing-home > section > .container {
+    padding-inline: 1rem;
+  }
+
+  .jb-marketing-home h2 {
+    font-size: clamp(1.55rem, 7vw, 2.2rem);
+    line-height: 1.12;
+    letter-spacing: -0.035em;
+    margin-bottom: 0.8rem;
+    text-wrap: balance;
+  }
+
+  .jb-marketing-home .text-xl {
+    font-size: 0.98rem;
+    line-height: 1.55;
+  }
+
+  .jb-marketing-home .text-lg {
+    font-size: 0.95rem;
+    line-height: 1.55;
+  }
+
+  .jb-home-hero {
+    min-height: 0 !important;
+    padding-top: max(5.7rem, calc(env(safe-area-inset-top) + 5rem)) !important;
+    padding-bottom: 1.2rem !important;
+  }
+
+  .jb-home-hero__container {
+    gap: 0.9rem !important;
+    padding-inline: 1rem;
+  }
+
+  .jb-home-hero__title {
+    font-size: clamp(2.25rem, 10.5vw, 3.35rem);
+    line-height: 1.02;
+    letter-spacing: -0.055em;
+    margin-bottom: 0.85rem;
+  }
+
+  .jb-home-hero__actions {
+    gap: 0.55rem !important;
+    margin-top: 1.1rem !important;
+  }
+
+  .jb-home-hero__actions > a:nth-child(1),
+  .jb-home-hero__actions > a:nth-child(2) {
+    flex: 1 1 calc(50% - 0.3rem);
+    min-width: 0;
+  }
+
+  .jb-home-hero__actions > a:nth-child(1) > span:last-child,
+  .jb-home-hero__actions > a:nth-child(2) > span:last-child {
+    width: 100%;
+    min-height: 44px;
+    padding-inline: 0.45rem;
+    padding-block: 0.7rem;
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+  }
+
+  .jb-home-hero__actions > a:nth-child(3) {
+    flex: 1 0 100%;
+    justify-content: center;
+    padding-block: 0.55rem;
+    font-size: 0.75rem;
+  }
+
+  .jb-home-hero__orbit {
+    max-width: 32rem;
+    margin-top: 0 !important;
+  }
+
+  .jb-home-hero__orbit .galaxy-container {
+    height: clamp(205px, 61vw, 260px) !important;
+    border-radius: 1rem;
+  }
+
+  .jb-home-hero__orbit .planet-node {
+    width: 30px;
+    height: 30px;
+    border-width: 1.5px;
+  }
+
+  .jb-home-hero__orbit .subject-detail {
+    display: none;
+  }
+
+  .jb-home-pillars > .container > .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .jb-home-pillars .grid > div > a {
+    height: clamp(238px, 67vw, 285px) !important;
+    border-radius: 1.15rem;
+  }
+
+  .jb-home-pillars .grid > div > a > div.relative {
+    padding: 1rem;
+  }
+
+  .jb-home-pillars .grid > div > a h3 {
+    font-size: 0.9rem;
+    line-height: 1.2;
+    margin-bottom: 0.45rem;
+  }
+
+  .jb-home-pillars .grid > div > a p {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 0.69rem;
+    line-height: 1.45;
+    margin-bottom: 0.7rem;
+  }
+
+  .jb-home-pillars .grid > div > a span:last-child {
+    font-size: 0.62rem;
+    line-height: 1.25;
+    letter-spacing: 0.045em;
+  }
+
+  /* Swipeable featured cards keep the existing items available without
+     stacking three full-height panels into a very long mobile section. */
+  .jb-home-programs .grid,
+  .jb-home-services .grid,
+  .jb-home-portfolio .grid {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 0.85rem !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin-inline: -1rem;
+    padding: 0.15rem 1rem 0.75rem;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+  }
+
+  .jb-home-programs .grid > *,
+  .jb-home-services .grid > *,
+  .jb-home-portfolio .grid > * {
+    flex: 0 0 min(84vw, 350px);
+    min-width: 0;
+    max-width: 350px;
+    scroll-snap-align: start;
+  }
+
+  .jb-home-programs .grid > * > *,
+  .jb-home-portfolio .grid > * > * {
+    height: 100%;
+  }
+
+  .jb-home-programs .grid > * > div:first-child {
+    height: 142px;
+  }
+
+  .jb-home-programs .grid > * > div:nth-child(2) {
+    padding: 1rem;
+  }
+
+  .jb-home-programs .grid > * h3 {
+    font-size: 1.08rem;
+    line-height: 1.25;
+  }
+
+  .jb-home-programs .grid > * p {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 0.85rem;
+    font-size: 0.8rem;
+  }
+
+  .jb-home-programs .grid > * > div:last-child {
+    padding: 0.75rem 0.9rem;
+    gap: 0.55rem;
+  }
+
+  .jb-home-programs .grid > * > div:last-child > span {
+    font-size: 0.62rem;
+  }
+
+  .jb-home-programs .grid > * > div:last-child a {
+    min-height: 40px;
+    padding: 0.6rem 0.7rem;
+    font-size: 0.64rem;
+  }
+
+  .jb-home-services .grid > * > a {
+    height: 292px !important;
+    border-radius: 1.1rem;
+  }
+
+  .jb-home-services .grid > * > a > div:last-child {
+    padding: 1rem;
+  }
+
+  .jb-home-services .grid > * > a h3 {
+    font-size: 1rem;
+  }
+
+  .jb-home-services .grid > * > a p {
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  .jb-home-portfolio .grid > * > div:first-child {
+    height: 170px;
+  }
+
+  .jb-home-portfolio .grid > * > div:nth-child(2) {
+    padding: 1rem;
+  }
+
+  .jb-home-portfolio .grid > * h3 {
+    font-size: 1.12rem;
+    margin-bottom: 0.55rem;
+  }
+
+  .jb-home-portfolio .grid > * .quill-content {
+    margin-bottom: 0.9rem;
+    font-size: 0.8rem;
+  }
+
+  .jb-home-portfolio .grid > * > div:nth-child(2) > div:first-child {
+    gap: 0.55rem;
+    margin-bottom: 0.8rem;
+  }
+
+  .jb-home-learning .grid {
+    gap: 0.85rem;
+  }
+
+  .jb-home-learning .space-y-8 > div {
+    gap: 0.85rem;
+    margin-top: 0.95rem !important;
+  }
+
+  .jb-home-learning .space-y-8 > div > div:first-child {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 0.85rem;
+    font-size: 0.9rem;
+  }
+
+  .jb-home-learning .space-y-8 h3 {
+    font-size: 1.05rem;
+    line-height: 1.2;
+    margin-bottom: 0.25rem;
+  }
+
+  .jb-home-learning .space-y-8 p {
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
+  .jb-home-audience > .container > .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .jb-home-audience .grid > * > div {
+    min-width: 0;
+  }
+
+  .jb-home-audience .grid > * > div > div:first-child {
+    height: 6.5rem;
+  }
+
+  .jb-home-audience .grid > * > div > div:first-child > div:last-child {
+    width: 2.3rem;
+    height: 2.3rem;
+    left: 0.75rem;
+    bottom: 0.65rem;
+  }
+
+  .jb-home-audience .grid > * > div > div:nth-child(2) {
+    padding: 0.9rem;
+  }
+
+  .jb-home-audience .grid > * h3 {
+    font-size: 0.83rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .jb-home-audience .grid > * p {
+    font-size: 0.7rem;
+    line-height: 1.42;
+    margin-bottom: 0.8rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .jb-home-audience .grid > * a {
+    min-height: 40px;
+    padding: 0.55rem 0.4rem;
+    font-size: 0.61rem;
+    letter-spacing: 0.035em;
+  }
+
+  .jb-home-final-cta > .container {
+    padding-inline: 1rem;
+  }
+
+  .jb-home-final-cta .flex.flex-col.sm\:flex-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin-bottom: 2rem;
+  }
+
+  .jb-home-final-cta .flex.flex-col.sm\:flex-row > a {
+    min-width: 0;
+    width: 100%;
+    min-height: 46px;
+    padding-inline: 0.6rem;
+    font-size: 0.68rem;
+    text-align: center;
+  }
+
+  .jb-home-final-cta .flex.flex-col.sm\:flex-row > a > span:last-child {
+    padding-inline: 0.7rem;
+    font-size: 0.68rem;
+  }
+
+  .jb-home-final-cta .pt-10 {
+    padding-top: 1.5rem;
+  }
+
+  .jb-home-final-cta .grid > div {
+    padding: 1rem;
+  }
+
+  .jb-home-final-cta .grid > div p {
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .jb-home-final-cta .grid > div a {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .jb-site-footer {
+    padding-top: 3rem;
+    padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  }
+
+  .jb-site-footer .container {
+    padding-inline: 1rem;
+  }
+
+  .jb-site-footer .container > .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.65rem 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .jb-site-footer .container > .grid > div:first-child,
+  .jb-site-footer .container > .grid > div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .jb-site-footer .container > .grid > div:first-child {
+    padding-right: 0;
+  }
+
+  .jb-site-footer .container > .grid > div:first-child > a span {
+    font-size: 1.1rem;
+  }
+
+  .jb-site-footer .container > .grid > div:first-child p {
+    margin-bottom: 1rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+
+  .jb-site-footer h3 {
+    margin-bottom: 0.8rem;
+    font-size: 0.72rem;
+  }
+
+  .jb-site-footer ul {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .jb-site-footer ul li {
+    margin: 0 !important;
+    font-size: 0.8rem;
+    line-height: 1.35;
+  }
+
+  .jb-site-footer form {
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .jb-site-footer form input {
+    min-width: 0;
+    min-height: 44px;
+    padding-inline: 0.8rem;
+  }
+
+  .jb-site-footer form button {
+    min-height: 44px;
+    padding-inline: 1rem;
+  }
+
+  .jb-site-footer .space-y-3 {
+    gap: 0.7rem;
+  }
+
+  .jb-site-footer .space-y-3 > * {
+    min-width: 0;
+    font-size: 0.78rem;
+  }
+
+  /* The page remains scrollable; only secondary decoration is removed. */
+  .jb-marketing-home .shadow-2xl {
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+  }
+}
+
+@media (max-width: 380px) {
+  .jb-mobile-nav-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .jb-mobile-nav-header {
+    padding-inline: 0.8rem;
+  }
+
+  .jb-mobile-nav-header .font-black {
+    font-size: 0.68rem;
+    letter-spacing: -0.025em;
+  }
+
+  .jb-home-hero__actions > a:nth-child(1) > span:last-child,
+  .jb-home-hero__actions > a:nth-child(2) > span:last-child {
+    font-size: 0.59rem;
+    letter-spacing: 0.035em;
+  }
+
+  .jb-home-pillars .grid > div > a {
+    height: 238px !important;
+  }
+
+  .jb-home-audience .grid > * a {
+    font-size: 0.57rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jb-home-hero__actions a,
+  .jb-mobile-nav-actions a {
+    transition: none !important;
+    transform: none !important;
+  }
+
+  .jb-home-hero__orbit .galaxy-container {
+    animation: none !important;
+  }
+}
+
+/* Public inner pages: keep the same editorial layout, but remove oversized
+   desktop hero spacing and make content controls fit handheld screens. */
+@media (max-width: 767px) {
+  .jb-public-content .jb-page-header {
+    padding-block: 3.35rem !important;
+  }
+
+  .jb-public-content .jb-page-header .container {
+    padding-inline: 1rem;
+  }
+
+  .jb-public-content .jb-page-header h1 {
+    font-size: clamp(2rem, 8.5vw, 2.7rem);
+    line-height: 1.06;
+    letter-spacing: -0.045em;
+    margin-bottom: 0.8rem;
+    text-wrap: balance;
+  }
+
+  .jb-public-content .jb-page-header p {
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+
+  .jb-public-content .jb-page-header .relative.z-10.mt-8 {
+    margin-top: 1.25rem;
+  }
+
+  .jb-public-content .jb-page-header .relative.z-10.mt-8 .mb-12 {
+    margin-bottom: 1.1rem;
+  }
+
+  .jb-public-content .digital-canvas {
+    padding-block: 2.75rem !important;
+  }
+
+  .jb-public-content .digital-canvas > .container,
+  .jb-public-content .jb-page-header > .container,
+  .jb-public-content .jb-public-banner > .container {
+    padding-inline: 1rem;
+  }
+
+  .jb-public-content .digital-canvas .grid {
+    gap: 1rem;
+  }
+
+  .jb-public-content .jb-public-banner {
+    padding-top: 3.5rem !important;
+    padding-bottom: 3.5rem !important;
+  }
+
+  .jb-public-content .jb-public-banner h1 {
+    font-size: clamp(2rem, 8.5vw, 2.65rem);
+    line-height: 1.08;
+    letter-spacing: -0.045em;
+    margin-bottom: 0.85rem;
+    text-wrap: balance;
+  }
+
+  .jb-public-content .jb-public-banner p {
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+
+  .jb-public-content .jb-portfolio-banner {
+    padding-top: max(5.75rem, calc(env(safe-area-inset-top) + 5rem)) !important;
+    padding-bottom: 2.75rem !important;
+  }
+
+  .jb-public-content .jb-portfolio-banner .max-w-3xl {
+    margin-bottom: 1.25rem;
+  }
+
+  .jb-public-content .jb-portfolio-banner .flex.flex-col.lg\:flex-row {
+    min-height: 0;
+  }
+
+  .jb-public-content :where(input, select, textarea) {
+    max-width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .jb-public-content :where(button, a) {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .jb-public-content :where(button, a):focus-visible {
+    outline: 2px solid #06b6d4;
+    outline-offset: 3px;
+  }
+
+  .jb-public-content .container > .grid,
+  .jb-public-content .container > div > .grid {
+    min-width: 0;
+  }
+}

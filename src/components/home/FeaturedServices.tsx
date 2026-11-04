@@ -73,7 +73,7 @@ const FeaturedServices: React.FC = () => {
   }, []);
 
   return (
-    <section className="py-24 bg-brand-slate text-white border-t border-brand-slate relative overflow-hidden">
+    <section className="jb-home-section jb-home-services py-24 bg-brand-slate text-white border-t border-brand-slate relative overflow-hidden">
       <div className="absolute top-0 right-0 w-96 h-96 bg-brand-red/10 rounded-full blur-3xl -mr-48 -mt-48"></div>
       <div className="container mx-auto px-4 md:px-8 max-w-7xl relative">
         <Reveal className="text-center max-w-3xl mx-auto mb-16">
