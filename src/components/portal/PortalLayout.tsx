@@ -549,18 +549,42 @@ const PortalLayout: React.FC = () => {
 
   const renderNavGroups = (mobile = false) => {
     return navGroups.map(group => {
+      const activeGroup = group.items.some(item => isItemActive(item.path));
+      const isExpanded = mobile
+        ? (expandedMobileGroups[group.label] ?? activeGroup)
+        : true;
+
       return (
-        <div key={group.label} className="mt-4 first:mt-1 space-y-1">
-          {(mobile || sidebarExpanded) && (
+        <div key={group.label} className="portal-nav-group mt-3 first:mt-1 space-y-1">
+          {mobile ? (
+            <button
+              type="button"
+              aria-expanded={isExpanded}
+              onClick={() => setExpandedMobileGroups(prev => ({
+                ...prev,
+                [group.label]: !(prev[group.label] ?? activeGroup)
+              }))}
+              className="w-full min-h-10 flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider text-[#64748B] dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+            >
+              <span>{group.label}</span>
+              <ChevronDown
+                size={15}
+                className={`shrink-0 transition-transform ${isExpanded ? 'rotate-180 text-[#2563EB]' : ''}`}
+              />
+            </button>
+          ) : sidebarExpanded ? (
             <div className="flex items-center justify-between px-3 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-[#64748B] dark:text-slate-400 select-none">
               <span>{group.label}</span>
             </div>
+          ) : null}
+
+          {isExpanded && (
+            <div className="space-y-0.5">
+              {group.items.map(item => (
+                <NavLinkComponent key={item.name} item={item} mobile={mobile} />
+              ))}
+            </div>
           )}
-          <div className="space-y-0.5">
-            {group.items.map(item => (
-              <NavLinkComponent key={item.name} item={item} mobile={mobile} />
-            ))}
-          </div>
         </div>
       );
     });
