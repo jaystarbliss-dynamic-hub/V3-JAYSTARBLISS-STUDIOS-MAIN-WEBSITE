@@ -30,7 +30,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
   size = 'md',
 }) => {
   return (
-    <div className={`relative overflow-hidden text-white ${size === 'lg' ? 'py-24 lg:py-36' : 'py-20 lg:py-28'}`}>
+    <div className={`jb-page-header relative overflow-hidden text-white ${size === 'lg' ? 'py-24 lg:py-36' : 'py-20 lg:py-28'}`}>
       <img
         src={image || fallbackImage}
         alt=""
