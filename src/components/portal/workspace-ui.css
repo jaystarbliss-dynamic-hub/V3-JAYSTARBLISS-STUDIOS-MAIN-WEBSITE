@@ -1,0 +1,291 @@
+/* Shared workspace refinement
+   A restrained, consistent application shell for learner, family, tutor,
+   school and administration workspaces. Keeps the existing Jaystarbliss
+   portal palette and all application behaviour intact. */
+
+.portal-shell,
+.admin-shell {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.portal-shell {
+  --workspace-canvas: #f5f7fb;
+  --workspace-surface: #ffffff;
+  --workspace-ink: #14284b;
+  --workspace-muted: #64748b;
+  --workspace-line: #e2e8f0;
+  --workspace-accent: #2563eb;
+  --workspace-accent-soft: #eaf1ff;
+  min-height: 100dvh;
+  background: var(--workspace-canvas);
+}
+
+.dark .portal-shell {
+  --workspace-canvas: #111c2e;
+  --workspace-surface: #142238;
+  --workspace-ink: #f8fafc;
+  --workspace-muted: #9aa9bd;
+  --workspace-line: rgba(148, 163, 184, 0.18);
+  --workspace-accent: #70a5ff;
+  --workspace-accent-soft: rgba(37, 99, 235, 0.18);
+}
+
+.portal-shell > aside {
+  background: var(--workspace-surface);
+  border-color: var(--workspace-line);
+  box-shadow: 1px 0 0 rgba(15, 23, 42, 0.015);
+}
+
+.dark .portal-shell > aside {
+  background: #101c2e;
+}
+
+.portal-shell .portal-main-content {
+  min-width: 0;
+  background: var(--workspace-canvas);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.portal-shell .workspace-topbar {
+  min-height: 64px;
+  height: 64px;
+  padding-inline: clamp(16px, 2.25vw, 34px);
+  background: color-mix(in srgb, var(--workspace-surface) 94%, transparent);
+  border-color: var(--workspace-line);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.015);
+}
+
+.portal-shell .workspace-topbar h1 {
+  color: var(--workspace-ink);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.portal-shell .portal-page-content {
+  width: 100%;
+  min-width: 0;
+  flex: 1 0 auto;
+  padding: 28px clamp(16px, 2.75vw, 42px) 42px;
+}
+
+.portal-shell .portal-page-content > * {
+  width: 100%;
+  max-width: 1480px;
+  margin-inline: auto;
+}
+
+.portal-shell .workspace-nav-link {
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.portal-shell .workspace-nav-link[data-active="true"] {
+  background: var(--workspace-accent-soft) !important;
+  border-color: color-mix(in srgb, var(--workspace-accent) 12%, transparent) !important;
+  color: var(--workspace-accent) !important;
+  box-shadow: none !important;
+}
+
+.portal-shell .workspace-nav-link[data-active="true"] .workspace-nav-link__icon {
+  color: var(--workspace-accent) !important;
+}
+
+.portal-shell .workspace-nav-link:not([data-active="true"]):hover {
+  background: rgba(37, 99, 235, 0.055);
+}
+
+.dark .portal-shell .workspace-nav-link:not([data-active="true"]):hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.portal-shell .workspace-dashboard-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 auto 24px;
+  padding: 24px 28px;
+  border: 1px solid var(--workspace-line);
+  border-radius: 18px;
+  background: linear-gradient(108deg, var(--workspace-surface) 0%, var(--workspace-surface) 68%, var(--workspace-accent-soft) 100%);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.025);
+}
+
+.portal-shell .workspace-dashboard-intro__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  color: var(--workspace-accent);
+  font-size: 0.68rem;
+  line-height: 1.2;
+  font-weight: 750;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.portal-shell .workspace-dashboard-intro__eyebrow::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--workspace-accent);
+  content: "";
+}
+
+.portal-shell .workspace-dashboard-intro__title {
+  margin: 0;
+  color: var(--workspace-ink);
+  font-size: clamp(1.45rem, 2.4vw, 2rem);
+  line-height: 1.15;
+  font-weight: 750;
+  letter-spacing: -0.045em;
+}
+
+.portal-shell .workspace-dashboard-intro__description {
+  max-width: 680px;
+  margin: 8px 0 0;
+  color: var(--workspace-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.portal-shell .workspace-dashboard-intro__date {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: 0 0 auto;
+  min-width: 188px;
+  padding: 11px 14px;
+  border: 1px solid var(--workspace-line);
+  border-radius: 13px;
+  background: var(--workspace-surface);
+  color: var(--workspace-muted);
+}
+
+.portal-shell .workspace-dashboard-intro__date-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}
+
+.portal-shell .workspace-dashboard-intro__date-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.portal-shell .workspace-dashboard-intro__date-value {
+  display: block;
+  color: var(--workspace-ink);
+  font-size: 0.77rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.portal-shell .pro-surface {
+  border-color: var(--workspace-line) !important;
+  border-radius: 16px;
+  background: var(--workspace-surface) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.025), 0 5px 18px rgba(15, 23, 42, 0.025) !important;
+}
+
+.dark .portal-shell .pro-surface {
+  border-color: var(--workspace-line) !important;
+  background: var(--workspace-surface) !important;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.12) !important;
+}
+
+.portal-shell button:focus-visible,
+.portal-shell a:focus-visible,
+.admin-shell button:focus-visible,
+.admin-shell a:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.admin-shell {
+  background: #f5f7fb;
+}
+
+.dark .admin-shell {
+  background: #0b1120;
+}
+
+.admin-shell .admin-main-content {
+  background: #f5f7fb;
+}
+
+.dark .admin-shell .admin-main-content {
+  background: #0b1120;
+}
+
+.admin-shell .workspace-topbar {
+  min-height: 64px;
+  height: 64px;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+}
+
+.admin-shell .admin-page-content {
+  width: 100%;
+  max-width: 1600px;
+  margin-inline: auto;
+  padding: 26px clamp(16px, 2.6vw, 40px) 40px;
+}
+
+.admin-shell .admin-page-content > * {
+  width: 100%;
+}
+
+@media (max-width: 767px) {
+  .portal-shell .workspace-dashboard-intro {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px;
+    margin-bottom: 18px;
+  }
+
+  .portal-shell .workspace-dashboard-intro__date {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .portal-shell .portal-page-content {
+    padding: 18px 14px 30px;
+  }
+
+  .portal-shell .workspace-topbar {
+    min-height: 58px;
+    height: 58px;
+    padding-inline: 12px;
+  }
+
+  .admin-shell .workspace-topbar {
+    min-height: 58px;
+    height: 58px;
+    padding-inline: 12px;
+  }
+
+  .admin-shell .admin-page-content {
+    padding: 18px 14px 30px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-shell .workspace-nav-link {
+    transition: none;
+  }
+}
