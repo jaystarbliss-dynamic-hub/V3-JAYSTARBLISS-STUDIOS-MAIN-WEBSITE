@@ -27,7 +27,7 @@ const PortalHomeWithBilling: React.FC<{ role: 'student' | 'parent' | 'staff' | '
 
   return (
     <div className="space-y-8">
-      <WorkspaceDashboardIntro name={workspaceName} role={role} />
+      {role !== 'parent' && <WorkspaceDashboardIntro name={workspaceName} role={role} />}
       {dashboard}
       {role === 'parent' && <ParentLearningTracks />}
       {role === 'student' && <EdClubLaunchBanner studentName={studentName} studentClass={studentClass} schoolId={schoolId} />}
