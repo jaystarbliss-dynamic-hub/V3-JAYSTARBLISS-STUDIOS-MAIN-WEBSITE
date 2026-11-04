@@ -14,6 +14,7 @@ import {
 import { db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import AdminAnalyticsWidget from '../../components/admin/AdminAnalyticsWidget';
+import WorkspaceDashboardIntro from '../../components/portal/WorkspaceDashboardIntro';
 import PhotoUpload from '../../components/admin/PhotoUpload';
 import { StudentEnrollmentApprovalModal } from '../../components/admin/StudentEnrollmentApprovalModal';
 import {
@@ -349,6 +350,7 @@ const AdminDashboard: React.FC = () => {
 
   return (
     <div className="dashboard-interface space-y-6">
+      <WorkspaceDashboardIntro name={sessionStorage.getItem('userName') || 'Administrator'} role="admin" />
       {/* Compact Control Actions */}
       <div className="flex items-center justify-end gap-2.5 flex-wrap">
         <button 
