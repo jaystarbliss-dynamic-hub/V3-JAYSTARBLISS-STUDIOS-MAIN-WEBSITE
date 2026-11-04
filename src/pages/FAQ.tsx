@@ -42,7 +42,7 @@ const FAQ: React.FC = () => {
       />
 
       {/* Header Banner */}
-      <div className="bg-brand-slate text-white py-20 lg:py-28 relative overflow-hidden">
+      <div className="jb-public-banner bg-brand-slate text-white py-20 lg:py-28 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:24px_24px] pointer-events-none" />
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl relative z-10 text-center">
           <span className="inline-block text-xs font-black uppercase tracking-widest text-brand-red mb-3">
