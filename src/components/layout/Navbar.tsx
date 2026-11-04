@@ -67,7 +67,12 @@ const Navbar: React.FC = () => {
   };
 
   const toggleMobileSubmenu = (key: string) => {
-    setMobileExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+    setMobileExpanded(prev => ({
+      programs: false,
+      portfolio: false,
+      resources: false,
+      [key]: !prev[key]
+    }));
   };
 
   // Nav link base class to ensure 100% identical height, baseline, padding and font sizing across all items
@@ -434,10 +439,10 @@ const Navbar: React.FC = () => {
 
       {/* Full-Screen Mobile Drawer (Complete view with dedicated top bar & scroll containment) */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex flex-col w-full max-w-full h-full bg-white dark:bg-slate-950 overflow-hidden animate-in fade-in duration-200">
+        <div className="jb-mobile-nav-drawer fixed inset-0 z-50 lg:hidden flex flex-col w-full max-w-full h-full bg-white dark:bg-slate-950 overflow-hidden animate-in fade-in duration-200">
           
           {/* Mobile Menu Top Header Bar */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shrink-0">
+          <div className="jb-mobile-nav-header flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shrink-0">
             <Link 
               to="/" 
               onClick={() => setMobileMenuOpen(false)}
@@ -469,7 +474,7 @@ const Navbar: React.FC = () => {
           </div>
 
           {/* Scrollable Navigation Body */}
-          <div className="flex-1 overflow-y-auto px-5 py-6 space-y-4">
+          <div className="jb-mobile-nav-body flex-1 overflow-y-auto px-5 py-6 space-y-4">
             
             <nav className="flex flex-col gap-1">
               
@@ -616,7 +621,7 @@ const Navbar: React.FC = () => {
             </nav>
 
             {/* Bottom Actions */}
-            <div className="pt-6 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-3">
+            <div className="jb-mobile-nav-actions sticky bottom-0 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] -mx-5 px-5 border-t border-slate-100/80 dark:border-slate-800/80 flex flex-col gap-2.5 bg-white/90 dark:bg-slate-950/90 backdrop-blur-xl">
               <Link
                 to="/portal"
                 onClick={() => setMobileMenuOpen(false)}
