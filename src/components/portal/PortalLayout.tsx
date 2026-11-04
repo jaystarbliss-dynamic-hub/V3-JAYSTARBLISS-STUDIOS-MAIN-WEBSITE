@@ -120,7 +120,7 @@ const PortalLayout: React.FC = () => {
     }
     return true;
   });
-  const [collapsedNavGroups] = useState<Record<string, boolean>>({});
+  const [expandedMobileGroups, setExpandedMobileGroups] = useState<Record<string, boolean>>({});
   const [impersonation, setImpersonation] = useState<any>(() => getActiveImpersonation());
   const [studentFeatures, setStudentFeatures] = useState<StudentPortalFeatures>({});
   const profileRef = useRef<HTMLDivElement>(null);
@@ -587,7 +587,7 @@ const PortalLayout: React.FC = () => {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-              className="absolute inset-y-0 left-0 w-[80vw] max-w-[280px] bg-white dark:bg-[#14284B] text-[#14284B] dark:text-white border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col p-4 overflow-y-auto"
+              className="portal-mobile-drawer absolute inset-y-0 left-0 w-[80vw] max-w-[280px] bg-white dark:bg-[#14284B] text-[#14284B] dark:text-white border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col p-4 overflow-hidden"
             >
               <div className="flex items-center justify-between min-h-14 pb-2.5 border-b border-slate-200 dark:border-slate-800 shrink-0 gap-2">
                 <button
@@ -622,10 +622,10 @@ const PortalLayout: React.FC = () => {
               </div>
 
               {/* Navigation links */}
-              <nav className="flex-1 space-y-2 pt-2">{renderNavGroups(true)}</nav>
+              <nav className="portal-mobile-drawer-nav flex-1 min-h-0 space-y-2 pt-2 overflow-y-auto custom-scrollbar">{renderNavGroups(true)}</nav>
 
               {/* Drawer footer utilities */}
-              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-1">
+              <div className="portal-mobile-drawer-footer pt-3 border-t border-slate-200 dark:border-slate-800 space-y-1 shrink-0">
                 <Link
                   to="/"
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-[#64748B] hover:text-[#2563EB] hover:bg-[#F0F5FF] dark:hover:bg-white/5 transition-colors"
