@@ -496,13 +496,15 @@ const Navbar: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => toggleMobileSubmenu('programs')}
+                  aria-expanded={mobileExpanded.programs}
+                  aria-controls="mobile-programs-panel"
                   className="w-full py-3 px-3 flex items-center justify-between text-base font-bold text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl transition-colors"
                 >
                   <span>Programs</span>
                   <ChevronDown size={16} className={`transition-transform duration-200 ${mobileExpanded.programs ? 'rotate-180 text-brand-red' : 'text-slate-400'}`} />
                 </button>
                 {mobileExpanded.programs && (
-                  <div className="pl-3 pr-2 py-2 space-y-1 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
+                  <div id="mobile-programs-panel" className="pl-3 pr-2 py-2 space-y-1 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
                     <Link to="/programs?tab=roadmap#roadmap-section" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-bold text-brand-red bg-red-50 dark:bg-red-950/40 rounded-lg">
                       Visual Learning Roadmap
                     </Link>
@@ -549,13 +551,15 @@ const Navbar: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => toggleMobileSubmenu('portfolio')}
+                  aria-expanded={mobileExpanded.portfolio}
+                  aria-controls="mobile-portfolio-panel"
                   className="w-full py-3 px-3 flex items-center justify-between text-base font-bold text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl transition-colors"
                 >
                   <span>Portfolio</span>
                   <ChevronDown size={16} className={`transition-transform duration-200 ${mobileExpanded.portfolio ? 'rotate-180 text-brand-red' : 'text-slate-400'}`} />
                 </button>
                 {mobileExpanded.portfolio && (
-                  <div className="pl-3 pr-2 py-2 space-y-1 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
+                  <div id="mobile-portfolio-panel" className="pl-3 pr-2 py-2 space-y-1 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
                     <Link to="/portfolio" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
                       Kids Corner &amp; Arcade Games
                     </Link>
@@ -574,13 +578,15 @@ const Navbar: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => toggleMobileSubmenu('resources')}
+                  aria-expanded={mobileExpanded.resources}
+                  aria-controls="mobile-resources-panel"
                   className="w-full py-3 px-3 flex items-center justify-between text-base font-bold text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl transition-colors"
                 >
                   <span>Resources</span>
                   <ChevronDown size={16} className={`transition-transform duration-200 ${mobileExpanded.resources ? 'rotate-180 text-brand-red' : 'text-slate-400'}`} />
                 </button>
                 {mobileExpanded.resources && (
-                  <div className="pl-3 pr-2 py-2 space-y-1 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
+                  <div id="mobile-resources-panel" className="pl-3 pr-2 py-2 space-y-1 bg-slate-50/70 dark:bg-slate-900/60 rounded-xl my-1 border border-slate-100 dark:border-slate-800">
                     <Link to="/blog" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
                       News Corner Bulletins
                     </Link>
