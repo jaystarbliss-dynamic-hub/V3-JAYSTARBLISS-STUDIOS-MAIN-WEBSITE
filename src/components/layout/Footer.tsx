@@ -47,7 +47,7 @@ const Footer: React.FC = () => {
   };
 
   return (
-    <footer className="bg-brand-slate pt-20 pb-10 border-t border-slate-800 relative z-50">
+    <footer className="jb-site-footer bg-brand-slate pt-20 pb-10 border-t border-slate-800 relative z-50">
       <div className="container mx-auto px-4 md:px-8 max-w-7xl">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-12 lg:gap-8 mb-16">
           
