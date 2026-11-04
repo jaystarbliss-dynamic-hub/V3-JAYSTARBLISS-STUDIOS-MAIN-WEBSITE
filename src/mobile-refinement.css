@@ -601,3 +601,101 @@
     animation: none !important;
   }
 }
+
+/* Public inner pages: keep the same editorial layout, but remove oversized
+   desktop hero spacing and make content controls fit handheld screens. */
+@media (max-width: 767px) {
+  .jb-public-content .jb-page-header {
+    padding-block: 3.35rem !important;
+  }
+
+  .jb-public-content .jb-page-header .container {
+    padding-inline: 1rem;
+  }
+
+  .jb-public-content .jb-page-header h1 {
+    font-size: clamp(2rem, 8.5vw, 2.7rem);
+    line-height: 1.06;
+    letter-spacing: -0.045em;
+    margin-bottom: 0.8rem;
+    text-wrap: balance;
+  }
+
+  .jb-public-content .jb-page-header p {
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+
+  .jb-public-content .jb-page-header .relative.z-10.mt-8 {
+    margin-top: 1.25rem;
+  }
+
+  .jb-public-content .jb-page-header .relative.z-10.mt-8 .mb-12 {
+    margin-bottom: 1.1rem;
+  }
+
+  .jb-public-content .digital-canvas {
+    padding-block: 2.75rem !important;
+  }
+
+  .jb-public-content .digital-canvas > .container,
+  .jb-public-content .jb-page-header > .container,
+  .jb-public-content .jb-public-banner > .container {
+    padding-inline: 1rem;
+  }
+
+  .jb-public-content .digital-canvas .grid {
+    gap: 1rem;
+  }
+
+  .jb-public-content .jb-public-banner {
+    padding-top: 3.5rem !important;
+    padding-bottom: 3.5rem !important;
+  }
+
+  .jb-public-content .jb-public-banner h1 {
+    font-size: clamp(2rem, 8.5vw, 2.65rem);
+    line-height: 1.08;
+    letter-spacing: -0.045em;
+    margin-bottom: 0.85rem;
+    text-wrap: balance;
+  }
+
+  .jb-public-content .jb-public-banner p {
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+
+  .jb-public-content .jb-portfolio-banner {
+    padding-top: max(5.75rem, calc(env(safe-area-inset-top) + 5rem)) !important;
+    padding-bottom: 2.75rem !important;
+  }
+
+  .jb-public-content .jb-portfolio-banner .max-w-3xl {
+    margin-bottom: 1.25rem;
+  }
+
+  .jb-public-content .jb-portfolio-banner .flex.flex-col.lg\:flex-row {
+    min-height: 0;
+  }
+
+  .jb-public-content :where(input, select, textarea) {
+    max-width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .jb-public-content :where(button, a) {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .jb-public-content :where(button, a):focus-visible {
+    outline: 2px solid #06b6d4;
+    outline-offset: 3px;
+  }
+
+  .jb-public-content .container > .grid,
+  .jb-public-content .container > div > .grid {
+    min-width: 0;
+  }
+}
