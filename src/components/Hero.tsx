@@ -15,15 +15,15 @@ const Hero: React.FC = () => {
   });
 
   return (
-    <div className="relative min-h-[90vh] bg-brand-slate overflow-hidden w-full max-w-full flex items-center justify-center pt-20 pb-12 lg:pb-0">
+    <div className="jb-home-hero relative min-h-[90vh] bg-brand-slate overflow-hidden w-full max-w-full flex items-center justify-center pt-20 pb-12 lg:pb-0">
       {/* Background Grid & Glow */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none"></div>
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-[800px] h-[90vw] max-h-[800px] bg-brand-red/10 rounded-full blur-[100px] opacity-50 pointer-events-none"></div>
 
-      <div className="container mx-auto px-4 sm:px-6 relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-8 items-center max-w-7xl">
+      <div className="jb-home-hero__container container mx-auto px-4 sm:px-6 relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-8 items-center max-w-7xl">
         {/* Left Content Area */}
-        <div className="text-center lg:text-left max-w-2xl mx-auto lg:mx-0 w-full">
-          <h1 className="mt-0 text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold text-white leading-[1.1] mb-6 tracking-tight break-words">
+        <div className="jb-home-hero__content text-center lg:text-left max-w-2xl mx-auto lg:mx-0 w-full">
+          <h1 className="jb-home-hero__title mt-0 text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold text-white leading-[1.1] mb-6 tracking-tight break-words">
             {data.headingLine1 || 'LEARN. BUILD.'}
             <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-red to-red-400">
@@ -32,7 +32,7 @@ const Hero: React.FC = () => {
             <br />
             {data.headingLine2 ? data.headingLine2.split(' ').slice(1).join(' ') || 'GROW.' : 'GROW.'}
           </h1>
-          <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 sm:gap-6 mt-8 w-full max-w-full">
+          <div className="jb-home-hero__actions flex flex-wrap items-center justify-center lg:justify-start gap-3 sm:gap-6 mt-8 w-full max-w-full">
             <Link
               to={data.primaryCtaLink || '/register'}
               className="relative inline-flex overflow-hidden rounded-xl p-[2px] focus:outline-none hover:-translate-y-1 transition-transform shadow-[0_10px_20px_rgba(223,70,39,0.3)] group"
@@ -63,7 +63,7 @@ const Hero: React.FC = () => {
         </div>
 
         {/* Right Animated Orb/Solar System Area (CRITICAL HERO REQUIREMENT) */}
-        <div className="w-full max-w-[600px] mx-auto lg:-translate-y-8 mt-4 lg:mt-0 overflow-hidden">
+        <div className="jb-home-hero__orbit w-full max-w-[600px] mx-auto lg:-translate-y-8 mt-4 lg:mt-0 overflow-hidden">
           <GalaxyOrbit />
         </div>
       </div>
