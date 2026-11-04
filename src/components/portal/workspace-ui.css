@@ -49,7 +49,7 @@
   scrollbar-gutter: stable;
 }
 
-.portal-shell .workspace-topbar {
+.portal-shell .portal-main-content > header {
   min-height: 64px;
   height: 64px;
   padding-inline: clamp(16px, 2.25vw, 34px);
@@ -58,49 +58,49 @@
   box-shadow: 0 1px 0 rgba(15, 23, 42, 0.015);
 }
 
-.portal-shell .workspace-topbar h1 {
+.portal-shell .portal-main-content > header h1 {
   color: var(--workspace-ink);
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
-.portal-shell .portal-page-content {
+.portal-shell .portal-main-content > div:last-child {
   width: 100%;
   min-width: 0;
   flex: 1 0 auto;
   padding: 28px clamp(16px, 2.75vw, 42px) 42px;
 }
 
-.portal-shell .portal-page-content > * {
+.portal-shell .portal-main-content > div:last-child > * {
   width: 100%;
   max-width: 1480px;
   margin-inline: auto;
 }
 
-.portal-shell .workspace-nav-link {
+.portal-shell nav a {
   min-height: 44px;
   border: 1px solid transparent;
   border-radius: 11px;
   transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
-.portal-shell .workspace-nav-link[data-active="true"] {
+.portal-shell nav a[class*="bg-[#E8F0FF]"] {
   background: var(--workspace-accent-soft) !important;
   border-color: color-mix(in srgb, var(--workspace-accent) 12%, transparent) !important;
   color: var(--workspace-accent) !important;
   box-shadow: none !important;
 }
 
-.portal-shell .workspace-nav-link[data-active="true"] .workspace-nav-link__icon {
+.portal-shell nav a[class*="bg-[#E8F0FF]"] span {
   color: var(--workspace-accent) !important;
 }
 
-.portal-shell .workspace-nav-link:not([data-active="true"]):hover {
+.portal-shell nav a:not([class*="bg-[#E8F0FF]"]):hover {
   background: rgba(37, 99, 235, 0.055);
 }
 
-.dark .portal-shell .workspace-nav-link:not([data-active="true"]):hover {
+.dark .portal-shell nav a:not([class*="bg-[#E8F0FF]"]):hover {
   background: rgba(148, 163, 184, 0.08);
 }
 
@@ -232,20 +232,20 @@
   background: #0b1120;
 }
 
-.admin-shell .workspace-topbar {
+.admin-shell > div > header {
   min-height: 64px;
   height: 64px;
   box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
 }
 
-.admin-shell .admin-page-content {
+.admin-shell .admin-main-content > div > div.max-w-7xl {
   width: 100%;
   max-width: 1600px;
   margin-inline: auto;
   padding: 26px clamp(16px, 2.6vw, 40px) 40px;
 }
 
-.admin-shell .admin-page-content > * {
+.admin-shell .admin-main-content > div > div.max-w-7xl > * {
   width: 100%;
 }
 
@@ -263,29 +263,29 @@
     min-width: 0;
   }
 
-  .portal-shell .portal-page-content {
+  .portal-shell .portal-main-content > div:last-child {
     padding: 18px 14px 30px;
   }
 
-  .portal-shell .workspace-topbar {
+  .portal-shell .portal-main-content > header {
     min-height: 58px;
     height: 58px;
     padding-inline: 12px;
   }
 
-  .admin-shell .workspace-topbar {
+  .admin-shell > div > header {
     min-height: 58px;
     height: 58px;
     padding-inline: 12px;
   }
 
-  .admin-shell .admin-page-content {
+  .admin-shell .admin-main-content > div > div.max-w-7xl {
     padding: 18px 14px 30px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .portal-shell .workspace-nav-link {
+  .portal-shell nav a {
     transition: none;
   }
 }
