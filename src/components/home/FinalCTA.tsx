@@ -48,7 +48,7 @@ const FinalCTA: React.FC = () => {
   }, []);
 
   return (
-    <section className="py-24 bg-brand-slate text-white relative overflow-hidden">
+    <section className="jb-home-section jb-home-final-cta py-24 bg-brand-slate text-white relative overflow-hidden">
       <div className="absolute top-0 right-0 w-96 h-96 bg-brand-red/10 rounded-full blur-3xl -mr-48 -mt-48"></div>
       <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-900/20 rounded-full blur-3xl -ml-48 -mb-48"></div>
       
