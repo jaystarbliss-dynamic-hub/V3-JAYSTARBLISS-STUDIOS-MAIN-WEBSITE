@@ -78,15 +78,21 @@
 
 .jb-mobile-nav-actions {
   z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
   padding-inline: max(1rem, env(safe-area-inset-left));
   padding-bottom: max(0.85rem, env(safe-area-inset-bottom));
   box-shadow: 0 -10px 26px rgba(15, 23, 42, 0.045);
 }
 
 .jb-mobile-nav-actions a {
-  min-height: 44px;
-  padding-block: 0.7rem;
-  font-size: 0.74rem;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0.65rem 0.45rem;
+  font-size: 0.66rem;
+  line-height: 1.25;
+  letter-spacing: 0.045em;
 }
 
 /* Portal mobile drawer: active section opens; other groups stay compact. */
@@ -556,6 +562,10 @@
 }
 
 @media (max-width: 380px) {
+  .jb-mobile-nav-actions {
+    grid-template-columns: 1fr;
+  }
+
   .jb-mobile-nav-header {
     padding-inline: 0.8rem;
   }
