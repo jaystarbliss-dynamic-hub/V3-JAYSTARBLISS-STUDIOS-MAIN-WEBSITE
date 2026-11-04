@@ -23,6 +23,10 @@ const ROLE_DESCRIPTIONS: Record<string, { label: string; description: string }> 
     label: 'School workspace',
     description: 'Manage your school’s learning activity, learner records, schedules, and assessment progress.',
   },
+  admin: {
+    label: 'Administration workspace',
+    description: 'Monitor platform activity, review requests, and move the most important operations forward.',
+  },
 };
 
 const WorkspaceDashboardIntro: React.FC<WorkspaceDashboardIntroProps> = ({ name, role }) => {
