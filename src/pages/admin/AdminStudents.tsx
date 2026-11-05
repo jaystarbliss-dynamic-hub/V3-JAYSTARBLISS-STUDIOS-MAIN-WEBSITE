@@ -17,6 +17,19 @@ import { resolveRealName, formatTutorDropdownLabel } from '../../utils/userNames
 import { CANONICAL_CLASSES, formatNormalizedClassDisplay, normalizeClassName } from '../../lib/classes';
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
 import { checkUsernameAvailability, claimGlobalUsername, normalizeUsername } from '../../lib/usernameRegistry';
+import ProgramHierarchySelector from '../../components/admin/ProgramHierarchySelector';
+import {
+  type ProgramRecord,
+  type ProgramDeliveryOption,
+  fetchAllProgramsMap,
+  getProgramBreadcrumbs,
+} from '../../lib/programHierarchy';
+import {
+  extractStudentSelectedProgramIds,
+  resolveEnrolmentScope,
+  saveStudentPathwayConfiguration,
+  submitPriorLearningRecognition,
+} from '../../lib/learningPathwayEngine';
 
 export interface AssignedStudentTutor {
   tutorId: string;
@@ -53,6 +66,12 @@ export interface UnifiedStudent {
   studentType: 'personal' | 'parent' | 'school';
   createdAt?: any;
   firebaseUid?: string;
+  selectedProgramIds?: string[];
+  assignedProgramIds?: string[];
+  optionalProgramIds?: string[];
+  pathwayStatus?: string;
+  deliveryType?: ProgramDeliveryOption;
+  agreedFee?: number;
 }
 
 interface Dispatch {
@@ -126,15 +145,27 @@ const AdminStudents: React.FC = () => {
     trackOrSubject: ''
   });
 
-  // Forms
+  const [programsMap, setProgramsMap] = useState<Map<string, ProgramRecord>>(new Map());
+  const [editingPathwayIds, setEditingPathwayIds] = useState<string[]>([]);
+  const [editingOptionalIds, setEditingOptionalIds] = useState<string[]>([]);
+  const [editingPriorIds, setEditingPriorIds] = useState<string[]>([]);
+  const [editingDeliveryType, setEditingDeliveryType] = useState<ProgramDeliveryOption>('PUBLIC_GROUP');
+  const [savingPathway, setSavingPathway] = useState(false);
+
+  // Forms — no hardcoded generic fallback tracks
   const [form, setForm] = useState({
     studentType: 'personal' as 'personal' | 'parent' | 'school',
     fullName: '',
     username: '',
     email: '',
     className: 'Grade 1',
-    track: 'Technology & Hardware & Electronics Foundation',
-    subjects: 'Coding, Mathematics, Hardware & Electronics',
+    track: '',
+    subjects: '',
+    selectedProgramIds: [] as string[],
+    optionalProgramIds: [] as string[],
+    priorRecognisedProgramIds: [] as string[],
+    deliveryType: 'PUBLIC_GROUP' as ProgramDeliveryOption,
+    agreedFee: 35000,
     schoolId: '',
     parentId: '',
     tutorId: '',
@@ -172,7 +203,8 @@ const AdminStudents: React.FC = () => {
         tutorsSnap,
         staffSnap,
         resSnap,
-        linkSnap
+        linkSnap,
+        progMap
       ] = await Promise.all([
         getDocs(collection(db, 'students')).catch((err) => { console.warn('Fetch students collection error:', err); return { docs: [] }; }),
         getDocs(collection(db, 'individualStudents')).catch((err) => { console.warn('Fetch individualStudents collection error:', err); return { docs: [] }; }),
@@ -183,7 +215,9 @@ const AdminStudents: React.FC = () => {
         getDocs(collection(db, 'staff')).catch(() => ({ docs: [] })),
         getDocs(collection(db, 'personalResources')).catch(() => ({ docs: [] })),
         getDocs(collection(db, 'personalLinks')).catch(() => ({ docs: [] })),
+        fetchAllProgramsMap().catch(() => new Map<string, ProgramRecord>()),
       ]);
+      setProgramsMap(progMap);
 
       const schoolMap = new Map<string, string>();
       const loadedSchools: { id: string; name: string }[] = [];
@@ -327,7 +361,13 @@ const AdminStudents: React.FC = () => {
           portalAccessEnabled: data.portalAccessEnabled !== false && data.status !== 'SUSPENDED' && data.accountStatus !== 'SUSPENDED',
           studentType,
           createdAt: data.createdAt || data.timestamp || null,
-          firebaseUid: data.firebaseUid || data.userId || (defaultSource === 'users' ? id : undefined)
+          firebaseUid: data.firebaseUid || data.userId || (defaultSource === 'users' ? id : undefined),
+          selectedProgramIds: Array.isArray(data.selectedProgramIds) ? data.selectedProgramIds : Array.isArray(data.assignedTrackIds) ? data.assignedTrackIds : data.programId ? [data.programId] : [],
+          assignedProgramIds: Array.isArray(data.assignedProgramIds) ? data.assignedProgramIds : Array.isArray(data.assignedTrackIds) ? data.assignedTrackIds : [],
+          optionalProgramIds: Array.isArray(data.optionalProgramIds) ? data.optionalProgramIds : [],
+          pathwayStatus: data.pathwayStatus || ((Array.isArray(data.selectedProgramIds) && data.selectedProgramIds.length > 0) || (Array.isArray(data.assignedTrackIds) && data.assignedTrackIds.length > 0) || data.programId ? 'CONFIGURED' : 'PENDING_PROGRAMME_CONFIRMATION'),
+          deliveryType: data.deliveryType || 'PUBLIC_GROUP',
+          agreedFee: typeof data.agreedFee === 'number' ? data.agreedFee : undefined,
         };
       };
 
@@ -659,6 +699,27 @@ const AdminStudents: React.FC = () => {
       }
 
       const canonicalStudentClass = normalizeClassName(form.className, 'Grade 1');
+      const scope = resolveEnrolmentScope(form.selectedProgramIds, programsMap, {
+        optionalProgramIds: form.optionalProgramIds,
+      });
+      const selectedTitles = scope.selectedNodes.map((n) => n.title);
+      const assignedUnitIds = scope.assignedLearningUnits.map((u) => u.id);
+      const assignedUnitTitles = scope.assignedLearningUnits.map((u) => u.title);
+      const rootIds = scope.enrolledRootPrograms.map((r) => r.id);
+      const hasExplicitPathway =
+        scope.selectedNodes.length > 0 || Boolean(form.track.trim());
+      const pathwayStatus = hasExplicitPathway
+        ? 'CONFIGURED'
+        : 'PENDING_PROGRAMME_CONFIRMATION';
+      const resolvedTrackLabel =
+        selectedTitles.length > 0
+          ? selectedTitles.join(', ')
+          : form.track.trim() || 'Pending Programme Confirmation';
+      const resolvedSubjects =
+        subjectsArray.length > 0
+          ? subjectsArray
+          : assignedUnitTitles.slice(0, 10);
+
       const payload = {
         fullName: form.fullName.trim(),
         studentName: form.fullName.trim(),
@@ -666,8 +727,19 @@ const AdminStudents: React.FC = () => {
         email: form.email.trim() || null,
         class: canonicalStudentClass,
         grade: canonicalStudentClass,
-        track: form.track.trim() || 'Technology & Coding',
-        subjects: subjectsArray,
+        track: resolvedTrackLabel,
+        pathwayStatus,
+        selectedProgramIds: scope.selectedNodes.map((n) => n.id),
+        assignedProgramIds: assignedUnitIds,
+        assignedTrackIds: scope.selectedNodes.map((n) => n.id),
+        enrolledRootProgramIds: rootIds,
+        optionalProgramIds: form.optionalProgramIds,
+        enrolledPrograms: selectedTitles,
+        programId: scope.selectedNodes[0]?.id || null,
+        programName: selectedTitles[0] || null,
+        deliveryType: form.deliveryType,
+        agreedFee: form.agreedFee,
+        subjects: resolvedSubjects,
         schoolId: form.studentType === 'school' ? form.schoolId : null,
         schoolName: form.studentType === 'school' ? (schoolObj?.name || form.schoolId) : null,
         parentId: form.studentType === 'parent' ? form.parentId : null,
@@ -700,6 +772,14 @@ const AdminStudents: React.FC = () => {
         fullName: form.fullName.trim(),
         username: cleanUsername,
         role: 'STUDENT',
+        pathwayStatus,
+        selectedProgramIds: scope.selectedNodes.map((n) => n.id),
+        assignedProgramIds: assignedUnitIds,
+        assignedTrackIds: scope.selectedNodes.map((n) => n.id),
+        enrolledRootProgramIds: rootIds,
+        optionalProgramIds: form.optionalProgramIds,
+        enrolledPrograms: selectedTitles,
+        deliveryType: form.deliveryType,
         schoolId: form.studentType === 'school' ? form.schoolId : null,
         schoolName: form.studentType === 'school' ? (schoolObj?.name || form.schoolId) : null,
         parentId: form.studentType === 'parent' ? form.parentId : null,
@@ -732,6 +812,30 @@ const AdminStudents: React.FC = () => {
         }),
       ]);
 
+      // Record any Prior-Learning Recognitions verified during onboarding
+      if (form.priorRecognisedProgramIds.length > 0) {
+        const actorUid = auth.currentUser?.uid || 'admin';
+        const actorName = auth.currentUser?.displayName || auth.currentUser?.email || 'Administrator';
+        for (const priorId of form.priorRecognisedProgramIds) {
+          const prog = programsMap.get(priorId);
+          if (prog) {
+            await submitPriorLearningRecognition({
+              studentId: studentDocRef.id,
+              studentName: form.fullName.trim(),
+              program: prog,
+              programsMap,
+              recognitionType: 'PRIOR_COMPLETION',
+              evidenceReference: 'Verified during administrator student onboarding',
+              verificationNotes: 'Approved by administrator during initial pathway configuration.',
+              actorUid,
+              actorName,
+              actorRole: 'ADMIN',
+              approveImmediately: true,
+            }).catch(() => null);
+          }
+        }
+      }
+
       setCredentials({
         fullName: form.fullName.trim(),
         username: cleanUsername,
@@ -759,8 +863,13 @@ const AdminStudents: React.FC = () => {
       username: '',
       email: '',
       className: 'Grade 1',
-      track: 'Technology & Hardware & Electronics Foundation',
-      subjects: 'Coding, Mathematics, Hardware & Electronics',
+      track: '',
+      subjects: '',
+      selectedProgramIds: [],
+      optionalProgramIds: [],
+      priorRecognisedProgramIds: [],
+      deliveryType: 'PUBLIC_GROUP',
+      agreedFee: 35000,
       schoolId: '',
       parentId: '',
       tutorId: '',
@@ -1035,7 +1144,7 @@ const AdminStudents: React.FC = () => {
     const rows = filteredStudents.map(s => [
       `"${(s.fullName || '').replace(/"/g, '""')}"`,
       `"${(s.class || 'Grade 1').replace(/"/g, '""')}"`,
-      `"${(s.track || 'Digital Literacy').replace(/"/g, '""')}"`,
+      `"${(s.track || 'Pending Programme Confirmation').replace(/"/g, '""')}"`,
       `"${(s.username || '').replace(/"/g, '""')}"`,
       `"${((s as any).accessCode || (s as any).passcode || (s as any).code || '').replace(/"/g, '""')}"`,
       `"${(s.email || '').replace(/"/g, '""')}"`,
@@ -2157,33 +2266,34 @@ const AdminStudents: React.FC = () => {
                 </div>
               </div>
 
-              {/* Track & Subjects */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Learning Track
-                  </label>
-                  <input
-                    type="text"
-                    value={form.track}
-                    onChange={e => setForm(prev => ({ ...prev, track: e.target.value }))}
-                    placeholder="e.g. Python & Hardware & Electronics Track"
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Subjects (Comma-separated)
-                  </label>
-                  <input
-                    type="text"
-                    value={form.subjects}
-                    onChange={e => setForm(prev => ({ ...prev, subjects: e.target.value }))}
-                    placeholder="Coding, Mathematics, Hardware & Electronics"
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-brand-red focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
+              {/* Recursive Programme Hierarchy Selector */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800">
+                <ProgramHierarchySelector
+                  programsMap={programsMap}
+                  selectedProgramIds={form.selectedProgramIds}
+                  onChangeSelectedProgramIds={(ids) =>
+                    setForm((prev) => ({ ...prev, selectedProgramIds: ids }))
+                  }
+                  optionalProgramIds={form.optionalProgramIds}
+                  onChangeOptionalProgramIds={(ids) =>
+                    setForm((prev) => ({ ...prev, optionalProgramIds: ids }))
+                  }
+                  priorRecognisedProgramIds={form.priorRecognisedProgramIds}
+                  onChangePriorRecognisedProgramIds={(ids) =>
+                    setForm((prev) => ({ ...prev, priorRecognisedProgramIds: ids }))
+                  }
+                  deliveryType={form.deliveryType}
+                  onChangeDeliveryType={(delivery, suggestedAmount) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      deliveryType: delivery,
+                      agreedFee: suggestedAmount > 0 ? suggestedAmount : prev.agreedFee,
+                    }))
+                  }
+                  allowOptionalToggle={true}
+                  allowPriorLearningToggle={true}
+                  compact={true}
+                />
               </div>
 
               <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -2313,7 +2423,7 @@ const AdminStudents: React.FC = () => {
                     ))}
                   </select>
                   <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">
-                    · <strong>{managingStudent.track || 'Technology & Coding'}</strong>
+                    · <strong>{managingStudent.track || 'Pending Programme Confirmation'}</strong>
                   </span>
                 </div>
               </div>
@@ -2411,6 +2521,116 @@ const AdminStudents: React.FC = () => {
                   No mentors currently assigned to this student. Click "Manage Mentors" above to assign faculty.
                 </p>
               )}
+            </div>
+
+            {/* Recursive Programme Pathway & Prior-Learning Recognition Configuration */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    Recursive Programme Pathway &amp; Prior-Learning Recognition
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Assign roots, branches, or specific nested sub-programmes and mark any verified prior-learning credits.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ext = extractStudentSelectedProgramIds(managingStudent, programsMap);
+                    setEditingPathwayIds(ext.selectedProgramIds);
+                    setEditingOptionalIds(ext.optionalProgramIds);
+                    setEditingDeliveryType(managingStudent.deliveryType || 'PUBLIC_GROUP');
+                  }}
+                  className="text-[11px] font-bold text-indigo-600 hover:underline"
+                >
+                  Load Current Selection
+                </button>
+              </div>
+
+              <ProgramHierarchySelector
+                programsMap={programsMap}
+                selectedProgramIds={
+                  editingPathwayIds.length > 0
+                    ? editingPathwayIds
+                    : extractStudentSelectedProgramIds(managingStudent, programsMap).selectedProgramIds
+                }
+                onChangeSelectedProgramIds={setEditingPathwayIds}
+                optionalProgramIds={editingOptionalIds}
+                onChangeOptionalProgramIds={setEditingOptionalIds}
+                priorRecognisedProgramIds={editingPriorIds}
+                onChangePriorRecognisedProgramIds={setEditingPriorIds}
+                deliveryType={editingDeliveryType}
+                onChangeDeliveryType={(deliv) => setEditingDeliveryType(deliv)}
+                allowOptionalToggle={true}
+                allowPriorLearningToggle={true}
+                compact={true}
+              />
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  disabled={savingPathway}
+                  onClick={async () => {
+                    setSavingPathway(true);
+                    try {
+                      const scope = await saveStudentPathwayConfiguration({
+                        studentId: managingStudent.id,
+                        studentUid: managingStudent.firebaseUid,
+                        selectedProgramIds: editingPathwayIds,
+                        optionalProgramIds: editingOptionalIds,
+                        deliveryType: editingDeliveryType,
+                        programsMap,
+                      });
+                      const actorUid = auth.currentUser?.uid || 'admin';
+                      const actorName =
+                        auth.currentUser?.displayName || auth.currentUser?.email || 'Administrator';
+                      for (const pid of editingPriorIds) {
+                        const prog = programsMap.get(pid);
+                        if (prog) {
+                          await submitPriorLearningRecognition({
+                            studentId: managingStudent.id,
+                            studentName: managingStudent.fullName,
+                            program: prog,
+                            programsMap,
+                            recognitionType: 'PRIOR_COMPLETION',
+                            evidenceReference: 'Verified by administrator in Student Pathway Inspector',
+                            verificationNotes: 'Prior-learning recognition approved.',
+                            actorUid,
+                            actorName,
+                            actorRole: 'ADMIN',
+                            approveImmediately: true,
+                          });
+                        }
+                      }
+                      const nextTrackLabel =
+                        scope.selectedNodes.length > 0
+                          ? scope.selectedNodes.map((n) => n.title).join(', ')
+                          : 'Pending Programme Confirmation';
+                      setManagingStudent((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              track: nextTrackLabel,
+                              selectedProgramIds: editingPathwayIds,
+                              optionalProgramIds: editingOptionalIds,
+                              deliveryType: editingDeliveryType,
+                            }
+                          : null
+                      );
+                      toast.success('Updated student programme pathway & prior-learning credits.');
+                      await loadAllData();
+                    } catch (err: any) {
+                      toast.error(err?.message || 'Failed to update student pathway');
+                    } finally {
+                      setSavingPathway(false);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl bg-brand-red text-white text-xs font-bold hover:bg-red-700 disabled:opacity-50"
+                >
+                  {savingPathway ? 'Saving Pathway...' : 'Save Pathway & Prior Credits'}
+                </button>
+              </div>
             </div>
 
             {/* Actions Grid */}

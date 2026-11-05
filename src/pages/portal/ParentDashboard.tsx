@@ -23,6 +23,14 @@ import {
   doesScheduleMatchStudent,
   validateMeetingLink,
 } from '../../lib/scheduleEngine';
+import { ParentLearningTracks } from '../../components/portal/ParentLearningTracks';
+import ProgramHierarchySelector from '../../components/admin/ProgramHierarchySelector';
+import {
+  type ProgramRecord,
+  type ProgramDeliveryOption,
+  fetchAllProgramsMap,
+  getProgramBreadcrumbs,
+} from '../../lib/programHierarchy';
 
 interface ChildRecord {
   id: string;
@@ -64,6 +72,9 @@ const ParentDashboard: React.FC = () => {
   const [studentName, setStudentName] = useState('');
   const [studentAge, setStudentAge] = useState<string>('Grade 1');
   const [availablePrograms, setAvailablePrograms] = useState<{ id: string; title: string }[]>([]);
+  const [programsMap, setProgramsMap] = useState<Map<string, ProgramRecord>>(new Map());
+  const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>([]);
+  const [deliveryType, setDeliveryType] = useState<ProgramDeliveryOption>('PUBLIC_GROUP');
   const [selectedPlan, setSelectedPlan] = useState('');
   const [preferredSubjects, setPreferredSubjects] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -161,12 +172,11 @@ const ParentDashboard: React.FC = () => {
           getDocs(collection(db, 'classSchedules'))
         ]);
         if (programsSnap.status === 'fulfilled') {
-          const progs = programsSnap.value.docs.map(d => ({ id: d.id, title: (d.data().title || d.data().name || 'Technology Programme') as string }));
+          const progs = programsSnap.value.docs.map(d => ({ id: d.id, title: (d.data().title || d.data().name || 'Programme') as string }));
           setAvailablePrograms(progs);
-          if (progs.length > 0 && !selectedPlan) {
-            setSelectedPlan(progs[0].title);
-          }
         }
+        const fullProgMap = await fetchAllProgramsMap().catch(() => new Map<string, ProgramRecord>());
+        if (!cancelled) setProgramsMap(fullProgMap);
         if (paymentResult.status === 'fulfilled') setPayments(paymentResult.value.docs.map(paymentDoc => ({ id: paymentDoc.id, ...paymentDoc.data() })).filter((payment: any) => payment.parentId === userUid || payment.parentId === userEmail || payment.parentEmail === userEmail));
         else { console.warn('Payment lookup failed:', paymentResult.reason); setPayments([]); }
         if (enrollmentResult.status === 'fulfilled') setEnrollments(enrollmentResult.value.docs.map(enrollmentDoc => ({ id: enrollmentDoc.id, ...enrollmentDoc.data() })));
@@ -236,8 +246,24 @@ const ParentDashboard: React.FC = () => {
     const trimmedName = studentName.trim();
     const trimmedAge = normalizeClassName(studentAge.trim(), 'Grade 1');
     const subjects = preferredSubjects.split(',').map(subject => subject.trim()).filter(Boolean);
-    if (!trimmedName || !trimmedAge || subjects.length === 0) {
-      setEnrollError('Please complete the student name, class/grade, and at least one subject.'); setSubmitting(false); return;
+    const programPaths = selectedProgramIds.map((pid) => {
+      const crumbs = getProgramBreadcrumbs(pid, programsMap);
+      return crumbs.map((c) => c.title).join(' › ');
+    });
+    const effectivePlan =
+      selectedPlan.trim() ||
+      (programPaths.length > 0 ? programPaths.join(', ') : '');
+    const effectiveSubjects =
+      subjects.length > 0
+        ? subjects
+        : selectedProgramIds
+            .map((pid) => programsMap.get(pid)?.title || '')
+            .filter(Boolean);
+
+    if (!trimmedName || !trimmedAge || (!effectivePlan && selectedProgramIds.length === 0)) {
+      setEnrollError('Please complete the student name, class/grade, and select at least one programme or sub-programme.');
+      setSubmitting(false);
+      return;
     }
     try {
       const user = auth.currentUser;
@@ -250,15 +276,20 @@ const ParentDashboard: React.FC = () => {
 
       let requestCreated: any = null;
 
-      // 1. Use the authenticated server endpoint for real parent sessions.
-      // Do not silently fall back to direct writes on API errors: doing so can
-      // create duplicate requests or skip the private admin notification.
       if (user && !effective.isMasquerading) {
         const token = await user.getIdToken();
         const response = await fetch('/api/parent-enrollment-request', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ studentName: trimmedName, studentAge: trimmedAge, plan: selectedPlan, subjects }),
+          body: JSON.stringify({
+            studentName: trimmedName,
+            studentAge: trimmedAge,
+            plan: effectivePlan,
+            selectedProgramIds,
+            programPaths,
+            deliveryType,
+            subjects: effectiveSubjects,
+          }),
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result.request) {
@@ -267,8 +298,6 @@ const ParentDashboard: React.FC = () => {
         requestCreated = result.request;
       }
 
-      // 2. Keep direct Firestore writes only for the admin's impersonation mode.
-      // Real parent sessions must always use the server endpoint above.
       if (!requestCreated && effective.isMasquerading) {
         const reqRef = doc(collection(db, 'enrollment_requests'));
         const now = new Date();
@@ -278,8 +307,12 @@ const ParentDashboard: React.FC = () => {
           studentClass: trimmedAge,
           class: trimmedAge,
           grade: trimmedAge,
-          plan: selectedPlan,
-          subjects,
+          plan: effectivePlan,
+          selectedProgramIds,
+          assignedTrackIds: selectedProgramIds,
+          programPaths,
+          deliveryType,
+          subjects: effectiveSubjects,
           parentId: userUid,
           parentEmail: userEmail,
           parentName: parentName,
@@ -411,7 +444,7 @@ const ParentDashboard: React.FC = () => {
             {children.map(child => {
               const progress = childProgress[child.id];
               const percentage = progress?.total ? Math.round((progress.completed / progress.total) * 100) : 0;
-              const subjects = Array.isArray(child.subjects) ? child.subjects : String(child.subjects || child.track || 'General Tech Track').split(',').map(subject => subject.trim()).filter(Boolean);
+              const subjects = Array.isArray(child.subjects) ? child.subjects : String(child.subjects || child.track || 'Pending Programme Confirmation').split(',').map(subject => subject.trim()).filter(Boolean);
               const feeAmount = Number(child.tuitionFee || child.fee || 0);
 
               return (
@@ -577,6 +610,13 @@ const ParentDashboard: React.FC = () => {
         </section>
       )}
 
+      {/* Recursive Programme Learning Pathways for Children */}
+      {children.length > 0 && (
+        <section className="bg-white dark:bg-[#161B26] rounded-2xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
+          <ParentLearningTracks students={children} />
+        </section>
+      )}
+
       {/* Enrollment Requests Section */}
       <section className="bg-white dark:bg-[#161B26] rounded-2xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
@@ -651,21 +691,15 @@ const ParentDashboard: React.FC = () => {
                   ))}
                 </select>
               </Field>
-              <Field label="Learning Track / Plan" htmlFor="parent-plan">
-                <select id="parent-plan" value={selectedPlan} onChange={event => setSelectedPlan(event.target.value)} className="w-full min-h-9 rounded-xl border border-slate-200 dark:border-slate-800 px-3 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
-                  {availablePrograms.length > 0 ? (
-                    availablePrograms.map(p => (
-                      <option key={p.id} value={p.title}>{p.title}</option>
-                    ))
-                  ) : (
-                    <option value="">No programme selected</option>
-                  )}
-                </select>
-              </Field>
-              <Field label="Preferred Subjects" htmlFor="parent-subjects">
-                <input id="parent-subjects" type="text" value={preferredSubjects} onChange={event => setPreferredSubjects(event.target.value)} placeholder="e.g. Python, Scratch, Robotics" className="w-full min-h-9 rounded-xl border border-slate-200 dark:border-slate-800 px-3 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white" />
-                <p className="mt-0.5 text-[10px] text-slate-500">Separate multiple subjects with commas.</p>
-              </Field>
+              <ProgramHierarchySelector
+                programsMap={programsMap}
+                selectedProgramIds={selectedProgramIds}
+                onChangeSelectedProgramIds={setSelectedProgramIds}
+                deliveryType={deliveryType}
+                onChangeDeliveryType={(deliv) => setDeliveryType(deliv)}
+                compact={true}
+                label="Select Programme or Nested Sub-Programmes"
+              />
               <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                 <button type="button" onClick={() => setShowEnrollModal(false)} className="min-h-9 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
                   Cancel

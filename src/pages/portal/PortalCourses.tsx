@@ -3,7 +3,8 @@ import {
   BookOpen, Code, CheckCircle2, ExternalLink, Award, Layers, 
   Loader2, PlayCircle, ClipboardList, Flag, GraduationCap,
   Calendar, Check, UserCheck, ArrowRight, FileText, Upload, Eye,
-  Download, Printer, X, Plus, AlertCircle, Send
+  Download, Printer, X, Plus, AlertCircle, Send, Folder, FolderOpen,
+  FolderTree, ChevronRight, ChevronDown, Lock, Clock
 } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, query, setDoc, where, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
@@ -11,6 +12,19 @@ import { db, auth } from '../../lib/firebase';
 import SEO from '../../components/ui/SEO';
 import { getEffectiveAuth } from '../../utils/impersonation';
 import { useToast } from '../../contexts/ToastContext';
+import {
+  type ProgramRecord,
+  fetchAllProgramsMap,
+} from '../../lib/programHierarchy';
+import {
+  type ComputedProgramNodeProgress,
+  type StudentPathwayProgressSummary,
+  type PriorLearningRecognitionType,
+  calculateStudentPathwayProgress,
+  fetchStudentProgressRecords,
+  fetchStudentPriorLearningRecognitions,
+  submitPriorLearningRecognition,
+} from '../../lib/learningPathwayEngine';
 
 interface CourseModule { 
   id: string; 
@@ -102,6 +116,20 @@ export const PortalCourses: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [canManageCurriculum, setCanManageCurriculum] = useState(false);
 
+  // Phase 5 Recursive Pathway State
+  const [programsMap, setProgramsMap] = useState<Map<string, ProgramRecord>>(new Map());
+  const [pathwaySummary, setPathwaySummary] = useState<StudentPathwayProgressSummary | null>(null);
+  const [resolvedStudentId, setResolvedStudentId] = useState<string>('');
+  const [resolvedStudentName, setResolvedStudentName] = useState<string>('Student');
+  const [expandedBranchIds, setExpandedBranchIds] = useState<Set<string>>(new Set());
+
+  // Student Request Prior-Learning Recognition Modal
+  const [priorRequestNode, setPriorRequestNode] = useState<ComputedProgramNodeProgress | null>(null);
+  const [priorReqType, setPriorReqType] = useState<PriorLearningRecognitionType>('PRIOR_COMPLETION');
+  const [priorReqEvidence, setPriorReqEvidence] = useState('');
+  const [priorReqNotes, setPriorReqNotes] = useState('');
+  const [submittingPriorReq, setSubmittingPriorReq] = useState(false);
+
   const loadCourses = async () => {
     setLoading(true);
     setMessage('');
@@ -168,92 +196,76 @@ export const PortalCourses: React.FC = () => {
         }
       }
 
-      const primaryTrack = studentRecord?.plan || studentRecord?.track || studentRecord?.programName || 'Assigned Learning Track';
+      const primaryTrack =
+        studentRecord?.plan ||
+        studentRecord?.track ||
+        studentRecord?.programName ||
+        'Pending Programme Confirmation';
       setStudentTrackTitle(primaryTrack);
 
-      // 2. Fetch all published programs from Firestore
-      const programMap = new Map<string, CourseModule>();
-      const publishedSnap = await getDocs(query(collection(db, 'programs'), where('status', '==', 'PUBLISHED')));
-      
-      const allPublished = publishedSnap.docs.map((d, index) => toModule(d.id, d.data(), index));
+      const effectiveStudentId = String(
+        studentDocId || studentRecord?.id || currentUid || ''
+      ).trim();
+      setResolvedStudentId(effectiveStudentId);
+      setResolvedStudentName(
+        studentRecord?.fullName ||
+          studentRecord?.studentName ||
+          studentRecord?.name ||
+          currentUser?.displayName ||
+          'Student'
+      );
 
-      // 3. Filter strictly to programs assigned to this student (or matching their enrolled series)
-      let relevantPrograms: CourseModule[] = [];
+      // 2. Fetch full recursive programme hierarchy + student progress + prior-learning recognitions
+      const [allProgramsMap, progressRecs, priorRecs] = await Promise.all([
+        fetchAllProgramsMap(),
+        effectiveStudentId ? fetchStudentProgressRecords(effectiveStudentId) : Promise.resolve([]),
+        effectiveStudentId
+          ? fetchStudentPriorLearningRecognitions(effectiveStudentId)
+          : Promise.resolve([]),
+      ]);
 
-      if (assignedNames.size > 0) {
-        relevantPrograms = allPublished.filter(prog => {
-          const titleLow = prog.title.toLowerCase().trim();
-          const seriesLow = (prog.seriesName || '').toLowerCase().trim();
-          
-          for (const name of assignedNames) {
-            if (titleLow === name || titleLow.includes(name) || name.includes(titleLow)) return true;
-            if (seriesLow && (seriesLow === name || seriesLow.includes(name) || name.includes(seriesLow))) return true;
-          }
-          return false;
-        });
+      setProgramsMap(allProgramsMap);
 
-        // If a program belongs to a series, also pull in the sibling stages of that series in order
-        const activeSeries = new Set<string>();
-        relevantPrograms.forEach(p => {
-          if (p.seriesName) activeSeries.add(p.seriesName.toLowerCase().trim());
-        });
+      // Expand all visible nodes by default
+      const allIds = new Set<string>();
+      allProgramsMap.forEach((p) => allIds.add(p.id));
+      setExpandedBranchIds(allIds);
 
-        if (activeSeries.size > 0) {
-          allPublished.forEach(prog => {
-            const sName = (prog.seriesName || '').toLowerCase().trim();
-            if (sName && activeSeries.has(sName)) {
-              if (!relevantPrograms.some(r => r.id === prog.id)) {
-                relevantPrograms.push(prog);
-              }
-            }
-          });
-        }
-      }
-
-      // Never substitute a hardcoded/default programme when no programme is
-      // assigned. An empty state is more accurate than showing unrelated courses.
-
-      relevantPrograms.forEach(mod => programMap.set(mod.id, mod));
-
-      // 4. Merge persistent student progress records
-      if (currentUid || studentDocId) {
-        const userQueryIds = [currentUid, studentDocId].filter(Boolean) as string[];
-        
-        for (const uid of userQueryIds) {
-          for (const source of ['courseProgress', 'studentProgress']) {
-            try {
-              const snap = await getDocs(query(collection(db, source), where('userId', '==', uid)));
-              snap.forEach(d => {
-                const p = d.data();
-                const courseId = p.courseId || p.programId || p.moduleId;
-                if (!courseId || !programMap.has(courseId)) return;
-                const current = programMap.get(courseId)!;
-                const completed = progressCount(p);
-                const bounded = current.lessonsCount ? Math.min(current.lessonsCount, completed) : completed;
-                programMap.set(courseId, {
-                  ...current,
-                  completedLessons: Math.max(current.completedLessons, bounded),
-                  badgeUnlocked: Boolean(p.badgeUnlocked || p.completed === true || (current.lessonsCount > 0 && bounded >= current.lessonsCount)),
-                  ...normalizeActiveLesson(p)
-                });
-              });
-            } catch (e) {
-              console.warn(`${source} progress lookup error:`, e);
-            }
-          }
-        }
-      }
-
-      // Sort strictly by stage number, then title
-      const sortedPrograms = Array.from(programMap.values()).sort((a, b) => a.stage - b.stage || a.title.localeCompare(b.title));
-      const uniqueTitles = new Map<string, CourseModule>();
-      sortedPrograms.forEach(program => {
-        const key = program.title.trim().toLowerCase().replace(/\s+/g, ' ');
-        if (!uniqueTitles.has(key)) uniqueTitles.set(key, program);
+      const computedSummary = calculateStudentPathwayProgress({
+        studentRecord: studentRecord || {
+          selectedProgramIds: Array.from(assignedNames),
+        },
+        programsMap: allProgramsMap,
+        progressRecords: progressRecs,
+        priorLearningRecords: priorRecs,
       });
-      const list = Array.from(uniqueTitles.values());
+      setPathwaySummary(computedSummary);
+
+      // 3. Populate CourseModule cards strictly from the student's resolved pathway units
+      const programMap = new Map<string, CourseModule>();
+      let idxCounter = 0;
+      for (const node of computedSummary.flatUnitsMap.values()) {
+        const countsAsUnit =
+          node.isDirectlyEnrolledScope &&
+          !node.isContainer &&
+          (node.children.length === 0 || node.isHybrid);
+        if (!countsAsUnit) continue;
+
+        const p = node.program;
+        const mod = toModule(p.id, p, idxCounter++);
+        mod.stageName = node.breadcrumbPath || mod.stageName;
+        mod.lessonsCount = node.totalLessons || mod.lessonsCount || 8;
+        mod.completedLessons = Math.round((node.selfProgress / 100) * mod.lessonsCount);
+        mod.badgeUnlocked =
+          node.selfStatus === 'COMPLETED' || node.selfStatus === 'PRIOR_LEARNING_APPROVED';
+        programMap.set(p.id, mod);
+      }
+
+      const list = Array.from(programMap.values());
       setModules(list);
-      setSelectedId(prev => prev && list.some(m => m.id === prev) ? prev : list[0]?.id || '');
+      setSelectedId((prev) =>
+        prev && list.some((m) => m.id === prev) ? prev : list[0]?.id || ''
+      );
 
       if (!list.length) {
         setMessage('No course tracks are currently assigned to your student profile.');
@@ -395,13 +407,185 @@ export const PortalCourses: React.FC = () => {
           <p className="text-xs text-slate-400 mt-1">Contact your institution administrator or tutor to assign your curriculum track.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left: Sequential Stage Cards List */}
-          <div className="space-y-3">
-            <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 px-1 flex items-center justify-between">
-              <span>Assigned Curriculum Stages</span>
-              <span className="text-[11px] font-bold text-brand-red">{modules.length} Stages</span>
-            </h2>
+        <div className="space-y-6">
+          {/* Recursive Programme Hierarchy & Progress Tree Card */}
+          {pathwaySummary && pathwaySummary.rootBranches.length > 0 && (
+            <div className="bg-white dark:bg-[#0c1220] rounded-3xl border border-gray-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div>
+                  <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <FolderTree size={18} className="text-brand-red" />
+                    <span>My Enrolled Programme Hierarchy &amp; Progress</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Overall Pathway Completion: <strong>{pathwaySummary.overallProgress}%</strong> ({pathwaySummary.completedRequiredUnits} of {pathwaySummary.totalRequiredUnits} required learning units completed)
+                  </p>
+                </div>
+                {pathwaySummary.priorLearningApprovedUnits > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold">
+                    <Award size={13} /> {pathwaySummary.priorLearningApprovedUnits} Prior-Learning Credit(s) Approved
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                {(() => {
+                  const renderStudentNode = (node: ComputedProgramNodeProgress): React.ReactNode => {
+                    const p = node.program;
+                    const hasChildren = node.children.length > 0;
+                    const isExpanded = expandedBranchIds.has(p.id);
+                    const countsOwnUnit =
+                      node.isDirectlyEnrolledScope &&
+                      !node.isContainer &&
+                      (node.children.length === 0 || node.isHybrid);
+                    const pct = hasChildren && !countsOwnUnit ? node.aggregateProgress : node.selfProgress;
+                    const status = hasChildren && !countsOwnUnit ? node.status : node.selfStatus;
+
+                    return (
+                      <div key={p.id} className="select-none">
+                        <div
+                          onClick={() => {
+                            if (countsOwnUnit) setSelectedId(p.id);
+                            else if (hasChildren) {
+                              setExpandedBranchIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(p.id)) next.delete(p.id);
+                                else next.add(p.id);
+                                return next;
+                              });
+                            }
+                          }}
+                          className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-wrap items-center justify-between gap-3 mb-1.5 ${
+                            selectedId === p.id
+                              ? 'border-brand-red bg-red-50/30 dark:bg-red-950/20'
+                              : 'border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/60'
+                          }`}
+                          style={{ marginLeft: `${Math.min(node.depth, 8) * 18}px` }}
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            {hasChildren ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedBranchIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(p.id)) next.delete(p.id);
+                                    else next.add(p.id);
+                                    return next;
+                                  });
+                                }}
+                                className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500"
+                              >
+                                {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                              </button>
+                            ) : (
+                              <span className="w-4 text-center text-slate-300">•</span>
+                            )}
+
+                            {hasChildren || node.isContainer ? (
+                              isExpanded ? (
+                                <FolderOpen size={16} className="text-brand-red shrink-0" />
+                              ) : (
+                                <Folder size={16} className="text-brand-red shrink-0" />
+                              )
+                            ) : (
+                              <BookOpen size={15} className="text-indigo-600 shrink-0" />
+                            )}
+
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-bold text-slate-900 dark:text-white">
+                                  {p.title}
+                                </span>
+                                {hasChildren && (
+                                  <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400">
+                                    — {pct}% complete
+                                  </span>
+                                )}
+                                {status === 'PRIOR_LEARNING_APPROVED' ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800">
+                                    Prior Learning Approved
+                                  </span>
+                                ) : status === 'COMPLETED' ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-green-100 text-green-800">
+                                    Completed
+                                  </span>
+                                ) : status === 'CURRENT' ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-100 text-indigo-800">
+                                    Currently Learning
+                                  </span>
+                                ) : status === 'LOCKED' ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-800 flex items-center gap-1">
+                                    <Lock size={10} /> Locked (Requires{' '}
+                                    {node.missingPrerequisites.map((m) => m.title).join(', ')})
+                                  </span>
+                                ) : status === 'OPTIONAL' ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">
+                                    Optional
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">
+                                    Upcoming
+                                  </span>
+                                )}
+                              </div>
+                              {node.depth > 0 && (
+                                <div className="text-[10px] text-slate-400 truncate">
+                                  {node.breadcrumbPath}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            <span className="text-xs font-black text-slate-700 dark:text-slate-300">
+                              {pct}%
+                            </span>
+                            {countsOwnUnit &&
+                              node.selfStatus !== 'COMPLETED' &&
+                              node.selfStatus !== 'PRIOR_LEARNING_APPROVED' &&
+                              node.priorLearningRecord?.status !== 'PENDING' && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPriorRequestNode(node);
+                                    setPriorReqEvidence('');
+                                    setPriorReqNotes('');
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold hover:bg-emerald-100"
+                                >
+                                  Already Completed? Request Credit
+                                </button>
+                              )}
+                            {node.priorLearningRecord?.status === 'PENDING' && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800">
+                                Prior Credit Pending Verification
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {hasChildren && isExpanded && (
+                          <div>{node.children.map((c) => renderStudentNode(c))}</div>
+                        )}
+                      </div>
+                    );
+                  };
+                  return pathwaySummary.rootBranches.map((r) => renderStudentNode(r));
+                })()}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left: Sequential Stage Cards List */}
+            <div className="space-y-3">
+              <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 px-1 flex items-center justify-between">
+                <span>Assigned Learning Units</span>
+                <span className="text-[11px] font-bold text-brand-red">{modules.length} Units</span>
+              </h2>
 
             {modules.map((mod) => {
               const progress = mod.lessonsCount > 0 ? Math.round((mod.completedLessons / mod.lessonsCount) * 100) : 0;
@@ -587,6 +771,126 @@ export const PortalCourses: React.FC = () => {
               </div>
             </div>
           )}
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL: STUDENT REQUEST PRIOR-LEARNING RECOGNITION ══ */}
+      {priorRequestNode && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!priorRequestNode || !resolvedStudentId) return;
+              setSubmittingPriorReq(true);
+              try {
+                await submitPriorLearningRecognition({
+                  studentId: resolvedStudentId,
+                  studentName: resolvedStudentName,
+                  program: priorRequestNode.program,
+                  programsMap,
+                  recognitionType: priorReqType,
+                  evidenceReference: priorReqEvidence,
+                  verificationNotes: priorReqNotes,
+                  actorUid: auth.currentUser?.uid || resolvedStudentId,
+                  actorName: resolvedStudentName,
+                  actorRole: 'STUDENT',
+                  approveImmediately: false,
+                });
+                toast.success(
+                  `Submitted Prior-Learning Recognition request for "${priorRequestNode.program.title}". Your tutor or administrator will verify it.`
+                );
+                setPriorRequestNode(null);
+                await loadCourses();
+              } catch (err: any) {
+                toast.error(err?.message || 'Could not submit prior-learning request.');
+              } finally {
+                setSubmittingPriorReq(false);
+              }
+            }}
+            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-w-lg w-full p-6 space-y-4 shadow-2xl"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <Award size={18} className="text-emerald-600" />
+                  <span>Request Prior-Learning Recognition</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Unit: <strong>{priorRequestNode.breadcrumbPath}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPriorRequestNode(null)}
+                className="p-1 text-slate-400 hover:text-slate-700"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                How did you complete this unit?
+              </label>
+              <select
+                value={priorReqType}
+                onChange={(e) => setPriorReqType(e.target.value as PriorLearningRecognitionType)}
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 dark:text-white"
+              >
+                <option value="PRIOR_COMPLETION">Completed Previously</option>
+                <option value="PORTFOLIO_VERIFIED">Built Practical Project / Portfolio</option>
+                <option value="ASSESSMENT_PASSED">Ready for Placement Assessment</option>
+                <option value="CREDIT_TRANSFER">Completed at Previous School / Academy</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Project Link / Certificate / Evidence *
+              </label>
+              <input
+                type="text"
+                required
+                value={priorReqEvidence}
+                onChange={(e) => setPriorReqEvidence(e.target.value)}
+                placeholder="Paste link to your project, GitHub repo, or certificate..."
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Summary of What You Know *
+              </label>
+              <textarea
+                rows={2}
+                required
+                value={priorReqNotes}
+                onChange={(e) => setPriorReqNotes(e.target.value)}
+                placeholder="Briefly describe the concepts and projects you have already built..."
+                className="w-full p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setPriorRequestNode(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submittingPriorReq}
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
+              >
+                <Send size={13} />
+                <span>{submittingPriorReq ? 'Submitting...' : 'Submit for Tutor Verification'}</span>
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

@@ -1,84 +1,412 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Clock3, XCircle, Send, ChevronDown, ChevronUp, Search } from 'lucide-react';
-import { collection, addDoc, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../../lib/firebase';
-import { SUBJECT_TAXONOMY } from '../../data/subjectCatalog';
-import type { SubjectCategory } from '../../data/subjectCatalog';
-import SEO from '../../components/ui/SEO';
-import { useToast } from '../../contexts/ToastContext';
+import React, { useState, useEffect, useMemo } from 'react';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db, auth } from '../../lib/firebase';
+import {
+  BookOpen,
+  Award,
+  CheckCircle2,
+  FolderTree,
+  Plus,
+  Send,
+  Clock,
+  AlertCircle,
+  X,
+} from 'lucide-react';
+import {
+  type ProgramRecord,
+  type ProgramNodeType,
+  type ProgramDeliveryOption,
+  type TutorProgramProposal,
+  fetchAllProgramsMap,
+  getProgramBreadcrumbs,
+  submitTutorProgramProposal,
+  fetchTutorProgramProposals,
+} from '../../lib/programHierarchy';
 
-type Application = { id: string; subjectId: string; subjectName: string; category: string; status: 'pending' | 'approved' | 'rejected'; rejectionReason?: string };
-const slug = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-
-const TutorSubjects: React.FC = () => {
-  const { toast } = useToast();
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [openCategory, setOpenCategory] = useState<string | null>('school');
-  const [search, setSearch] = useState('');
+export default function TutorSubjects() {
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [programsMap, setProgramsMap] = useState<Map<string, ProgramRecord>>(new Map());
+  const [myProposals, setMyProposals] = useState<TutorProgramProposal[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  // Proposal Modal State
+  const [showProposalModal, setShowProposalModal] = useState(false);
+  const [proposalTitle, setProposalTitle] = useState('');
+  const [parentProgramId, setParentProgramId] = useState('');
+  const [proposedNodeType, setProposedNodeType] = useState<ProgramNodeType>('ENROLLABLE');
+  const [description, setDescription] = useState('');
+  const [objectivesText, setObjectivesText] = useState('');
+  const [curriculumText, setCurriculumText] = useState('');
+  const [prerequisiteIds, setPrerequisiteIds] = useState<string[]>([]);
+  const [deliveryOptions, setDeliveryOptions] = useState<ProgramDeliveryOption[]>([
+    'PUBLIC_GROUP',
+    'PRIVATE_MENTORSHIP',
+  ]);
+  const [duration, setDuration] = useState('8 Weeks');
+  const [submitting, setSubmitting] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+
+  const loadData = async () => {
     const uid = auth.currentUser?.uid;
-    if (!uid) return;
-    setLoading(true);
+    if (!uid) {
+      setLoading(false);
+      return;
+    }
     try {
-      const snap = await getDocs(query(collection(db, 'tutorSubjectApplications'), where('tutorId', '==', uid)));
-      setApplications(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Application, 'id'>) })));
+      const [snap, progMap, proposals] = await Promise.all([
+        getDocs(query(collection(db, 'tutorSubjects'), where('tutorId', '==', uid))).catch(
+          () => null
+        ),
+        fetchAllProgramsMap().catch(() => new Map<string, ProgramRecord>()),
+        fetchTutorProgramProposals(uid).catch(() => [] as TutorProgramProposal[]),
+      ]);
+
+      if (snap) {
+        setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }
+      setProgramsMap(progMap);
+      setMyProposals(proposals);
     } catch (error) {
-      console.error(error);
-      toast.error('Could not load your subject applications.');
+      console.error('Error loading tutor subjects & proposals:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { void load(); }, []);
-  const existing = useMemo(() => new Set(applications.map(a => a.subjectId)), [applications]);
-  const categories = useMemo(() => SUBJECT_TAXONOMY.map(c => ({ ...c, subjects: c.subjects.filter(s => s.toLowerCase().includes(search.toLowerCase())) })).filter(c => c.subjects.length), [search]);
-  const toggle = (subject: string) => {
-    const id = slug(subject);
-    if (existing.has(id)) return;
-    setSelected(current => current.includes(id) ? current.filter(x => x !== id) : [...current, id]);
-  };
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const submit = async () => {
-    const uid = auth.currentUser?.uid;
-    if (!uid || !selected.length) return;
-    setLoading(true);
+  const parentOptions = useMemo(() => {
+    const list: Array<{ program: ProgramRecord; breadcrumbPath: string }> = [];
+    for (const p of programsMap.values()) {
+      if (p.isArchived || !p.canContainChildren) continue;
+      const crumbs = getProgramBreadcrumbs(p.id, programsMap);
+      list.push({
+        program: p,
+        breadcrumbPath: crumbs.map((c) => c.title).join(' › '),
+      });
+    }
+    return list.sort((a, b) => a.breadcrumbPath.localeCompare(b.breadcrumbPath));
+  }, [programsMap]);
+
+  const handleSubmitProposal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const user = auth.currentUser;
+    if (!user || !proposalTitle.trim() || !parentProgramId) return;
+
+    setSubmitting(true);
+    setFeedbackMsg(null);
     try {
-      const rows = SUBJECT_TAXONOMY.flatMap(c => c.subjects.map(s => ({ subjectId: slug(s), subjectName: s, categoryId: c.id, categoryName: c.title }))).filter(x => selected.includes(x.subjectId));
-      await Promise.all(rows.map(x => addDoc(collection(db, 'tutorSubjectApplications'), { tutorId: uid, tutorEmail: auth.currentUser?.email || '', ...x, status: 'pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp() })));
-      setSelected([]);
-      toast.success('Subject applications submitted for admin approval.');
-      await load();
-    } catch (error) {
-      console.error(error);
-      toast.error('Some applications could not be submitted.');
-      setLoading(false);
+      await submitTutorProgramProposal({
+        title: proposalTitle.trim(),
+        parentProgramId,
+        proposedNodeType,
+        description: description.trim(),
+        learningObjectives: objectivesText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean),
+        curriculum: curriculumText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean),
+        prerequisiteProgramIds: prerequisiteIds,
+        deliveryOptions,
+        duration,
+        sessionsPerWeek: 2,
+        sessionDuration: '60 mins',
+        isRequired: true,
+        tutorUid: user.uid,
+        tutorName: user.displayName || user.email || 'Tutor',
+        tutorEmail: user.email || '',
+        programsMap,
+      });
+
+      setShowProposalModal(false);
+      setProposalTitle('');
+      setDescription('');
+      setObjectivesText('');
+      setCurriculumText('');
+      setPrerequisiteIds([]);
+      setFeedbackMsg(
+        'Your nested sub-programme proposal has been submitted to the Administrator for review and official pricing approval.'
+      );
+      await loadData();
+    } catch (err: any) {
+      setFeedbackMsg(err?.message || 'Failed to submit sub-programme proposal.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const statusIcon = (app: Application) => app.status === 'approved' ? <CheckCircle2 size={15} className="text-emerald-500" /> : app.status === 'rejected' ? <XCircle size={15} className="text-rose-500" /> : <Clock3 size={15} className="text-amber-500" />;
-  const statusText = (app: Application) => app.status === 'approved' ? 'Approved' : app.status === 'rejected' ? 'Rejected' : 'Pending admin review';
+  if (loading) return <div className="p-8 text-center">Loading your subjects...</div>;
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
-      <SEO title="Subjects I Teach | Jaystarbliss Studios" description="Choose the subjects and skills you are qualified to teach." noindex />
-      <div className="pro-surface rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <p className="text-xs sm:text-sm text-slate-500 max-w-2xl">Select the subjects and skills you can teach. Each selection is reviewed before it becomes part of your tutor profile.</p>
-          <div className="relative w-full md:w-72"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search subjects..." className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm outline-none focus:border-brand-red" /></div>
+    <div className="p-6 max-w-6xl mx-auto space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-gray-900 dark:text-white">
+            My Assigned Subjects &amp; Curriculum Proposals
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 text-sm">
+            View subjects you are approved to teach and propose new nested sub-programmes beneath existing programme branches.
+          </p>
         </div>
 
-        <div className="mt-6 grid gap-3">{categories.map((category: SubjectCategory) => { const open = openCategory === category.id; return <div key={category.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"><button type="button" onClick={() => setOpenCategory(open ? null : category.id)} className="w-full flex items-center justify-between gap-4 p-4 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50"><div><div className="font-black text-sm text-slate-900 dark:text-white">{category.title}</div><div className="text-xs text-slate-500 mt-0.5">{category.description}</div></div>{open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</button>{open && <div className="p-4 pt-0 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{category.subjects.map(subject => { const id = slug(subject); const app = applications.find(a => a.subjectId === id); const chosen = selected.includes(id); return <button key={id} type="button" disabled={!!app} onClick={() => toggle(subject)} className={'text-left p-3 rounded-xl border transition-all ' + (app ? 'opacity-90 cursor-not-allowed border-slate-200 dark:border-slate-700' : chosen ? 'border-brand-red bg-brand-red/10' : 'border-slate-200 dark:border-slate-800 hover:border-brand-red/50 bg-white dark:bg-slate-950')}><div className="flex items-start justify-between gap-2"><span className="text-xs font-bold text-slate-900 dark:text-white">{subject}</span>{app && statusIcon(app)}</div><span className="text-[10px] text-slate-500 mt-1 block">{app ? statusText(app) : chosen ? 'Selected' : 'Click to select'}</span>{app?.status === 'rejected' && app.rejectionReason && <span className="text-[10px] text-rose-600 dark:text-rose-400 mt-1.5 block leading-relaxed">Reason: {app.rejectionReason}</span>}</button>; })}</div>}</div>; })}</div>
-
-        {selected.length > 0 && <div className="mt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"><div><div className="text-sm font-black text-slate-900 dark:text-white">{selected.length} subject{selected.length === 1 ? '' : 's'} selected</div><div className="text-xs text-slate-500">They will remain pending until reviewed.</div></div><button type="button" disabled={loading} onClick={() => void submit()} className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-brand-red text-white text-xs font-black disabled:opacity-60"><Send size={15} />{loading ? 'Submitting...' : 'Request Approval'}</button></div>}
-
-        <div className="mt-6"><h2 className="text-sm font-black text-slate-900 dark:text-white mb-3">My Subject Applications</h2>{loading ? <p className="text-xs text-slate-500">Loading subject applications...</p> : <div className="space-y-2">{applications.length === 0 ? <p className="text-xs text-slate-500">No subject applications yet.</p> : applications.map(app => <div key={app.id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 flex items-start justify-between gap-3"><div><p className="text-xs font-black text-slate-900 dark:text-white">{app.subjectName}</p><p className="text-[10px] text-slate-500 mt-1">{statusText(app)}</p>{app.status === 'rejected' && app.rejectionReason && <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">{app.rejectionReason}</p>}</div>{statusIcon(app)}</div>)}</div>}</div>
+        <button
+          type="button"
+          onClick={() => {
+            if (!parentProgramId && parentOptions.length > 0) {
+              setParentProgramId(parentOptions[0].program.id);
+            }
+            setShowProposalModal(true);
+          }}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-red text-white text-xs font-bold hover:bg-red-700 transition-colors shadow-sm"
+        >
+          <Plus size={15} />
+          <span>Propose Nested Sub-Programme</span>
+        </button>
       </div>
+
+      {feedbackMsg && (
+        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center justify-between">
+          <span>{feedbackMsg}</span>
+          <button onClick={() => setFeedbackMsg(null)} className="font-bold underline">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Assigned Subjects Grid */}
+      {subjects.length === 0 ? (
+        <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl border border-slate-200 dark:border-slate-700 text-center">
+          <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+            No Subjects Assigned Yet
+          </h3>
+          <p className="text-gray-500 text-sm mt-1">
+            Contact the administrator to have subjects assigned to your profile, or propose a new nested sub-programme below.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {subjects.map((sub) => (
+            <div
+              key={sub.id}
+              className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="p-3 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                  <BookOpen className="w-6 h-6" />
+                </div>
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {sub.status || 'Active'}
+                </span>
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">
+                {sub.subjectName}
+              </h3>
+              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                <Award className="w-4 h-4 text-amber-500" />
+                <span>Proficiency: {sub.proficiencyLevel}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tutor Sub-Programme Proposals Section */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-xs">
+        <div className="p-5 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+              <FolderTree size={16} className="text-brand-red" />
+              <span>My Proposed Sub-Programmes ({myProposals.length})</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Track administrator approval status for nested sub-programmes you have proposed.
+            </p>
+          </div>
+        </div>
+
+        {myProposals.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500">
+            You have not submitted any sub-programme proposals yet. Click &quot;Propose Nested Sub-Programme&quot; above to suggest a new module or course branch.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-700">
+            {myProposals.map((prop) => (
+              <div key={prop.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-slate-900 dark:text-white">
+                      {prop.title}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                        prop.status === 'APPROVED'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : prop.status === 'REJECTED'
+                          ? 'bg-red-100 text-red-800'
+                          : prop.status === 'CHANGES_REQUESTED'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-indigo-100 text-indigo-800'
+                      }`}
+                    >
+                      {prop.status}
+                    </span>
+                  </div>
+                  <div className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">
+                    Parent Path: {prop.parentBreadcrumbPath} › {prop.title}
+                  </div>
+                  <p className="text-xs text-slate-500">{prop.description}</p>
+                  {prop.adminReviewNotes && (
+                    <div className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-lg mt-1">
+                      <strong>Admin Feedback:</strong> {prop.adminReviewNotes}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Proposal Modal */}
+      {showProposalModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <form
+            onSubmit={handleSubmitProposal}
+            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-w-xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <FolderTree size={18} className="text-brand-red" />
+                  <span>Propose Nested Sub-Programme</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Propose a new learning unit beneath any existing programme branch. Final pricing and publication are approved by an administrator.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProposalModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-700"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Parent Programme Branch *
+              </label>
+              <select
+                required
+                value={parentProgramId}
+                onChange={(e) => setParentProgramId(e.target.value)}
+                className="w-full px-3.5 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium bg-white dark:bg-slate-800 dark:text-white"
+              >
+                <option value="">Select Parent Programme...</option>
+                {parentOptions.map((opt) => (
+                  <option key={opt.program.id} value={opt.program.id}>
+                    {opt.breadcrumbPath}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Proposed Sub-Programme Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={proposalTitle}
+                  onChange={(e) => setProposalTitle(e.target.value)}
+                  placeholder="e.g. TypeScript Fundamentals"
+                  className="w-full px-3.5 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Suggested Duration
+                </label>
+                <input
+                  type="text"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
+                  placeholder="e.g. 6 Weeks"
+                  className="w-full px-3.5 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Description &amp; Rationale *
+              </label>
+              <textarea
+                rows={2}
+                required
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Explain what this sub-programme covers and how it benefits learners..."
+                className="w-full p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Learning Objectives (1 per line)
+                </label>
+                <textarea
+                  rows={4}
+                  value={objectivesText}
+                  onChange={(e) => setObjectivesText(e.target.value)}
+                  placeholder={'Understand static types\nBuild reusable interfaces'}
+                  className="w-full p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Suggested Lesson Outline (1 per line)
+                </label>
+                <textarea
+                  rows={4}
+                  value={curriculumText}
+                  onChange={(e) => setCurriculumText(e.target.value)}
+                  placeholder={'Week 1: Type Annotations\nWeek 2: Generics & Utility Types'}
+                  className="w-full p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowProposalModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-brand-red text-white text-xs font-bold hover:bg-red-700 disabled:opacity-50"
+              >
+                <Send size={13} />
+                <span>{submitting ? 'Submitting Proposal...' : 'Submit for Admin Approval'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
-};
-
-export default TutorSubjects;
+}

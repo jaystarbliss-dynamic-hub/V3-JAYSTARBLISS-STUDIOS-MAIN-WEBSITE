@@ -1,85 +1,296 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { BookOpen, CalendarDays, CheckCircle2, CheckSquare, GraduationCap, KeyRound, Link as LinkIcon, Loader2, ShieldCheck, User, X } from 'lucide-react';
-import { addDoc, collection, doc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo } from 'react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { useToast } from '../../contexts/ToastContext';
-import { CANONICAL_CLASSES, normalizeClassName } from '../../lib/classes';
-import { checkUsernameAvailability, claimGlobalUsername } from '../../lib/usernameRegistry';
+import { X, CheckCircle, AlertTriangle, FolderTree } from 'lucide-react';
+import {
+  type ProgramRecord,
+  type ProgramDeliveryOption,
+  fetchAllProgramsMap,
+  getProgramBreadcrumbs,
+} from '../../lib/programHierarchy';
+import {
+  extractStudentSelectedProgramIds,
+  resolveEnrolmentScope,
+} from '../../lib/learningPathwayEngine';
+import ProgramHierarchySelector from './ProgramHierarchySelector';
 
-export interface EnrollmentRequestData { id:string; studentName?:string; name?:string; studentAge?:string; studentClass?:string; class?:string; grade?:string; parentName?:string; parentEmail?:string; parentPhone?:string; parentId?:string; plan?:string; subjects?:string[]|string; email?:string; phone?:string; }
-interface ProgramOption { id:string; title:string; price:number; seriesName?:string; stageNumber?:number; stageName?:string; }
-interface TutorOption { id:string; name:string; email:string; }
-const DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-const DAY_INDEX:Record<string,number>={Sunday:0,Monday:1,Tuesday:2,Wednesday:3,Thursday:4,Friday:5,Saturday:6};
-const cleanUsername=(v:string)=>v.toLowerCase().replace(/[^a-z0-9._-]/g,'').slice(0,30);
-const makeCode=()=>{const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';const bytes=new Uint8Array(7);crypto.getRandomValues(bytes);return Array.from(bytes,b=>chars[b%chars.length]).join('')};
-const makeUsername=(name:string,id:string)=>`${(name.normalize('NFKD').replace(/[^a-zA-Z0-9]/g,'').toLowerCase().slice(0,14)||'student')}_${id.replace(/[^a-z0-9]/gi,'').slice(-4).toLowerCase()}`;
-interface Props { request:EnrollmentRequestData|null; isOpen:boolean; onClose:()=>void; onSuccess?:(data:any)=>void; }
+export interface EnrollmentApprovalPathwayPayload {
+  selectedProgramIds: string[];
+  optionalProgramIds: string[];
+  priorRecognisedProgramIds: string[];
+  deliveryType: ProgramDeliveryOption;
+  pathwayStatus: 'CONFIGURED' | 'PENDING_PROGRAMME_CONFIRMATION';
+  enrolledRootProgramIds: string[];
+  assignedProgramIds: string[];
+  selectedProgramTitles: string[];
+}
 
-export const StudentEnrollmentApprovalModal:React.FC<Props>=({request,isOpen,onClose,onSuccess})=>{
- const {toast}=useToast();
- const [loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[programs,setPrograms]=useState<ProgramOption[]>([]),[tutors,setTutors]=useState<TutorOption[]>([]);
- const [programId,setProgramId]=useState(''),[programTitle,setProgramTitle]=useState(''),[fee,setFee]=useState(35000),[feePlan,setFeePlan]=useState('Full Session Tuition'),[tutorId,setTutorId]=useState(''),[tutorRole,setTutorRole]=useState('Lead Mentor');
- const [days,setDays]=useState<string[]>(['Saturday']),[daySchedules,setDaySchedules]=useState<Record<string,{startTime:string;endTime:string}>>({Saturday:{startTime:'10:00',endTime:'12:00'}}),[durationWeeks,setDurationWeeks]=useState(8),[deliveryMode,setDeliveryMode]=useState<'online'|'physical'|'hybrid'>('online'),[meetingLink,setMeetingLink]=useState(''),[location,setLocation]=useState('');
- const [username,setUsername]=useState(''),[code,setCode]=useState(''),[edClub,setEdClub]=useState(false),[assessments,setAssessments]=useState(false),[notifyParent,setNotifyParent]=useState(true),[emailParent,setEmailParent]=useState(true),[done,setDone]=useState<any>(null);
- const studentName=request?.studentName||request?.name||'Student',parentEmail=request?.parentEmail||request?.email||'',parentName=request?.parentName||'Parent';
- const initialClass=normalizeClassName(request?.class||request?.grade||request?.studentClass||request?.studentAge,'Grade 1');
- const [selectedClass,setSelectedClass]=useState(initialClass);
+interface Props {
+  student?: any;
+  request?: any;
+  isOpen?: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
+  onApprove?: (
+    studentId: string,
+    programId: string,
+    tutorId: string,
+    agreedFee: number,
+    customProgramName?: string,
+    pathwayPayload?: EnrollmentApprovalPathwayPayload
+  ) => Promise<void>;
+}
 
- useEffect(()=>{
-  if(!isOpen||!request)return;
-  let active=true;
-  setLoading(true);setDone(null);setUsername(makeUsername(studentName,request.id));setCode(makeCode());setSelectedClass(normalizeClassName(request.class||request.grade||request.studentClass||request.studentAge,'Grade 1'));setDays(['Saturday']);setDaySchedules({Saturday:{startTime:'10:00',endTime:'12:00'}});setDurationWeeks(8);setEdClub(false);setAssessments(false);
-  void Promise.all([getDocs(collection(db,'programs')).catch(()=>({docs:[]} as any)),getDocs(collection(db,'tutors')).catch(()=>({docs:[]} as any)),getDocs(collection(db,'staff')).catch(()=>({docs:[]} as any)),getDocs(collection(db,'users')).catch(()=>({docs:[]} as any))]).then(([ps,ts,ss,us])=>{
-   if(!active)return;
-   const p:ProgramOption[]=ps.docs.map((d:any)=>{const x=d.data();return{id:d.id,title:x.title||x.name||'Academy Programme',price:Number(x.price||x.tuition||x.fee||35000),seriesName:x.seriesName||'',stageNumber:Number(x.stageNumber||x.stage||1),stageName:x.stageName||''}});
-   setPrograms(p);const chosen=p.find(x=>request.plan&&x.title.toLowerCase().includes(String(request.plan).toLowerCase()))||p[0];if(chosen){setProgramId(chosen.id);setProgramTitle(chosen.title);setFee(chosen.price)}
-   const map=new Map<string,TutorOption>();[...ts.docs,...ss.docs,...us.docs].forEach((d:any)=>{const x=d.data(),role=String(x.role||'').toLowerCase(),name=x.fullName||x.name||x.displayName||x.realName;if(name&&(!us.docs.includes(d)||['tutor','teacher','mentor','instructor','staff','faculty'].includes(role)))map.set(d.id,{id:d.id,name,email:x.email||''})});const t=Array.from(map.values()).sort((a,b)=>a.name.localeCompare(b.name));setTutors(t);if(t[0])setTutorId(t[0].id);
-  }).finally(()=>{if(active)setLoading(false)});
-  return()=>{active=false};
- },[isOpen,request?.id]);
+export const StudentEnrollmentApprovalModal: React.FC<Props> = ({
+  student: studentProp,
+  request,
+  isOpen = true,
+  onClose,
+  onSuccess,
+  onApprove,
+}) => {
+  const student = studentProp || request;
+  const [programsMap, setProgramsMap] = useState<Map<string, ProgramRecord>>(new Map());
+  const [tutors, setTutors] = useState<any[]>([]);
+  const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>([]);
+  const [optionalProgramIds, setOptionalProgramIds] = useState<string[]>([]);
+  const [priorRecognisedProgramIds, setPriorRecognisedProgramIds] = useState<string[]>([]);
+  const [deliveryType, setDeliveryType] = useState<ProgramDeliveryOption>('PUBLIC_GROUP');
+  const [selectedTutor, setSelectedTutor] = useState(student?.assignedTutorId || '');
+  const [fee, setFee] = useState<string>(
+    student?.agreedFee !== undefined ? String(student.agreedFee) : ''
+  );
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
- const updateDay=(day:string,field:'startTime'|'endTime',value:string)=>setDaySchedules(v=>({...v,[day]:{...(v[day]||{startTime:'10:00',endTime:'12:00'}),[field]:value}}));
- const toggleDay=(day:string)=>{setDays(v=>v.includes(day)?(v.length===1?v:v.filter(x=>x!==day)):[...v,day]);setDaySchedules(v=>v[day]?v:{...v,[day]:{startTime:'10:00',endTime:'12:00'}})};
- const resolvedTutor=tutors.find(t=>t.id===tutorId);
- const selectedProgram=programs.find(p=>p.id===programId);
- const scheduleSummary=useMemo(()=>days.map(d=>`${d} ${daySchedules[d]?.startTime||'10:00'}–${daySchedules[d]?.endTime||'12:00'}`).join(' • '),[days,daySchedules]);
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [progMap, tSnap] = await Promise.all([
+          fetchAllProgramsMap(),
+          getDocs(
+            query(collection(db, 'users'), where('role', 'in', ['TUTOR', 'STAFF', 'ACADEMIC_STAFF']))
+          ).catch(() => null),
+        ]);
 
- const approve=async()=>{
-  if(!request)return;
-  const finalUsername=cleanUsername(username),finalCode=code.trim().toUpperCase(),canonicalClass=normalizeClassName(selectedClass,'Grade 1');
-  if(finalUsername.length<3||finalCode.length<4)return toast.error('Student username and access code are required.');
-  if(!programTitle.trim()||fee<0||durationWeeks<1)return toast.error('Please complete the programme, fee and duration.');
-  for(const day of days)if((daySchedules[day]?.endTime||'')<=(daySchedules[day]?.startTime||''))return toast.error(`End time must be later than start time for ${day}.`);
-  setSaving(true);
-  try{
-   const studentId=`student_${request.id}`;
-   const availability=await checkUsernameAvailability(finalUsername,[studentId]);
-   if(!availability.available){
-    setSaving(false);
-    return toast.error(availability.reason||`The username "${finalUsername}" is already taken. Please pick another username.`);
-   }
-   const tutorName=resolvedTutor?.name||'Jaystarbliss Lead Mentor',tutorEmail=resolvedTutor?.email||'faculty@jaystarbliss.com',email=(request.email||`${finalUsername}@jaystarbliss.cadet`).toLowerCase(),parentId=request.parentId||parentEmail||null,subjects=Array.isArray(request.subjects)?request.subjects:String(request.subjects||programTitle).split(',').map(x=>x.trim()).filter(Boolean);
-   const initialTrack={programId:programId||null,programName:programTitle,seriesName:selectedProgram?.seriesName||'',stageNumber:selectedProgram?.stageNumber||1,stageName:selectedProgram?.stageName||'',progress:0,completed:false,status:'CURRENT'};
-   const master:any={id:studentId,fullName:studentName,name:studentName,username:finalUsername,accessCode:finalCode,email,studentEmail:email,grade:canonicalClass,class:canonicalClass,track:programTitle,plan:programTitle,programId:programId||null,programName:programTitle,programTitle,enrolledPrograms:[programTitle],subjects,tuitionFee:fee,fee,currency:'NGN',feePlanType:feePlan,paymentStatus:'PENDING',tutorId:tutorId||'tutor_default',tutorName,tutorEmail,mentorName:tutorName,schedule:scheduleSummary,classScheduleDetails:{days,daySchedules,deliveryMode,meetingLink:deliveryMode==='online'?meetingLink:'',locationRoom:deliveryMode!=='online'?location:'',recurrenceWeeks:durationWeeks,programDurationWeeks:durationWeeks},programDurationWeeks:durationWeeks,currentProgramId:programId||null,currentProgramName:programTitle,currentProgramStage:selectedProgram?.stageNumber||1,currentProgramStageName:selectedProgram?.stageName||'',learningTracks:[initialTrack],featureAccess:{edClub,assessments},edClubEnabled:edClub,parentId,parentEmail,parentName,parentPhone:request.parentPhone||request.phone||'',isIndependent:false,registrationType:'parent',status:'ACTIVE',accountStatus:'ACTIVE',portalAccessEnabled:true,registrationSource:'parent-enrollment-approved',enrollmentRequestId:request.id,approvedAt:serverTimestamp(),createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
-   await Promise.all([
-    setDoc(doc(db,'students',studentId),master,{merge:true}),
-    setDoc(doc(db,'individualStudents',studentId),{...master,firebaseUid:null},{merge:true}),
-    setDoc(doc(db,'users',studentId),{id:studentId,uid:studentId,email,displayName:studentName,fullName:studentName,username:finalUsername,accessCode:finalCode,role:'STUDENT',class:canonicalClass,grade:canonicalClass,accountStatus:'ACTIVE',status:'ACTIVE',studentDocId:studentId,parentId,parentEmail,isIndependent:false,registrationType:'parent',plan:programTitle,programName:programTitle,currentProgramId:programId||null,currentProgramName:programTitle,tutorName,featureAccess:{edClub,assessments},edClubEnabled:edClub,updatedAt:serverTimestamp()},{merge:true}),
-    claimGlobalUsername(finalUsername,{uid:studentId,docId:studentId,role:'STUDENT',email,name:studentName})
-   ]);
-   const now=new Date(),writes:Promise<any>[]=[];
-   for(let week=0;week<durationWeeks;week++)for(const dayName of days){let diff=DAY_INDEX[dayName]-now.getDay();if(diff<0||(diff===0&&week===0))diff+=7;const date=new Date(now);date.setDate(date.getDate()+diff+week*7);const cfg=daySchedules[dayName]||{startTime:'10:00',endTime:'12:00'};writes.push(addDoc(collection(db,'classSchedules'),{title:`${programTitle} Session (Week ${week+1})`,programName:programTitle,programId:programId||'prog_active',studentId,studentName,studentEmail:email,classLevel:canonicalClass,classLevels:[canonicalClass],parentId,parentEmail,parentName,tutorId:tutorId||'tutor_default',tutorName,tutorEmail,date:date.toISOString().slice(0,10),dayOfWeek:dayName,startTime:cfg.startTime,endTime:cfg.endTime,daySchedule:cfg,scheduleGroupId:studentId,programDurationWeeks:durationWeeks,occurrenceIndex:week+1,occurrenceTotal:durationWeeks,targetType:'parent',deliveryMode,meetingLink:deliveryMode==='online'?meetingLink:'',locationRoom:deliveryMode!=='online'?location:'',status:'SCHEDULED',createdAt:serverTimestamp()}));}
-   await Promise.all(writes);
-   const updateData={status:'approved',studentId,username:finalUsername,accessCode:finalCode,class:canonicalClass,grade:canonicalClass,studentAge:canonicalClass,programId:programId||null,programName:programTitle,programTitle,tuitionFee:fee,tutorName,tutorId:tutorId||'tutor_default',schedule:scheduleSummary,programDurationWeeks:durationWeeks,currentProgramId:programId||null,currentProgramName:programTitle,featureAccess:{edClub,assessments},edClubEnabled:edClub,approvedAt:serverTimestamp()};
-   await updateDoc(doc(db,'enrollment_requests',request.id),updateData).catch(async()=>updateDoc(doc(db,'student_requests',request.id),updateData).catch(()=>undefined));
-   if(notifyParent&&parentEmail)await addDoc(collection(db,'notifications'),{recipientId:parentId||parentEmail,recipientEmail:parentEmail,targetRole:'parent',type:'credential_delivery',title:`Access Granted: ${studentName}'s Student Portal`,message:`Username: ${finalUsername} | Access Code: ${finalCode}. Class: ${canonicalClass}. Programme: ${programTitle}. Schedule: ${scheduleSummary}.`,metadata:{studentId,username:finalUsername,accessCode:finalCode,class:canonicalClass,programName:programTitle,featureAccess:{edClub,assessments}},timestamp:serverTimestamp(),read:false,readBy:[]}).catch(()=>undefined);
-   if(emailParent&&parentEmail)await addDoc(collection(db,'email_logs'),{to:parentEmail,parentName,studentName,subject:`Jaystarbliss Studios: Student Portal Credentials for ${studentName}`,credentials:{username:finalUsername,accessCode:finalCode,class:canonicalClass,program:programTitle,schedule:scheduleSummary,fee},status:'QUEUED_SENT',sentAt:serverTimestamp()}).catch(()=>undefined);
-   const result={studentId,studentName,username:finalUsername,accessCode:finalCode,class:canonicalClass,programTitle,tuitionFee:fee,tutorName,scheduleSummary,parentEmail};setDone(result);onSuccess?.(result);toast.success(`Access approved for ${studentName}.`);
-  }catch(e:any){console.error(e);toast.error(e?.message||'Failed to approve student.')}finally{setSaving(false)}
- };
+        setProgramsMap(progMap);
 
- if(!isOpen||!request)return null;
- return <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3 overflow-y-auto"><div className="w-full max-w-3xl max-h-[94vh] overflow-hidden rounded-3xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-800"><div className="p-5 border-b flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-wider font-black text-brand-red">Student onboarding</p><h2 className="text-lg font-black">{done?'Student access approved':`Approve ${studentName}`}</h2><p className="text-xs text-slate-500">Configure credentials, class, programme, schedule, duration and optional features.</p></div><button onClick={onClose}><X size={18}/></button></div><div className="p-5 overflow-y-auto space-y-5">{loading?<div className="py-16 grid place-items-center text-sm text-slate-500"><Loader2 className="animate-spin mr-2 inline" size={18}/> Loading programmes and tutors…</div>:done?<div className="space-y-4"><div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-5"><CheckCircle2 className="text-emerald-600 mb-2"/><h3 className="font-black text-emerald-900">Portal account activated</h3><p className="text-xs text-emerald-800 mt-1">The student record, weekly class schedule and parent notification have been updated.</p></div><div className="rounded-2xl bg-slate-950 text-white p-5 grid sm:grid-cols-2 gap-4"><div><p className="text-[10px] text-slate-400 uppercase">Username</p><p className="font-mono font-black">{done.username}</p></div><div><p className="text-[10px] text-slate-400 uppercase">Access code</p><p className="font-mono font-black text-emerald-400">{done.accessCode}</p></div><div><p className="text-[10px] text-slate-400 uppercase">Programme</p><p className="font-bold">{done.programTitle}</p></div><div><p className="text-[10px] text-slate-400 uppercase">Schedule</p><p className="font-bold text-xs">{done.scheduleSummary}</p></div></div><button onClick={onClose} className="w-full rounded-xl bg-brand-red text-white py-3 text-xs font-black">Done & Close</button></div>:<div className="space-y-5"><div className="rounded-2xl border p-4 bg-slate-50 dark:bg-slate-950/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><div><p className="text-[10px] uppercase font-black text-slate-400">Applicant</p><p className="text-sm font-black">{studentName}</p><p className="text-[11px] text-slate-500">{parentName} · {parentEmail}</p></div><div className="sm:w-64"><label className="block text-[10px] uppercase font-black text-slate-400 mb-1"><GraduationCap size={12} className="inline mr-1"/>Class / Grade Level</label><select value={selectedClass} onChange={e=>setSelectedClass(e.target.value)} className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold">{CANONICAL_CLASSES.map(cls=><option key={cls} value={cls}>{cls}</option>)}</select></div></div><section className="space-y-3"><h3 className="text-[11px] uppercase tracking-wider font-black flex items-center gap-2"><BookOpen size={14}/> Programme & billing</h3><div className="grid sm:grid-cols-2 gap-3"><select value={programId} onChange={e=>{const p=programs.find(x=>x.id===e.target.value);setProgramId(e.target.value);setProgramTitle(p?.title||'Custom Programme');setFee(p?.price||35000)}} className="rounded-xl border px-3 py-2.5 text-xs font-bold">{programs.map(p=><option key={p.id} value={p.id}>{p.title}</option>)}</select><input value={programTitle} onChange={e=>setProgramTitle(e.target.value)} className="rounded-xl border px-3 py-2.5 text-xs font-bold" placeholder="Programme title"/><input type="number" min="0" value={fee} onChange={e=>setFee(Number(e.target.value))} className="rounded-xl border px-3 py-2.5 text-xs font-bold" placeholder="Tuition fee"/><select value={feePlan} onChange={e=>setFeePlan(e.target.value)} className="rounded-xl border px-3 py-2.5 text-xs font-bold"><option>Full Session Tuition</option><option>Monthly Subscription</option><option>Special Agreed Fee</option><option>Full Scholarship</option></select></div></section><section className="space-y-3"><h3 className="text-[11px] uppercase tracking-wider font-black flex items-center gap-2"><User size={14}/> Tutor / mentor</h3><div className="grid sm:grid-cols-2 gap-3"><select value={tutorId} onChange={e=>setTutorId(e.target.value)} className="rounded-xl border px-3 py-2.5 text-xs font-bold"><option value="">Select tutor</option>{tutors.map(t=><option key={t.id} value={t.id}>{t.name}{t.email?` · ${t.email}`:''}</option>)}</select><input value={tutorRole} onChange={e=>setTutorRole(e.target.value)} className="rounded-xl border px-3 py-2.5 text-xs font-bold" placeholder="Tutor role"/></div></section><section className="space-y-3"><h3 className="text-[11px] uppercase tracking-wider font-black flex items-center gap-2"><CalendarDays size={14}/> Weekly schedule & duration</h3><div className="flex flex-wrap gap-1.5">{DAYS.map(d=><button key={d} type="button" onClick={()=>toggleDay(d)} className={`rounded-xl px-3 py-2 text-[11px] font-black ${days.includes(d)?'bg-brand-red text-white':'bg-slate-100 dark:bg-slate-800'}`}>{d.slice(0,3)}</button>)}</div><div className="space-y-2">{days.map(d=><div key={d} className="grid grid-cols-[1fr_1fr_1fr] gap-2 items-center rounded-xl border p-2.5"><div><p className="text-xs font-black">{d}</p><p className="text-[9px] text-slate-500">This day only</p></div><input type="time" value={daySchedules[d]?.startTime||'10:00'} onChange={e=>updateDay(d,'startTime',e.target.value)} className="rounded-lg border px-2 py-2 text-xs font-bold"/><input type="time" value={daySchedules[d]?.endTime||'12:00'} onChange={e=>updateDay(d,'endTime',e.target.value)} className="rounded-lg border px-2 py-2 text-xs font-bold"/></div>)}</div><div className="grid sm:grid-cols-2 gap-3"><input type="number" min="1" max="104" value={durationWeeks} onChange={e=>setDurationWeeks(Math.max(1,Number(e.target.value)||1))} className="rounded-xl border px-3 py-2.5 text-xs font-bold" placeholder="Teaching weeks"/><select value={deliveryMode} onChange={e=>setDeliveryMode(e.target.value as any)} className="rounded-xl border px-3 py-2.5 text-xs font-bold"><option value="online">Online Live</option><option value="physical">Physical</option><option value="hybrid">Hybrid</option></select></div>{deliveryMode==='online'?<div className="relative"><LinkIcon size={13} className="absolute left-3 top-3 text-slate-400"/><input value={meetingLink} onChange={e=>setMeetingLink(e.target.value)} className="w-full rounded-xl border pl-8 pr-3 py-2.5 text-xs" placeholder="Meeting link"/></div>:<input value={location} onChange={e=>setLocation(e.target.value)} className="w-full rounded-xl border px-3 py-2.5 text-xs" placeholder="Classroom / studio location"/>}</section><section className="space-y-3"><h3 className="text-[11px] uppercase tracking-wider font-black flex items-center gap-2"><KeyRound size={14}/> Student login credentials</h3><div className="grid sm:grid-cols-2 gap-3"><div><label className="text-[10px] font-bold text-slate-500">Custom username</label><input value={username} onChange={e=>setUsername(cleanUsername(e.target.value))} className="w-full rounded-xl border px-3 py-2.5 text-xs font-mono font-bold" placeholder="student_username"/></div><div><label className="text-[10px] font-bold text-slate-500">Access code</label><input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} className="w-full rounded-xl border px-3 py-2.5 text-xs font-mono font-bold"/></div></div></section><section className="space-y-3"><h3 className="text-[11px] uppercase tracking-wider font-black flex items-center gap-2"><ShieldCheck size={14}/> Optional student features</h3><div className="grid sm:grid-cols-2 gap-3"><label className="flex items-center justify-between rounded-xl border p-3"><span><b className="block text-xs">Ed Club</b><small className="text-[10px] text-slate-500">Show the existing Ed Club banner and launch link</small></span><input type="checkbox" checked={edClub} onChange={e=>setEdClub(e.target.checked)}/></label><label className="flex items-center justify-between rounded-xl border p-3"><span><b className="block text-xs">Assessments</b><small className="text-[10px] text-slate-500">Show assessments and quizzes</small></span><input type="checkbox" checked={assessments} onChange={e=>setAssessments(e.target.checked)}/></label></div></section><div className="flex flex-wrap gap-4 text-xs"><label className="flex items-center gap-2"><input type="checkbox" checked={notifyParent} onChange={e=>setNotifyParent(e.target.checked)}/> Notify parent portal</label><label className="flex items-center gap-2"><input type="checkbox" checked={emailParent} onChange={e=>setEmailParent(e.target.checked)}/> Log parent email</label></div><button disabled={saving} onClick={()=>void approve()} className="w-full rounded-xl bg-emerald-600 text-white py-3 text-xs font-black inline-flex items-center justify-center gap-2">{saving?<Loader2 size={14} className="animate-spin"/>:<CheckSquare size={14}/>} {saving?'Approving…':'Approve & create student access'}</button></div>}</div></div></div>;
+        // Extract student's requested or existing programme(s) WITHOUT falling back to programs[0]
+        const extracted = extractStudentSelectedProgramIds(student, progMap);
+        setSelectedProgramIds(extracted.selectedProgramIds);
+        setOptionalProgramIds(extracted.optionalProgramIds);
+
+        if (student?.deliveryType === 'PRIVATE_MENTORSHIP' || student?.billingModel === 'PRIVATE_MENTORSHIP') {
+          setDeliveryType('PRIVATE_MENTORSHIP');
+        }
+
+        if (extracted.selectedProgramIds.length > 0 && !student?.agreedFee) {
+          let suggested = 0;
+          for (const pid of extracted.selectedProgramIds) {
+            const p = progMap.get(pid);
+            if (p) {
+              suggested += p.publicGroupPricing?.amount ?? (p.price || 35000);
+            }
+          }
+          if (suggested > 0) setFee(String(suggested));
+        }
+
+        if (tSnap) {
+          setTutors(tSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        }
+      } catch (err) {
+        console.error('Error loading enrollment approval modal data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [student]);
+
+  const resolvedScope = useMemo(() => {
+    return resolveEnrolmentScope(selectedProgramIds, programsMap, {
+      optionalProgramIds,
+    });
+  }, [selectedProgramIds, optionalProgramIds, programsMap]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const primaryProgramId = selectedProgramIds[0] || '';
+      const selectedTitles = resolvedScope.selectedNodes.map((n) => {
+        const crumbs = getProgramBreadcrumbs(n.id, programsMap);
+        return crumbs.map((c) => c.title).join(' › ');
+      });
+      const displayProgramName =
+        resolvedScope.selectedNodes.length > 0
+          ? resolvedScope.selectedNodes.map((n) => n.title).join(', ')
+          : 'Pending Programme Confirmation';
+
+      const pathwayPayload: EnrollmentApprovalPathwayPayload = {
+        selectedProgramIds,
+        optionalProgramIds,
+        priorRecognisedProgramIds,
+        deliveryType,
+        pathwayStatus:
+          selectedProgramIds.length > 0 ? 'CONFIGURED' : 'PENDING_PROGRAMME_CONFIRMATION',
+        enrolledRootProgramIds: resolvedScope.enrolledRootPrograms.map((r) => r.id),
+        assignedProgramIds: resolvedScope.assignedLearningUnits.map((u) => u.id),
+        selectedProgramTitles: selectedTitles,
+      };
+
+      if (onApprove) {
+        await onApprove(
+          student?.id,
+          primaryProgramId,
+          selectedTutor,
+          Number(fee) || 0,
+          displayProgramName,
+          pathwayPayload
+        );
+      } else if (student?.id) {
+        const { saveStudentPathwayConfiguration } = await import('../../lib/learningPathwayEngine');
+        await saveStudentPathwayConfiguration({
+          studentId: student.id,
+          studentName: student.name || student.fullName || student.studentName || 'Student',
+          selectedProgramIds,
+          optionalProgramIds,
+          priorRecognisedProgramIds,
+          deliveryType,
+          agreedFee: Number(fee) || 0,
+          programsMap,
+          actorUid: 'admin',
+          actorName: 'Administrator',
+          actorRole: 'ADMIN',
+        });
+      }
+      if (onSuccess) onSuccess();
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!isOpen || loading || !student) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-2xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] overflow-y-auto">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <FolderTree size={20} className="text-brand-red" />
+              <span>Configure Programme Pathway &amp; Approve Enrolment</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Student:{' '}
+              <strong className="text-slate-900 dark:text-white">
+                {student?.name || student?.fullName || student?.studentName}
+              </strong>
+              {student?.chosenProgram || student?.selectedPlan || student?.programName ? (
+                <span className="ml-2 text-indigo-600 dark:text-indigo-400 font-semibold">
+                  (Requested: {student.chosenProgram || student.selectedPlan || student.programName})
+                </span>
+              ) : null}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 text-slate-400 hover:text-slate-700"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <ProgramHierarchySelector
+            programsMap={programsMap}
+            selectedProgramIds={selectedProgramIds}
+            onChangeSelectedProgramIds={setSelectedProgramIds}
+            optionalProgramIds={optionalProgramIds}
+            onChangeOptionalProgramIds={setOptionalProgramIds}
+            priorRecognisedProgramIds={priorRecognisedProgramIds}
+            onChangePriorRecognisedProgramIds={setPriorRecognisedProgramIds}
+            deliveryType={deliveryType}
+            onChangeDeliveryType={(nextDelivery, suggestedAmount) => {
+              setDeliveryType(nextDelivery);
+              if (suggestedAmount > 0) {
+                setFee(String(suggestedAmount));
+              }
+            }}
+            allowOptionalToggle={true}
+            allowPriorLearningToggle={true}
+            compact={true}
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Assign Tutor (Optional)
+              </label>
+              <select
+                value={selectedTutor}
+                onChange={(e) => setSelectedTutor(e.target.value)}
+                className="w-full p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 dark:text-white"
+              >
+                <option value="">-- Assign Later --</option>
+                {tutors.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.fullName || t.name || t.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Agreed Enrolment Fee (₦)
+              </label>
+              <input
+                type="number"
+                value={fee}
+                onChange={(e) => setFee(e.target.value)}
+                className="w-full p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 dark:text-white"
+                placeholder="e.g. 35000"
+                required
+              />
+            </div>
+          </div>
+
+          {selectedProgramIds.length === 0 && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+              <AlertTriangle size={16} className="shrink-0 text-amber-600" />
+              <span>
+                No specific programme is selected yet. Approving now will mark this student as{' '}
+                <strong>Pending Programme Confirmation</strong> instead of assigning a random fallback.
+              </span>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 text-xs font-bold disabled:opacity-50"
+            >
+              <CheckCircle className="w-4 h-4" />
+              <span>
+                {submitting
+                  ? 'Saving Pathway & Approving...'
+                  : 'Confirm Pathway & Approve Enrolment'}
+              </span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 };
-export default StudentEnrollmentApprovalModal;

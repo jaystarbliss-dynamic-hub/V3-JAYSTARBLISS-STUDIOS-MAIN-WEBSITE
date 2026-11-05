@@ -71,13 +71,20 @@ export const handler: Handler = async event => {
     }
     const studentName = clean(body.studentName);
     const studentAge = clean(body.studentAge, 40);
-    const plan = clean(body.plan, 120);
+    const selectedProgramIds = Array.isArray(body.selectedProgramIds)
+      ? body.selectedProgramIds.map((id: unknown) => clean(id, 160)).filter(Boolean)
+      : [];
+    const programPaths = Array.isArray(body.programPaths)
+      ? body.programPaths.map((p: unknown) => clean(p, 240)).filter(Boolean)
+      : [];
+    const deliveryType = clean(body.deliveryType || 'PUBLIC_GROUP', 60);
+    const plan = clean(body.plan || programPaths[0] || '', 180);
     const subjects = Array.isArray(body.subjects)
       ? body.subjects.map((subject: unknown) => clean(subject, 80)).filter(Boolean).slice(0, 12)
-      : [];
+      : programPaths.slice(0, 12);
 
-    if (!studentName || !studentAge || !plan || subjects.length === 0) {
-      return json(400, { error: 'Student name, age/grade, learning plan, and at least one subject are required.' });
+    if (!studentName || !studentAge || (!plan && selectedProgramIds.length === 0)) {
+      return json(400, { error: 'Student name, age/grade, and at least one selected programme or sub-programme are required.' });
     }
 
     const now = new Date();
@@ -85,7 +92,11 @@ export const handler: Handler = async event => {
     const record = {
       studentName,
       studentAge,
-      plan,
+      plan: plan || 'Pending Programme Confirmation',
+      selectedProgramIds,
+      assignedTrackIds: selectedProgramIds,
+      programPaths,
+      deliveryType,
       subjects,
       parentId: decoded.uid,
       parentEmail: clean(parent.email || '', 160).toLowerCase(),

@@ -108,6 +108,11 @@ export const handler: Handler = async (event) => {
       if (role === "parent") {
         await adminDb.collection("parents").doc(user.uid).set({ ...baseProfile, children: [] }, { merge: true });
       } else if (role === "student") {
+        const selectedProgramIds = Array.isArray(body.selectedProgramIds)
+          ? body.selectedProgramIds.map((x: unknown) => String(x || "").trim()).filter(Boolean)
+          : [];
+        const requestedPlan = String(body.plan || body.programName || "").trim();
+        const hasExplicitProgram = selectedProgramIds.length > 0 || Boolean(requestedPlan);
         await adminDb.collection("individualStudents").doc(user.uid).set({
           fullName: name,
           email,
@@ -115,7 +120,12 @@ export const handler: Handler = async (event) => {
           accountStatus: "ACTIVE",
           firebaseUid: user.uid,
           forcePasswordReset,
-          plan: "Standard Tech Track",
+          selectedProgramIds,
+          assignedProgramIds: selectedProgramIds,
+          assignedTrackIds: selectedProgramIds,
+          pathwayStatus: hasExplicitProgram ? "CONFIGURED" : "PENDING_PROGRAMME_CONFIRMATION",
+          plan: hasExplicitProgram ? requestedPlan || null : null,
+          track: hasExplicitProgram ? requestedPlan || null : "Pending Programme Confirmation",
           createdAt: now,
           updatedAt: now
         }, { merge: true });

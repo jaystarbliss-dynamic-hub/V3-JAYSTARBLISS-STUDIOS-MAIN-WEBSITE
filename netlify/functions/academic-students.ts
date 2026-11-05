@@ -10,13 +10,98 @@ const assignmentCollections = ['tutorAssignments', 'staffAssignments', 'studentA
 
 export const handler: Handler = async (event) => {
   try {
-    if (event.httpMethod !== 'GET') return json(405, { error: 'Method Not Allowed' });
-    const raw = token(event); if (!raw) return json(401, { error: 'Authentication required.' });
+    if (event.httpMethod !== 'GET' && event.httpMethod !== 'POST') {
+      return json(405, { error: 'Method Not Allowed' });
+    }
+    const raw = token(event);
+    if (!raw) return json(401, { error: 'Authentication required.' });
     const decoded = await adminAuth.verifyIdToken(raw);
     const userSnap = await adminDb.collection('users').doc(decoded.uid).get();
     if (!userSnap.exists) return json(403, { error: 'Portal profile not found.' });
     const user = userSnap.data() || {};
     const role = roleOf(user.role);
+
+    if (event.httpMethod === 'POST') {
+      const allowedWriter = [
+        'ADMIN',
+        'SUPER_ADMIN',
+        'CONTENT_ADMIN',
+        'EDUCATION_ADMIN',
+        'SERVICES_ADMIN',
+        'TUTOR',
+        'STAFF',
+        'INSTRUCTOR',
+        'TEACHER',
+      ].includes(role);
+      if (!allowedWriter) {
+        return json(403, { error: 'Only authorised tutors or administrators can update learning pathways.' });
+      }
+      const body = JSON.parse(event.body || '{}');
+      const studentId = String(body.studentId || '').trim();
+      if (!studentId) return json(400, { error: 'studentId is required.' });
+
+      const now = new Date();
+      if (body.action === 'update_student_tracks' || body.action === 'update_student_pathway') {
+        const selectedProgramIds = Array.isArray(body.selectedProgramIds)
+          ? body.selectedProgramIds
+          : Array.isArray(body.assignedTrackIds)
+          ? body.assignedTrackIds
+          : [];
+        const assignedProgramIds = Array.isArray(body.assignedProgramIds)
+          ? body.assignedProgramIds
+          : selectedProgramIds;
+        const optionalProgramIds = Array.isArray(body.optionalProgramIds)
+          ? body.optionalProgramIds
+          : [];
+        const currentFocusProgramIds = Array.isArray(body.currentFocusProgramIds)
+          ? body.currentFocusProgramIds
+          : [];
+        const enrolledPrograms = Array.isArray(body.enrolledPrograms)
+          ? body.enrolledPrograms
+          : [];
+        const pathwayStatus =
+          selectedProgramIds.length > 0 ? 'CONFIGURED' : 'PENDING_PROGRAMME_CONFIRMATION';
+
+        const updateData: Record<string, any> = {
+          selectedProgramIds,
+          assignedProgramIds,
+          assignedTrackIds: selectedProgramIds,
+          optionalProgramIds,
+          currentFocusProgramIds,
+          enrolledPrograms,
+          pathwayStatus,
+          updatedAt: now,
+        };
+        if (enrolledPrograms.length > 0) {
+          updateData.track = enrolledPrograms.join(', ');
+          updateData.programName = enrolledPrograms[0];
+        }
+        await Promise.all([
+          adminDb.collection('individualStudents').doc(studentId).set(updateData, { merge: true }).catch(() => null),
+          adminDb.collection('students').doc(studentId).set(updateData, { merge: true }).catch(() => null),
+          adminDb.collection('users').doc(studentId).set(updateData, { merge: true }).catch(() => null),
+        ]);
+
+        if (body.courseProgress && typeof body.courseProgress === 'object') {
+          for (const [progId, progVal] of Object.entries<any>(body.courseProgress)) {
+            const docId = `${studentId}_${progId}`;
+            await adminDb.collection('courseProgress').doc(docId).set(
+              {
+                studentId,
+                programId: progId,
+                courseId: progId,
+                ...progVal,
+                lastUpdatedByUid: decoded.uid,
+                updatedAt: now,
+              },
+              { merge: true }
+            );
+          }
+        }
+        return json(200, { ok: true, studentId, pathwayStatus });
+      }
+      return json(400, { error: 'Unsupported action.' });
+    }
     const docs = new Map<string, any>();
     const add = (snap: QuerySnapshot) => snap.forEach(d => docs.set(d.id, { id: d.id, ...d.data() }));
     const addStudentById = async (studentId: string) => {
@@ -149,6 +234,20 @@ export const handler: Handler = async (event) => {
       username: s.username || '',
       email: s.email || '',
       plan: s.plan || s.programName || s.program || '',
+      track: s.track || s.programName || '',
+      programId: s.programId || '',
+      programName: s.programName || '',
+      pathwayStatus: s.pathwayStatus || ((Array.isArray(s.selectedProgramIds) && s.selectedProgramIds.length > 0) || (Array.isArray(s.assignedTrackIds) && s.assignedTrackIds.length > 0) || s.programId ? 'CONFIGURED' : 'PENDING_PROGRAMME_CONFIRMATION'),
+      selectedProgramIds: Array.isArray(s.selectedProgramIds) ? s.selectedProgramIds : Array.isArray(s.assignedTrackIds) ? s.assignedTrackIds : s.programId ? [s.programId] : [],
+      assignedProgramIds: Array.isArray(s.assignedProgramIds) ? s.assignedProgramIds : Array.isArray(s.assignedTrackIds) ? s.assignedTrackIds : [],
+      assignedTrackIds: Array.isArray(s.assignedTrackIds) ? s.assignedTrackIds : Array.isArray(s.selectedProgramIds) ? s.selectedProgramIds : [],
+      optionalProgramIds: Array.isArray(s.optionalProgramIds) ? s.optionalProgramIds : [],
+      excludedProgramIds: Array.isArray(s.excludedProgramIds) ? s.excludedProgramIds : [],
+      currentFocusProgramIds: Array.isArray(s.currentFocusProgramIds) ? s.currentFocusProgramIds : [],
+      enrolledRootProgramIds: Array.isArray(s.enrolledRootProgramIds) ? s.enrolledRootProgramIds : [],
+      enrolledPrograms: Array.isArray(s.enrolledPrograms) ? s.enrolledPrograms : [],
+      deliveryType: s.deliveryType || 'PUBLIC_GROUP',
+      agreedFee: s.agreedFee ?? null,
       schoolId: s.schoolId || '',
       parentId: s.parentId || '',
       tutorId: s.tutorId || s.staffId || s.assignedTutorId || s.assignedStaffId || s.instructorId || '',

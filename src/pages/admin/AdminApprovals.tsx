@@ -89,6 +89,20 @@ const AdminApprovals: React.FC = () => {
       const uniqueUsername = await ensureUniqueGeneratedUsername(makeUniqueUsername(req.name, req.email, req.id));
       
       const canonicalStudentClass = normalizeClassName(req.class || req.grade, 'Grade 7');
+      const reqSelectedIds = Array.isArray(req.selectedProgramIds)
+        ? req.selectedProgramIds
+        : Array.isArray(req.assignedTrackIds)
+        ? req.assignedTrackIds
+        : req.programId
+        ? [req.programId]
+        : [];
+      const reqPathwayStatus =
+        reqSelectedIds.length > 0 ? 'CONFIGURED' : 'PENDING_PROGRAMME_CONFIRMATION';
+      const reqTrack =
+        reqSelectedIds.length > 0
+          ? req.plan || req.programName || req.track || subjects.join(', ')
+          : 'Pending Programme Confirmation';
+
       const stdDoc = await addDoc(collection(db, 'students'), {
         fullName: req.name,
         username: uniqueUsername,
@@ -102,6 +116,12 @@ const AdminApprovals: React.FC = () => {
         isIndependent: !req.parentId,
         registrationType: req.parentId ? 'parent' : 'individual',
         subjects,
+        selectedProgramIds: reqSelectedIds,
+        assignedProgramIds: reqSelectedIds,
+        assignedTrackIds: reqSelectedIds,
+        pathwayStatus: reqPathwayStatus,
+        track: reqTrack,
+        deliveryType: req.deliveryType || 'PUBLIC_GROUP',
         registeredAt: serverTimestamp()
       });
 
@@ -113,6 +133,12 @@ const AdminApprovals: React.FC = () => {
         grade: canonicalStudentClass,
         accessCode,
         subjects,
+        selectedProgramIds: reqSelectedIds,
+        assignedProgramIds: reqSelectedIds,
+        assignedTrackIds: reqSelectedIds,
+        pathwayStatus: reqPathwayStatus,
+        track: reqTrack,
+        deliveryType: req.deliveryType || 'PUBLIC_GROUP',
         status: 'ACTIVE',
         parentId: req.parentId || null,
         parentEmail: req.parentEmail || req.email || '',
@@ -157,6 +183,15 @@ const AdminApprovals: React.FC = () => {
         : String(req.subjects || '').split(',').map((subject: string) => subject.trim()).filter(Boolean);
       const parentId = req.parentId || null;
       const parentEmail = req.parentEmail || '';
+      const selectedProgramIds = Array.isArray(req.selectedProgramIds)
+        ? req.selectedProgramIds
+        : Array.isArray(req.assignedTrackIds)
+        ? req.assignedTrackIds
+        : [];
+      const pathwayStatus =
+        selectedProgramIds.length > 0 || Boolean(req.plan && req.plan !== 'Pending Programme Confirmation')
+          ? 'CONFIGURED'
+          : 'PENDING_PROGRAMME_CONFIRMATION';
 
       const sharedStudentRecord = {
         fullName: studentName,
@@ -169,6 +204,12 @@ const AdminApprovals: React.FC = () => {
         registrationType: 'parent',
         subjects,
         plan: req.plan || '',
+        track: req.plan || 'Pending Programme Confirmation',
+        selectedProgramIds,
+        assignedProgramIds: selectedProgramIds,
+        assignedTrackIds: selectedProgramIds,
+        pathwayStatus,
+        deliveryType: req.deliveryType || 'PUBLIC_GROUP',
         grade: normalizeClassName(req.class || req.grade || req.studentClass || req.studentAge, 'Grade 1'),
         class: normalizeClassName(req.class || req.grade || req.studentClass || req.studentAge, 'Grade 1'),
         accessCode,

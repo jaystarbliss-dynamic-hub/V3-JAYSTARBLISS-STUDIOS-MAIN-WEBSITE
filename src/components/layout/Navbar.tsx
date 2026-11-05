@@ -142,47 +142,39 @@ const Navbar: React.FC = () => {
                   >
                     <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/60 dark:border-white/10 p-3 space-y-1">
                       <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        Explore Learning Tracks
+                        Primary Learning Programmes
                       </div>
                       
                       <Link 
-                        to="/programs?school=academic-excellence#programs-content" 
+                        to="/programs?category=technology#programs-content" 
                         className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Academics &amp; Tutoring</div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Foundational sciences, math &amp; WAEC/JAMB</div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">1. Technology Programme</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Coding, Software Engineering, AI, Web Dev &amp; Digital Literacy</div>
                       </Link>
 
                       <Link 
-                        to="/programs?school=technology-programming#programs-content" 
+                        to="/programs?category=design-graphics#programs-content" 
                         className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Tech, Coding &amp; AI</div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Scratch, Python, Web Dev &amp; Artificial Intelligence</div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">2. Design &amp; Graphics Programme</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Graphic design, branding, UI/UX design &amp; 2D illustration</div>
                       </Link>
 
                       <Link 
-                        to="/programs?school=digital-literacy#programs-content" 
+                        to="/programs?category=music#programs-content" 
                         className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Digital Literacy &amp; Tools</div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Touch typing, Microsoft Office, Excel &amp; Smart Search</div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">3. Music Programme</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Instrumental mastery, vocals, audio production &amp; music theory</div>
                       </Link>
 
                       <Link 
-                        to="/programs?school=creative-design#programs-content" 
+                        to="/programs?category=academics#programs-content" 
                         className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
-                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Creative Arts &amp; Design</div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Graphic design, branding &amp; digital illustrations</div>
-                      </Link>
-
-                      <Link 
-                        to="/programs?school=music-performing-arts#programs-content" 
-                        className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
-                      >
-                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">Music &amp; Performing Arts</div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Keyboard, piano, recorder, violin &amp; music theory</div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">4. Academics Programme</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">WAEC prep, JAMB prep, STEM sciences &amp; subject tutoring</div>
                       </Link>
 
                       <Link 
@@ -190,7 +182,7 @@ const Navbar: React.FC = () => {
                         className="block px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors group"
                       >
                         <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-red">School Coding &amp; Tech Clubs</div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Custom coding and robotics labs for partner schools</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Institutional partnerships for primary and secondary schools</div>
                       </Link>
 
                       <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
@@ -504,20 +496,17 @@ const Navbar: React.FC = () => {
                     <Link to="/programs?tab=catalog#catalog-section" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-brand-red">
                       Full Programs Catalog
                     </Link>
-                    <Link to="/programs?school=academic-excellence#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      Academics &amp; Tutoring
+                    <Link to="/programs?category=technology#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      1. Technology Programme
                     </Link>
-                    <Link to="/programs?school=technology-programming#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      Coding, Tech &amp; AI
+                    <Link to="/programs?category=design-graphics#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      2. Design &amp; Graphics Programme
                     </Link>
-                    <Link to="/programs?school=digital-literacy#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      Digital Literacy &amp; Tools
+                    <Link to="/programs?category=music#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      3. Music Programme
                     </Link>
-                    <Link to="/programs?school=creative-design#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      Creative Arts &amp; Design
-                    </Link>
-                    <Link to="/programs?school=music-performing-arts#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
-                      Music &amp; Performing Arts
+                    <Link to="/programs?category=academics#programs-content" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
+                      4. Academics Programme
                     </Link>
                     <Link to="/school-partnership" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-brand-red">
                       School Coding &amp; Tech Clubs

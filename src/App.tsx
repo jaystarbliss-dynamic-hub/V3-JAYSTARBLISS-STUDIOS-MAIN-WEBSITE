@@ -226,6 +226,7 @@ function AnimatedRoutes() {
         <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
           <Route index element={<AdminDashboard />} />
           <Route path="schedules" element={<AdminClassSchedules />} />
+          <Route path="assessments" element={<TutorExaminations />} />
           <Route path="examinations" element={<TutorExaminations />} />
           <Route path="examination-history" element={<ExaminationHistory mode="history" />} />
           <Route path="agreements" element={<AgreementsCenter role="admin" />} />

@@ -43,15 +43,15 @@ function resolveProgramRouteSlug(program: any): string {
 }
 
 const SCHOOL_FILTER_MAP: Record<string, { label: string; icon: React.FC<{ size?: number; className?: string }> }> = {
-  ALL: { label: 'All 8 Programs', icon: Layers },
-  'technology-programming': { label: 'Tech & Coding', icon: Laptop },
-  'digital-literacy': { label: 'Digital Literacy', icon: Brain },
-  'creative-design': { label: 'Creative Design', icon: Palette },
-  'music-performing-arts': { label: 'Music & Instruments', icon: Music },
-  'academic-excellence': { label: 'Academic Excellence', icon: GraduationCap },
-  'strategy-games': { label: 'Chess & Strategy', icon: Gamepad2 },
-  'young-creators': { label: 'Young Creators', icon: Baby },
-  'private-tutoring': { label: 'Private Mentorship', icon: Users }
+  ALL: { label: 'All Programmes', icon: Layers },
+  'technology-programming': { label: 'Technology Programme', icon: Laptop },
+  'creative-design': { label: 'Design & Graphics Programme', icon: Palette },
+  'music-performing-arts': { label: 'Music Programme', icon: Music },
+  'academic-excellence': { label: 'Academics Programme', icon: GraduationCap },
+  'digital-literacy': { label: 'Digital Literacy (Track)', icon: Brain },
+  'strategy-games': { label: 'Chess & Strategy (Track)', icon: Gamepad2 },
+  'young-creators': { label: 'Young Creators (Track)', icon: Baby },
+  'private-tutoring': { label: 'Private Mentorship Mode', icon: Users }
 };
 
 const CANONICAL_SCHOOL_MAP: Record<string, { schoolId: string; filterKey: string }> = {
@@ -201,8 +201,8 @@ const Programs: React.FC = () => {
   return (
     <MainLayout>
       <SEO 
-        title="Our Learning Ecosystem | 8 Progressive Pathways" 
-        description="Explore the multi-disciplinary learning ecosystem: Technology & Coding, Digital Literacy, Creative Design, Music, Academic Excellence, Chess, and Young Creators." 
+        title="Our Learning Ecosystem | 4 Primary Programmes & Specialised Tracks" 
+        description="Explore the recursive learning ecosystem: Technology Programme, Design & Graphics Programme, Music Programme, and Academics Programme." 
       />
 
       {/* Hero Header */}
@@ -251,11 +251,11 @@ const Programs: React.FC = () => {
           }> = [
             {
               id: 'ecosystem',
-              label: 'Core Programs',
-              number: '08',
-              title: 'Core Programs',
-              description: 'Explore every learning pathway in one place.',
-              actionLabel: 'Explore programs',
+              label: 'Core Programmes',
+              number: '04',
+              title: 'Core Programmes',
+              description: 'Explore the 4 primary programme pillars and nested pathways.',
+              actionLabel: 'Explore programmes',
               targetSectionId: 'programs-content'
             },
             {

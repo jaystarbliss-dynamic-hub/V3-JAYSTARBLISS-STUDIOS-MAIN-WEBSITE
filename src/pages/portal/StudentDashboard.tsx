@@ -397,10 +397,10 @@ export const StudentDashboard: React.FC = () => {
               });
 
               if (!progName) {
-                const general = schPrograms.find(p => p.isGeneralProgram) || schPrograms[0];
-                if (general) {
-                  progName = general.name;
-                  if (general.hasEdclub || String(general.name || '').toLowerCase().includes('digital literacy')) {
+                const explicitGeneral = schPrograms.find(p => p.isGeneralProgram === true);
+                if (explicitGeneral) {
+                  progName = explicitGeneral.name || explicitGeneral.title || '';
+                  if (explicitGeneral.hasEdclub || String(explicitGeneral.name || '').toLowerCase().includes('digital literacy')) {
                     edclubAccess = true;
                   }
                 }
@@ -422,7 +422,10 @@ export const StudentDashboard: React.FC = () => {
             sessionStorage.setItem('studentSchoolId', schDoc.id);
             sessionStorage.setItem('studentSchoolName', schData.name || studentRecord.schoolName);
             if (Array.isArray(schData.programs) && schData.programs.length > 0 && !progName) {
-              progName = schData.programs[0].name;
+              const explicitGen = schData.programs.find((p: any) => p.isGeneralProgram === true);
+              if (explicitGen) {
+                progName = explicitGen.name || explicitGen.title || '';
+              }
             }
           }
         } catch (e) {
@@ -432,15 +435,24 @@ export const StudentDashboard: React.FC = () => {
 
       // Query programs collection to determine if program is multi-stage or standalone
       let matchedProgramDoc: any = null;
+      const selectedIds: string[] = Array.isArray((studentRecord as any).selectedProgramIds)
+        ? (studentRecord as any).selectedProgramIds
+        : Array.isArray((studentRecord as any).assignedTrackIds)
+        ? (studentRecord as any).assignedTrackIds
+        : [];
       try {
         const progsSnap = await getDocs(collection(db, 'programs')).catch(() => ({ docs: [] } as any));
         progsSnap.docs.forEach((d: any) => {
           const p = d.data();
           const pTitle = String(p.title || p.name || '').trim().toLowerCase();
-          const isMatch = assignedProgramsList.some(ap => ap === pTitle || ap.includes(pTitle) || pTitle.includes(ap)) ||
+          const isIdMatch = selectedIds.includes(d.id) || (studentRecord as any).programId === d.id;
+          const isMatch =
+            isIdMatch ||
+            assignedProgramsList.some(ap => ap === pTitle || ap.includes(pTitle) || pTitle.includes(ap)) ||
             (progName && (pTitle === progName.toLowerCase().trim() || pTitle.includes(progName.toLowerCase().trim()) || progName.toLowerCase().trim().includes(pTitle)));
-          if (isMatch && !matchedProgramDoc) {
-            matchedProgramDoc = p;
+          if (isMatch) {
+            if (!matchedProgramDoc) matchedProgramDoc = p;
+            if (!progName) progName = p.title || p.name || '';
             if (p.hasEdclub === true || p.hasEdClub === true || pTitle.includes('digital literacy') || pTitle.includes('typing')) {
               edclubAccess = true;
             }
@@ -462,7 +474,11 @@ export const StudentDashboard: React.FC = () => {
         edclubAccess = true;
       }
 
-      const resolvedProgramTitle = progName || (isDigitalLitOrTyping ? 'Digital Literacy Junior' : (studentRecord.schoolName ? 'Digital Literacy Junior' : (studentRecord.plan || 'Digital Literacy Junior')));
+      const resolvedProgramTitle =
+        progName ||
+        studentRecord.plan ||
+        (studentRecord as any).track ||
+        'Pending Programme Confirmation';
       setEnrolledProgramName(resolvedProgramTitle);
       setIsEdclubAllowed(edclubAccess);
       setHasResourcesAllowed(resAccess);
