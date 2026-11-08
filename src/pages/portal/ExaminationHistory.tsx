@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { auth, db, getAllClientDatabases } from "../../lib/firebase";
 import {
@@ -25,8 +25,13 @@ import {
   normalizeWorkType,
   getWorkTypeLabels,
   isAttemptResultReleased,
+  classifyStudentEnrolment,
+  isAttemptOverdueForExpiry,
+  gradeAnswers,
+  resolveAttemptQuestions,
   type WorkType,
 } from "../../lib/classes";
+import { fetchAcademicStudentsFallback } from "../../lib/academicFallback";
 import {
   type DocumentHeaderConfig,
   loadSavedDocumentHeaderConfig,
@@ -58,6 +63,14 @@ import {
   MessageSquare,
   Sparkles,
   X,
+  Eye,
+  Link2,
+  Users,
+  User,
+  ChevronDown,
+  ChevronRight,
+  SlidersHorizontal,
+  Award,
 } from "lucide-react";
 import { TableSkeleton, MetricGridSkeleton } from "../../components/ui/Skeleton";
 
@@ -137,6 +150,9 @@ type Question = {
   options?: { id: string; text: string }[];
   correctOptionIds?: string[];
   acceptedAnswers?: string[];
+  explanation?: string;
+  deliverableInstructions?: string;
+  submissionMethod?: string;
 };
 
 type Exam = {
@@ -150,10 +166,13 @@ type Exam = {
   durationMinutes: number;
   schoolId?: string;
   schoolName?: string;
+  recipientMode?: string;
+  targetStudentIds?: string[];
   targetClass?: string;
   className?: string;
   classIds?: string[];
   passcode?: string;
+  dueDate?: string;
   availableFrom?: string;
   availableUntil?: string;
   maxScore?: number;
@@ -161,17 +180,21 @@ type Exam = {
   questions?: Question[];
   createdBy?: string;
   tutorId?: string;
+  updatedAt?: any;
+  createdAt?: any;
 };
 
 type Attempt = {
   id: string;
   examId: string;
   studentId: string;
+  studentUid?: string;
   studentName: string;
   className: string;
   schoolId?: string;
   schoolName?: string;
   status: string;
+  deadlineAt?: string;
   score?: number;
   maxScore?: number;
   percentage?: number;
@@ -179,12 +202,14 @@ type Attempt = {
   releasedAt?: any;
   resultReleased?: boolean;
   autoGraded?: boolean;
-  answers?: Record<string, string | string[]>;
+  answers?: Record<string, any>;
+  submissionUrl?: string;
+  deliverableUrl?: string;
   questions?: Question[];
   questionsSnapshot?: Question[];
   questionResults?: {
     questionId: string;
-    answer?: string | string[];
+    answer?: any;
     correct?: boolean;
     pointsAwarded?: number;
     maxPoints?: number;
@@ -197,6 +222,187 @@ type Attempt = {
   feedback?: string;
   tutorFeedback?: string;
 };
+
+interface PrivateLearnerRecord {
+  id: string;
+  uid?: string;
+  name: string;
+  className: string;
+  subType: "parent" | "individual";
+}
+
+interface SchoolLearnerRecord {
+  id: string;
+  uid?: string;
+  name: string;
+  schoolId: string;
+  schoolName: string;
+  className: string;
+}
+
+interface ParsedStructuredSubmission {
+  textResponse?: string;
+  linkUrl?: string;
+  fileDataUrl?: string;
+  fileName?: string;
+  fileSize?: number;
+  fileType?: string;
+}
+
+function parseAnswerObject(raw: any): ParsedStructuredSubmission {
+  if (!raw) return {};
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as ParsedStructuredSubmission;
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      try {
+        return JSON.parse(trimmed) as ParsedStructuredSubmission;
+      } catch {
+        // fall through
+      }
+    }
+    if (/^https?:\/\//i.test(trimmed)) {
+      return { linkUrl: trimmed };
+    }
+    if (trimmed.startsWith("data:")) {
+      return { fileDataUrl: trimmed, fileName: "submitted-file" };
+    }
+    const urlMatch = trimmed.match(/https?:\/\/[^\s"'<>]+/i);
+    if (urlMatch) {
+      return { textResponse: raw, linkUrl: urlMatch[0] };
+    }
+    return { textResponse: raw };
+  }
+  return {};
+}
+
+function extractAttemptSubmittedLinks(
+  attempt: Attempt,
+  exam?: Exam
+): { label: string; url: string; questionId?: string }[] {
+  const found: { label: string; url: string; questionId?: string }[] = [];
+  const seen = new Set<string>();
+  const addLink = (urlRaw: any, label: string, questionId?: string) => {
+    const u = String(urlRaw || "").trim();
+    if (!u || !/^https?:\/\//i.test(u)) return;
+    if (seen.has(u)) return;
+    seen.add(u);
+    found.push({ label, url: u, questionId });
+  };
+
+  addLink(attempt.submissionUrl, "Submitted Deliverable Link");
+  addLink(attempt.deliverableUrl, "Submitted Project Link");
+
+  const questions = resolveAttemptQuestions(exam || {}, attempt) as Question[];
+  const qMap = new Map<string, { index: number; prompt: string }>();
+  questions.forEach((q, idx) => {
+    if (q?.id) qMap.set(String(q.id), { index: idx + 1, prompt: q.prompt || `Item ${idx + 1}` });
+  });
+
+  if (attempt.answers && typeof attempt.answers === "object") {
+    Object.entries(attempt.answers).forEach(([qId, rawVal]) => {
+      const parsed = parseAnswerObject(rawVal);
+      if (parsed.linkUrl) {
+        const qInfo = qMap.get(qId);
+        addLink(
+          parsed.linkUrl,
+          qInfo ? `Q${qInfo.index} Link` : "Submitted Link",
+          qId
+        );
+      }
+    });
+  }
+
+  return found;
+}
+
+function formatQuestionAnswerForTutor(q: Question, rawAnswer: any): {
+  displayText: string;
+  linkUrl?: string;
+  fileDataUrl?: string;
+  fileName?: string;
+} {
+  if (rawAnswer === undefined || rawAnswer === null || rawAnswer === "") {
+    return { displayText: "No answer submitted" };
+  }
+  if (["single_choice", "true_false", "dropdown"].includes(q.type)) {
+    const opt = (q.options || []).find((o) => String(o.id) === String(rawAnswer));
+    return { displayText: opt ? `${opt.text} (${opt.id})` : String(rawAnswer) };
+  }
+  if (q.type === "multiple_choice") {
+    const arr = Array.isArray(rawAnswer) ? rawAnswer : [rawAnswer];
+    const labels = arr.map((id) => {
+      const opt = (q.options || []).find((o) => String(o.id) === String(id));
+      return opt ? opt.text : String(id);
+    });
+    return { displayText: labels.join(", ") || "No option selected" };
+  }
+  const parsed = parseAnswerObject(rawAnswer);
+  const parts: string[] = [];
+  if (parsed.textResponse?.trim()) parts.push(parsed.textResponse.trim());
+  if (parsed.linkUrl?.trim() && !parts.includes(parsed.linkUrl.trim())) {
+    parts.push(`Link: ${parsed.linkUrl.trim()}`);
+  }
+  if (parsed.fileName?.trim()) {
+    parts.push(`Attached File: ${parsed.fileName.trim()}`);
+  }
+  return {
+    displayText: parts.join("\n") || String(rawAnswer),
+    linkUrl: parsed.linkUrl?.trim(),
+    fileDataUrl: parsed.fileDataUrl?.trim(),
+    fileName: parsed.fileName?.trim(),
+  };
+}
+
+function formatExpectedKeyForTutor(q: Question): string {
+  if (["single_choice", "true_false", "dropdown", "multiple_choice"].includes(q.type)) {
+    const ids = Array.isArray(q.correctOptionIds) ? q.correctOptionIds : [];
+    if (!ids.length) return "Manual / Tutor Evaluation";
+    return ids
+      .map((id) => {
+        const opt = (q.options || []).find((o) => String(o.id) === String(id));
+        return opt ? opt.text : String(id);
+      })
+      .join(", ");
+  }
+  if (Array.isArray(q.acceptedAnswers) && q.acceptedAnswers.length > 0) {
+    return q.acceptedAnswers.join(" | ");
+  }
+  return "Practical / Manual Tutor Review";
+}
+
+function formatTimestampShort(val: any): string {
+  if (!val) return "—";
+  try {
+    if (typeof val?.toDate === "function") {
+      return val.toDate().toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    }
+    if (typeof val?.seconds === "number") {
+      return new Date(val.seconds * 1000).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    }
+    const d = new Date(val);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    }
+  } catch {
+    // ignore
+  }
+  return String(val);
+}
 
 interface ExaminationHistoryProps {
   mode?: "overview" | "history";
@@ -223,7 +429,16 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   const [schoolAliases, setSchoolAliases] = useState<string[]>([]);
   const [availableSchools, setAvailableSchools] = useState<{ id: string; name: string }[]>([]);
   const [schoolNameMap, setSchoolNameMap] = useState<Record<string, string>>({});
+  const [privateLearners, setPrivateLearners] = useState<PrivateLearnerRecord[]>([]);
+  const [schoolLearners, setSchoolLearners] = useState<SchoolLearnerRecord[]>([]);
   const [scopeReady, setScopeReady] = useState(false);
+
+  // Recipient Category Filtering (All | Partner Schools | Private Students)
+  const [recipientCategory, setRecipientCategory] = useState<
+    "all" | "partner_schools" | "private_students"
+  >("all");
+  const [privateSubFilter, setPrivateSubFilter] = useState<"all" | "parent" | "individual">("all");
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
 
   const [exams, setExams] = useState<Exam[]>([]);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
@@ -237,11 +452,13 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   );
   const [workTypeTab, setWorkTypeTab] = useState<"ALL" | WorkType>("ALL");
   const [overviewSearch, setOverviewSearch] = useState("");
+  const [archiveSearch, setArchiveSearch] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [zipBusy, setZipBusy] = useState(false);
   const [zipProgress, setZipProgress] = useState("");
   const [copiedExamId, setCopiedExamId] = useState<string | null>(null);
+  const [copiedUrlKey, setCopiedUrlKey] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [bulkReleaseBusy, setBulkReleaseBusy] = useState(false);
   const [showHeaderDesigner, setShowHeaderDesigner] = useState(false);
@@ -249,12 +466,45 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   const [releaseModalAttempt, setReleaseModalAttempt] = useState<Attempt | null>(null);
   const [releaseRemarkInput, setReleaseRemarkInput] = useState<string>("");
 
+  // Compact Actions Dropdown state
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Detailed Submission Review & Marking Modal state
+  const [reviewModalAttempt, setReviewModalAttempt] = useState<Attempt | null>(null);
+  const [reviewMarksMap, setReviewMarksMap] = useState<Record<string, number>>({});
+  const [reviewTotalOverride, setReviewTotalOverride] = useState<string>("");
+  const [reviewRemarkInput, setReviewRemarkInput] = useState<string>("");
+  const [reviewSaving, setReviewSaving] = useState(false);
+
+  // Detailed Archived Assessment Modal state
+  const [archivedDetailExam, setArchivedDetailExam] = useState<Exam | null>(null);
+
   const isSchoolUser =
     isSchoolPortal || ["SCHOOL", "SCHOOL_ADMIN"].includes(userRole.toUpperCase());
   const isPlatformAdmin =
     isAdminWorkspace || ["ADMIN", "SUPER_ADMIN", "SUPERADMIN"].includes(userRole.toUpperCase());
 
-  // 1. Resolve User Scope & Authorised Schools (Strict Isolation for School Portal & Tutors)
+  // Close compact actions dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setShowActionsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Copy arbitrary link helper
+  const handleCopySubmittedLink = (key: string, url: string) => {
+    if (!url) return;
+    navigator.clipboard.writeText(url);
+    setCopiedUrlKey(key);
+    setTimeout(() => setCopiedUrlKey(null), 2000);
+  };
+
+  // 1. Resolve User Scope, Authorised Partner Schools & Genuine Private Students
   useEffect(() => {
     let isMounted = true;
     const resolveScope = async () => {
@@ -326,6 +576,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           if (isMounted) {
             setSchoolAliases(aliasList);
             setSchoolId(canonicalId || aliasList[0] || "");
+            setRecipientCategory("partner_schools");
             const singleSchoolList = canonicalId
               ? [{ id: canonicalId, name: finalName }]
               : [];
@@ -381,6 +632,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
 
         const list: { id: string; name: string }[] = [];
         const nameMap: Record<string, string> = {};
+        const knownSchoolIdSet = new Set<string>();
 
         schoolDocMap.forEach((s: any, sId: string) => {
           const sCode = String(s.schoolId || s.code || s.schoolCode || "").trim();
@@ -388,9 +640,11 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             resolvePartnerSchoolName(s.name, s.schoolName) || `Partner School (${sId})`;
           nameMap[sId] = sName;
           nameMap[sId.toLowerCase()] = sName;
+          knownSchoolIdSet.add(sId);
           if (sCode) {
             nameMap[sCode] = sName;
             nameMap[sCode.toLowerCase()] = sName;
+            knownSchoolIdSet.add(sCode);
           }
 
           const isAdmin =
@@ -406,11 +660,90 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           }
         });
 
+        // Load genuine Private Students (parent-enrolled & individual) and Partner School Students
+        const privateMap = new Map<string, PrivateLearnerRecord>();
+        const schoolStdMap = new Map<string, SchoolLearnerRecord>();
+
+        try {
+          const fallbackStudents = await fetchAcademicStudentsFallback({
+            scope: isPlatformAdmin ? "all" : "assigned",
+          });
+          fallbackStudents.forEach((st) => {
+            if (st.isPrivate) {
+              privateMap.set(st.id, {
+                id: st.id,
+                name: st.fullName || "Private Student",
+                className: normalizeClassName(st.class || "") || st.class || "Private",
+                subType: st.privateSubType === "parent" ? "parent" : "individual",
+              });
+            } else if (!st.isPrivate && st.schoolId) {
+              schoolStdMap.set(st.id, {
+                id: st.id,
+                name: st.fullName || "School Student",
+                schoolId: st.schoolId,
+                schoolName: nameMap[st.schoolId] || st.schoolName || "Partner School",
+                className: normalizeClassName(st.class || "") || st.class || "General",
+              });
+            }
+          });
+        } catch {
+          // ignore fallback error
+        }
+
+        // Also scan individualStudents & students collections directly to ensure complete coverage
+        try {
+          const [indSnap, stdSnap] = await Promise.all([
+            getDocs(collection(db, "individualStudents")).catch(() => ({ docs: [] } as any)),
+            getDocs(collection(db, "students")).catch(() => ({ docs: [] } as any)),
+          ]);
+          const processDoc = (d: any, docSource: "individualStudents" | "students") => {
+            const raw = { id: d.id, ...d.data(), docSource };
+            const cls = classifyStudentEnrolment(raw);
+            const fullName = String(
+              raw.fullName || raw.studentName || raw.name || ""
+            ).trim();
+            if (!fullName) return;
+            const normCls =
+              normalizeClassName(raw.className || raw.class || raw.grade || "") ||
+              raw.className ||
+              raw.class ||
+              "General";
+
+            if (cls.isPrivate && !privateMap.has(d.id)) {
+              privateMap.set(d.id, {
+                id: d.id,
+                uid: raw.userId || raw.firebaseUid || raw.uid || undefined,
+                name: fullName,
+                className: normCls,
+                subType: cls.privateSubType === "parent" ? "parent" : "individual",
+              });
+            } else if (cls.isSchool && !schoolStdMap.has(d.id)) {
+              const sId = String(raw.schoolId || raw.schoolCode || "").trim();
+              schoolStdMap.set(d.id, {
+                id: d.id,
+                uid: raw.userId || raw.firebaseUid || raw.uid || undefined,
+                name: fullName,
+                schoolId: sId,
+                schoolName: nameMap[sId] || raw.schoolName || "Partner School",
+                className: normCls,
+              });
+            }
+          };
+          indSnap.docs?.forEach((d: any) => processDoc(d, "individualStudents"));
+          stdSnap.docs?.forEach((d: any) => processDoc(d, "students"));
+        } catch {
+          // ignore
+        }
+
         if (isMounted) {
           setSchoolNameMap(nameMap);
           setAvailableSchools(list);
-          // For Platform Admins & Tutors, default to "" (All Partner/Assigned Schools)
-          // so all completed assessments across their authorised schools are immediately visible
+          setPrivateLearners(
+            Array.from(privateMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+          );
+          setSchoolLearners(
+            Array.from(schoolStdMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+          );
           if (schoolId && !list.some((item) => item.id === schoolId)) {
             setSchoolId("");
           }
@@ -428,13 +761,65 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     };
   }, [isSchoolPortal, isAdminWorkspace]);
 
-  const resolveSchoolLabel = (id?: string, fallbackName?: string) => {
-    const key = String(id || "").trim();
-    const mapped = key ? schoolNameMap[key] || schoolNameMap[key.toLowerCase()] : "";
-    return resolvePartnerSchoolName(mapped, fallbackName, "Assigned Partner School");
+  const privateLearnerById = useMemo(() => {
+    const map = new Map<string, PrivateLearnerRecord>();
+    privateLearners.forEach((p) => {
+      map.set(p.id, p);
+      if (p.uid) map.set(p.uid, p);
+    });
+    return map;
+  }, [privateLearners]);
+
+  const isPrivateAttemptOrExam = (record: {
+    schoolId?: string;
+    schoolName?: string;
+    studentId?: string;
+    studentUid?: string;
+    recipientMode?: string;
+  }): boolean => {
+    const sId = String(record.schoolId || "").trim().toLowerCase();
+    const sName = String(record.schoolName || "").trim().toLowerCase();
+    if (record.recipientMode === "PRIVATE_LEARNERS") return true;
+    if (sId === "private" || sId === "private_parent" || sId === "private_individual") return true;
+    if (sName.includes("private")) return true;
+    if (record.studentId && privateLearnerById.has(record.studentId)) return true;
+    if (record.studentUid && privateLearnerById.has(record.studentUid)) return true;
+    if (!sId && record.studentId && !schoolLearners.some((s) => s.id === record.studentId)) {
+      return true;
+    }
+    return false;
   };
 
-  // 2. Load Examinations & Attempts within Authorised Scope (Merging across both DBs + Server)
+  const resolveSchoolLabel = (
+    id?: string,
+    fallbackName?: string,
+    studentId?: string,
+    studentUid?: string
+  ) => {
+    const priv =
+      (studentId && privateLearnerById.get(studentId)) ||
+      (studentUid && privateLearnerById.get(studentUid));
+    if (priv) {
+      return priv.subType === "parent"
+        ? "Private Learner (Parent-Enrolled)"
+        : "Private Learner (Individual)";
+    }
+    const key = String(id || "").trim();
+    if (
+      key.toLowerCase() === "private" ||
+      String(fallbackName || "").toLowerCase().includes("private")
+    ) {
+      return "Private Mentorship";
+    }
+    const mapped = key ? schoolNameMap[key] || schoolNameMap[key.toLowerCase()] : "";
+    return resolvePartnerSchoolName(
+      mapped,
+      fallbackName,
+      key ? "Assigned Partner School" : "Private Mentorship"
+    );
+  };
+
+  // 2. Load Examinations & Attempts within Authorised Scope (Auto-Expiring Overdue Attempts)
   const load = async () => {
     if (!scopeReady) return;
     setLoading(true);
@@ -463,7 +848,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         console.warn("Server exam history notice, merging with Firestore:", err);
       }
 
-      // 2. Direct Firestore merge across all client databases (Default + AI Shared Quota)
+      // 2. Direct Firestore merge across all client databases
       const currentUid = auth.currentUser?.uid || "";
       const allowedSchoolKeys = new Set<string>();
       if (isSchoolUser) {
@@ -475,7 +860,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         availableSchools.forEach((s) => allowedSchoolKeys.add(s.id.toLowerCase()));
       }
 
-      const matchesScope = (recordSchoolId: any) => {
+      const matchesScope = (recordSchoolId: any, record?: any) => {
         const sKey = String(recordSchoolId || "").trim().toLowerCase();
         if (isSchoolUser) {
           return Boolean(sKey && allowedSchoolKeys.has(sKey));
@@ -484,11 +869,14 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           return Boolean(sKey && allowedSchoolKeys.has(sKey));
         }
         if (isPlatformAdmin) return true;
+        // For Tutors when schoolId === "": include their assigned schools AND private student assessments/attempts
+        if (!sKey || sKey === "private" || record?.recipientMode === "PRIVATE_LEARNERS") {
+          return true;
+        }
         return Boolean(sKey && allowedSchoolKeys.has(sKey));
       };
 
       const examMap = new Map<string, Exam>();
-      // Seed from server exams first
       serverExams.forEach((ex) => {
         const sLabel = resolveSchoolLabel(ex.schoolId, ex.schoolName);
         const maxScore = computeExamMaxScore(ex);
@@ -513,7 +901,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         if (data.status === "archived" && isSchoolUser) return;
         if (!isSchoolUser && !isPlatformAdmin) {
           const canSee =
-            matchesScope(data.schoolId) ||
+            matchesScope(data.schoolId, data) ||
             canManageExamRecord({
               uid: currentUid,
               role: userRole || "TUTOR",
@@ -521,7 +909,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               assignedSchoolIds: Array.from(allowedSchoolKeys),
             });
           if (!canSee) return;
-        } else if (!matchesScope(data.schoolId)) {
+        } else if (!matchesScope(data.schoolId, data)) {
           return;
         }
         if (isSchoolUser && data.status === "draft") return;
@@ -574,11 +962,52 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         }
       });
 
+      const nowMs = Date.now();
       const attList: Attempt[] = [];
       rawAttemptMap.forEach((data: any) => {
         const parentExam = examMap.get(data.examId);
-        if (!matchesScope(data.schoolId) && !matchesScope(parentExam?.schoolId) && !parentExam) {
+        if (
+          !matchesScope(data.schoolId, data) &&
+          !matchesScope(parentExam?.schoolId, parentExam) &&
+          !parentExam
+        ) {
           return;
+        }
+
+        // Auto-expire overdue in_progress attempts (timer elapsed or dueDate/availableUntil passed on a previous date)
+        if (
+          data.status === "in_progress" &&
+          isAttemptOverdueForExpiry(data, parentExam, nowMs)
+        ) {
+          const attemptQuestions = resolveAttemptQuestions(parentExam || {}, data);
+          const grading = gradeAnswers(
+            { ...(parentExam || {}), questions: attemptQuestions },
+            data.answers || {}
+          );
+          data.status = "expired";
+          data.score = grading.score;
+          data.maxScore = grading.maxScore;
+          data.percentage = grading.percentage;
+          data.autoGraded = grading.autoGraded;
+          data.questionResults = grading.questionResults;
+
+          dbInstances.forEach((dbInst) => {
+            setDoc(
+              doc(dbInst, "jdiExamAttempts", data.id),
+              {
+                status: "expired",
+                score: grading.score,
+                maxScore: grading.maxScore,
+                percentage: grading.percentage,
+                autoGraded: grading.autoGraded,
+                questionResults: grading.questionResults,
+                isOnline: false,
+                submittedAt: data.submittedAt || serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            ).catch(() => undefined);
+          });
         }
 
         const isReleased = isAttemptResultReleased(data);
@@ -589,7 +1018,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           score !== undefined ? calculateScorePercentage(score, maxScore) : undefined;
         const sLabel = resolveSchoolLabel(
           data.schoolId || parentExam?.schoolId,
-          data.schoolName || parentExam?.schoolName
+          data.schoolName || parentExam?.schoolName,
+          data.studentId,
+          data.studentUid
         );
 
         attList.push({
@@ -635,6 +1066,158 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       }).then((cfg) => setHeaderConfig(cfg));
     }
   }, [scopeReady, schoolId]);
+
+  // Open Detailed Submission Review & Marking Modal
+  const openReviewSubmissionModal = (attempt: Attempt) => {
+    const exam = exams.find((e) => e.id === attempt.examId);
+    const questions = resolveAttemptQuestions(exam || {}, attempt) as Question[];
+    const initialMarks: Record<string, number> = {};
+
+    const resultsMap = new Map<string, any>();
+    (attempt.questionResults || []).forEach((r) => {
+      if (r?.questionId) resultsMap.set(String(r.questionId), r);
+    });
+    (attempt.manualMarks || []).forEach((m) => {
+      if (m?.questionId) {
+        resultsMap.set(String(m.questionId), {
+          ...(resultsMap.get(String(m.questionId)) || {}),
+          pointsAwarded: m.pointsAwarded,
+          maxPoints: m.maxPoints,
+        });
+      }
+    });
+
+    questions.forEach((q) => {
+      const r = resultsMap.get(q.id);
+      if (r && typeof r.pointsAwarded === "number") {
+        initialMarks[q.id] = r.pointsAwarded;
+      } else {
+        initialMarks[q.id] = 0;
+      }
+    });
+
+    setReviewMarksMap(initialMarks);
+    setReviewTotalOverride(typeof attempt.score === "number" ? String(attempt.score) : "");
+    const existingRemark = String(attempt.feedback || attempt.tutorFeedback || "").trim();
+    if (existingRemark) {
+      setReviewRemarkInput(existingRemark);
+    } else {
+      const max = computeExamMaxScore(exam, attempt);
+      const pct =
+        typeof attempt.score === "number" ? calculateScorePercentage(attempt.score, max) : 0;
+      setReviewRemarkInput(getSuggestedTutorRemark(pct));
+    }
+    setReviewModalAttempt(attempt);
+  };
+
+  // Save Marks & Feedback from Review Modal (with or without releasing result)
+  const handleSaveReviewAndMarks = async (releaseNow: boolean) => {
+    if (!reviewModalAttempt || isSchoolUser || reviewSaving) return;
+    setReviewSaving(true);
+    setMessage("");
+    try {
+      const exam = exams.find((e) => e.id === reviewModalAttempt.examId);
+      const questions = resolveAttemptQuestions(exam || {}, reviewModalAttempt) as Question[];
+      const maxScore = computeExamMaxScore(exam, reviewModalAttempt);
+
+      let computedSum = 0;
+      const manualMarksList: { questionId: string; pointsAwarded: number; maxPoints: number }[] = [];
+      const updatedQuestionResults = questions.map((q) => {
+        const maxPts = Number(q.points) || 1;
+        const awarded = Math.max(0, Math.min(maxPts, Number(reviewMarksMap[q.id] ?? 0)));
+        computedSum += awarded;
+        manualMarksList.push({
+          questionId: q.id,
+          pointsAwarded: awarded,
+          maxPoints: maxPts,
+        });
+        return {
+          questionId: q.id,
+          answer: reviewModalAttempt.answers?.[q.id],
+          correct: awarded >= maxPts && maxPts > 0,
+          pointsAwarded: awarded,
+          maxPoints: maxPts,
+        };
+      });
+
+      const finalScore =
+        questions.length > 0
+          ? computedSum
+          : reviewTotalOverride.trim() !== ""
+          ? Math.max(0, Number(reviewTotalOverride) || 0)
+          : typeof reviewModalAttempt.score === "number"
+          ? reviewModalAttempt.score
+          : 0;
+
+      const finalPercentage = calculateScorePercentage(finalScore, maxScore);
+      const trimmedRemark = reviewRemarkInput.trim();
+      const willBeReleased = releaseNow || isAttemptResultReleased(reviewModalAttempt);
+
+      const patch: Record<string, any> = {
+        score: finalScore,
+        maxScore,
+        percentage: finalPercentage,
+        manualMarks: manualMarksList,
+        questionResults: updatedQuestionResults,
+        feedback: trimmedRemark,
+        tutorFeedback: trimmedRemark,
+        status: "graded",
+        ...(willBeReleased
+          ? {
+              resultReleased: true,
+              releasedAt: reviewModalAttempt.releasedAt || serverTimestamp(),
+            }
+          : {}),
+        updatedAt: serverTimestamp(),
+      };
+
+      try {
+        if (auth.currentUser) {
+          const token = await auth.currentUser.getIdToken();
+          await fetch("/.netlify/functions/jdi-exam-management", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify({
+              examId: reviewModalAttempt.examId,
+              attemptId: reviewModalAttempt.id,
+              action: willBeReleased ? "release" : "grade",
+              score: finalScore,
+              maxScore,
+              percentage: finalPercentage,
+              manualMarks: manualMarksList,
+              questionResults: updatedQuestionResults,
+              feedback: trimmedRemark,
+              tutorFeedback: trimmedRemark,
+            }),
+          });
+        }
+      } catch {
+        // fallback to Firestore below
+      }
+
+      for (const dbInstance of getAllClientDatabases()) {
+        await setDoc(doc(dbInstance, "jdiExamAttempts", reviewModalAttempt.id), patch, {
+          merge: true,
+        }).catch(() =>
+          updateDoc(doc(dbInstance, "jdiExamAttempts", reviewModalAttempt.id), patch).catch(
+            () => undefined
+          )
+        );
+      }
+
+      setReviewModalAttempt(null);
+      await load();
+      setMessage(
+        releaseNow
+          ? `Marks, feedback, and official result released for ${reviewModalAttempt.studentName}!`
+          : `Marks and tutor feedback saved for ${reviewModalAttempt.studentName} (${finalScore}/${maxScore} · ${finalPercentage}%).`
+      );
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not save marks.");
+    } finally {
+      setReviewSaving(false);
+    }
+  };
 
   const openReleaseRemarkModal = (attempt: Attempt) => {
     if (isSchoolUser) return;
@@ -793,7 +1376,21 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       const until = ex.availableUntil
         ? new Date(ex.availableUntil).getTime()
         : Number.MAX_SAFE_INTEGER;
-      if (ex.status === "completed" || ex.status === "closed" || now >= until) {
+      let dueDeadline = Number.MAX_SAFE_INTEGER;
+      if (ex.dueDate) {
+        const rawDue = String(ex.dueDate).trim();
+        const parsed = /^\d{4}-\d{2}-\d{2}$/.test(rawDue)
+          ? new Date(`${rawDue}T23:59:59.999`).getTime()
+          : new Date(rawDue).getTime();
+        if (Number.isFinite(parsed) && parsed > 0) dueDeadline = parsed;
+      }
+
+      if (
+        ex.status === "completed" ||
+        ex.status === "closed" ||
+        now >= until ||
+        now > dueDeadline
+      ) {
         completed.push(ex);
       } else if (ex.status === "scheduled" || (from > 0 && now < from)) {
         upcoming.push(ex);
@@ -822,6 +1419,23 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     return map;
   }, [attempts]);
 
+  // Filtered Private Learners for selector dropdown
+  const filteredPrivateLearnerOptions = useMemo(() => {
+    return privateLearners.filter((p) => {
+      if (privateSubFilter !== "all" && p.subType !== privateSubFilter) return false;
+      return true;
+    });
+  }, [privateLearners, privateSubFilter]);
+
+  // Filtered Partner School Learners for selector dropdown
+  const filteredSchoolLearnerOptions = useMemo(() => {
+    return schoolLearners.filter((s) => {
+      if (schoolId && s.schoolId !== schoolId) return false;
+      if (selectedClass && s.className !== selectedClass) return false;
+      return true;
+    });
+  }, [schoolLearners, schoolId, selectedClass]);
+
   // Filtered attempts for Examination History
   const filtered = useMemo(() => {
     return attempts.filter((a) => {
@@ -829,6 +1443,35 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       if (workTypeTab !== "ALL" && normalizeWorkType(exam?.workType, exam) !== workTypeTab) {
         return false;
       }
+      // Recipient Category Filter (Partner Schools vs Private Students)
+      const isPriv = isPrivateAttemptOrExam({
+        schoolId: a.schoolId || exam?.schoolId,
+        schoolName: a.schoolName || exam?.schoolName,
+        studentId: a.studentId,
+        studentUid: a.studentUid,
+        recipientMode: exam?.recipientMode,
+      });
+
+      if (recipientCategory === "partner_schools" && isPriv) return false;
+      if (recipientCategory === "private_students") {
+        if (!isPriv) return false;
+        if (privateSubFilter !== "all") {
+          const pRec =
+            privateLearnerById.get(a.studentId) ||
+            (a.studentUid ? privateLearnerById.get(a.studentUid) : undefined);
+          if (pRec && pRec.subType !== privateSubFilter) return false;
+        }
+      }
+
+      if (selectedStudentId) {
+        const matchesStd =
+          a.studentId === selectedStudentId ||
+          a.studentUid === selectedStudentId ||
+          privateLearnerById.get(selectedStudentId)?.uid === a.studentUid ||
+          privateLearnerById.get(selectedStudentId)?.uid === a.studentId;
+        if (!matchesStd) return false;
+      }
+
       if (selected && a.examId !== selected) return false;
       if (selectedClass && a.className !== selectedClass) return false;
       const isReleased = Boolean(a.releasedAt || a.resultReleased);
@@ -843,7 +1486,83 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       if (attemptStateFilter === "expired" && a.status !== "expired") return false;
       return true;
     });
-  }, [attempts, exams, workTypeTab, selected, selectedClass, attemptStateFilter]);
+  }, [
+    attempts,
+    exams,
+    workTypeTab,
+    recipientCategory,
+    privateSubFilter,
+    selectedStudentId,
+    selected,
+    selectedClass,
+    attemptStateFilter,
+    privateLearnerById,
+  ]);
+
+  // Filtered Completed & Past Assessments Archive (respecting search & recipient filters)
+  const filteredArchivedExams = useMemo(() => {
+    // Include exams in categorizedExams.completed PLUS any exam that already has submitted attempts
+    const archiveMap = new Map<string, Exam>();
+    categorizedExams.completed.forEach((ex) => archiveMap.set(ex.id, ex));
+    exams.forEach((ex) => {
+      if (ex.status === "draft") return;
+      const counts = attemptCountsByExam[ex.id];
+      if (counts && counts.total > 0 && !archiveMap.has(ex.id)) {
+        archiveMap.set(ex.id, ex);
+      }
+    });
+
+    const list = Array.from(archiveMap.values());
+    return list.filter((ex) => {
+      if (workTypeTab !== "ALL" && normalizeWorkType(ex.workType, ex) !== workTypeTab) {
+        return false;
+      }
+      const isPriv = isPrivateAttemptOrExam({
+        schoolId: ex.schoolId,
+        schoolName: ex.schoolName,
+        recipientMode: ex.recipientMode,
+      });
+      if (recipientCategory === "partner_schools" && isPriv && ex.recipientMode !== "ALL") {
+        return false;
+      }
+      if (recipientCategory === "private_students" && !isPriv && ex.recipientMode !== "ALL") {
+        // Also allow if a private student has an attempt on this exam
+        const hasPrivAttempt = attempts.some(
+          (a) =>
+            a.examId === ex.id &&
+            isPrivateAttemptOrExam({
+              schoolId: a.schoolId,
+              schoolName: a.schoolName,
+              studentId: a.studentId,
+              studentUid: a.studentUid,
+            })
+        );
+        if (!hasPrivAttempt) return false;
+      }
+      if (archiveSearch.trim()) {
+        const q = archiveSearch.trim().toLowerCase();
+        const schoolText = resolveSchoolLabel(ex.schoolId, ex.schoolName).toLowerCase();
+        const clsText = (ex.targetClass || ex.className || "").toLowerCase();
+        const typeText = getWorkTypeLabels(ex.workType, ex).singular.toLowerCase();
+        const match =
+          (ex.title || "").toLowerCase().includes(q) ||
+          (ex.subject || "").toLowerCase().includes(q) ||
+          schoolText.includes(q) ||
+          clsText.includes(q) ||
+          typeText.includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [
+    categorizedExams.completed,
+    exams,
+    attempts,
+    attemptCountsByExam,
+    workTypeTab,
+    recipientCategory,
+    archiveSearch,
+  ]);
 
   // Filtered current & upcoming exams for Examination Overview
   const currentAndUpcomingExams = useMemo(() => {
@@ -944,7 +1663,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       [
         "Student",
         "Class",
-        "Partner School",
+        "School / Enrolment",
         "Assessment",
         "Status",
         "Score",
@@ -966,7 +1685,12 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         return [
           a.studentName,
           a.className,
-          resolveSchoolLabel(a.schoolId || exam?.schoolId, a.schoolName || exam?.schoolName),
+          resolveSchoolLabel(
+            a.schoolId || exam?.schoolId,
+            a.schoolName || exam?.schoolName,
+            a.studentId,
+            a.studentUid
+          ),
           exam?.title || a.examId,
           isReleased ? "released" : a.status,
           !canSeeScore
@@ -996,7 +1720,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   };
 
   const renderPdfBytes = async (a: Attempt) => {
-    if (!isAttemptResultReleased(a)) {
+    if (isSchoolUser && !isAttemptResultReleased(a)) {
       throw new Error(
         "Assessment results have not been released by the tutor yet. Printing is disabled until results are released."
       );
@@ -1004,7 +1728,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     const exam = exams.find((e) => e.id === a.examId);
     const authoritativeSchoolName = resolveSchoolLabel(
       a.schoolId || exam?.schoolId,
-      a.schoolName || exam?.schoolName
+      a.schoolName || exam?.schoolName,
+      a.studentId,
+      a.studentUid
     );
     const maxScore = computeExamMaxScore(exam, a);
 
@@ -1014,6 +1740,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         schoolName: authoritativeSchoolName,
         maxScore,
         questions: a.questionsSnapshot || a.questions || exam?.questions,
+        callerRole: isSchoolUser ? "school" : "tutor",
       },
       exam
         ? {
@@ -1109,7 +1836,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   };
 
   const pdf = async (a: Attempt) => {
-    if (!isAttemptResultReleased(a)) {
+    if (isSchoolUser && !isAttemptResultReleased(a)) {
       setMessage(
         "Assessment results have not been released by the tutor yet. Printing is disabled until results are released."
       );
@@ -1126,8 +1853,6 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
 
   // ============================================================================
   // VIEW A: ASSESSMENT OVERVIEW (/portal/school/exams)
-  // Focuses exclusively on current & upcoming assessments, classes, subjects,
-  // schedules, statuses, access codes, and summary counts for the school.
   // ============================================================================
   if (effectiveMode === "overview") {
     return (
@@ -1479,8 +2204,6 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
 
   // ============================================================================
   // VIEW B: ASSESSMENT HISTORY (/portal/school/exam-history, /portal/staff/exam-history, /admin/examination-history)
-  // Focuses on completed, closed or past assessments and actual student attempts,
-  // scores, grading, result-release states, individual reports and bulk exports.
   // ============================================================================
   return (
     <main className="mx-auto max-w-6xl space-y-6">
@@ -1490,41 +2213,148 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             Assessment History
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-            Review student assessment submissions, tutor release status, and official printable performance reports.
+            Review student assessment submissions, mark responses, manage result release, and print official performance reports.
           </p>
         </div>
       </header>
 
-      {/* WORK TYPE CATEGORY TABS */}
-      <div className="flex items-center gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-slate-800 touch-pan-x">
-        {(
-          [
-            { id: "ALL", label: "All Assessments" },
-            { id: "ASSIGNMENT", label: "Assignments" },
-            { id: "ACTIVITY", label: "Activities" },
-            { id: "TEST", label: "Tests" },
-            { id: "EXAMINATION", label: "Examinations" },
-          ] as const
-        ).map((wt) => {
-          const active = workTypeTab === wt.id;
-          return (
+      {/* SECTION NAVIGATION + COMPACT RIGHT-SIDE ACTION TOOLBAR (Deliverable 10) */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-2">
+        {/* Left: Work-Type Category Tabs */}
+        <div className="flex items-center gap-4 sm:gap-6 overflow-x-auto no-scrollbar touch-pan-x">
+          {(
+            [
+              { id: "ALL", label: "All Assessments" },
+              { id: "ASSIGNMENT", label: "Assignments" },
+              { id: "ACTIVITY", label: "Activities" },
+              { id: "TEST", label: "Tests" },
+              { id: "EXAMINATION", label: "Examinations" },
+            ] as const
+          ).map((wt) => {
+            const active = workTypeTab === wt.id;
+            return (
+              <button
+                key={wt.id}
+                type="button"
+                onClick={() => setWorkTypeTab(wt.id)}
+                className={`relative pb-2.5 text-xs sm:text-sm font-bold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+                  active
+                    ? "text-[#14284B] dark:text-white"
+                    : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                }`}
+              >
+                {wt.label}
+                {active && (
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right: Compact Action Toolbar */}
+        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => void load()}
+            title="Refresh assessment records"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+          >
+            <RefreshCw size={13} className={loading ? "animate-spin text-blue-600" : "text-blue-600"} />
+            <span>{loading ? "Refreshing…" : "Refresh"}</span>
+          </button>
+
+          {!isSchoolUser && unreleasedSubmittedFiltered.length > 0 && (
             <button
-              key={wt.id}
               type="button"
-              onClick={() => setWorkTypeTab(wt.id)}
-              className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer ${
-                active
-                  ? "text-[#14284B] dark:text-white"
-                  : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-              }`}
+              disabled={bulkReleaseBusy}
+              onClick={() => void releaseAllPendingInView(unreleasedSubmittedFiltered)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer shadow-xs whitespace-nowrap"
             >
-              {wt.label}
-              {active && (
-                <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
-              )}
+              <CheckCircle2 size={13} />
+              <span>
+                {bulkReleaseBusy
+                  ? "Releasing…"
+                  : `Release Pending (${unreleasedSubmittedFiltered.length})`}
+              </span>
             </button>
-          );
-        })}
+          )}
+
+          {/* Compact Dropdown for Exports & Document Header Customizer */}
+          <div className="relative" ref={actionsMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowActionsMenu((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-slate-800 dark:hover:bg-blue-700 cursor-pointer whitespace-nowrap"
+            >
+              <SlidersHorizontal size={13} />
+              <span>Tools &amp; Exports</span>
+              <ChevronDown size={13} />
+            </button>
+
+            {showActionsMenu && (
+              <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1.5 shadow-xl z-40 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowActionsMenu(false);
+                    setShowHeaderDesigner(true);
+                  }}
+                  className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <LayoutTemplate size={14} className="text-blue-600 shrink-0" />
+                  <span>Document Header Customizer</span>
+                </button>
+
+                {!isSchoolUser && unreleasedSubmittedFiltered.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={bulkReleaseBusy}
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      void releaseAllPendingInView(unreleasedSubmittedFiltered);
+                    }}
+                    className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+                  >
+                    <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                    <span>Release All Pending Results ({unreleasedSubmittedFiltered.length})</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  disabled={isSchoolUser ? !releasedFiltered.length : !filtered.length}
+                  onClick={() => {
+                    setShowActionsMenu(false);
+                    csv();
+                  }}
+                  className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <FileSpreadsheet size={14} className="text-emerald-600 shrink-0" />
+                  <span>Download Excel (.xlsx)</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={!releasedFiltered.length || zipBusy}
+                  onClick={() => {
+                    setShowActionsMenu(false);
+                    void bulkZip();
+                  }}
+                  className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <FileArchive size={14} className="text-blue-600 shrink-0" />
+                  <span>
+                    {zipBusy
+                      ? zipProgress || "Packaging ZIP…"
+                      : `Download Released PDFs (ZIP) (${releasedFiltered.length})`}
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* METRIC OVERVIEW */}
@@ -1534,7 +2364,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             Past / Closed Assessments
           </p>
           <p className="mt-2 text-3xl font-black text-slate-900 dark:text-white">
-            {categorizedExams.completed.length}
+            {filteredArchivedExams.length}
           </p>
           <p className="text-xs text-slate-400 mt-1">{exams.length} total in scope</p>
         </article>
@@ -1568,26 +2398,112 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         </article>
       </section>
 
-      {/* FILTER & EXPORT CONTROLS */}
-      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* RECIPIENT CATEGORY & FILTER CONTROLS (Deliverable 6) */}
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-xs space-y-4">
+        {!isSchoolUser && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  { id: "all", label: "All Recipients", icon: Layers },
+                  { id: "partner_schools", label: "Partner Schools", icon: School },
+                  { id: "private_students", label: "Private Students", icon: Users },
+                ] as const
+              ).map((cat) => {
+                const Icon = cat.icon;
+                const active = recipientCategory === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      setRecipientCategory(cat.id);
+                      setSelectedStudentId("");
+                      if (cat.id === "private_students") {
+                        setSchoolId("");
+                        setSelectedClass("");
+                      }
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                      active
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    <Icon size={14} />
+                    <span>{cat.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {recipientCategory === "private_students" && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(
+                  [
+                    { id: "all", label: "All Private" },
+                    { id: "parent", label: "Parent-Enrolled" },
+                    { id: "individual", label: "Individual Private" },
+                  ] as const
+                ).map((sub) => (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => {
+                      setPrivateSubFilter(sub.id);
+                      setSelectedStudentId("");
+                    }}
+                    className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer ${
+                      privateSubFilter === sub.id
+                        ? "bg-indigo-600 text-white"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                    }`}
+                  >
+                    {sub.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
           {isSchoolUser ? (
             <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Partner School Scope
-              <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 p-3 text-sm font-bold text-slate-900 dark:text-white normal-case tracking-normal">
+              <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 p-2.5 text-sm font-bold text-slate-900 dark:text-white normal-case tracking-normal">
                 <School size={16} className="text-blue-600 shrink-0" />
                 <span className="truncate">
                   {availableSchools[0]?.name || resolveSchoolLabel(schoolId)}
                 </span>
               </div>
             </div>
+          ) : recipientCategory === "private_students" ? (
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Private Student ({filteredPrivateLearnerOptions.length})
+              <select
+                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+                value={selectedStudentId}
+                onChange={(e) => setSelectedStudentId(e.target.value)}
+              >
+                <option value="">All Genuine Private Students</option>
+                {filteredPrivateLearnerOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.subType === "parent" ? "Parent-Enrolled" : "Individual"})
+                  </option>
+                ))}
+              </select>
+            </label>
           ) : (
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Partner School
               <select
-                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
                 value={schoolId}
-                onChange={(e) => setSchoolId(e.target.value)}
+                onChange={(e) => {
+                  setSchoolId(e.target.value);
+                  setSelectedStudentId("");
+                }}
               >
                 <option value="">
                   {isPlatformAdmin ? "All Partner Schools" : "All Assigned Schools"}
@@ -1604,7 +2520,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
             Assessment
             <select
-              className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+              className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
             >
@@ -1617,28 +2533,67 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             </select>
           </label>
 
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Class
-            <select
-              className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
-              value={selectedClass}
-              onChange={(e) => setSelectedClass(e.target.value)}
-            >
-              <option value="">All Classes</option>
-              {Array.from(new Set(attempts.map((a) => a.className).filter(Boolean)))
-                .sort()
-                .map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-            </select>
-          </label>
+          {recipientCategory !== "private_students" ? (
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Class {recipientCategory === "partner_schools" ? "/ Narrow by Student" : ""}
+              <div className="mt-1.5 flex gap-2 normal-case tracking-normal">
+                <select
+                  className="block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500"
+                  value={selectedClass}
+                  onChange={(e) => {
+                    setSelectedClass(e.target.value);
+                    setSelectedStudentId("");
+                  }}
+                >
+                  <option value="">All Classes</option>
+                  {Array.from(new Set(attempts.map((a) => a.className).filter(Boolean)))
+                    .sort()
+                    .map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                </select>
+                {!isSchoolUser && recipientCategory === "partner_schools" && (
+                  <select
+                    className="block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500"
+                    value={selectedStudentId}
+                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                  >
+                    <option value="">All Students</option>
+                    {filteredSchoolLearnerOptions.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </label>
+          ) : (
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Class / Level
+              <select
+                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+                value={selectedClass}
+                onChange={(e) => setSelectedClass(e.target.value)}
+              >
+                <option value="">All Levels</option>
+                {Array.from(new Set(attempts.map((a) => a.className).filter(Boolean)))
+                  .sort()
+                  .map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
 
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
             Attempt State
             <select
-              className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+              className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
               value={attemptStateFilter}
               onChange={(e) => setAttemptStateFilter(e.target.value as any)}
             >
@@ -1650,76 +2605,12 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             </select>
           </label>
         </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800 pt-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              disabled={loading}
-              onClick={() => void load()}
-              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
-            >
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-              {loading ? "Refreshing…" : "Refresh Records"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowHeaderDesigner(true)}
-              className="inline-flex items-center gap-2 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 px-4 py-2.5 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-100 cursor-pointer"
-            >
-              <LayoutTemplate size={15} />
-              Document Header Customizer
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {!isSchoolUser && unreleasedSubmittedFiltered.length > 0 && (
-              <button
-                type="button"
-                disabled={bulkReleaseBusy}
-                onClick={() => void releaseAllPendingInView(unreleasedSubmittedFiltered)}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer shadow-xs"
-              >
-                <CheckCircle2 size={15} />
-                {bulkReleaseBusy
-                  ? "Releasing Results…"
-                  : `Release All Pending Results (${unreleasedSubmittedFiltered.length})`}
-              </button>
-            )}
-            <button
-              disabled={isSchoolUser ? !releasedFiltered.length : !filtered.length}
-              title={
-                isSchoolUser && !releasedFiltered.length
-                  ? "Export is disabled until the tutor releases assessment results."
-                  : undefined
-              }
-              onClick={csv}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <FileSpreadsheet size={15} className="text-emerald-600" />
-              Download Excel (.xlsx)
-            </button>
-            <button
-              disabled={!releasedFiltered.length || zipBusy}
-              title={
-                !releasedFiltered.length
-                  ? "Bulk PDF download is disabled until the tutor releases assessment results."
-                  : undefined
-              }
-              onClick={() => void bulkZip()}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 dark:bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <FileArchive size={15} className="text-blue-300" />
-              {zipBusy
-                ? zipProgress || "Packaging ZIP…"
-                : `Download Released PDF Reports (ZIP) (${releasedFiltered.length})`}
-            </button>
-          </div>
-        </div>
       </section>
 
       {message && (
         <p
           role="alert"
-          className="rounded-xl bg-blue-50 p-4 text-sm font-medium text-blue-900 border border-blue-200"
+          className="rounded-xl bg-blue-50 dark:bg-blue-950/40 p-4 text-sm font-medium text-blue-900 dark:text-blue-200 border border-blue-200 dark:border-blue-800"
         >
           {message}
         </p>
@@ -1734,15 +2625,20 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {filtered.length} attempt record(s) matching current filters
+              {!isSchoolUser && " · Click any student submission to inspect answers, open submitted links, or mark responses."}
             </p>
           </div>
-          {selected && (
+          {(selected || selectedStudentId || recipientCategory !== "all") && (
             <button
               type="button"
-              onClick={() => setSelected("")}
+              onClick={() => {
+                setSelected("");
+                setSelectedStudentId("");
+                if (!isSchoolUser) setRecipientCategory("all");
+              }}
               className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
             >
-              Clear assessment filter
+              Reset active filters
             </button>
           )}
         </div>
@@ -1773,8 +2669,12 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     : null;
                 const schoolDisplay = resolveSchoolLabel(
                   a.schoolId || exam?.schoolId,
-                  a.schoolName || exam?.schoolName
+                  a.schoolName || exam?.schoolName,
+                  a.studentId,
+                  a.studentUid
                 );
+                const submittedLinks = extractAttemptSubmittedLinks(a, exam);
+                const primaryLink = submittedLinks[0];
                 const stateLabel = isReleased
                   ? "Released"
                   : a.status === "in_progress"
@@ -1840,29 +2740,66 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                       </span>
                     </div>
 
+                    {/* Direct Link Open & Copy actions if student submitted a link */}
+                    {primaryLink && !isSchoolUser && (
+                      <div className="flex items-center gap-2 rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-indigo-50/60 dark:bg-indigo-950/30 p-2.5 text-xs">
+                        <Link2 size={14} className="text-indigo-600 shrink-0" />
+                        <span className="truncate flex-1 font-medium text-indigo-950 dark:text-indigo-200">
+                          {primaryLink.url}
+                        </span>
+                        <a
+                          href={primaryLink.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-indigo-700 shrink-0"
+                        >
+                          <ExternalLink size={11} />
+                          Open Link
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleCopySubmittedLink(a.id, primaryLink.url)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 shrink-0 cursor-pointer"
+                        >
+                          {copiedUrlKey === a.id ? <Check size={11} /> : <Copy size={11} />}
+                          {copiedUrlKey === a.id ? "Copied" : "Copy"}
+                        </button>
+                      </div>
+                    )}
+
                     <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {!isSchoolUser && (
+                        <button
+                          type="button"
+                          onClick={() => openReviewSubmissionModal(a)}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-indigo-300 dark:border-indigo-700 bg-indigo-50/80 dark:bg-indigo-950/40 px-3 py-2 text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 cursor-pointer"
+                        >
+                          <Eye size={14} />
+                          Review / Mark
+                        </button>
+                      )}
                       <button
                         type="button"
-                        disabled={!isReleased}
-                        aria-disabled={!isReleased}
+                        disabled={isSchoolUser && !isReleased}
+                        aria-disabled={isSchoolUser && !isReleased}
                         title={
-                          isReleased
+                          !isSchoolUser || isReleased
                             ? "Download official assessment report PDF"
                             : "Printing is disabled until the tutor releases the assessment result."
                         }
                         onClick={() => void pdf(a)}
                         className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
-                          isReleased
+                          !isSchoolUser || isReleased
                             ? "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
                             : "border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/40 text-slate-400 dark:text-slate-500 opacity-60 cursor-not-allowed"
                         }`}
                       >
-                        {isReleased ? (
+                        {!isSchoolUser || isReleased ? (
                           <Download size={14} className="text-blue-600" />
                         ) : (
                           <Lock size={14} className="text-slate-400" />
                         )}
-                        {isReleased ? "Print Official PDF" : "Print Official PDF (Locked)"}
+                        {!isSchoolUser || isReleased ? "Print Official PDF" : "PDF Locked"}
                       </button>
                       {!isSchoolUser &&
                         ["submitted", "expired", "graded"].includes(a.status) &&
@@ -1890,11 +2827,11 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                   <tr>
                     <th className="p-4">Student</th>
                     <th className="p-4">Class</th>
-                    <th className="p-4">Partner School</th>
+                    <th className="p-4">School / Enrolment</th>
                     <th className="p-4">Assessment</th>
                     <th className="p-4">State</th>
                     <th className="p-4">Score &amp; Percentage</th>
-                    <th className="p-4 text-right">Official Report</th>
+                    <th className="p-4 text-right">Submission &amp; Official Report</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1909,8 +2846,12 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         : null;
                     const schoolDisplay = resolveSchoolLabel(
                       a.schoolId || exam?.schoolId,
-                      a.schoolName || exam?.schoolName
+                      a.schoolName || exam?.schoolName,
+                      a.studentId,
+                      a.studentUid
                     );
+                    const submittedLinks = extractAttemptSubmittedLinks(a, exam);
+                    const primaryLink = submittedLinks[0];
                     const stateLabel = isReleased
                       ? "Released"
                       : a.status === "in_progress"
@@ -1927,7 +2868,18 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                       >
                         <td className="p-4 font-semibold text-slate-900 dark:text-white">
-                          {a.studentName}
+                          {!isSchoolUser ? (
+                            <button
+                              type="button"
+                              onClick={() => openReviewSubmissionModal(a)}
+                              className="text-left hover:text-blue-600 dark:hover:text-blue-400 hover:underline cursor-pointer"
+                              title="Click to open and review student submission"
+                            >
+                              {a.studentName}
+                            </button>
+                          ) : (
+                            a.studentName
+                          )}
                         </td>
                         <td className="p-4 text-slate-600 dark:text-slate-300">
                           {a.className || "—"}
@@ -1942,6 +2894,27 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                             </span>
                             <span>{exam?.title || a.examId}</span>
                           </div>
+                          {primaryLink && !isSchoolUser && (
+                            <div className="mt-1.5 flex items-center gap-1.5">
+                              <a
+                                href={primaryLink.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 rounded-md bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100"
+                              >
+                                <ExternalLink size={11} />
+                                Open Submitted Link
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleCopySubmittedLink(a.id, primaryLink.url)}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
+                              >
+                                {copiedUrlKey === a.id ? <Check size={11} /> : <Copy size={11} />}
+                                {copiedUrlKey === a.id ? "Copied!" : "Copy Link"}
+                              </button>
+                            </div>
+                          )}
                         </td>
                         <td className="p-4">
                           <span
@@ -1985,27 +2958,37 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                             </span>
                           )}
                         </td>
-                        <td className="p-4 text-right space-x-2 whitespace-nowrap">
+                        <td className="p-4 text-right space-x-1.5 whitespace-nowrap">
+                          {!isSchoolUser && (
+                            <button
+                              type="button"
+                              onClick={() => openReviewSubmissionModal(a)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 px-2.5 py-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 cursor-pointer"
+                            >
+                              <Eye size={13} />
+                              Review / Mark
+                            </button>
+                          )}
                           <button
                             type="button"
-                            disabled={!isReleased}
-                            aria-disabled={!isReleased}
+                            disabled={isSchoolUser && !isReleased}
+                            aria-disabled={isSchoolUser && !isReleased}
                             title={
-                              isReleased
+                              !isSchoolUser || isReleased
                                 ? "Download official assessment report PDF"
                                 : "Printing is disabled until the tutor releases the assessment result."
                             }
                             onClick={() => void pdf(a)}
-                            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                              isReleased
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                              !isSchoolUser || isReleased
                                 ? "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
                                 : "border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/40 text-slate-400 dark:text-slate-500 opacity-60 cursor-not-allowed"
                             }`}
                           >
-                            {isReleased ? (
-                              <Download size={14} className="text-blue-600" />
+                            {!isSchoolUser || isReleased ? (
+                              <Download size={13} className="text-blue-600" />
                             ) : (
-                              <Lock size={14} className="text-slate-400" />
+                              <Lock size={13} className="text-slate-400" />
                             )}
                             Print Official PDF
                           </button>
@@ -2017,9 +3000,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                     type="button"
                                     disabled={actionBusy === a.id + "release"}
                                     onClick={() => openReleaseRemarkModal(a)}
-                                    className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
+                                    className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
                                   >
-                                    <CheckCircle2 size={14} />
+                                    <CheckCircle2 size={13} />
                                     Release Result
                                   </button>
                                 ) : (
@@ -2046,55 +3029,721 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         )}
       </section>
 
-      {/* COMPLETED / PAST ASSESSMENTS ARCHIVE */}
-      {categorizedExams.completed.length > 0 && (
-        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
-          <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+      {/* COMPLETED & PAST ASSESSMENTS ARCHIVE — LIST-BASED INTERFACE WITH SEARCH & CLICKABLE DETAIL MODAL (Deliverable 11) */}
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
+        <div className="border-b border-slate-100 dark:border-slate-800 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
               Completed &amp; Past Assessments Archive
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Select any past assessment below to filter the student attempts table above.
+              Click any archived assessment row to inspect full participation records, student submissions, and individual reports.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {categorizedExams.completed.map((ex) => {
-              const stats = attemptCountsByExam[ex.id] || {
-                total: 0,
-                submitted: 0,
-                inProgress: 0,
-              };
-              const isSelected = selected === ex.id;
-              return (
-                <button
-                  key={ex.id}
-                  type="button"
-                  onClick={() => setSelected(isSelected ? "" : ex.id)}
-                  className={`text-left rounded-xl border p-4 transition-all cursor-pointer ${
-                    isSelected
-                      ? "border-blue-600 bg-blue-50/50 dark:bg-blue-950/30"
-                      : "border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 hover:border-slate-300"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="rounded-full bg-slate-200 dark:bg-slate-700 px-2.5 py-0.5 text-[10px] font-bold uppercase text-slate-700 dark:text-slate-200">
-                      Completed
-                    </span>
-                    <span className="text-xs font-semibold text-slate-500">
-                      {ex.targetClass || "All Classes"}
-                    </span>
-                  </div>
-                  <h3 className="mt-2 font-bold text-sm text-slate-900 dark:text-white truncate">
-                    {ex.title}
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
-                    {ex.subject} · {stats.total} attempt(s)
-                  </p>
-                </button>
-              );
-            })}
+          {/* Small Search Bar beside the Completed & Past Assessments Archive heading */}
+          <div className="relative w-full sm:w-72 shrink-0">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+            />
+            <input
+              type="text"
+              value={archiveSearch}
+              onChange={(e) => setArchiveSearch(e.target.value)}
+              placeholder="Search title, subject, school or class…"
+              className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 pl-8 pr-8 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900"
+            />
+            {archiveSearch && (
+              <button
+                type="button"
+                onClick={() => setArchiveSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
-        </section>
+        </div>
+
+        {filteredArchivedExams.length === 0 ? (
+          <div className="p-10 text-center text-slate-500">
+            <History size={34} className="mx-auto mb-2 text-slate-400" />
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              No archived assessments match your search
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              Completed, closed, and past-deadline assessments appear in this structured archive list.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs sm:text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-800/60 text-[11px] uppercase font-bold text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                <tr>
+                  <th className="p-3.5 sm:p-4">Assessment Title</th>
+                  <th className="p-3.5 sm:p-4">Category</th>
+                  <th className="p-3.5 sm:p-4">Subject</th>
+                  <th className="p-3.5 sm:p-4">Partner School / Cohort</th>
+                  <th className="p-3.5 sm:p-4">Class</th>
+                  <th className="p-3.5 sm:p-4 text-center">Participants</th>
+                  <th className="p-3.5 sm:p-4">Closing / Completion Date</th>
+                  <th className="p-3.5 sm:p-4 text-right">Records</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {filteredArchivedExams.map((ex) => {
+                  const stats = attemptCountsByExam[ex.id] || {
+                    total: 0,
+                    submitted: 0,
+                    inProgress: 0,
+                  };
+                  const typeLabels = getWorkTypeLabels(ex.workType, ex);
+                  const isPriv = isPrivateAttemptOrExam({
+                    schoolId: ex.schoolId,
+                    schoolName: ex.schoolName,
+                    recipientMode: ex.recipientMode,
+                  });
+                  const schoolDisplay = isPriv
+                    ? "Private Students Cohort"
+                    : resolveSchoolLabel(ex.schoolId, ex.schoolName);
+                  const classDisplay =
+                    ex.targetClass ||
+                    ex.className ||
+                    (Array.isArray(ex.classIds) && ex.classIds.length > 0
+                      ? ex.classIds.join(", ")
+                      : "All Eligible");
+                  const closingDateDisplay = formatTimestampShort(
+                    ex.dueDate || ex.availableUntil || ex.updatedAt || ex.createdAt
+                  );
+
+                  return (
+                    <tr
+                      key={ex.id}
+                      onClick={() => setArchivedDetailExam(ex)}
+                      className="hover:bg-blue-50/50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+                    >
+                      <td className="p-3.5 sm:p-4 font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                        {ex.title}
+                      </td>
+                      <td className="p-3.5 sm:p-4">
+                        <span className="inline-flex rounded-md bg-red-50 dark:bg-red-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-300">
+                          {typeLabels.singular}
+                        </span>
+                      </td>
+                      <td className="p-3.5 sm:p-4 text-slate-700 dark:text-slate-300 font-medium">
+                        {ex.subject || "General"}
+                      </td>
+                      <td className="p-3.5 sm:p-4 text-slate-700 dark:text-slate-300">
+                        {schoolDisplay}
+                      </td>
+                      <td className="p-3.5 sm:p-4 text-slate-600 dark:text-slate-400">
+                        {classDisplay}
+                      </td>
+                      <td className="p-3.5 sm:p-4 text-center">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-950/60 px-2.5 py-0.5 text-xs font-bold text-blue-700 dark:text-blue-300">
+                          <Users size={12} />
+                          {stats.total} student{stats.total === 1 ? "" : "s"}
+                        </span>
+                      </td>
+                      <td className="p-3.5 sm:p-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {closingDateDisplay}
+                      </td>
+                      <td className="p-3.5 sm:p-4 text-right whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 group-hover:translate-x-0.5 transition-transform">
+                          View Records
+                          <ChevronRight size={14} />
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* CLICKABLE ARCHIVE ROW DETAIL MODAL (Deliverable 11) */}
+      {archivedDetailExam && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-3 sm:p-5 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Archived Assessment Details: ${archivedDetailExam.title}`}
+        >
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+              <div className="space-y-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-md bg-red-50 dark:bg-red-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-300">
+                    {getWorkTypeLabels(archivedDetailExam.workType, archivedDetailExam).singular}
+                  </span>
+                  <span className="rounded-full bg-slate-200 dark:bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold uppercase text-slate-700 dark:text-slate-300">
+                    Archived Record
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-xl font-bold text-slate-900 dark:text-white break-words">
+                  {archivedDetailExam.title}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Subject: <strong>{archivedDetailExam.subject}</strong> · Duration:{" "}
+                  <strong>{archivedDetailExam.durationMinutes || 30} mins</strong> · Max Score:{" "}
+                  <strong>{computeExamMaxScore(archivedDetailExam)} pts</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setArchivedDetailExam(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {(() => {
+              const examAttempts = attempts.filter((a) => a.examId === archivedDetailExam.id);
+              const isPriv = isPrivateAttemptOrExam({
+                schoolId: archivedDetailExam.schoolId,
+                schoolName: archivedDetailExam.schoolName,
+                recipientMode: archivedDetailExam.recipientMode,
+              });
+              const schoolText = isPriv
+                ? "Private Students Cohort"
+                : resolveSchoolLabel(archivedDetailExam.schoolId, archivedDetailExam.schoolName);
+              const classText =
+                archivedDetailExam.targetClass ||
+                archivedDetailExam.className ||
+                (Array.isArray(archivedDetailExam.classIds) &&
+                archivedDetailExam.classIds.length > 0
+                  ? archivedDetailExam.classIds.join(", ")
+                  : "All Classes");
+
+              return (
+                <div className="p-5 overflow-y-auto space-y-5 flex-1">
+                  {/* Summary Cards */}
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-3.5">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        School / Cohort
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
+                        {schoolText}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-3.5">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        Target Class
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
+                        {classText}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-3.5">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        Student Participation
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-blue-600 dark:text-blue-400">
+                        {examAttempts.length} Participating Student{examAttempts.length === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Participating Students List */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                        Participating Students &amp; Individual Results ({examAttempts.length})
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelected(archivedDetailExam.id);
+                          setArchivedDetailExam(null);
+                        }}
+                        className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
+                      >
+                        Filter main table by this assessment
+                      </button>
+                    </div>
+
+                    {examAttempts.length === 0 ? (
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-8 text-center text-xs text-slate-500">
+                        No student attempts were recorded for this assessment.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                        <table className="w-full text-left text-xs sm:text-sm">
+                          <thead className="bg-slate-100 dark:bg-slate-800 text-[11px] uppercase font-bold text-slate-600 dark:text-slate-300">
+                            <tr>
+                              <th className="p-3">Student Name</th>
+                              <th className="p-3">Class</th>
+                              <th className="p-3">Status</th>
+                              <th className="p-3">Score</th>
+                              <th className="p-3 text-right">Submission &amp; Report</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {examAttempts.map((att) => {
+                              const isRel = isAttemptResultReleased(att);
+                              const canSee = isRel || !isSchoolUser;
+                              const max = computeExamMaxScore(archivedDetailExam, att);
+                              const pct =
+                                canSee && typeof att.score === "number"
+                                  ? calculateScorePercentage(att.score, max)
+                                  : null;
+                              const links = extractAttemptSubmittedLinks(att, archivedDetailExam);
+                              return (
+                                <tr
+                                  key={att.id}
+                                  className="hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                                >
+                                  <td className="p-3 font-bold text-slate-900 dark:text-white">
+                                    {att.studentName}
+                                  </td>
+                                  <td className="p-3 text-slate-600 dark:text-slate-300">
+                                    {att.className || "—"}
+                                  </td>
+                                  <td className="p-3">
+                                    <span className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-[11px] font-bold capitalize text-slate-700 dark:text-slate-300">
+                                      {isRel ? "Released" : att.status}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 font-mono font-bold text-slate-900 dark:text-white">
+                                    {canSee && typeof att.score === "number"
+                                      ? `${att.score}/${max} (${pct}%)`
+                                      : "Pending"}
+                                  </td>
+                                  <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
+                                    {links[0] && !isSchoolUser && (
+                                      <>
+                                        <a
+                                          href={links[0].url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 px-2 py-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-300"
+                                        >
+                                          <ExternalLink size={11} />
+                                          Open Link
+                                        </a>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleCopySubmittedLink(`arch_${att.id}`, links[0].url)
+                                          }
+                                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 cursor-pointer"
+                                        >
+                                          {copiedUrlKey === `arch_${att.id}` ? (
+                                            <Check size={11} />
+                                          ) : (
+                                            <Copy size={11} />
+                                          )}
+                                          {copiedUrlKey === `arch_${att.id}` ? "Copied" : "Copy"}
+                                        </button>
+                                      </>
+                                    )}
+                                    {!isSchoolUser && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setArchivedDetailExam(null);
+                                          openReviewSubmissionModal(att);
+                                        }}
+                                        className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-indigo-700 cursor-pointer"
+                                      >
+                                        <Eye size={12} />
+                                        Review / Mark
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      disabled={isSchoolUser && !isRel}
+                                      onClick={() => void pdf(att)}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                                    >
+                                      <Download size={12} className="text-blue-600" />
+                                      PDF Report
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setArchivedDetailExam(null)}
+                className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
+              >
+                Close Archive View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DETAILED SUBMISSION REVIEW & MARKING MODAL (Deliverables 7, 8 & 9) */}
+      {reviewModalAttempt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-3 sm:p-5 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Review and Mark Submission for ${reviewModalAttempt.studentName}`}
+        >
+          {(() => {
+            const exam = exams.find((e) => e.id === reviewModalAttempt.examId);
+            const questions = resolveAttemptQuestions(exam || {}, reviewModalAttempt) as Question[];
+            const maxScore = computeExamMaxScore(exam, reviewModalAttempt);
+            const submittedLinks = extractAttemptSubmittedLinks(reviewModalAttempt, exam);
+            const isReleased = isAttemptResultReleased(reviewModalAttempt);
+            const schoolDisplay = resolveSchoolLabel(
+              reviewModalAttempt.schoolId || exam?.schoolId,
+              reviewModalAttempt.schoolName || exam?.schoolName,
+              reviewModalAttempt.studentId,
+              reviewModalAttempt.studentUid
+            );
+
+            const currentCalculatedScore =
+              questions.length > 0
+                ? questions.reduce(
+                    (sum, q) =>
+                      sum +
+                      Math.max(
+                        0,
+                        Math.min(Number(q.points) || 1, Number(reviewMarksMap[q.id] ?? 0))
+                      ),
+                    0
+                  )
+                : reviewTotalOverride.trim() !== ""
+                ? Math.max(0, Number(reviewTotalOverride) || 0)
+                : Number(reviewModalAttempt.score || 0);
+            const currentPct = calculateScorePercentage(currentCalculatedScore, maxScore);
+
+            return (
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
+                {/* Modal Header */}
+                <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-indigo-100 dark:bg-indigo-950/70 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-800 dark:text-indigo-300">
+                        Submission Inspection &amp; Marking
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
+                          isReleased
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                            : "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                        }`}
+                      >
+                        {isReleased ? "Result Released" : `Status: ${reviewModalAttempt.status}`}
+                      </span>
+                    </div>
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words">
+                      {reviewModalAttempt.studentName} — {exam?.title || "Assessment"}
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      {reviewModalAttempt.className || "General"} · {schoolDisplay} · Submitted:{" "}
+                      {formatTimestampShort(reviewModalAttempt.submittedAt)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => void pdf(reviewModalAttempt)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 cursor-pointer"
+                    >
+                      <Download size={14} className="text-blue-600" />
+                      Print Official PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReviewModalAttempt(null)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-5 overflow-y-auto space-y-5 flex-1">
+                  {/* Prominent Submitted Link Bar (Deliverable 8) */}
+                  {submittedLinks.length > 0 && (
+                    <div className="rounded-2xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/30 p-4 space-y-2.5">
+                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-indigo-900 dark:text-indigo-200">
+                        <Link2 size={15} className="text-indigo-600" />
+                        <span>Submitted Student Deliverable Link(s)</span>
+                      </div>
+                      <div className="space-y-2">
+                        {submittedLinks.map((lnk, idx) => (
+                          <div
+                            key={lnk.url + idx}
+                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 p-3"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block">
+                                {lnk.label}
+                              </span>
+                              <p className="text-xs sm:text-sm font-mono font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                {lnk.url}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <a
+                                href={lnk.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-700 shadow-xs"
+                              >
+                                <ExternalLink size={13} />
+                                Open Submitted Link
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleCopySubmittedLink(`modal_${idx}`, lnk.url)
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 cursor-pointer"
+                              >
+                                {copiedUrlKey === `modal_${idx}` ? (
+                                  <Check size={13} className="text-emerald-600" />
+                                ) : (
+                                  <Copy size={13} />
+                                )}
+                                {copiedUrlKey === `modal_${idx}` ? "Copied!" : "Copy Link"}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Question-by-Question Responses & Marking */}
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                        Submitted Responses &amp; Question Marking ({questions.length})
+                      </h4>
+                      <div className="inline-flex items-center gap-2 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 px-3 py-1.5 text-xs font-bold text-blue-900 dark:text-blue-200">
+                        <Award size={14} className="text-blue-600" />
+                        <span>
+                          Total Score: {currentCalculatedScore} / {maxScore} ({currentPct}%)
+                        </span>
+                      </div>
+                    </div>
+
+                    {questions.length === 0 ? (
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+                        <p className="text-xs text-slate-600 dark:text-slate-300">
+                          No structured question items were snapshotted for this assessment. You can enter or adjust the total score directly below:
+                        </p>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Total Score Awarded (out of {maxScore})
+                          <input
+                            type="number"
+                            min={0}
+                            max={maxScore}
+                            value={reviewTotalOverride}
+                            onChange={(e) => setReviewTotalOverride(e.target.value)}
+                            className="mt-1.5 w-40 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-bold text-slate-900 dark:text-white"
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {questions.map((q, idx) => {
+                          const rawAns = reviewModalAttempt.answers?.[q.id];
+                          const formatted = formatQuestionAnswerForTutor(q, rawAns);
+                          const expectedKey = formatExpectedKeyForTutor(q);
+                          const maxPts = Number(q.points) || 1;
+                          const awarded = Number(reviewMarksMap[q.id] ?? 0);
+
+                          return (
+                            <div
+                              key={q.id || idx}
+                              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-4 space-y-3"
+                            >
+                              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                                <div className="space-y-1 flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="rounded bg-slate-900 text-white px-2 py-0.5 text-[11px] font-bold">
+                                      Q{idx + 1}
+                                    </span>
+                                    <span className="text-[11px] font-semibold uppercase text-slate-500">
+                                      {String(q.type || "question").replace("_", " ")}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm font-bold text-slate-900 dark:text-white break-words">
+                                    {q.prompt}
+                                  </p>
+                                </div>
+
+                                {/* Marks Input per Question */}
+                                <div className="flex items-center gap-2 shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5">
+                                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                                    Marks:
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={maxPts}
+                                    step="0.5"
+                                    value={awarded}
+                                    onChange={(e) => {
+                                      const val = Math.max(
+                                        0,
+                                        Math.min(maxPts, Number(e.target.value) || 0)
+                                      );
+                                      setReviewMarksMap((prev) => ({ ...prev, [q.id]: val }));
+                                    }}
+                                    className="w-16 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1 text-center text-xs font-bold text-slate-900 dark:text-white"
+                                  />
+                                  <span className="text-xs font-bold text-slate-500">
+                                    / {maxPts}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="grid gap-2.5 sm:grid-cols-2 text-xs pt-2 border-t border-slate-200/70 dark:border-slate-700/70">
+                                <div className="rounded-lg bg-white dark:bg-slate-900 p-3 border border-slate-200/80 dark:border-slate-800 space-y-2">
+                                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                    Student's Submitted Answer
+                                  </span>
+                                  <p className="font-semibold text-slate-900 dark:text-white whitespace-pre-wrap break-words">
+                                    {formatted.displayText}
+                                  </p>
+                                  {formatted.linkUrl && (
+                                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                                      <a
+                                        href={formatted.linkUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-indigo-700"
+                                      >
+                                        <ExternalLink size={11} />
+                                        Open Submitted Link
+                                      </a>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleCopySubmittedLink(
+                                            `q_${q.id}`,
+                                            formatted.linkUrl!
+                                          )
+                                        }
+                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                                      >
+                                        {copiedUrlKey === `q_${q.id}` ? (
+                                          <Check size={11} />
+                                        ) : (
+                                          <Copy size={11} />
+                                        )}
+                                        {copiedUrlKey === `q_${q.id}` ? "Copied!" : "Copy Link"}
+                                      </button>
+                                    </div>
+                                  )}
+                                  {formatted.fileDataUrl && (
+                                    <div className="pt-1">
+                                      <a
+                                        href={formatted.fileDataUrl}
+                                        download={formatted.fileName || "submitted-deliverable"}
+                                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-700"
+                                      >
+                                        <Download size={11} />
+                                        Download File ({formatted.fileName || "Attachment"})
+                                      </a>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="rounded-lg bg-white dark:bg-slate-900 p-3 border border-slate-200/80 dark:border-slate-800 space-y-1">
+                                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                    Expected Answer / Marking Guide
+                                  </span>
+                                  <p className="font-medium text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
+                                    {expectedKey}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tutor Remark & Feedback Section */}
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                        Official Tutor Feedback &amp; Remark
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setReviewRemarkInput(getSuggestedTutorRemark(currentPct))
+                        }
+                        className="inline-flex items-center gap-1 rounded-lg bg-blue-600/10 px-2.5 py-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-600/20 cursor-pointer"
+                      >
+                        <Sparkles size={12} />
+                        Suggest Remark for {currentPct}%
+                      </button>
+                    </div>
+                    <textarea
+                      rows={3}
+                      value={reviewRemarkInput}
+                      onChange={(e) => setReviewRemarkInput(e.target.value)}
+                      placeholder="Enter feedback or marking comments for this student…"
+                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-900 dark:text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Modal Footer — Independent Marking vs Releasing */}
+                <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setReviewModalAttempt(null)}
+                    className="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={reviewSaving}
+                      onClick={() => void handleSaveReviewAndMarks(false)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-blue-600 bg-white dark:bg-slate-800 px-4 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-50 disabled:opacity-50 cursor-pointer"
+                    >
+                      {reviewSaving ? "Saving…" : "Save Marks & Feedback"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={reviewSaving}
+                      onClick={() => void handleSaveReviewAndMarks(true)}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer shadow-xs"
+                    >
+                      <CheckCircle2 size={14} />
+                      {reviewSaving
+                        ? "Saving & Releasing…"
+                        : isReleased
+                        ? "Save & Update Released Report"
+                        : "Save Marks & Release Result"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
       )}
 
       {/* Tutor Remark Selection & Custom Input Modal when Releasing Results */}
@@ -2237,4 +3886,3 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
 export function SchoolExaminationOverview() {
   return <ExaminationHistory mode="overview" />;
 }
-

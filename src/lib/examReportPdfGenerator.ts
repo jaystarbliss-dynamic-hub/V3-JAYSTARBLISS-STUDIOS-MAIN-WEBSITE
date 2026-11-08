@@ -804,10 +804,22 @@ export async function createExamReportPdfDocument(data: ExamReportData): Promise
   const pageWidth = doc.internal.pageSize.getWidth();
   const companyLogoDataUrl = await loadOfficialCompanyLogoDataUrl();
 
-  const resolvedSchool =
-    resolvePartnerSchoolName(data.schoolName, data.schoolId) ||
-    data.schoolName ||
-    'Jaystarbliss Dynamic Innovations';
+  const rawSchId = String(data.schoolId || '').trim().toLowerCase();
+  const rawSchName = String(data.schoolName || '').trim();
+  const isPrivateLearner =
+    !rawSchId ||
+    rawSchId === 'private' ||
+    rawSchId === 'private_parent' ||
+    rawSchId === 'private_individual' ||
+    rawSchName.toLowerCase().includes('private');
+
+  const resolvedSchool = isPrivateLearner
+    ? rawSchName && !rawSchName.toLowerCase().includes('partner')
+      ? rawSchName
+      : 'Private Mentorship (Jaystarbliss Studios)'
+    : resolvePartnerSchoolName(data.schoolName, data.schoolId) ||
+      data.schoolName ||
+      'Jaystarbliss Dynamic Innovations';
   const resolvedClass = formatNormalizedClassDisplay(data.className, 'General');
   const maxScore = computeExamMaxScore(
     { maxScore: data.maxScore, questions: data.questions },
@@ -875,8 +887,12 @@ export async function createExamReportPdfDocument(data: ExamReportData): Promise
   doc.setFontSize(8.5);
   doc.setTextColor(51, 65, 85);
   doc.text(`Student Name: ${data.studentName || 'Student'}`, 18, cursorY + 14);
-  doc.text(`Class / Level: ${resolvedClass}`, 18, cursorY + 20);
-  doc.text(`School: ${resolvedSchool}`, 18, cursorY + 26);
+  doc.text(`Class / Pathway: ${resolvedClass}`, 18, cursorY + 20);
+  doc.text(
+    isPrivateLearner ? `Enrolment: ${resolvedSchool}` : `School: ${resolvedSchool}`,
+    18,
+    cursorY + 26
+  );
   doc.text(
     `${typeLabels.singular}: ${data.examTitle || typeLabels.singular} (${data.subject || 'General'})`,
     18,
@@ -1259,11 +1275,23 @@ export function buildExamReportViewModel(
   const summary = formatScoreSummary(rawScore, maxScore);
   const typeLabels = getWorkTypeLabels(exam?.workType || attempt?.workType, exam);
 
-  const schoolName =
-    resolvePartnerSchoolName(exam?.schoolName, attempt?.schoolName, exam?.schoolId, attempt?.schoolId) ||
-    exam?.schoolName ||
-    attempt?.schoolName ||
-    'Jaystarbliss Partner Academy';
+  const rawAttemptSchId = String(attempt?.schoolId || exam?.schoolId || '').trim().toLowerCase();
+  const rawAttemptSchName = String(attempt?.schoolName || exam?.schoolName || '').trim();
+  const isPrivateAttempt =
+    !rawAttemptSchId ||
+    rawAttemptSchId === 'private' ||
+    rawAttemptSchId === 'private_parent' ||
+    rawAttemptSchId === 'private_individual' ||
+    rawAttemptSchName.toLowerCase().includes('private');
+
+  const schoolName = isPrivateAttempt
+    ? rawAttemptSchName && !rawAttemptSchName.toLowerCase().includes('partner')
+      ? rawAttemptSchName
+      : 'Private Mentorship (Jaystarbliss Studios)'
+    : resolvePartnerSchoolName(exam?.schoolName, attempt?.schoolName, exam?.schoolId, attempt?.schoolId) ||
+      exam?.schoolName ||
+      attempt?.schoolName ||
+      'Jaystarbliss Partner Academy';
 
   const studentClass = formatNormalizedClassDisplay(
     attempt?.className || exam?.targetClass || exam?.className,

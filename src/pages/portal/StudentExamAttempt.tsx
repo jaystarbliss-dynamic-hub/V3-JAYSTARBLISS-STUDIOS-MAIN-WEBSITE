@@ -235,6 +235,8 @@ export default function StudentExamAttempt() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [seconds, setSeconds] = useState(0);
+  const [timerInitialized, setTimerInitialized] = useState(false);
+  const [autoExpiredBanner, setAutoExpiredBanner] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmingSubmit, setConfirmingSubmit] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "pending" | "saving" | "error">("saved");
@@ -309,19 +311,22 @@ export default function StudentExamAttempt() {
         // Resolve authoritative partner school name
         const effectiveSchoolId = String(attemptData.schoolId || examData.schoolId || "").trim();
         let schoolDocName = "";
-        if (effectiveSchoolId) {
+        if (effectiveSchoolId && effectiveSchoolId !== "private") {
           const schSnap = await getDoc(doc(db, "schools", effectiveSchoolId)).catch(() => null);
           if (schSnap?.exists()) {
             const s = schSnap.data();
             schoolDocName = s.name || s.schoolName || "";
           }
         }
-        const resolvedSchoolName = resolvePartnerSchoolName(
-          schoolDocName,
-          attemptData.schoolName,
-          examData.schoolName,
-          sessionStorage.getItem("schoolName") || ""
-        );
+        const resolvedSchoolName =
+          effectiveSchoolId === "private" || !effectiveSchoolId
+            ? attemptData.schoolName || "Private Mentorship"
+            : resolvePartnerSchoolName(
+                schoolDocName,
+                attemptData.schoolName,
+                examData.schoolName,
+                sessionStorage.getItem("schoolName") || ""
+              );
 
         const rawQuestions: Q[] = resolveAttemptQuestions(examData, attemptData) as Q[];
         const isClosed = attemptData.status !== "in_progress";
@@ -337,6 +342,7 @@ export default function StudentExamAttempt() {
 
         const maxScore = computeExamMaxScore(examData, attemptData);
         const score = isReleased && typeof attemptData.score === "number" ? attemptData.score : undefined;
+        const configuredDurationMin = Math.max(1, Number(examData.durationMinutes) || 30);
 
         loadedData = {
           attempt: {
@@ -362,7 +368,9 @@ export default function StudentExamAttempt() {
             schoolId: effectiveSchoolId,
             schoolName: resolvedSchoolName,
             maxScore,
-            deadlineAt: attemptData.deadlineAt || new Date(Date.now() + 30 * 60000).toISOString(),
+            deadlineAt:
+              attemptData.deadlineAt ||
+              new Date(Date.now() + configuredDurationMin * 60000).toISOString(),
           },
           exam: {
             id: attemptData.examId,
@@ -379,7 +387,7 @@ export default function StudentExamAttempt() {
             schoolName: resolvedSchoolName,
             maxScore,
             instructions: examData.instructions || examData.description || "",
-            durationMinutes: examData.durationMinutes || 30,
+            durationMinutes: configuredDurationMin,
             gradingMode: examData.gradingMode || "automatic",
             questions: isReleased ? rawQuestions : safeQuestions,
           },
@@ -389,11 +397,14 @@ export default function StudentExamAttempt() {
         const effectiveSchoolId = String(
           loadedData.attempt.schoolId || loadedData.exam.schoolId || ""
         ).trim();
-        let resolvedSchoolName = resolvePartnerSchoolName(
-          loadedData.attempt.schoolName,
-          loadedData.exam.schoolName
-        );
-        if (!resolvedSchoolName && effectiveSchoolId) {
+        let resolvedSchoolName =
+          effectiveSchoolId === "private" || !effectiveSchoolId
+            ? loadedData.attempt.schoolName || "Private Mentorship"
+            : resolvePartnerSchoolName(
+                loadedData.attempt.schoolName,
+                loadedData.exam.schoolName
+              );
+        if (!resolvedSchoolName && effectiveSchoolId && effectiveSchoolId !== "private") {
           const schSnap = await getDoc(doc(db, "schools", effectiveSchoolId)).catch(() => null);
           if (schSnap?.exists()) {
             const s = schSnap.data();
@@ -412,6 +423,10 @@ export default function StudentExamAttempt() {
         Math.ceil((new Date(loadedData.attempt.deadlineAt).getTime() - Date.now()) / 1000)
       );
       setSeconds(remaining);
+      setTimerInitialized(true);
+      if (remaining <= 0 && loadedData.attempt.status === "in_progress") {
+        setAutoExpiredBanner(true);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load assessment attempt.");
     } finally {
@@ -420,6 +435,8 @@ export default function StudentExamAttempt() {
   };
 
   useEffect(() => {
+    setTimerInitialized(false);
+    setAutoExpiredBanner(false);
     void loadAttemptData();
   }, [attemptId]);
 
@@ -432,6 +449,9 @@ export default function StudentExamAttempt() {
         Math.ceil((new Date(data.attempt.deadlineAt).getTime() - Date.now()) / 1000)
       );
       setSeconds(remaining);
+      if (remaining <= 0) {
+        setAutoExpiredBanner(true);
+      }
     }, 1000);
     return () => window.clearInterval(interval);
   }, [data?.attempt.deadlineAt, data?.attempt.status]);
@@ -838,12 +858,13 @@ export default function StudentExamAttempt() {
     }
   };
 
-  // Auto-expire when timer hits 0
+  // Auto-expire when timer hits 00:00 (or is already 00:00 on load)
   useEffect(() => {
-    if (seconds === 0 && data?.attempt.status === "in_progress" && !busy) {
+    if (timerInitialized && seconds <= 0 && data?.attempt.status === "in_progress" && !busy) {
+      setAutoExpiredBanner(true);
       void send("expire");
     }
-  }, [seconds]);
+  }, [seconds, timerInitialized, data?.attempt.status, busy]);
 
   // Download PDF Report
   const handleDownloadReport = async () => {
@@ -950,7 +971,10 @@ export default function StudentExamAttempt() {
     );
   }
 
-  const closed = data.attempt.status !== "in_progress";
+  const isTimeUp = timerInitialized && seconds <= 0;
+  const isExpiredAttempt =
+    data.attempt.status === "expired" || autoExpiredBanner || (data.attempt.status === "in_progress" && isTimeUp);
+  const closed = data.attempt.status !== "in_progress" || isTimeUp;
   const isReleased = isAttemptResultReleased(data.attempt);
   const answerableQuestions = data.questions.filter((q) => q.type !== "learning_resource");
   const answeredCount = answerableQuestions.filter((q) => {
@@ -974,8 +998,9 @@ export default function StudentExamAttempt() {
       ));
 
   const isLowTime = !closed && seconds > 0 && seconds <= 300;
-  const formattedTime = `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${String(
-    seconds % 60
+  const safeSeconds = isExpiredAttempt || closed ? 0 : Math.max(0, seconds);
+  const formattedTime = `${Math.floor(safeSeconds / 60).toString().padStart(2, "0")}:${String(
+    safeSeconds % 60
   ).padStart(2, "0")}`;
 
   const reportVm = isReleased
@@ -1000,6 +1025,10 @@ export default function StudentExamAttempt() {
 
   const examResourceUrl =
     data.exam.resourceUrl || data.exam.videoUrl || data.exam.learningVideoUrl || "";
+  const isPrivateStudentReport =
+    !data.attempt.schoolId ||
+    data.attempt.schoolId === "private" ||
+    (reportVm?.schoolName || "").toLowerCase().includes("private");
 
   return (
     <main className="mx-auto max-w-4xl space-y-5 p-3 sm:p-5 md:p-8">
@@ -1068,41 +1097,74 @@ export default function StudentExamAttempt() {
               aria-live="off"
               aria-label={closed ? "Assessment status" : `Time remaining ${formattedTime}`}
               className={`rounded-xl border px-3.5 py-2 sm:px-5 sm:py-2.5 text-center shrink-0 transition-colors ${
-                closed
+                isExpiredAttempt
+                  ? "border-red-500/40 bg-red-950/60"
+                  : closed
                   ? "border-white/10 bg-white/5"
                   : isLowTime
                   ? "border-red-400/50 bg-red-500/20 animate-pulse"
                   : "border-amber-400/30 bg-white/10"
               }`}
             >
-            {closed ? (
-              <span className="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider">
-                {isReleased ? "Released" : data.attempt.status}
-              </span>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Clock
-                  className={isLowTime ? "text-red-300 shrink-0" : "text-amber-400 shrink-0"}
-                  size={18}
-                />
-                <div className="text-left">
-                  <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-300 leading-none mb-0.5">
-                    Time Left
-                  </span>
-                  <span
-                    className={`font-mono text-lg sm:text-2xl font-black leading-none ${
-                      isLowTime ? "text-red-200" : "text-amber-300"
-                    }`}
-                  >
-                    {formattedTime}
-                  </span>
+              {isExpiredAttempt ? (
+                <div className="flex items-center gap-2">
+                  <Clock className="text-red-400 shrink-0" size={18} />
+                  <div className="text-left">
+                    <span className="block text-[9px] uppercase tracking-wider font-bold text-red-300 leading-none mb-0.5">
+                      Time Expired
+                    </span>
+                    <span className="font-mono text-base sm:text-xl font-black leading-none text-red-200">
+                      00:00 · Closed
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )}
+              ) : closed ? (
+                <span className="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider">
+                  {isReleased ? "Released" : data.attempt.status}
+                </span>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Clock
+                    className={isLowTime ? "text-red-300 shrink-0" : "text-amber-400 shrink-0"}
+                    size={18}
+                  />
+                  <div className="text-left">
+                    <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-300 leading-none mb-0.5">
+                      Time Left
+                    </span>
+                    <span
+                      className={`font-mono text-lg sm:text-2xl font-black leading-none ${
+                        isLowTime ? "text-red-200" : "text-amber-300"
+                      }`}
+                    >
+                      {formattedTime}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+
+      {isExpiredAttempt && (
+        <div
+          role="alert"
+          className="rounded-2xl bg-red-50 dark:bg-red-950/60 p-4 sm:p-5 text-xs sm:text-sm text-red-900 dark:text-red-100 border border-red-200 dark:border-red-800 flex items-start gap-3 shadow-sm"
+        >
+          <AlertTriangle size={20} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-red-950 dark:text-white">
+              Assessment Automatically Closed — Time Expired (00:00)
+            </p>
+            <p className="text-red-800 dark:text-red-200 leading-relaxed">
+              Your allocated time for this {typeLabels.lowerSingular} reached{" "}
+              <span className="font-mono font-bold">00:00</span>. Your attempt and all saved answers
+              have been automatically submitted and locked for grading.
+            </p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <p
@@ -1178,10 +1240,12 @@ export default function StudentExamAttempt() {
                   <School className="mt-0.5 text-blue-600 dark:text-blue-400 shrink-0" size={18} />
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Partner School
+                      {isPrivateStudentReport ? "Enrolment Category" : "Partner School"}
                     </p>
                     <p className="text-sm font-bold text-slate-900 dark:text-white break-words">
-                      {reportVm.schoolName}
+                      {isPrivateStudentReport
+                        ? "Private Mentorship (Jaystarbliss Studios)"
+                        : reportVm.schoolName}
                     </p>
                     <p className="text-xs text-slate-600 dark:text-slate-300">
                       Submitted: {reportVm.submittedAtText}
@@ -1368,14 +1432,21 @@ export default function StudentExamAttempt() {
             </>
           ) : (
             <div className="text-center py-6 space-y-4">
-              <CheckCircle2 size={48} className="mx-auto text-emerald-600 dark:text-emerald-400" />
+              {isExpiredAttempt ? (
+                <Clock size={48} className="mx-auto text-red-600 dark:text-red-400" />
+              ) : (
+                <CheckCircle2 size={48} className="mx-auto text-emerald-600 dark:text-emerald-400" />
+              )}
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
-                  {typeLabels.singular} Submitted Successfully
+                  {isExpiredAttempt
+                    ? `${typeLabels.singular} Automatically Closed — Time Expired`
+                    : `${typeLabels.singular} Submitted Successfully`}
                 </h2>
                 <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-                  Your {typeLabels.lowerSingular} submission has been securely recorded in the
-                  central academic ledger.
+                  {isExpiredAttempt
+                    ? `Your allocated time reached 00:00. Your ${typeLabels.lowerSingular} attempt was automatically submitted and recorded in the central academic ledger.`
+                    : `Your ${typeLabels.lowerSingular} submission has been securely recorded in the central academic ledger.`}
                 </p>
               </div>
               <div className="rounded-xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 p-4 max-w-md mx-auto text-xs text-amber-900 dark:text-amber-200 space-y-1">

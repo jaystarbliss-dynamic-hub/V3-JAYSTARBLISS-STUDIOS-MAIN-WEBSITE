@@ -37,6 +37,9 @@ import {
   getWorkTypeLabels,
   isStudentEligibleForWork,
   isAttemptResultReleased,
+  isAttemptOverdueForExpiry,
+  gradeAnswers,
+  resolveAttemptQuestions,
   type WorkType,
 } from "../../lib/classes";
 import { ExamListSkeleton } from "../../components/ui/Skeleton";
@@ -389,6 +392,7 @@ export default function StudentExaminations() {
           getDocs(collection(dbInst, "jdiExamAttempts")).catch(() => ({ docs: [] } as any))
         )
       );
+      const now = Date.now();
       const attemptsByExam: Record<string, any> = {};
 
       attemptsSnaps.forEach((attemptsSnap) => {
@@ -399,13 +403,55 @@ export default function StudentExaminations() {
             (currentStudentId && a.studentId === currentStudentId) ||
             (currentUid && a.studentId === currentUid)
           ) {
-            const isReleased = isAttemptResultReleased(a);
             const examKey = String(a.examId);
+            const parentExam = rawDocsMap.get(examKey) || examMap.get(examKey);
+            let effectiveStatus = String(a.status || "");
+
+            // Auto-expire overdue in_progress attempts (timer elapsed or dueDate/availableUntil passed on a previous date)
+            if (
+              effectiveStatus === "in_progress" &&
+              isAttemptOverdueForExpiry(a, parentExam, now)
+            ) {
+              effectiveStatus = "expired";
+              const attemptQuestions = resolveAttemptQuestions(parentExam || {}, a);
+              const grading = gradeAnswers(
+                { ...(parentExam || {}), questions: attemptQuestions },
+                a.answers || {}
+              );
+              allDbs.forEach((dbInst) => {
+                setDoc(
+                  doc(dbInst, "jdiExamAttempts", ad.id),
+                  {
+                    status: "expired",
+                    score: grading.score,
+                    maxScore: grading.maxScore,
+                    percentage: grading.percentage,
+                    autoGraded: grading.autoGraded,
+                    questionResults: grading.questionResults,
+                    isOnline: false,
+                    submittedAt: a.submittedAt || serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                  },
+                  { merge: true }
+                ).catch(() => undefined);
+              });
+            }
+
+            const isReleased = isAttemptResultReleased(a);
             const prev = attemptsByExam[examKey];
-            if (!prev || isReleased || !prev.resultReleased) {
+            const isCurrentDone = ["submitted", "completed", "graded", "expired"].includes(
+              effectiveStatus.toLowerCase()
+            );
+            const isPrevDone = prev
+              ? ["submitted", "completed", "graded", "expired"].includes(
+                  String(prev.attemptStatus || "").toLowerCase()
+                )
+              : false;
+
+            if (!prev || isReleased || (isCurrentDone && !isPrevDone) || !prev.resultReleased) {
               attemptsByExam[examKey] = {
                 attemptId: ad.id,
-                attemptStatus: a.status,
+                attemptStatus: effectiveStatus,
                 score: isReleased ? a.score : prev?.score,
                 maxScore: a.maxScore ?? prev?.maxScore,
                 feedback: isReleased ? a.feedback || a.tutorFeedback : prev?.feedback,
@@ -419,7 +465,6 @@ export default function StudentExaminations() {
         });
       });
 
-      const now = Date.now();
       classEligibleExams.forEach((exam: any) => {
         const rawFrom = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
         const from = Number.isFinite(rawFrom) ? rawFrom : 0;
@@ -431,6 +476,18 @@ export default function StudentExaminations() {
         if (from > 0 && until < Number.MAX_SAFE_INTEGER && until <= from) {
           const plus12h = until + 12 * 60 * 60 * 1000;
           until = plus12h > from ? plus12h : Number.MAX_SAFE_INTEGER;
+        }
+
+        // Also check dueDate if set (treat YYYY-MM-DD as end of that day in local time)
+        let dueDateDeadline = Number.MAX_SAFE_INTEGER;
+        if (exam.dueDate) {
+          const rawDueStr = String(exam.dueDate).trim();
+          const parsedDue = /^\d{4}-\d{2}-\d{2}$/.test(rawDueStr)
+            ? new Date(`${rawDueStr}T23:59:59.999`).getTime()
+            : new Date(rawDueStr).getTime();
+          if (Number.isFinite(parsedDue) && parsedDue > 0) {
+            dueDateDeadline = parsedDue;
+          }
         }
 
         const att = attemptsByExam[exam.id] || {};
@@ -445,8 +502,10 @@ export default function StudentExaminations() {
           effectiveAttemptStatus === "expired" ||
           Boolean(att.resultReleased || existingServerItem?.releasedAt);
 
+        const isPastDeadline = now >= until || now > dueDateDeadline;
+
         const computedStatus: "active" | "upcoming" | "completed" =
-          isAttemptSubmittedOrDone || exam.status === "completed" || now >= until
+          isAttemptSubmittedOrDone || exam.status === "completed" || isPastDeadline
             ? "completed"
             : now < from || exam.status === "scheduled"
             ? "upcoming"
@@ -474,8 +533,8 @@ export default function StudentExaminations() {
           status: computedStatus,
           durationMinutes:
             deliveryMode === "EXTERNAL_LINK"
-              ? Number(exam.durationMinutes) || 0
-              : Number(exam.durationMinutes) || 30,
+              ? Math.max(0, Number(exam.durationMinutes) || 0)
+              : Math.max(1, Number(exam.durationMinutes) || 30),
           maxScore,
           questionCount: Array.isArray(exam.questions) ? exam.questions.length : 0,
           seriesName: exam.seriesName,
@@ -490,7 +549,7 @@ export default function StudentExaminations() {
           passcodeHash: exam.passcodeHash,
           questions: exam.questions,
           ...att,
-          ...(existingServerItem?.attemptId
+          ...(existingServerItem?.attemptId && !att.attemptId
             ? {
                 attemptId: existingServerItem.attemptId,
                 attemptStatus: existingServerItem.attemptStatus,
@@ -550,6 +609,10 @@ export default function StudentExaminations() {
     [exams]
   );
   const activeCount = useMemo(() => exams.filter((e) => e.status === "active").length, [exams]);
+  const completedCount = useMemo(
+    () => exams.filter((e) => e.status === "completed").length,
+    [exams]
+  );
 
   // Compute SHA-256 for passcode check
   const computeHash = async (val: string) => {
@@ -726,10 +789,18 @@ export default function StudentExaminations() {
       {/* TABS & REFRESH */}
       <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm space-y-4">
         {/* Clean Work-Type Category Tabs */}
-        <div className="flex items-center gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-slate-800 touch-pan-x">
+        <div className="flex items-center gap-4 sm:gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-slate-800 touch-pan-x">
           {(
             [
-              { id: "ALL", label: "All Assessments" },
+              {
+                id: "ALL",
+                label:
+                  tab === "active"
+                    ? "All Active Assessments"
+                    : tab === "completed"
+                    ? "All Completed Assessments"
+                    : "All Upcoming Assessments",
+              },
               { id: "ASSIGNMENT", label: "Assignments" },
               { id: "ACTIVITY", label: "Activities" },
               { id: "TEST", label: "Tests" },
@@ -737,16 +808,17 @@ export default function StudentExaminations() {
             ] as const
           ).map((wt) => {
             const active = workTypeTab === wt.id;
+            const tabExams = exams.filter((e) => e.status === tab);
             const count =
               wt.id === "ALL"
-                ? exams.length
-                : exams.filter((e) => normalizeWorkType(e.workType, e) === wt.id).length;
+                ? tabExams.length
+                : tabExams.filter((e) => normalizeWorkType(e.workType, e) === wt.id).length;
             return (
               <button
                 key={wt.id}
                 type="button"
                 onClick={() => setWorkTypeTab(wt.id)}
-                className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap shrink-0 transition-colors cursor-pointer flex items-center gap-1.5 ${
                   active
                     ? "text-slate-900 dark:text-white"
                     : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
@@ -772,36 +844,36 @@ export default function StudentExaminations() {
                 <span className="text-blue-700 dark:text-blue-400">{studentInfo.class}</span>
               </span>
             )}
-            <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
-              {(["active", "upcoming", "completed"] as const).map((item) => {
-                const count =
-                  item === "active"
-                    ? activeCount
-                    : item === "upcoming"
-                    ? upcomingCount
-                    : exams.length - activeCount - upcomingCount;
-                return (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setTab(item)}
-                    className={`rounded-xl px-2.5 sm:px-4 py-2.5 text-xs sm:text-sm font-bold capitalize transition-colors text-center ${
-                      tab === item
-                        ? "bg-blue-600 text-white shadow-sm"
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700"
-                    }`}
-                  >
-                    {item} ({count})
-                  </button>
-                );
-              })}
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
+              {(
+                [
+                  { id: "active", label: "All Active Assessments", count: activeCount },
+                  ...(upcomingCount > 0
+                    ? [{ id: "upcoming" as const, label: "Upcoming", count: upcomingCount }]
+                    : []),
+                  { id: "completed", label: "Completed Assessments", count: completedCount },
+                ] as const
+              ).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setTab(item.id)}
+                  className={`rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors text-center cursor-pointer ${
+                    tab === item.id
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  {item.label} ({item.count})
+                </button>
+              ))}
             </div>
           </div>
           <button
             type="button"
             onClick={load}
             disabled={loading}
-            className="w-full sm:w-auto rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 shadow-xs transition-colors cursor-pointer"
+            className="w-full sm:w-auto rounded-xl bg-blue-600 px-5 py-2 text-xs sm:text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 shadow-xs transition-colors cursor-pointer shrink-0"
           >
             {loading ? "Checking Work…" : "Refresh List"}
           </button>
@@ -839,8 +911,15 @@ export default function StudentExaminations() {
 
         {filtered.length === 0 && exams.length > 0 && (
           <p className="py-12 text-center text-sm font-medium text-slate-500 dark:text-slate-400">
-            There are no <span className="font-bold capitalize">{tab}</span> assessments for your
-            class right now.
+            There are no{" "}
+            <span className="font-bold">
+              {tab === "active"
+                ? "active"
+                : tab === "completed"
+                ? "completed"
+                : "upcoming"}
+            </span>{" "}
+            assessments in this category right now.
           </p>
         )}
 
@@ -861,6 +940,7 @@ export default function StudentExaminations() {
               const typeLabels = getWorkTypeLabels(exam.workType, exam);
               const mediaUrl =
                 exam.learningVideoUrl || exam.videoUrl || exam.resourceUrl || "";
+              const submissionDeadlineText = exam.dueDate || exam.availableUntil || "";
 
               return (
                 <article
@@ -951,7 +1031,16 @@ export default function StudentExaminations() {
                         {(!isExternal || exam.durationMinutes > 0) && (
                           <span className="inline-flex items-center gap-1.5">
                             <Clock3 size={15} className="text-slate-400 shrink-0" />
-                            {exam.durationMinutes} minutes
+                            Duration: {exam.durationMinutes} minutes
+                          </span>
+                        )}
+                        {submissionDeadlineText && (
+                          <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
+                            <CalendarDays size={15} className="text-amber-500 shrink-0" />
+                            Submission Deadline:{" "}
+                            {new Date(submissionDeadlineText).toString() !== "Invalid Date"
+                              ? new Date(submissionDeadlineText).toLocaleString()
+                              : submissionDeadlineText}
                           </span>
                         )}
                         {exam.availableFrom && (

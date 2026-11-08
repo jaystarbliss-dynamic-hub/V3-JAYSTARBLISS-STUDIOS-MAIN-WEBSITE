@@ -31,6 +31,9 @@ import {
   normalizeWorkType,
   validateWorkTypeTransition,
   normalizeRecipientTargets,
+  classifyStudentEnrolment,
+  isAttemptOverdueForExpiry,
+  gradeAnswers,
 } from "../../lib/classes";
 import {
   KeyRound,
@@ -165,13 +168,19 @@ type EnrolledStudent = {
   id: string;
   fullName: string;
   studentName?: string;
+  email?: string;
   class?: string;
   className?: string;
   schoolId?: string;
   schoolName?: string;
+  parentId?: string;
   parentName?: string;
+  parentEmail?: string;
+  plan?: string;
   assignmentCategory?: "school" | "private";
   isPrivate?: boolean;
+  privateSubType?: "parent" | "individual" | null;
+  privateLabel?: string;
 };
 
 type EditorTab = "setup" | "questions" | "responses" | "settings" | "directory";
@@ -224,6 +233,7 @@ export default function TutorExaminations() {
   const [dueDate, setDueDate] = useState<string>("");
   const [recipientMode, setRecipientMode] = useState<"SCHOOL_CLASS" | "PRIVATE_LEARNERS" | "MULTI_TARGET">("SCHOOL_CLASS");
   const [privateLearners, setPrivateLearners] = useState<EnrolledStudent[]>([]);
+  const [schoolStudentsList, setSchoolStudentsList] = useState<EnrolledStudent[]>([]);
   const [targetStudentIds, setTargetStudentIds] = useState<string[]>([]);
   const [studentCategoryTab, setStudentCategoryTab] = useState<"all" | "school" | "private">("all");
   const [studentSearchFilter, setStudentSearchFilter] = useState<string>("");
@@ -611,57 +621,106 @@ export default function TutorExaminations() {
         schoolsList.sort((a, b) => a.name.localeCompare(b.name));
 
         const privateMap = new Map<string, EnrolledStudent>();
-        fallbackStudents.forEach((st: any) => {
-          const stClass = normalizeClassName(st.className || st.grade || st.class || "Grade 1");
-          const isPriv =
-            st.assignmentCategory === "private" ||
-            (!st.schoolId && st.assignmentCategory !== "school");
-          privateMap.set(st.id, {
-            id: st.id,
-            fullName: String(st.fullName || st.name || st.studentName || "Learner").trim(),
-            class: stClass,
-            className: stClass,
-            schoolId: String(st.schoolId || "").trim(),
-            schoolName: String(st.schoolName || "").trim(),
-            parentName: String(st.parentName || "").trim(),
-            assignmentCategory: isPriv ? "private" : "school",
-            isPrivate: isPriv,
-          });
-        });
+        const schoolStudentMap = new Map<string, EnrolledStudent>();
 
-        // Also check direct collections in case of impersonation or newly added learners
-        const [indStudentsSnap, stdStudentsSnap] = await Promise.all([
+        // Also check direct collections for parent accounts, individual students, and school students
+        const [indStudentsSnap, stdStudentsSnap, parentsSnap] = await Promise.all([
           getDocs(collection(db, "individualStudents")).catch(() => ({ docs: [] } as any)),
           getDocs(collection(db, "students")).catch(() => ({ docs: [] } as any)),
+          getDocs(collection(db, "parents")).catch(() => ({ docs: [] } as any)),
         ]);
+
+        const knownParentIds = new Set<string>();
+        const knownParentEmails = new Set<string>();
+        const knownParentChildIds = new Set<string>();
+        (parentsSnap.docs || []).forEach((pd: any) => {
+          const p = pd.data() || {};
+          knownParentIds.add(pd.id);
+          if (p.uid) knownParentIds.add(String(p.uid).trim());
+          if (p.email) knownParentEmails.add(String(p.email).trim().toLowerCase());
+          if (Array.isArray(p.children)) {
+            p.children.forEach((c: any) => {
+              const cid = typeof c === "string" ? c.trim() : String(c?.id || "").trim();
+              if (cid) knownParentChildIds.add(cid);
+            });
+          }
+        });
+
+        const registerCandidateStudent = (id: string, raw: Record<string, any>, docSource: string) => {
+          if (!id || !raw) return;
+          const fullName = String(raw.fullName || raw.name || raw.studentName || "").trim();
+          if (!fullName) return;
+          const stClass = normalizeClassName(raw.className || raw.grade || raw.class || "Grade 1") || "Grade 1";
+          const classification = classifyStudentEnrolment(
+            { ...raw, id, docSource },
+            { knownParentIds, knownParentEmails, knownParentChildIds }
+          );
+
+          const entry: EnrolledStudent = {
+            id,
+            fullName,
+            studentName: fullName,
+            email: String(raw.email || raw.studentEmail || "").trim(),
+            class: stClass,
+            className: stClass,
+            schoolId: classification.isSchool ? String(raw.schoolId || raw.school_id || "").trim() : "",
+            schoolName: classification.isSchool ? String(raw.schoolName || raw.school || "").trim() : "",
+            parentId: String(raw.parentId || raw.parentUid || "").trim(),
+            parentName: String(raw.parentName || raw.guardianName || "").trim(),
+            parentEmail: String(raw.parentEmail || raw.guardianEmail || "").trim(),
+            plan: String(raw.plan || raw.programName || raw.track || "").trim(),
+            assignmentCategory: classification.isSchool ? "school" : "private",
+            isPrivate: classification.isPrivate,
+            privateSubType: classification.privateSubType,
+            privateLabel: classification.privateLabel,
+          };
+
+          if (classification.isSchool) {
+            schoolStudentMap.set(id, entry);
+            privateMap.delete(id);
+          } else if (classification.isPrivate) {
+            if (!schoolStudentMap.has(id)) {
+              privateMap.set(id, entry);
+            }
+          }
+        };
+
+        fallbackStudents.forEach((st: any) => {
+          if (!st || !st.id) return;
+          registerCandidateStudent(st.id, st, st.assignmentCategory === "school" ? "students" : "individualStudents");
+        });
+
         const effectiveUid = effectiveAuth.effectiveUid || currentUser.uid;
-        [...(indStudentsSnap.docs || []), ...(stdStudentsSnap.docs || [])].forEach((d: any) => {
-          if (privateMap.has(d.id)) return;
-          const st = d.data();
+        (stdStudentsSnap.docs || []).forEach((d: any) => {
+          const st = d.data() || {};
           const tutorMatch =
             isAdmin ||
             [st.tutorId, st.staffId, st.assignedTutorId, st.assignedStaffId, st.instructorId]
               .map((v) => String(v || "").trim())
-              .includes(effectiveUid);
+              .includes(effectiveUid) ||
+            (st.schoolId && existingSchoolIds.has(String(st.schoolId).trim()));
           if (!tutorMatch) return;
-          const stClass = normalizeClassName(st.className || st.grade || st.class || "Grade 1");
-          const isPriv = !st.schoolId || d.ref?.parent?.id === "individualStudents";
-          privateMap.set(d.id, {
-            id: d.id,
-            fullName: String(st.fullName || st.name || st.studentName || "Private Learner").trim(),
-            class: stClass,
-            className: stClass,
-            schoolId: String(st.schoolId || "").trim(),
-            schoolName: String(st.schoolName || st.school || "").trim(),
-            parentName: String(st.parentName || "").trim(),
-            assignmentCategory: isPriv ? "private" : "school",
-            isPrivate: isPriv,
-          });
+          registerCandidateStudent(d.id, st, "students");
+        });
+
+        (indStudentsSnap.docs || []).forEach((d: any) => {
+          const st = d.data() || {};
+          const tutorMatch =
+            isAdmin ||
+            [st.tutorId, st.staffId, st.assignedTutorId, st.assignedStaffId, st.instructorId]
+              .map((v) => String(v || "").trim())
+              .includes(effectiveUid) ||
+            (st.schoolId && existingSchoolIds.has(String(st.schoolId).trim()));
+          if (!tutorMatch) return;
+          registerCandidateStudent(d.id, st, "individualStudents");
         });
 
         if (isMounted) {
           setPrivateLearners(
             Array.from(privateMap.values()).sort((a, b) => a.fullName.localeCompare(b.fullName))
+          );
+          setSchoolStudentsList(
+            Array.from(schoolStudentMap.values()).sort((a, b) => a.fullName.localeCompare(b.fullName))
           );
           setAssignedSchools(schoolsList);
           if (schoolsList.length > 0 && !schoolId) {
@@ -893,8 +952,43 @@ export default function TutorExaminations() {
       return onSnapshot(
         qAttempts,
         (snapshot) => {
+          const activeExamObj = existingExams.find((e) => e.id === activeId);
+          const nowMs = Date.now();
           const records: ExamAttemptRecord[] = snapshot.docs.map((d) => {
             const at = d.data();
+            let resolvedStatus: ExamAttemptRecord["status"] = at.status || "in_progress";
+            let resolvedScore = at.score;
+            let resolvedMax = at.maxScore;
+            let resolvedPct = at.percentage;
+            let resolvedResults = at.questionResults || [];
+
+            if (
+              resolvedStatus === "in_progress" &&
+              isAttemptOverdueForExpiry(at, activeExamObj, nowMs)
+            ) {
+              resolvedStatus = "expired";
+              if (activeExamObj && Array.isArray(activeExamObj.questions) && activeExamObj.questions.length > 0) {
+                const graded = gradeAnswers(
+                  { gradingMode: activeExamObj.gradingMode, questions: activeExamObj.questions },
+                  at.answers || {}
+                );
+                resolvedScore = graded.score;
+                resolvedMax = graded.maxScore;
+                resolvedPct = graded.percentage;
+                resolvedResults = graded.questionResults;
+              }
+              updateDoc(doc(dbInstance, "jdiExamAttempts", d.id), {
+                status: "expired",
+                isOnline: false,
+                ...(resolvedScore !== undefined ? { score: resolvedScore } : {}),
+                ...(resolvedMax !== undefined ? { maxScore: resolvedMax } : {}),
+                ...(resolvedPct !== undefined ? { percentage: resolvedPct } : {}),
+                ...(resolvedResults.length > 0 ? { questionResults: resolvedResults } : {}),
+                submittedAt: at.submittedAt || at.deadlineAt || new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              }).catch(() => undefined);
+            }
+
             return {
               id: d.id,
               examId: at.examId,
@@ -904,13 +998,13 @@ export default function TutorExaminations() {
               className: at.className || "Grade 1",
               schoolId: at.schoolId,
               schoolName: at.schoolName,
-              status: at.status || "in_progress",
-              score: at.score,
-              maxScore: at.maxScore,
-              percentage: at.percentage,
+              status: resolvedStatus,
+              score: resolvedScore,
+              maxScore: resolvedMax,
+              percentage: resolvedPct,
               answers: at.answers || {},
-              questionResults: at.questionResults || [],
-              isOnline: at.isOnline === true,
+              questionResults: resolvedResults,
+              isOnline: resolvedStatus === "in_progress" && at.isOnline === true,
               lastHeartbeat: at.lastHeartbeat,
               startedAt: at.startedAt,
               submittedAt: at.submittedAt,
@@ -2229,16 +2323,42 @@ ANSWER KEY
   const activePasscode = customPasscode || generatedPasscode;
 
   const formattedPrivateStudents = useMemo(() => {
-    return privateLearners.map((pl) => ({
-      id: pl.id,
-      fullName: pl.fullName || pl.studentName || "Private Learner",
-      class: pl.class,
-      className: pl.className,
-      schoolId: pl.schoolId,
-      schoolName: pl.schoolName,
-      parentName: pl.parentName,
-    }));
+    return privateLearners
+      .filter((pl) => pl.isPrivate !== false && pl.assignmentCategory !== "school")
+      .map((pl) => ({
+        id: pl.id,
+        name: pl.fullName || pl.studentName || "Private Learner",
+        fullName: pl.fullName || pl.studentName || "Private Learner",
+        grade: pl.class || pl.className || "Grade 1",
+        class: pl.class,
+        className: pl.className,
+        email: pl.email,
+        schoolId: "",
+        schoolName: "",
+        parentId: pl.parentId,
+        parentName: pl.parentName,
+        parentEmail: pl.parentEmail,
+        plan: pl.plan,
+        privateSubType: pl.privateSubType,
+        privateLabel: pl.privateLabel,
+        assignmentCategory: "private",
+      }));
   }, [privateLearners]);
+
+  const formattedSchoolStudents = useMemo(() => {
+    return schoolStudentsList.map((st) => ({
+      id: st.id,
+      name: st.fullName || st.studentName || "School Student",
+      fullName: st.fullName || st.studentName || "School Student",
+      grade: st.class || st.className || "Grade 1",
+      class: st.class,
+      className: st.className,
+      email: st.email,
+      schoolId: st.schoolId,
+      schoolName: st.schoolName,
+      assignmentCategory: "school",
+    }));
+  }, [schoolStudentsList]);
 
   const formattedSchools = useMemo(() => {
     return assignedSchools.map((s) => ({
@@ -2389,6 +2509,7 @@ ANSWER KEY
           initialTab={viewMode === "monitor" ? "responses" : "questions"}
           assignedSchools={formattedSchools}
           assignedPrivateStudents={formattedPrivateStudents}
+          assignedSchoolStudents={formattedSchoolStudents}
           questionBankItems={questionBankItems}
           currentUserRole={userRole || (isAdminWorkspace ? "admin" : "tutor")}
           isTutor={!isAdminWorkspace}

@@ -679,7 +679,7 @@ export const handler: Handler = async event => {
       const lockRef = adminDb.collection("jdiAttemptLimits").doc(lockId);
       const attemptId = randomBytes(16).toString("hex");
       const attemptRef = adminDb.collection("jdiExamAttempts").doc(attemptId);
-      const duration = Math.min(300, Math.max(1, Number(exam.durationMinutes || 30)));
+      const duration = Math.min(525600, Math.max(1, Number(exam.durationMinutes || 30)));
       const questions = Array.isArray(exam.questions) ? exam.questions : [];
       const shuffle = <T,>(items: T[]) => {
         const copy = [...items];

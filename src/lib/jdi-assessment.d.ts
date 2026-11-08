@@ -304,3 +304,29 @@ export function getWorkTypeLabels(
   fallbackObj?: Record<string, any> | null
 ): WorkTypeLabels;
 
+export interface StudentEnrolmentClassification {
+  category: "school" | "private_parent" | "private_individual" | "unclassified";
+  isSchool: boolean;
+  isPrivate: boolean;
+  privateSubType: "parent" | "individual" | null;
+  privateLabel: string;
+}
+
+export function classifyStudentEnrolment(
+  studentRecord?: Record<string, any> | null,
+  options?: {
+    docSource?: string;
+    knownSchoolIds?: Set<string> | string[];
+    knownParentIds?: Set<string>;
+    knownParentEmails?: Set<string>;
+    knownParentChildIds?: Set<string>;
+  }
+): StudentEnrolmentClassification;
+
+export function isAttemptOverdueForExpiry(
+  attempt?: Record<string, any> | null,
+  exam?: Record<string, any> | null,
+  nowMs?: number
+): boolean;
+
+

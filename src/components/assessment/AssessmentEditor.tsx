@@ -71,6 +71,7 @@ export interface AssessmentEditorProps {
   isCreatingNew?: boolean;
   assignedSchools: Array<{ id: string; name: string }>;
   assignedPrivateStudents: RecipientPrivateStudent[];
+  assignedSchoolStudents?: RecipientPrivateStudent[];
   questionBankItems: QuestionBankItem[];
   currentUserRole: string;
   isTutor?: boolean;
@@ -96,6 +97,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   isCreatingNew = false,
   assignedSchools,
   assignedPrivateStudents,
+  assignedSchoolStudents = [],
   questionBankItems = [],
   isTutor = false,
   onBackToOverview,
@@ -1762,13 +1764,114 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                                 </div>
                               </div>
 
-                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 space-y-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                                   Student Response:
                                 </span>
-                                <p className="font-semibold whitespace-pre-wrap">
-                                  {rawAns ? String(rawAns) : <span className="italic text-slate-400">No response provided</span>}
-                                </p>
+                                {(() => {
+                                  if (rawAns === undefined || rawAns === null || rawAns === '') {
+                                    return (
+                                      <p className="italic text-slate-400">No response provided</p>
+                                    );
+                                  }
+                                  let displayText = '';
+                                  let linkUrl = '';
+                                  let fileDataUrl = '';
+                                  let fileName = '';
+
+                                  if (typeof rawAns === 'string') {
+                                    const trimmed = rawAns.trim();
+                                    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+                                      try {
+                                        const parsed = JSON.parse(trimmed);
+                                        displayText = String(parsed.textResponse || '').trim();
+                                        linkUrl = String(parsed.linkUrl || '').trim();
+                                        fileDataUrl = String(parsed.fileDataUrl || '').trim();
+                                        fileName = String(parsed.fileName || '').trim();
+                                      } catch {
+                                        displayText = trimmed;
+                                      }
+                                    } else if (/^https?:\/\//i.test(trimmed)) {
+                                      linkUrl = trimmed;
+                                      displayText = trimmed;
+                                    } else {
+                                      displayText = trimmed;
+                                      const match = trimmed.match(/https?:\/\/[^\s"'<>]+/i);
+                                      if (match) linkUrl = match[0];
+                                    }
+                                  } else if (Array.isArray(rawAns)) {
+                                    displayText = rawAns
+                                      .map((id) => {
+                                        const opt = q.options?.find((o) => String(o.id) === String(id));
+                                        return opt ? `${opt.id}. ${opt.text}` : String(id);
+                                      })
+                                      .join(', ');
+                                  } else if (typeof rawAns === 'object') {
+                                    displayText = String((rawAns as any).textResponse || '').trim();
+                                    linkUrl = String((rawAns as any).linkUrl || '').trim();
+                                    fileDataUrl = String((rawAns as any).fileDataUrl || '').trim();
+                                    fileName = String((rawAns as any).fileName || '').trim();
+                                  } else {
+                                    displayText = String(rawAns);
+                                  }
+
+                                  if (
+                                    !linkUrl &&
+                                    !fileDataUrl &&
+                                    ['single_choice', 'true_false', 'dropdown'].includes(q.type)
+                                  ) {
+                                    const opt = q.options?.find(
+                                      (o) => String(o.id) === String(rawAns)
+                                    );
+                                    if (opt) displayText = `${opt.id}. ${opt.text}`;
+                                  }
+
+                                  return (
+                                    <div className="space-y-2">
+                                      {displayText && (
+                                        <p className="font-semibold whitespace-pre-wrap break-words text-slate-900 dark:text-white">
+                                          {displayText}
+                                        </p>
+                                      )}
+                                      {linkUrl && (
+                                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                                          <a
+                                            href={linkUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-700"
+                                          >
+                                            <ExternalLink size={12} />
+                                            Open Submitted Link
+                                          </a>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              navigator.clipboard?.writeText(linkUrl);
+                                              setSaveBannerMessage('Submitted link copied to clipboard!');
+                                            }}
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
+                                          >
+                                            <Copy size={12} />
+                                            Copy Link
+                                          </button>
+                                        </div>
+                                      )}
+                                      {fileDataUrl && (
+                                        <div className="pt-1">
+                                          <a
+                                            href={fileDataUrl}
+                                            download={fileName || 'submitted-file'}
+                                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700"
+                                          >
+                                            <Download size={12} />
+                                            Download Attached File ({fileName || 'Deliverable'})
+                                          </a>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </div>
                           );
@@ -2130,13 +2233,13 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     <input
                       type="number"
                       min={1}
-                      max={300}
+                      max={525600}
                       value={durationMinutes}
                       onChange={(e) => {
                         setDurationMinutes(Math.max(1, Number(e.target.value) || 30));
                         markDirty();
                       }}
-                      className="w-24 h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold text-center bg-white dark:bg-slate-900"
+                      className="w-28 h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold text-center bg-white dark:bg-slate-900"
                     />
                     <span className="text-xs font-semibold text-slate-500">minutes</span>
                   </div>
@@ -2249,6 +2352,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         onClose={() => setShowRecipientModal(false)}
         availableSchools={assignedSchools}
         availablePrivateStudents={assignedPrivateStudents}
+        schoolStudents={assignedSchoolStudents}
         initialSelectedSchoolIds={targetSchoolIds}
         initialSelectedStudentIds={targetStudentIds}
         isTutor={isTutor}
@@ -2256,6 +2360,9 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
           setTargetSchoolIds(res.targetSchoolIds);
           setTargetStudentIds(res.targetStudentIds);
           setRecipientMode(res.recipientMode);
+          if (res.selectedClasses && res.selectedClasses.length > 0) {
+            setTargetClass(res.selectedClasses[0]);
+          }
           markDirty();
           setShowRecipientModal(false);
         }}

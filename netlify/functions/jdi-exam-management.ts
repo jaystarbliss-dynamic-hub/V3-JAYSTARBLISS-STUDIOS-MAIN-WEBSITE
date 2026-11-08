@@ -877,8 +877,8 @@ export const handler: Handler = async event => {
         }
         if (updates.durationMinutes !== undefined) {
           const value = Number(updates.durationMinutes);
-          if (!Number.isInteger(value) || value < 1 || value > 300) {
-            return json(400, { error: "Duration must be a whole number from 1 to 300 minutes." });
+          if (!Number.isInteger(value) || value < 1 || value > 525600) {
+            return json(400, { error: "Duration must be a whole number of at least 1 minute." });
           }
           patch.durationMinutes = value;
         }

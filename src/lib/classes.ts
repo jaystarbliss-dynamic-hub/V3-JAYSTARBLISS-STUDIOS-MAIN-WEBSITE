@@ -33,11 +33,34 @@ import {
   isAttemptResultReleased as sharedIsAttemptResultReleased,
   canViewOrPrintAttemptResult as sharedCanViewOrPrintAttemptResult,
   getWorkTypeLabels as sharedGetWorkTypeLabels,
+  classifyStudentEnrolment as sharedClassifyStudentEnrolment,
+  isAttemptOverdueForExpiry as sharedIsAttemptOverdueForExpiry,
   MANUAL_DELIVERABLE_TYPES as SHARED_MANUAL_DELIVERABLE_TYPES,
   type WorkTypeLabels as SharedWorkTypeLabels,
+  type StudentEnrolmentClassification as SharedStudentEnrolmentClassification,
 } from './jdi-assessment.js';
 
 export const MANUAL_DELIVERABLE_TYPES = SHARED_MANUAL_DELIVERABLE_TYPES;
+export type StudentEnrolmentClassification = SharedStudentEnrolmentClassification;
+
+export function classifyStudentEnrolment(
+  studentRecord?: Record<string, any> | null,
+  options?: {
+    knownParentIds?: Set<string>;
+    knownParentEmails?: Set<string>;
+    knownParentChildIds?: Set<string>;
+  }
+): StudentEnrolmentClassification {
+  return sharedClassifyStudentEnrolment(studentRecord || {}, options);
+}
+
+export function isAttemptOverdueForExpiry(
+  attempt?: Record<string, any> | null,
+  exam?: Record<string, any> | null,
+  nowMs?: number
+): boolean {
+  return sharedIsAttemptOverdueForExpiry(attempt || {}, exam || {}, nowMs);
+}
 
 export type AcademicWorkType = 'ASSIGNMENT' | 'ACTIVITY' | 'TEST' | 'EXAMINATION';
 export type WorkType = AcademicWorkType;

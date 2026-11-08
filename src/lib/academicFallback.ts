@@ -13,7 +13,12 @@ import {
   where,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { buildAttendanceRecordKey, formatNormalizedClassDisplay, resolvePartnerSchoolName } from './classes';
+import {
+  buildAttendanceRecordKey,
+  classifyStudentEnrolment,
+  formatNormalizedClassDisplay,
+  resolvePartnerSchoolName,
+} from './classes';
 import { getEffectiveAuth } from '../utils/impersonation';
 
 const assignmentFields = [
@@ -59,6 +64,9 @@ export interface AcademicStudentRecord {
   accountStatus?: string;
   assignmentCategory: 'school' | 'private';
   isPrivate: boolean;
+  privateSubType?: 'parent' | 'individual' | null;
+  privateLabel?: string;
+  studentType?: 'school' | 'parent' | 'personal';
 }
 
 export interface TutorAssignedContext {
@@ -426,14 +434,14 @@ export async function fetchAcademicStudentsFallback(options?: {
     stdSnap.docs?.forEach((d: any) => {
       const data = d.data() || {};
       if (isStudentAssignedToTutor(d.id, data)) {
-        addDocEntry(d.id, data);
+        addDocEntry(d.id, { docSource: 'students', ...data });
       }
     });
 
     indSnap.docs?.forEach((d: any) => {
       const data = d.data() || {};
       if (isStudentAssignedToTutor(d.id, data)) {
-        addDocEntry(d.id, data);
+        addDocEntry(d.id, { docSource: 'individualStudents', ...data });
       }
     });
 
@@ -461,6 +469,7 @@ export async function fetchAcademicStudentsFallback(options?: {
             tutorId: data.tutorId || ctx.uid,
             tutorName: data.tutorName || ctx.name,
             studentType: 'parent',
+            docSource: 'enrollment_requests',
           });
         }
       }
@@ -477,8 +486,8 @@ export async function fetchAcademicStudentsFallback(options?: {
         () => null
       ),
     ]);
-    indSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
-    stdSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
+    indSnap?.docs.forEach((d) => addDocEntry(d.id, { docSource: 'individualStudents', ...d.data() }));
+    stdSnap?.docs.forEach((d) => addDocEntry(d.id, { docSource: 'students', ...d.data() }));
 
     if (parentEmail) {
       const [indEmailSnap, stdEmailSnap] = await Promise.all([
@@ -489,8 +498,8 @@ export async function fetchAcademicStudentsFallback(options?: {
           query(collection(db, 'students'), where('parentEmail', '==', parentEmail), limit(100))
         ).catch(() => null),
       ]);
-      indEmailSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
-      stdEmailSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
+      indEmailSnap?.docs.forEach((d) => addDocEntry(d.id, { docSource: 'individualStudents', ...d.data() }));
+      stdEmailSnap?.docs.forEach((d) => addDocEntry(d.id, { docSource: 'students', ...d.data() }));
     }
   } else if (role.includes('SCHOOL')) {
     const sid = String(
@@ -507,7 +516,7 @@ export async function fetchAcademicStudentsFallback(options?: {
       const snap = await getDocs(
         query(collection(db, colName), where('schoolId', '==', sid), limit(400))
       ).catch(() => null);
-      snap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
+      snap?.docs.forEach((d) => addDocEntry(d.id, { docSource: colName, ...d.data() }));
     }
   } else if (role.includes('STUDENT')) {
     const candidateId = String(
@@ -520,7 +529,7 @@ export async function fetchAcademicStudentsFallback(options?: {
     if (candidateId) {
       for (const colName of ['individualStudents', 'students'] as const) {
         const snap = await getDoc(doc(db, colName, candidateId)).catch(() => null);
-        if (snap?.exists()) addDocEntry(snap.id, snap.data());
+        if (snap?.exists()) addDocEntry(snap.id, { docSource: colName, ...snap.data() });
       }
     }
     if (docs.size === 0 && uid) {
@@ -528,7 +537,7 @@ export async function fetchAcademicStudentsFallback(options?: {
         const snap = await getDocs(
           query(collection(db, colName), where('firebaseUid', '==', uid), limit(10))
         ).catch(() => null);
-        snap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
+        snap?.docs.forEach((d) => addDocEntry(d.id, { docSource: colName, ...d.data() }));
       }
     }
   } else if (role.includes('ADMIN')) {
@@ -544,8 +553,8 @@ export async function fetchAcademicStudentsFallback(options?: {
         resolvePartnerSchoolName(sd.name, sd.schoolName, sd.institutionName) || d.id
       );
     });
-    stdSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
-    indSnap?.docs.forEach((d) => addDocEntry(d.id, d.data()));
+    stdSnap?.docs.forEach((d) => addDocEntry(d.id, { docSource: 'students', ...d.data() }));
+    indSnap?.docs.forEach((d) => addDocEntry(d.id, { docSource: 'individualStudents', ...d.data() }));
   }
 
   // Deduplicate by normalized name + schoolId/parentId if duplicate IDs exist across collections
@@ -556,7 +565,14 @@ export async function fetchAcademicStudentsFallback(options?: {
     const schoolId = String(s.schoolId || s.school_id || '').trim();
     const schoolName =
       String(s.schoolName || (schoolId ? schoolNameMap.get(schoolId) : '') || '').trim();
-    const isSchoolStudent = Boolean(schoolId && schoolId !== 'private');
+    const enrolment = classifyStudentEnrolment({
+      ...s,
+      schoolId,
+      schoolName,
+    });
+    const isSchoolStudent = enrolment.isSchool;
+    const isPrivateStudent = enrolment.isPrivate;
+
     const normalizedClass = formatNormalizedClassDisplay(
       s.class || s.className || s.grade || s.classLevel,
       'Grade 1'
@@ -576,9 +592,9 @@ export async function fetchAcademicStudentsFallback(options?: {
       grade: normalizedClass,
       plan,
       track: plan,
-      schoolId,
+      schoolId: isSchoolStudent ? schoolId : '',
       schoolName: isSchoolStudent ? schoolName || 'Partner School' : '',
-      parentId: String(s.parentId || '').trim(),
+      parentId: String(s.parentId || s.parentUid || '').trim(),
       parentName: String(s.parentName || s.guardianName || '').trim(),
       parentEmail: String(s.parentEmail || s.guardianEmail || '').trim(),
       tutorId: String(
@@ -590,7 +606,14 @@ export async function fetchAcademicStudentsFallback(options?: {
       portalAccessEnabled: s.portalAccessEnabled !== false,
       accountStatus: String(s.accountStatus || s.status || 'ACTIVE').toUpperCase(),
       assignmentCategory: isSchoolStudent ? 'school' : 'private',
-      isPrivate: !isSchoolStudent,
+      isPrivate: isPrivateStudent,
+      privateSubType: enrolment.privateSubType,
+      privateLabel: enrolment.privateLabel,
+      studentType: isSchoolStudent
+        ? 'school'
+        : enrolment.privateSubType === 'parent'
+        ? 'parent'
+        : 'personal',
     };
 
     deduplicated.set(s.id, record);

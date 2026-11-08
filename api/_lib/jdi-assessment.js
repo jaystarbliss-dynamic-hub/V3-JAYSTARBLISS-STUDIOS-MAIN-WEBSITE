@@ -657,7 +657,7 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
       ? Number(body.durationMinutes)
       : 0;
     const durationMinutes =
-      rawDuration !== null && Number.isFinite(rawDuration) && rawDuration >= 1 && rawDuration <= 300
+      rawDuration !== null && Number.isFinite(rawDuration) && rawDuration >= 1 && rawDuration <= 525600
         ? Math.round(rawDuration)
         : 0;
 
@@ -678,10 +678,10 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
     };
   }
 
-  // NATIVE examination validation
+  // NATIVE examination validation (supports any positive whole-number duration up to 525,600 minutes / 1 year)
   const durationMinutes = Number(body.durationMinutes ?? existingDoc?.durationMinutes ?? 30);
-  if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 300) {
-    return { error: "Provide a whole-number duration from 1 to 300 minutes." };
+  if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 525600) {
+    return { error: "Provide a whole-number duration of at least 1 minute." };
   }
 
   let rawQuestions = Array.isArray(body.questions) ? body.questions : [];
@@ -1095,8 +1095,8 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
   const recipientMode = String(workItem.recipientMode || "").toUpperCase();
   const audienceType = String(workItem.audienceType || "").toLowerCase();
   if (
-    (recipientMode === "PRIVATE_LEARNERS" || recipientMode === "PRIVATE" || audienceType === "individual") &&
-    targetStudentIds.length > 0
+    targetStudentIds.length > 0 &&
+    recipientMode !== "MULTI_TARGET"
   ) {
     return false;
   }
@@ -1111,6 +1111,13 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
       .map(s => String(s ?? "").trim().toLowerCase())
       .filter(s => s && s !== "private" && s !== "none")
   );
+
+  if (
+    (recipientMode === "PRIVATE_LEARNERS" || recipientMode === "PRIVATE" || audienceType === "individual") &&
+    studentSchoolKeys.size > 0
+  ) {
+    return false;
+  }
 
   const workSchoolIds = [
     ...(Array.isArray(workItem.targetSchoolIds) ? workItem.targetSchoolIds : []),
@@ -1579,3 +1586,179 @@ export function getWorkTypeLabels(input = null, fallbackObj = null) {
   const normalized = normalizeWorkType(rawType, sourceObj);
   return WORK_TYPE_LABEL_MAP[normalized] || WORK_TYPE_LABEL_MAP.EXAMINATION;
 }
+
+export function classifyStudentEnrolment(studentRecord = {}, options = {}) {
+  const s = studentRecord && typeof studentRecord === "object" ? studentRecord : {};
+  const rawType = String(s.studentType || "").trim().toLowerCase();
+  const rawCategory = String(s.assignmentCategory || "").trim().toLowerCase();
+  const rawSource = String(s.source || s.docSource || "").trim().toLowerCase();
+  const rawSchoolId = String(s.schoolId || s.school_id || "").trim();
+  const rawSchoolIdLower = rawSchoolId.toLowerCase();
+  const rawSchoolName = String(s.schoolName || s.school || s.institutionName || "").trim();
+  const rawSchoolNameLower = rawSchoolName.toLowerCase();
+
+  const nonSchoolTokens = new Set([
+    "",
+    "private",
+    "private mentorship",
+    "private learner",
+    "private learners",
+    "private student",
+    "independent",
+    "personal",
+    "individual",
+    "parent",
+    "none",
+    "null",
+    "undefined",
+    "jaystarbliss dynamic innovations",
+    "jaystarbliss studios",
+  ]);
+
+  const hasValidSchoolId = Boolean(rawSchoolId && !nonSchoolTokens.has(rawSchoolIdLower));
+  const hasValidSchoolName = Boolean(rawSchoolName && !nonSchoolTokens.has(rawSchoolNameLower));
+  const isBulkSchoolSource = rawSource.includes("school");
+
+  if (
+    rawType === "school" ||
+    rawCategory === "school" ||
+    hasValidSchoolId ||
+    hasValidSchoolName ||
+    isBulkSchoolSource
+  ) {
+    return {
+      category: "school",
+      isSchool: true,
+      isPrivate: false,
+      privateSubType: null,
+      privateLabel: "",
+    };
+  }
+
+  const parentId = String(s.parentId || s.parentUid || s.parent_id || "").trim();
+  const parentEmail = String(s.parentEmail || s.guardianEmail || "").trim().toLowerCase();
+  const parentName = String(s.parentName || s.guardianName || "").trim();
+  const knownParentIds = options?.knownParentIds instanceof Set ? options.knownParentIds : null;
+  const knownParentEmails = options?.knownParentEmails instanceof Set ? options.knownParentEmails : null;
+  const knownParentChildIds = options?.knownParentChildIds instanceof Set ? options.knownParentChildIds : null;
+  const docId = String(s.id || s.studentDocId || s.studentId || "").trim();
+
+  const isParentLinked =
+    rawType === "parent" ||
+    Boolean(parentId) ||
+    Boolean(parentEmail) ||
+    Boolean(parentName) ||
+    Boolean(s.enrollmentRequestId) ||
+    rawSource.includes("parent") ||
+    Boolean(docId && knownParentChildIds && knownParentChildIds.has(docId)) ||
+    Boolean(parentId && knownParentIds && knownParentIds.has(parentId)) ||
+    Boolean(parentEmail && knownParentEmails && knownParentEmails.has(parentEmail));
+
+  if (isParentLinked) {
+    return {
+      category: "private_parent",
+      isSchool: false,
+      isPrivate: true,
+      privateSubType: "parent",
+      privateLabel: "Parent-Enrolled Private",
+    };
+  }
+
+  const email = String(s.email || s.studentEmail || "").trim().toLowerCase();
+  const isSyntheticSchoolEmail = email.endsWith("@jbs-portal.local") && !rawSource.includes("admin") && !rawType;
+  const deliveryType = String(s.deliveryType || s.billingModel || s.teachingMode || "").trim().toUpperCase();
+  const hasAssignedTutor = Boolean(
+    s.tutorId ||
+      s.assignedTutorId ||
+      s.staffId ||
+      s.assignedStaffId ||
+      s.instructorId ||
+      (Array.isArray(s.assignedTutors) && s.assignedTutors.length > 0)
+  );
+  const hasExplicitProgram = Boolean(
+    (Array.isArray(s.selectedProgramIds) && s.selectedProgramIds.length > 0) ||
+      (Array.isArray(s.assignedProgramIds) && s.assignedProgramIds.length > 0) ||
+      s.programId ||
+      s.plan ||
+      s.track
+  );
+
+  const isIndividualPrivate =
+    !isSyntheticSchoolEmail &&
+    (["personal", "individual", "independent", "private"].includes(rawType) ||
+      rawCategory === "private" ||
+      s.isPrivate === true ||
+      rawSchoolIdLower === "private" ||
+      rawSource === "individualstudents" ||
+      rawSource === "admin_onboarding" ||
+      Boolean(deliveryType) ||
+      hasAssignedTutor ||
+      (Boolean(email) && !email.endsWith("@jbs-portal.local")) ||
+      hasExplicitProgram);
+
+  if (isIndividualPrivate) {
+    return {
+      category: "private_individual",
+      isSchool: false,
+      isPrivate: true,
+      privateSubType: "individual",
+      privateLabel: "Individual Private",
+    };
+  }
+
+  return {
+    category: "unclassified",
+    isSchool: false,
+    isPrivate: false,
+    privateSubType: null,
+    privateLabel: "",
+  };
+}
+
+export function isAttemptOverdueForExpiry(attempt = {}, exam = {}, nowMs = Date.now()) {
+  if (!attempt || String(attempt.status || "").trim().toLowerCase() !== "in_progress") {
+    return false;
+  }
+
+  if (attempt.deadlineAt) {
+    const attemptDeadlineMs = new Date(attempt.deadlineAt).getTime();
+    if (Number.isFinite(attemptDeadlineMs) && nowMs >= attemptDeadlineMs) {
+      return true;
+    }
+  }
+
+  const startOfToday = new Date(nowMs);
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfTodayMs = startOfToday.getTime();
+
+  const rawClosing =
+    exam?.availableUntil ||
+    exam?.dueDate ||
+    attempt?.availableUntil ||
+    attempt?.dueDate ||
+    null;
+
+  if (rawClosing) {
+    const rawStr = typeof rawClosing === "string" ? rawClosing.trim() : "";
+    const parsedMs =
+      typeof rawClosing?.toDate === "function"
+        ? rawClosing.toDate().getTime()
+        : new Date(rawClosing).getTime();
+
+    if (Number.isFinite(parsedMs)) {
+      const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(rawStr);
+      if (isDateOnly) {
+        if (parsedMs < startOfTodayMs) {
+          return true;
+        }
+      } else {
+        if (parsedMs < startOfTodayMs || nowMs >= parsedMs) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
