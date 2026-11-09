@@ -25,3 +25,203 @@ export function isStaffRole(role:BillingRole){return["tutor","staff"].includes(r
 export function isActiveRecord(data:Record<string,any>){return!["SUSPENDED","BANNED","DISABLED","INACTIVE"].includes(String(data.accountStatus||data.status||"ACTIVE").toUpperCase());}
 export async function resolveTutorFromStudent(studentId:string){for(const collectionName of["individualStudents","students"]){const ref=adminDb.collection(collectionName).doc(studentId);const snap=await ref.get();if(!snap.exists)continue;const data=snap.data()||{};const tutorId=String(data.tutorId||data.staffId||data.assignedTutorId||data.assignedStaffId||data.instructorId||"").trim();if(!tutorId)return{studentRef:ref,student:data,tutorId:""};return{studentRef:ref,student:data,tutorId};}return null;}
 export function addWeeks(date:Date,weeks:number){const next=new Date(date.getTime());next.setDate(next.getDate()+Number(weeks)*7);return next;}
+
+const SUCCESSFUL_PAYMENT_STATUSES = new Set([
+  "SUCCESS",
+  "SUCCESSFUL",
+  "PAID",
+  "COMPLETED",
+  "APPROVED",
+  "CONFIRMED",
+  "VERIFIED"
+]);
+
+const PARTIAL_PAYMENT_STATUSES = new Set([
+  "PARTIALLY_PAID",
+  "PARTIAL"
+]);
+
+export function isSuccessfulPaymentStatus(status: unknown): boolean {
+  const normalized = String(status ?? "").trim().toUpperCase();
+  if (!normalized) return false;
+  return SUCCESSFUL_PAYMENT_STATUSES.has(normalized);
+}
+
+export function isPartiallyPaidStatus(status: unknown): boolean {
+  const normalized = String(status ?? "").trim().toUpperCase();
+  if (!normalized) return false;
+  return PARTIAL_PAYMENT_STATUSES.has(normalized);
+}
+
+export function isSuccessfulPaymentRecord(payment: Record<string, any> | null | undefined): boolean {
+  if (!payment || typeof payment !== "object") return false;
+  return isSuccessfulPaymentStatus(payment.status ?? payment.paymentStatus);
+}
+
+export function extractPaymentAmountNaira(payment: Record<string, any> | null | undefined): number {
+  if (!payment || typeof payment !== "object") return 0;
+  for (const key of ["customerTotal", "totalAmount", "amountPaid", "grossAmount"]) {
+    const val = Number(payment[key]);
+    if (Number.isFinite(val) && val > 0) return Number(val.toFixed(2));
+  }
+  const base = Number(payment.baseAmount);
+  const fee = Number(payment.transactionFee || 0);
+  if (Number.isFinite(base) && base > 0) {
+    return Number((base + (Number.isFinite(fee) && fee > 0 ? fee : 0)).toFixed(2));
+  }
+  const rawAmount = Number(payment.amount);
+  if (!Number.isFinite(rawAmount) || rawAmount <= 0) return 0;
+  const providerMinor = Number(payment.providerAmount || payment.amountMinor || 0);
+  const looksLikeLegacyKobo =
+    (providerMinor > 0 && rawAmount === providerMinor && !payment.amountInNaira) ||
+    (Boolean(payment.gatewayFeeVerified || payment.verifiedBy) && !payment.amountInNaira && rawAmount >= 100000 && rawAmount % 100 === 0);
+  const naira = looksLikeLegacyKobo ? rawAmount / 100 : rawAmount;
+  return Number(naira.toFixed(2));
+}
+
+export function extractPaymentBaseAmountNaira(payment: Record<string, any> | null | undefined): number {
+  if (!payment || typeof payment !== "object") return 0;
+  const base = Number(payment.baseAmount);
+  if (Number.isFinite(base) && base > 0) return Number(base.toFixed(2));
+  const total = extractPaymentAmountNaira(payment);
+  const fee = Number(payment.transactionFee || 0);
+  if (total > 0 && Number.isFinite(fee) && fee > 0 && total > fee) {
+    return Number((total - fee).toFixed(2));
+  }
+  return total;
+}
+
+export async function resolveTrustedStudentFeeAndTutor(params: {
+  student: Record<string, any>;
+  programId?: string;
+  programName?: string;
+  config: PaymentConfig;
+  parentBilling?: Record<string, any> | null;
+}): Promise<{
+  amount: number;
+  tutorId: string;
+  tutorName: string;
+  programId: string;
+  programName: string;
+}> {
+  const { student, programId, programName, config, parentBilling } = params;
+  const studentTutorId = String(
+    student.tutorId ||
+    student.staffId ||
+    student.assignedTutorId ||
+    student.assignedStaffId ||
+    student.instructorId ||
+    ""
+  ).trim();
+  const studentTutorName = String(
+    student.tutorName ||
+    student.assignedTutorName ||
+    student.instructorName ||
+    ""
+  ).trim();
+
+  const enrolledList = Array.isArray(student.enrolledPrograms)
+    ? student.enrolledPrograms
+    : Array.isArray(student.programs)
+      ? student.programs
+      : [];
+
+  const targetPid = String(programId || "").trim();
+  const targetPName = String(programName || "").trim().toLowerCase();
+
+  let matchedProg: Record<string, any> | null = null;
+  if (enrolledList.length > 0) {
+    for (const rawProg of enrolledList) {
+      if (rawProg && typeof rawProg === "object") {
+        const pId = String(rawProg.id || rawProg.programId || "").trim();
+        const pTitle = String(rawProg.title || rawProg.name || rawProg.programName || "").trim().toLowerCase();
+        if ((targetPid && pId === targetPid) || (targetPName && pTitle === targetPName)) {
+          matchedProg = rawProg;
+          break;
+        }
+      }
+    }
+    if (!matchedProg && enrolledList.length === 1 && typeof enrolledList[0] === "object") {
+      matchedProg = enrolledList[0];
+    }
+  }
+
+  let resolvedAmount = 0;
+  let resolvedTutorId = studentTutorId;
+  let resolvedTutorName = studentTutorName;
+  let resolvedProgramId = targetPid || String(student.programId || student.planId || "assigned_student_plan").trim();
+  let resolvedProgramName =
+    String(programName || student.programName || student.programTitle || student.course || student.track || student.plan || "Assigned Tuition Plan").trim();
+
+  if (matchedProg) {
+    const progFee = Number(matchedProg.remainingBalance ?? matchedProg.tuitionFee ?? matchedProg.price ?? matchedProg.fee ?? matchedProg.amount ?? 0);
+    if (Number.isFinite(progFee) && progFee > 0) resolvedAmount = progFee;
+    if (matchedProg.tutorId || matchedProg.assignedTutorId) {
+      resolvedTutorId = String(matchedProg.tutorId || matchedProg.assignedTutorId).trim();
+    }
+    if (matchedProg.tutorName || matchedProg.assignedTutorName) {
+      resolvedTutorName = String(matchedProg.tutorName || matchedProg.assignedTutorName).trim();
+    }
+    if (matchedProg.id || matchedProg.programId) {
+      resolvedProgramId = String(matchedProg.id || matchedProg.programId).trim();
+    }
+    if (matchedProg.title || matchedProg.name || matchedProg.programName) {
+      resolvedProgramName = String(matchedProg.title || matchedProg.name || matchedProg.programName).trim();
+    }
+  }
+
+  // Check Firestore programs collection if amount is still 0 and we have a program ID
+  if (resolvedAmount <= 0 && resolvedProgramId && !resolvedProgramId.startsWith("prog_") && resolvedProgramId !== "assigned_student_plan") {
+    const progSnap = await adminDb.collection("programs").doc(resolvedProgramId).get().catch(() => null);
+    if (progSnap && progSnap.exists) {
+      const pData = progSnap.data() || {};
+      const dbProgFee = Number(pData.tuitionFee ?? pData.price ?? pData.fee ?? pData.amount ?? 0);
+      if (Number.isFinite(dbProgFee) && dbProgFee > 0) resolvedAmount = dbProgFee;
+      if (!resolvedTutorId && (pData.tutorId || pData.leadTutorId)) {
+        resolvedTutorId = String(pData.tutorId || pData.leadTutorId).trim();
+      }
+      if (pData.title || pData.name) {
+        resolvedProgramName = String(pData.title || pData.name).trim();
+      }
+    }
+  }
+
+  // Check student's own configured fee or remaining balance (if partially paid)
+  if (resolvedAmount <= 0) {
+    const isPartial = isPartiallyPaidStatus(student.paymentStatus ?? student.status);
+    const remaining = Number(student.remainingBalance ?? 0);
+    const studentFee = isPartial && remaining > 0
+      ? remaining
+      : Number(student.tuitionFee ?? student.fee ?? student.amount ?? student.price ?? 0);
+    if (Number.isFinite(studentFee) && studentFee > 0) {
+      resolvedAmount = studentFee;
+    }
+  }
+
+  // Check static/configured payment plan on student or requested programId
+  if (resolvedAmount <= 0) {
+    const candidatePlanId = String(student.planId || resolvedProgramId || "").trim();
+    const planFromConfig = config.plans[candidatePlanId];
+    if (planFromConfig && Number(planFromConfig.baseAmount) > 0) {
+      resolvedAmount = Number(planFromConfig.baseAmount);
+      resolvedProgramId = planFromConfig.id;
+      resolvedProgramName = planFromConfig.name;
+    }
+  }
+
+  // Fallback to parent's admin-assigned billing record if present
+  if (resolvedAmount <= 0 && parentBilling && Number(parentBilling.baseAmount) > 0 && String(parentBilling.status || "ACTIVE").toUpperCase() !== "DISABLED") {
+    const isPartial = isPartiallyPaidStatus(parentBilling.status);
+    const remaining = Number(parentBilling.remainingBalance ?? 0);
+    resolvedAmount = isPartial && remaining > 0 ? remaining : Number(parentBilling.baseAmount);
+  }
+
+  return {
+    amount: Math.max(0, Number(resolvedAmount.toFixed(2))),
+    tutorId: resolvedTutorId,
+    tutorName: resolvedTutorName,
+    programId: resolvedProgramId,
+    programName: resolvedProgramName
+  };
+}
+

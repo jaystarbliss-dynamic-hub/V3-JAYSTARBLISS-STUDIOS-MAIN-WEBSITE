@@ -6,6 +6,7 @@ import {
   ChevronDown, TrendingUp
 } from 'lucide-react';
 import { db, auth } from '../../lib/firebase';
+import { isSuccessfulPaymentRecord, extractPaymentBaseAmountNaira } from '../../lib/billing';
 import SEO from '../../components/ui/SEO';
 
 const money = (value: number) => `₦${Math.round(value || 0).toLocaleString('en-NG')}`;
@@ -83,8 +84,8 @@ const AdminReports: React.FC = () => {
 
   const data = useMemo(() => {
     const u = scoped(users), s = scoped(schools), st = scoped(students), p = scoped(payments), i = scoped(inquiries), a = scoped(activity);
-    const successfulPayments = p.filter(x => ['success','successful','paid','confirmed','completed'].includes(String(x.status || x.paymentStatus || '').toLowerCase()));
-    const revenue = successfulPayments.reduce((sum, x) => sum + Number(x.baseAmount ?? x.amount ?? x.total ?? 0), 0);
+    const successfulPayments = p.filter(x => isSuccessfulPaymentRecord(x) && x.type !== 'transfer_to' && x.type !== 'outflow');
+    const revenue = successfulPayments.reduce((sum, x) => sum + extractPaymentBaseAmountNaira(x), 0);
     return { 
       users: u, 
       schools: s, 

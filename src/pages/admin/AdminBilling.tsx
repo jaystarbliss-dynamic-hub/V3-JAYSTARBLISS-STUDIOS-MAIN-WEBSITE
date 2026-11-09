@@ -9,10 +9,20 @@ import {
   Sliders, UserCheck, AlertCircle, ExternalLink,
   ChevronDown, ChevronUp, Settings, User, BookOpen
 } from 'lucide-react';
-import { billingGet, billingPost, dateLabel, formatNaira } from '../../lib/billing';
+import {
+  billingGet,
+  billingPost,
+  dateLabel,
+  formatNaira,
+  isSuccessfulPaymentStatus,
+  isPartiallyPaidStatus,
+  isSuccessfulPaymentRecord,
+  extractPaymentAmountNaira,
+  extractPaymentBaseAmountNaira
+} from '../../lib/billing';
 import SEO from '../../components/ui/SEO';
 import { useToast } from '../../contexts/ToastContext';
-import { collection, getDocs, doc, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { FintechTransactionHistory } from '../../components/portal/FintechTransactionHistory';
 import { FintechWithdrawalModal } from '../../components/portal/FintechWithdrawalModal';
@@ -21,7 +31,7 @@ import { TransferToTutorModal } from '../../components/portal/TransferToTutorMod
 import { ParentTuitionModal } from '../../components/portal/ParentTuitionModal';
 import type { UnifiedParentStudent } from '../../components/portal/ParentTuitionModal';
 import { TutorAllocationModal } from '../../components/portal/TutorAllocationModal';
-import { formatCurrency, generatePdfReceipt } from '../../lib/receiptGenerator';
+import { formatCurrency, generatePdfReceipt, generatePdfStatement } from '../../lib/receiptGenerator';
 import type { TransactionReceiptData } from '../../lib/receiptGenerator';
 
 export interface ParentFamilyGroup {
@@ -411,11 +421,10 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
   // Calculations for Financial Metrics
   const plans = Object.values((data.config?.plans || {}) as Record<string, Plan>);
   
-  // Normalized Paid Payments
+  // Normalized Paid / Partially Paid Payments (never default missing status to PAID)
   const paid = useMemo(() => {
     return (data.payments || []).filter((p: any) => {
-      const st = String(p.status || p.paymentStatus || 'PAID').toUpperCase();
-      return ['PAID', 'SUCCESS', 'SUCCESSFUL', 'COMPLETED', 'APPROVED', 'VERIFIED'].includes(st);
+      return isSuccessfulPaymentRecord(p) || isPartiallyPaidStatus(p.status ?? p.paymentStatus);
     });
   }, [data.payments]);
 
@@ -423,8 +432,7 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
   const withdrawals = useMemo(() => data.withdrawals || [], [data.withdrawals]);
   const paidWithdrawals = useMemo(() => {
     return withdrawals.filter((w: any) => {
-      const st = String(w.status || '').toUpperCase();
-      return ['PAID', 'SUCCESS', 'SUCCESSFUL', 'COMPLETED'].includes(st);
+      return isSuccessfulPaymentStatus(w.status);
     });
   }, [withdrawals]);
 
@@ -433,9 +441,7 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
     return paid.reduce((sum: number, p: any) => {
       const isOutflow = p.type === 'transfer_to' || p.type === 'outflow' || p.category === 'transfer_to';
       if (isOutflow) return sum;
-      const raw = Number(p.customerTotal || p.amount || p.baseAmount || p.totalAmount || 0);
-      const normalized = raw > 10000000 ? raw / 100 : raw; // Handle kobo format if stored as kobo
-      return sum + normalized;
+      return sum + extractPaymentAmountNaira(p);
     }, 0);
   }, [paid]);
 
@@ -444,9 +450,7 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
     return paid.reduce((sum: number, p: any) => {
       const isTransfer = p.type === 'transfer_to' || p.category === 'transfer_to';
       if (!isTransfer) return sum;
-      const raw = Number(p.amount || p.customerTotal || p.baseAmount || 0);
-      const normalized = raw > 10000000 ? raw / 100 : raw;
-      return sum + normalized;
+      return sum + extractPaymentAmountNaira(p);
     }, 0);
   }, [paid]);
 
@@ -458,12 +462,12 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
     return paid.reduce((sum: number, p: any) => sum + Number(p.transactionFee || 0), 0);
   }, [paid]);
 
-  // Tutor Allocations
+  // Tutor Allocations (strictly use tutorPayoutRate / baseAmount so Paystack gateway fees are never added to tutor payouts)
   const tutorAllocated = useMemo(() => {
     return paid.reduce((sum: number, p: any) => {
       if (p.tutorId || p.assignedTutorId || p.type === 'transfer_to' || p.category === 'transfer_to') {
-        const raw = Number(p.baseAmount || p.customerTotal || p.amount || 0);
-        return sum + (raw > 10000000 ? raw / 100 : raw);
+        const alloc = Number(p.tutorPayoutRate || p.walletCreditedAmount || extractPaymentBaseAmountNaira(p));
+        return sum + alloc;
       }
       return sum;
     }, 0);
@@ -497,11 +501,15 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
       const k = monthKey(p.paidAt || p.updatedAt || p.createdAt);
       if (!k) return;
       map[k] ??= { gross: 0, gatewayFees: 0, tutorAllocated: 0, withdrawals: 0, withdrawalFees: 0, transactions: 0 };
-      const amt = Number(p.customerTotal || p.amount || p.baseAmount || 0);
-      map[k].gross += amt > 10000000 ? amt / 100 : amt;
-      map[k].gatewayFees += Number(p.transactionFee || 0);
-      map[k].tutorAllocated += (p.tutorId || p.type === 'transfer_to') ? amt : 0;
-      map[k].transactions++;
+      const isOutflow = p.type === 'transfer_to' || p.type === 'outflow' || p.category === 'transfer_to';
+      const amt = extractPaymentAmountNaira(p);
+      const baseAmt = Number(p.tutorPayoutRate || p.walletCreditedAmount || extractPaymentBaseAmountNaira(p));
+      if (!isOutflow) {
+        map[k].gross += amt;
+        map[k].gatewayFees += Number(p.transactionFee || 0);
+        map[k].transactions++;
+      }
+      map[k].tutorAllocated += (p.tutorId || p.assignedTutorId || isOutflow) ? baseAmt : 0;
     });
     paidWithdrawals.forEach((w: any) => {
       const k = monthKey(w.paidAt || w.updatedAt || w.createdAt);
@@ -517,22 +525,23 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
     }));
   }, [paid, paidWithdrawals]);
 
-  // Format transactions for FintechTransactionHistory
+  // Format all transactions for FintechTransactionHistory (preserving pending/failed/partial statuses and never defaulting missing status to PAID)
   const formattedTransactions: TransactionReceiptData[] = useMemo(() => {
-    return paid.map((p: any) => {
-      const amt = Number(p.customerTotal || p.amount || p.baseAmount || 0);
-      const isTransferToTutor = p.type === 'transfer_to' || p.category === 'transfer_to' || Boolean(p.tutorId);
+    return (data.payments || []).map((p: any) => {
+      const amt = extractPaymentAmountNaira(p);
+      const baseAmt = extractPaymentBaseAmountNaira(p);
+      const isTransferToTutor = p.type === 'transfer_to' || p.category === 'transfer_to';
       const isSchoolTuition = p.category === 'school_tuition' || Boolean(p.schoolId);
 
       return {
         ...p,
         id: p.id || p.reference || `TXN-${Math.random().toString(36).slice(2, 8)}`,
         reference: p.reference || p.id,
-        amount: amt > 10000000 ? amt / 100 : amt,
-        customerTotal: amt > 10000000 ? amt / 100 : amt,
-        baseAmount: p.baseAmount || (amt > 10000000 ? amt / 100 : amt),
+        amount: amt,
+        customerTotal: amt,
+        baseAmount: baseAmt,
         transactionFee: Number(p.transactionFee || 0),
-        status: p.status || 'PAID',
+        status: String(p.status ?? p.paymentStatus ?? 'UNKNOWN').toUpperCase() || 'UNKNOWN',
         paidAt: p.paidAt || p.createdAt,
         type: isTransferToTutor ? 'outflow' : (p.type || 'inflow'),
         category: isTransferToTutor ? 'transfer_to' : (isSchoolTuition ? 'school_tuition' : (p.category || 'parent_tuition')),
@@ -549,44 +558,67 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
         metadata: p.metadata || {}
       };
     });
-  }, [paid]);
+  }, [data.payments]);
 
 
   // Action: Transfer to Tutor Wallet
   const handleTransferToTutor = async (tutorId: string, tutorName: string, amount: number, notes: string) => {
     try {
-      // 1. Update tutor's wallet in Firestore
-      const walletRef = doc(db, 'staffWallets', tutorId);
-      await setDoc(walletRef, {
-        staffId: tutorId,
-        staffName: tutorName,
-        availableBalance: increment(amount),
-        lifetimeEarned: increment(amount),
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      const txReference = `TRF-TUTOR-${tutorId.slice(0, 6)}-${Date.now()}`;
+      try {
+        await billingPost('billing-admin', {
+          action: 'transfer_to_tutor',
+          tutorId,
+          amount,
+          description: notes || `Direct Transfer to Faculty Wallet (${tutorName})`,
+          reference: txReference
+        });
+      } catch (serverErr: any) {
+        const msg = serverErr?.message || '';
+        if (
+          msg.includes('Invalid') ||
+          msg.includes('already') ||
+          msg.includes('not found') ||
+          msg.includes('Forbidden')
+        ) {
+          throw serverErr;
+        }
+        // Safe local fallback checking for duplicate reference first
+        const existingTx = await getDoc(doc(db, 'payments', txReference));
+        if (existingTx.exists()) {
+          throw new Error('This transfer reference has already been processed.');
+        }
+        const walletRef = doc(db, 'staffWallets', tutorId);
+        await setDoc(walletRef, {
+          staffId: tutorId,
+          staffName: tutorName,
+          availableBalance: increment(amount),
+          lifetimeEarned: increment(amount),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
 
-      // 2. Record transfer transaction in payments collection
-      const paymentRef = doc(collection(db, 'payments'));
-      await setDoc(paymentRef, {
-        type: 'transfer_to',
-        category: 'transfer_to',
-        source: 'treasury',
-        destination: 'tutor_wallet',
-        tutorId,
-        tutorName,
-        amount,
-        customerTotal: amount,
-        baseAmount: amount,
-        status: 'PAID',
-        description: notes || `Direct Transfer to Faculty Wallet (${tutorName})`,
-        plan: 'Faculty Allocation',
-        payerName: 'Platform Treasury',
-        reference: `TRF-TUTOR-${Date.now()}`,
-        paidAt: new Date().toISOString(),
-        createdAt: serverTimestamp()
-      });
+        await setDoc(doc(db, 'payments', txReference), {
+          type: 'transfer_to',
+          category: 'transfer_to',
+          source: 'treasury',
+          destination: 'tutor_wallet',
+          tutorId,
+          tutorName,
+          amount,
+          amountInNaira: true,
+          customerTotal: amount,
+          baseAmount: amount,
+          status: 'PAID',
+          description: notes || `Direct Transfer to Faculty Wallet (${tutorName})`,
+          plan: 'Faculty Allocation',
+          payerName: 'Platform Treasury',
+          reference: txReference,
+          paidAt: new Date().toISOString(),
+          createdAt: serverTimestamp()
+        });
+      }
 
-      // 3. Dispatch Notification to Tutor
+      // Dispatch Notification to Tutor
       const notifRef = doc(collection(db, 'notifications'));
       await setDoc(notifRef, {
         recipientId: tutorId,
@@ -595,7 +627,7 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
         type: 'WALLET_CREDIT',
         read: false,
         createdAt: serverTimestamp()
-      });
+      }).catch(() => undefined);
 
       toast.success(`Successfully transferred ₦${amount.toLocaleString()} to ${tutorName}'s wallet.`);
       await load();
@@ -627,63 +659,93 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
       });
       toast.success(`Treasury disbursal of ₦${payoutData.amount.toLocaleString()} to ${payoutData.bankName} initiated!`);
       await load();
-    } catch {
-      // Fallback to Firestore record
-      await setDoc(doc(collection(db, 'withdrawals')), {
-        type: 'ADMIN_TREASURY_DISBURSAL',
-        amount: payoutData.amount,
-        fee: payoutData.fee,
-        netAmount: payoutData.netAmount,
-        bankCode: payoutData.bankCode,
-        bankName: payoutData.bankName,
-        accountNumber: payoutData.accountNumber,
-        accountName: payoutData.accountName,
-        status: 'completed',
-        createdAt: serverTimestamp()
-      });
-      toast.success(`Disbursal recorded successfully in Platform Treasury.`);
-      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Treasury disbursal failed. Paystack transfer could not be confirmed.');
+      throw err;
     }
   };
 
-  // Action: Assign Tutor to Invoiced Payment
+  // Action: Assign Tutor to Invoiced Payment (idempotent & supports safe reassignment)
   const assignTutor = async (payment: any, tutorId: string) => {
-    if (!tutorId) return;
+    if (!tutorId || !payment?.id) return;
     setSaving(payment.id);
     const tutor = (data.staff || []).find((s: any) => s.id === tutorId);
     const tutorName = tutor?.name || 'Assigned Tutor';
 
     try {
-      // Update payment in Firestore
-      if (payment.id) {
-        await updateDoc(doc(db, 'payments', payment.id), {
+      try {
+        await billingPost('billing-admin', {
+          action: 'assign_tutor',
+          paymentId: payment.id,
+          tutorId,
+          studentId: payment.studentId
+        });
+      } catch (serverErr: any) {
+        const msg = serverErr?.message || '';
+        if (
+          msg.includes('only be assigned') ||
+          msg.includes('not found') ||
+          msg.includes('already withdrawn') ||
+          msg.includes('Forbidden')
+        ) {
+          throw serverErr;
+        }
+        // Safe local fallback with duplicate credit protection and reassignment reversal
+        const payRef = doc(db, 'payments', payment.id);
+        const freshPaySnap = await getDoc(payRef);
+        const freshPay = freshPaySnap.exists() ? freshPaySnap.data() : payment;
+
+        if (!isSuccessfulPaymentRecord(freshPay) && !isPartiallyPaidStatus(freshPay.status ?? freshPay.paymentStatus)) {
+          throw new Error('Tutor can only be assigned to a verified paid or partially paid invoice.');
+        }
+
+        const prevTutorId = String(freshPay.tutorId || '');
+        const alreadyCredited = Boolean(freshPay.walletCredited);
+        if (prevTutorId === tutorId && alreadyCredited) {
+          toast.success(`Invoice is already allocated to ${tutorName}.`);
+          await load();
+          return;
+        }
+
+        const allocAmount = Number(
+          freshPay.tutorPayoutRate || freshPay.walletCreditedAmount || extractPaymentBaseAmountNaira(freshPay)
+        );
+
+        if (alreadyCredited && prevTutorId && prevTutorId !== tutorId && allocAmount > 0) {
+          const prevWalletRef = doc(db, 'staffWallets', prevTutorId);
+          const prevSnap = await getDoc(prevWalletRef);
+          const prevAvail = Number(prevSnap.data()?.availableBalance || 0);
+          if (prevAvail < allocAmount) {
+            throw new Error('Cannot reassign tutor: previous tutor has already withdrawn these funds.');
+          }
+          await setDoc(prevWalletRef, {
+            availableBalance: increment(-allocAmount),
+            lifetimeEarned: increment(-allocAmount),
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        }
+
+        if (allocAmount > 0 && (!alreadyCredited || prevTutorId !== tutorId)) {
+          const walletRef = doc(db, 'staffWallets', tutorId);
+          await setDoc(walletRef, {
+            staffId: tutorId,
+            staffName: tutorName,
+            availableBalance: increment(allocAmount),
+            lifetimeEarned: increment(allocAmount),
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        }
+
+        await setDoc(payRef, {
           tutorId,
           tutorName,
+          walletCredited: allocAmount > 0,
+          walletCreditedAmount: allocAmount,
           allocatedAt: serverTimestamp()
-        }).catch(async () => {
-          await setDoc(doc(db, 'payments', payment.id), {
-            ...payment,
-            tutorId,
-            tutorName,
-            allocatedAt: serverTimestamp()
-          }, { merge: true });
-        });
-      }
-
-      // Automatically credit tutor's wallet for this invoice
-      const allocAmount = Number(payment.baseAmount || payment.customerTotal || payment.amount || 0);
-      if (allocAmount > 0) {
-        const walletRef = doc(db, 'staffWallets', tutorId);
-        await setDoc(walletRef, {
-          staffId: tutorId,
-          staffName: tutorName,
-          availableBalance: increment(allocAmount),
-          lifetimeEarned: increment(allocAmount),
-          updatedAt: serverTimestamp()
         }, { merge: true });
       }
 
-      toast.success(`Allocated invoice to ${tutorName} and credited faculty wallet.`);
+      toast.success(`Allocated invoice to ${tutorName} and updated faculty wallet.`);
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Unable to allocate tutor.');
@@ -709,7 +771,7 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
       status: school.billing?.status || 'ACTIVE'
     });
     setOfflinePaymentDraft({
-      amount: String(school.billing?.baseAmount || 0),
+      amount: String(school.billing?.remainingBalance || school.billing?.baseAmount || 0),
       reference: `TX-BANK-${Date.now().toString().slice(-6)}`,
       date: new Date().toISOString().slice(0, 10),
       payerName: school.name || '',
@@ -794,53 +856,117 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
       }
 
       const txRef = offlinePaymentDraft.reference.trim() || `TX-OFFLINE-${Date.now()}`;
-      const paymentRecord = {
-        schoolId: selectedSchoolWorkspace.id,
-        schoolName: selectedSchoolWorkspace.name,
-        payerName: offlinePaymentDraft.payerName || selectedSchoolWorkspace.name,
-        payerEmail: selectedSchoolWorkspace.contactEmail || selectedSchoolWorkspace.email || '',
-        amount: payAmount,
-        customerTotal: payAmount,
-        baseAmount: payAmount,
-        transactionFee: 0,
-        type: 'inflow',
-        category: 'school_tuition',
-        status: 'PAID',
-        method: 'bank_transfer',
-        channel: 'bank_transfer',
-        reference: txRef,
-        description: offlinePaymentDraft.description || `Institutional Tuition - ${selectedSchoolWorkspace.name}`,
-        notes: offlinePaymentDraft.notes,
-        paidAt: offlinePaymentDraft.date ? new Date(offlinePaymentDraft.date).toISOString() : new Date().toISOString(),
-        createdAt: serverTimestamp()
-      };
-
-      // Save to payments collection
-      await setDoc(doc(db, 'payments', txRef), paymentRecord);
-
-      // Also record in school doc
-      const currentSchoolPayments = Array.isArray(selectedSchoolWorkspace.billing?.payments) 
-        ? selectedSchoolWorkspace.billing.payments 
+      const contractAmount = Math.max(
+        0,
+        Number(selectedSchoolWorkspace.billing?.baseAmount || 0)
+      );
+      const currentSchoolPayments = Array.isArray(selectedSchoolWorkspace.billing?.payments)
+        ? selectedSchoolWorkspace.billing.payments
         : [];
-      
-      const updatedBilling = {
-        ...(selectedSchoolWorkspace.billing || {}),
-        lastPaymentDate: paymentRecord.paidAt,
-        lastPaymentAmount: payAmount,
-        status: 'PAID',
-        payments: [paymentRecord, ...currentSchoolPayments]
-      };
+      const previouslyPaid = currentSchoolPayments.reduce((sum: number, p: any) => {
+        const st = String(p?.status || '').toUpperCase();
+        if (['PAID', 'SUCCESS', 'SUCCESSFUL', 'COMPLETED', 'PARTIALLY_PAID', 'PARTIAL'].includes(st)) {
+          return sum + Number(p?.amount || p?.baseAmount || 0);
+        }
+        return sum;
+      }, 0);
+      const cumulativePaid = previouslyPaid + payAmount;
+      const isPartial = contractAmount > 0 && cumulativePaid < contractAmount;
+      const remainingBalance = isPartial ? Math.max(0, contractAmount - cumulativePaid) : 0;
+      const resolvedStatus = isPartial ? 'PARTIALLY_PAID' : 'PAID';
+      const paidAtIso = offlinePaymentDraft.date
+        ? new Date(offlinePaymentDraft.date).toISOString()
+        : new Date().toISOString();
 
-      await updateDoc(doc(db, 'schools', selectedSchoolWorkspace.id), {
-        billing: updatedBilling,
-        updatedAt: serverTimestamp()
-      });
+      try {
+        await billingPost('billing-admin', {
+          action: 'record_offline_payment',
+          targetType: 'SCHOOL',
+          schoolId: selectedSchoolWorkspace.id,
+          schoolName: selectedSchoolWorkspace.name,
+          payerName: offlinePaymentDraft.payerName || selectedSchoolWorkspace.name,
+          payerEmail: selectedSchoolWorkspace.contactEmail || selectedSchoolWorkspace.email || '',
+          amount: payAmount,
+          contractAmount,
+          reference: txRef,
+          paymentDate: paidAtIso,
+          description: offlinePaymentDraft.description || `Institutional Tuition - ${selectedSchoolWorkspace.name}`,
+          notes: offlinePaymentDraft.notes
+        });
+      } catch (serverErr: any) {
+        const msg = serverErr?.message || '';
+        if (msg.includes('already exists') || msg.includes('Invalid') || msg.includes('Forbidden')) {
+          throw serverErr;
+        }
+        // Safe local fallback: never overwrite an existing transaction reference
+        const existingSnap = await getDoc(doc(db, 'payments', txRef));
+        if (existingSnap.exists()) {
+          throw new Error(`A transaction with reference "${txRef}" already exists. Cannot overwrite existing payment.`);
+        }
 
-      toast.success(`Offline bank payment of ${formatNaira(payAmount)} successfully recorded for ${selectedSchoolWorkspace.name}!`);
+        const paymentRecord = {
+          schoolId: selectedSchoolWorkspace.id,
+          schoolName: selectedSchoolWorkspace.name,
+          payerName: offlinePaymentDraft.payerName || selectedSchoolWorkspace.name,
+          payerEmail: selectedSchoolWorkspace.contactEmail || selectedSchoolWorkspace.email || '',
+          amount: payAmount,
+          amountInNaira: true,
+          customerTotal: payAmount,
+          baseAmount: payAmount,
+          fullContractAmount: contractAmount || payAmount,
+          remainingBalance,
+          transactionFee: 0,
+          type: 'inflow',
+          category: 'school_tuition',
+          status: resolvedStatus,
+          paymentStatus: resolvedStatus,
+          method: 'bank_transfer',
+          channel: 'bank_transfer',
+          reference: txRef,
+          description: offlinePaymentDraft.description || `Institutional Tuition - ${selectedSchoolWorkspace.name}`,
+          notes: offlinePaymentDraft.notes,
+          paidAt: paidAtIso,
+          createdAt: serverTimestamp()
+        };
+
+        await setDoc(doc(db, 'payments', txRef), paymentRecord);
+
+        const updatedBilling = {
+          ...(selectedSchoolWorkspace.billing || {}),
+          baseAmount: contractAmount || payAmount,
+          lastPaymentDate: paidAtIso,
+          lastPaymentAmount: payAmount,
+          remainingBalance,
+          status: resolvedStatus,
+          payments: [paymentRecord, ...currentSchoolPayments]
+        };
+
+        await updateDoc(doc(db, 'schools', selectedSchoolWorkspace.id), {
+          billing: updatedBilling,
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      const freshSchoolSnap = await getDoc(doc(db, 'schools', selectedSchoolWorkspace.id)).catch(() => null);
+      const updatedBilling = freshSchoolSnap?.exists()
+        ? freshSchoolSnap.data()?.billing
+        : {
+            ...(selectedSchoolWorkspace.billing || {}),
+            lastPaymentDate: paidAtIso,
+            lastPaymentAmount: payAmount,
+            remainingBalance,
+            status: resolvedStatus
+          };
+
+      toast.success(
+        isPartial
+          ? `Partial bank settlement of ${formatNaira(payAmount)} recorded (${formatNaira(remainingBalance)} remaining).`
+          : `Offline bank payment of ${formatNaira(payAmount)} successfully recorded for ${selectedSchoolWorkspace.name}!`
+      );
       
       // Reset draft
       setOfflinePaymentDraft({
-        amount: String(selectedSchoolWorkspace.billing?.baseAmount || 0),
+        amount: String(remainingBalance > 0 ? remainingBalance : (selectedSchoolWorkspace.billing?.baseAmount || 0)),
         reference: `TX-BANK-${Date.now().toString().slice(-6)}`,
         date: new Date().toISOString().slice(0, 10),
         payerName: selectedSchoolWorkspace.name,
@@ -1088,8 +1214,12 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
             type="button"
             onClick={() => {
               if (formattedTransactions.length > 0) {
-                generatePdfReceipt(formattedTransactions[0]);
-                toast.success('Generated official financial statement PDF');
+                generatePdfStatement(formattedTransactions, {
+                  title: 'Platform Treasury & Monthly Statement'
+                });
+                toast.success(`Generated financial statement PDF (${formattedTransactions.length} transactions)`);
+              } else {
+                toast.error('No transactions available to export.');
               }
             }}
             className="min-h-9 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs inline-flex items-center gap-1.5 transition-all shadow-sm"
@@ -2824,7 +2954,17 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
         userName="Platform Treasury"
         userEmail="admin@jaystarbliss-studios.name.ng"
         onPaystackTopUp={async (amt) => {
-          toast.success(`Platform Treasury direct deposit of ₦${amt.toLocaleString()} initiated via Paystack.`);
+          const result = await billingPost<any>('paystack-initialize', {
+            role: 'admin',
+            planId: 'treasury_topup',
+            planName: 'Platform Treasury Funding',
+            amount: amt
+          });
+          if (result?.authorizationUrl) {
+            window.location.assign(result.authorizationUrl);
+          } else {
+            throw new Error('Paystack checkout URL was not returned by the payment server.');
+          }
         }}
       />
     </>

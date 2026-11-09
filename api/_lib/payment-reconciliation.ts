@@ -1,9 +1,52 @@
 import { adminDb } from "./firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
-import { calculateCustomerCharge, getFeePolicy, getPaymentConfig, normaliseRole } from "./billing";
+import {
+  calculateCustomerCharge,
+  getFeePolicy,
+  getPaymentConfig,
+  normaliseRole,
+  isPartiallyPaidStatus,
+  resolveTrustedStudentFeeAndTutor,
+  PaymentPlan
+} from "./billing";
 import { createPortalNotification } from "./email";
 
 const asString = (value: unknown) => String(value ?? "").trim();
+
+async function verifyAndLoadStudent(studentId: string, ownerId: string, ownerRole: "parent" | "school" | "student", ownerEmail?: string) {
+  if (!studentId) return null;
+  const emailNorm = asString(ownerEmail).toLowerCase();
+  for (const colName of ["individualStudents", "students"]) {
+    const snap = await adminDb.collection(colName).doc(studentId).get();
+    if (!snap.exists) continue;
+    const data = snap.data() || {};
+    let owned = false;
+    if (ownerRole === "student") {
+      owned = asString(data.firebaseUid || data.userId) === ownerId;
+    } else if (ownerRole === "school") {
+      owned = asString(data.schoolId) === ownerId;
+    } else {
+      const sParentId = asString(data.parentId || data.parentUid || data.parentUserId);
+      const sParentEmail = asString(data.parentEmail || data.guardianEmail).toLowerCase();
+      owned = (Boolean(sParentId) && sParentId === ownerId) || (Boolean(emailNorm) && sParentEmail === emailNorm);
+      if (!owned) {
+        const [uSnap, pSnap] = await Promise.all([
+          adminDb.collection("users").doc(ownerId).get().catch(() => null),
+          adminDb.collection("parents").doc(ownerId).get().catch(() => null)
+        ]);
+        const hasChild = (docData: any) => {
+          if (!docData) return false;
+          const list = [...(Array.isArray(docData.children) ? docData.children : []), ...(Array.isArray(docData.linkedStudentIds) ? docData.linkedStudentIds : [])];
+          return list.some((it: any) => asString(it && typeof it === "object" ? it.id || it.studentId : it) === studentId);
+        };
+        owned = hasChild(uSnap?.exists ? uSnap.data() : null) || hasChild(pSnap?.exists ? pSnap.data() : null);
+      }
+    }
+    if (!owned) throw new Error("PAYMENT_STUDENT_OWNER_MISMATCH");
+    return { id: snap.id, ...data };
+  }
+  throw new Error("STUDENT_NOT_FOUND");
+}
 
 export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string) {
   const reference = asString(tx.reference);
@@ -16,61 +59,6 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
   if (verifiedUserId && userId !== verifiedUserId) throw new Error("PAYMENT_OWNER_MISMATCH");
 
   const config = await getPaymentConfig();
-  const userSnapForBilling = await adminDb.collection("users").doc(userId).get();
-  const userForBilling = userSnapForBilling.exists ? userSnapForBilling.data() || {} : {};
-  let assignedBilling = userForBilling.billing || null;
-  if (requestedRole === "school") {
-    const assignedSchoolId = asString(userForBilling.schoolId);
-    if (assignedSchoolId) {
-      const assignedSchoolSnap = await adminDb.collection("schools").doc(assignedSchoolId).get();
-      if (assignedSchoolSnap.exists && assignedSchoolSnap.data()?.billing) {
-        assignedBilling = assignedSchoolSnap.data()?.billing;
-      }
-    }
-  }
-
-  let plan = config.plans[planId];
-
-  // Admin-assigned billing is authoritative at reconciliation too. This protects
-  // against a generic frontend plan ID being paired with an admin-assigned fee.
-  if (assignedBilling && Number(assignedBilling.baseAmount) > 0 && String(assignedBilling.status || "ACTIVE").toUpperCase() !== "DISABLED") {
-    const cycle = asString(assignedBilling.cycle || "monthly").toLowerCase();
-    plan = {
-      id: asString(assignedBilling.planId || planId || "assigned_plan"),
-      name: asString(assignedBilling.planName || metadata.planName || (requestedRole === "school" ? "Fees/Payments" : "Assigned Tuition Plan")),
-      role: requestedRole === "school" ? "school" : "student",
-      baseAmount: Number(assignedBilling.baseAmount),
-      durationWeeks: cycle === "termly" ? 12 : 4,
-      teachingModes: ["Standard Delivery", "Hybrid / Physical"],
-      description: "Admin-assigned billing plan",
-      active: true
-    };
-  }
-
-  // Resolve admin-assigned or custom billing plan if not found in static config or marked inactive
-  if (!plan || !plan.active) {
-    const metadataBase = Number(metadata.baseAmount || 0);
-    const txAmountBase = Number(tx.amount || 0) / 100;
-    const baseAmount = metadataBase > 0 ? metadataBase : txAmountBase;
-    if (baseAmount > 0) {
-      plan = {
-        id: planId || "assigned_plan",
-        name: asString(metadata.planName || metadata.plan || (requestedRole === "school" ? "Institutional Partner Fee" : "Assigned Tuition Plan")),
-        role: (requestedRole === "school" || (plan && plan.role === "school")) ? "school" : "student",
-        baseAmount,
-        durationWeeks: Number(metadata.durationWeeks || (requestedRole === "school" ? 4 : 4)),
-        teachingModes: ["Standard Delivery", "Hybrid / Physical"],
-        description: "Admin-assigned institutional / tuition plan",
-        active: true
-      };
-    } else if (plan) {
-      // If plan existed in config but had active:false, activate it for this assigned payment
-      plan = { ...plan, active: true };
-    } else {
-      throw new Error("PAYMENT_PLAN_INVALID");
-    }
-  }
-
   const userSnap = await adminDb.collection("users").doc(userId).get();
   if (!userSnap.exists) throw new Error("PAYMENT_USER_NOT_FOUND");
   const userRecord = userSnap.data() || {};
@@ -78,6 +66,202 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
   if (requestedRole && requestedRole !== authoritativeRole) throw new Error("PAYMENT_ROLE_MISMATCH");
   const role = authoritativeRole;
   if (!["parent", "school", "student"].includes(role)) throw new Error("PAYMENT_ROLE_INVALID");
+
+  let assignedBilling: Record<string, any> | null = userRecord.billing || null;
+  let schoolDocData: Record<string, any> | null = null;
+  const resolvedSchoolId = role === "school" ? asString(userRecord.schoolId || metadata.schoolId || userId) : asString(metadata.schoolId);
+
+  if (role === "school" && resolvedSchoolId) {
+    const assignedSchoolSnap = await adminDb.collection("schools").doc(resolvedSchoolId).get();
+    if (assignedSchoolSnap.exists) {
+      schoolDocData = assignedSchoolSnap.data() || {};
+      if (schoolDocData.billing) {
+        assignedBilling = schoolDocData.billing;
+      }
+    }
+  }
+
+  let plan: PaymentPlan | undefined = config.plans[planId];
+  let verifiedSelectedItems: Array<{
+    id: string;
+    childId: string;
+    childName: string;
+    programId: string;
+    programName: string;
+    tutorId: string;
+    tutorName: string;
+    amount: number;
+  }> = [];
+  let verifiedPrimaryTutorId = "";
+  let fullSchoolContractAmount = 0;
+  let remainingSchoolBalance = 0;
+
+  // 1. Authoritative resolution for parent multi-item tuition checkout
+  if (role === "parent" && Array.isArray(metadata.selectedItems) && metadata.selectedItems.length > 0) {
+    for (const rawItem of metadata.selectedItems) {
+      const cId = asString(rawItem?.childId);
+      if (!cId) throw new Error("PAYMENT_METADATA_INVALID");
+      const studentDoc: Record<string, any> | null = await verifyAndLoadStudent(cId, userId, "parent", userRecord.email);
+      if (!studentDoc) throw new Error("STUDENT_NOT_FOUND");
+      const resolved = await resolveTrustedStudentFeeAndTutor({
+        student: studentDoc,
+        programId: asString(rawItem?.programId),
+        programName: asString(rawItem?.programName),
+        config,
+        parentBilling: assignedBilling
+      });
+      if (resolved.amount <= 0) throw new Error("PAYMENT_PLAN_INVALID");
+      verifiedSelectedItems.push({
+        id: asString(rawItem?.id || `${cId}_${resolved.programId}`),
+        childId: cId,
+        childName: asString(studentDoc.fullName || studentDoc.studentName || studentDoc.name || rawItem?.childName || "Enrolled Child"),
+        programId: resolved.programId,
+        programName: resolved.programName,
+        tutorId: resolved.tutorId,
+        tutorName: resolved.tutorName || "Assigned Tutor",
+        amount: resolved.amount
+      });
+    }
+    const totalVerifiedBase = Number(verifiedSelectedItems.reduce((acc, it) => acc + it.amount, 0).toFixed(2));
+    verifiedPrimaryTutorId = verifiedSelectedItems[0]?.tutorId || "";
+    const uniqueNames = Array.from(new Set(verifiedSelectedItems.map(i => i.childName).filter(Boolean)));
+    plan = {
+      id: "parent_multi_tuition",
+      name: asString(metadata.planName || (uniqueNames.length > 0 ? `Tuition: ${uniqueNames.join(", ")}` : "Tuition Settlement")),
+      role: "student",
+      baseAmount: totalVerifiedBase,
+      durationWeeks: 4,
+      teachingModes: ["Standard Delivery", "Hybrid / Physical"],
+      description: "Verified multi-programme parent tuition settlement",
+      active: true
+    };
+  }
+
+  // 2. Authoritative resolution for single student / parent payment
+  if ((role === "parent" || role === "student") && verifiedSelectedItems.length === 0) {
+    const targetSid = role === "student"
+      ? asString(userRecord.studentDocId || metadata.studentId)
+      : asString(metadata.studentId);
+
+    if (targetSid) {
+      const studentDoc: Record<string, any> | null = await verifyAndLoadStudent(targetSid, userId, role, userRecord.email);
+      if (studentDoc) {
+        const resolved = await resolveTrustedStudentFeeAndTutor({
+          student: studentDoc,
+          programId: planId,
+          programName: asString(metadata.planName),
+          config,
+          parentBilling: assignedBilling
+        });
+        verifiedPrimaryTutorId = resolved.tutorId;
+        if (resolved.amount > 0) {
+          plan = {
+            id: resolved.programId || planId || "assigned_student_plan",
+            name: resolved.programName || asString(metadata.planName || "Assigned Tuition Plan"),
+            role: "student",
+            baseAmount: resolved.amount,
+            durationWeeks: 4,
+            teachingModes: ["Standard Delivery", "Hybrid / Physical"],
+            description: "Database-verified student tuition plan",
+            active: true
+          };
+        }
+      }
+    }
+
+    if (!plan && enrollmentRequestId) {
+      const enrSnap = await adminDb.collection("enrollment_requests").doc(enrollmentRequestId).get();
+      if (enrSnap.exists) {
+        const enrData = enrSnap.data() || {};
+        const enrAmount = Number(enrData.tuitionFee ?? enrData.fee ?? enrData.amount ?? enrData.paymentBaseAmount ?? 0);
+        verifiedPrimaryTutorId = verifiedPrimaryTutorId || asString(enrData.tutorId);
+        if (enrAmount > 0) {
+          plan = {
+            id: asString(enrData.planId || planId || "assigned_enrollment_plan"),
+            name: asString(enrData.paymentPlanName || enrData.programName || enrData.plan || metadata.planName || "Assigned Tuition Plan"),
+            role: "student",
+            baseAmount: enrAmount,
+            durationWeeks: Number(enrData.durationWeeks || 4),
+            teachingModes: ["Standard Delivery", "Hybrid / Physical"],
+            description: "Database-verified enrollment plan",
+            active: true
+          };
+        }
+      }
+    }
+  }
+
+  // 3. Authoritative resolution for school payment (including valid 100% / 70% / 50% installments)
+  if (role === "school") {
+    let schoolBase = Number(assignedBilling?.baseAmount || 0);
+    let schoolPlanName = asString(assignedBilling?.planName || metadata.planName || "School Learning Partnership");
+    if (schoolBase <= 0 && schoolDocData && Array.isArray(schoolDocData.programs)) {
+      const matchedProg = schoolDocData.programs.find((p: any) => p && typeof p === "object" && (p.id === planId || p.programId === planId)) || schoolDocData.programs[0];
+      if (matchedProg && typeof matchedProg === "object") {
+        schoolBase = Number(matchedProg.price ?? matchedProg.tuitionFee ?? matchedProg.fee ?? matchedProg.amount ?? 0);
+        schoolPlanName = asString(matchedProg.title || matchedProg.name || schoolPlanName);
+      }
+    }
+    if (schoolBase <= 0 && config.plans[planId]?.role === "school") {
+      schoolBase = Number(config.plans[planId].baseAmount);
+      schoolPlanName = config.plans[planId].name;
+    }
+
+    if (schoolBase > 0) {
+      fullSchoolContractAmount = schoolBase;
+      const isPartial = isPartiallyPaidStatus(assignedBilling?.status);
+      const existingRemaining = Number(assignedBilling?.remainingBalance || 0);
+      const metaPct = Number(metadata.paymentPercentage || 100);
+      const validPct = [100, 70, 50].includes(metaPct) ? metaPct : 100;
+
+      let expectedPayable = schoolBase;
+      if (isPartial && existingRemaining > 0 && validPct === 100) {
+        expectedPayable = existingRemaining;
+        remainingSchoolBalance = 0;
+      } else if (validPct < 100) {
+        expectedPayable = Number(((schoolBase * validPct) / 100).toFixed(2));
+        remainingSchoolBalance = Number(Math.max(0, schoolBase - expectedPayable).toFixed(2));
+      }
+
+      const cycle = asString(assignedBilling?.cycle || "termly").toLowerCase();
+      plan = {
+        id: asString(assignedBilling?.planId || planId || "school_assigned_plan"),
+        name: schoolPlanName,
+        role: "school",
+        baseAmount: expectedPayable,
+        durationWeeks: cycle === "termly" ? 12 : 4,
+        teachingModes: ["Standard Delivery", "Hybrid / Physical"],
+        description: "Admin-assigned school billing plan",
+        active: true
+      };
+    }
+  }
+
+  // 4. Fallback to admin-assigned billing on user record if not yet resolved
+  if (!plan && assignedBilling && Number(assignedBilling.baseAmount) > 0 && asString(assignedBilling.status || "ACTIVE").toUpperCase() !== "DISABLED") {
+    const cycle = asString(assignedBilling.cycle || "monthly").toLowerCase();
+    const isPartial = isPartiallyPaidStatus(assignedBilling.status);
+    const existingRemaining = Number(assignedBilling.remainingBalance || 0);
+    const expectedBase = isPartial && existingRemaining > 0 ? existingRemaining : Number(assignedBilling.baseAmount);
+    plan = {
+      id: asString(assignedBilling.planId || planId || "assigned_plan"),
+      name: asString(assignedBilling.planName || metadata.planName || (role === "school" ? "School Learning Partnership" : "Assigned Tuition Plan")),
+      role: role === "school" ? "school" : "student",
+      baseAmount: expectedBase,
+      durationWeeks: cycle === "termly" ? 12 : 4,
+      teachingModes: ["Standard Delivery", "Hybrid / Physical"],
+      description: "Admin-assigned billing plan",
+      active: true
+    };
+  }
+
+  if (plan && !plan.active) {
+    plan = { ...plan, active: true };
+  }
+  if (!plan || !(Number(plan.baseAmount) > 0)) {
+    throw new Error("PAYMENT_PLAN_INVALID");
+  }
+
   if (role === "school" && plan.role !== "school") throw new Error("PAYMENT_PLAN_ROLE_MISMATCH");
   if (role !== "school" && plan.role !== "student") throw new Error("PAYMENT_PLAN_ROLE_MISMATCH");
 
@@ -92,15 +276,6 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
     ? Number((actualTransactionFeeMinor / 100).toFixed(2))
     : chargePreview.transactionFee;
 
-  // Paystack's verified transaction amount is the amount the customer actually paid.
-  // When "pass fees to customers" is enabled, that amount includes the gateway fee.
-  // When the merchant absorbs the fee, it equals the configured base fee and tx.fees
-  // is deducted by Paystack from settlement. We therefore reconcile in this order:
-  //   1. exact base fee (merchant absorbs gateway fee), or
-  //   2. base fee + Paystack's own verified fee (customer bears gateway fee).
-  // We deliberately do NOT calculate Paystack's fee ourselves for acceptance because
-  // the gateway's verified fees value is the source of truth and can vary by channel,
-  // account pricing, caps, or education-specific pricing.
   const amountMatchesBase = providerAmountMinor === expectedBaseMinor;
   const amountMatchesBasePlusVerifiedFee =
     hasVerifiedGatewayFee && providerAmountMinor === expectedBaseMinor + actualTransactionFeeMinor;
@@ -113,12 +288,7 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
     throw new Error("PAYMENT_AMOUNT_MISMATCH");
   }
 
-  // The verified gateway amount is the receipt total.
   const customerTotal = providerAmount;
-
-  // Metadata is informational only at reconciliation. The admin-assigned billing
-  // record above is authoritative, so stale frontend metadata must never cause a
-  // valid Paystack payment to be rejected.
 
   const canonicalPaymentRef = adminDb.collection("payments").doc(reference);
   const enrollmentRef = enrollmentRequestId ? adminDb.collection("enrollment_requests").doc(enrollmentRequestId) : null;
@@ -139,9 +309,9 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
       if (asString(enrollment.paymentStatus).toUpperCase() === "PAID") throw new Error("ENROLLMENT_ALREADY_PAID");
     }
 
-    const studentId = asString(metadata.studentId || enrollment.studentId);
-    const tutorId = asString(metadata.tutorId || enrollment.tutorId);
-    const schoolId = asString(metadata.schoolId || enrollment.schoolId || userRecord.schoolId);
+    const studentId = asString(metadata.studentId || enrollment.studentId || (role === "student" ? userRecord.studentDocId : ""));
+    const tutorId = asString(verifiedPrimaryTutorId || enrollment.tutorId);
+    const schoolId = asString(resolvedSchoolId || enrollment.schoolId);
     const studentName = asString(metadata.studentName || enrollment.studentName || enrollment.enrollmentStudentName);
     const paidAt = tx.paid_at ? new Date(tx.paid_at) : new Date();
 
@@ -149,11 +319,22 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
       const ownStudentId = asString(userRecord.studentDocId);
       if (!ownStudentId || (studentId && studentId !== ownStudentId)) throw new Error("PAYMENT_STUDENT_OWNER_MISMATCH");
     }
-    if (role === "school" && schoolId && asString(userRecord.schoolId) !== schoolId) throw new Error("PAYMENT_SCHOOL_OWNER_MISMATCH");
-    if (role === "parent" && studentId) {
+    if (role === "school" && schoolId && asString(userRecord.schoolId || userId) !== schoolId) {
+      throw new Error("PAYMENT_SCHOOL_OWNER_MISMATCH");
+    }
+    if (role === "parent" && studentId && verifiedSelectedItems.length === 0) {
       let studentSnap = await transaction.get(adminDb.collection("individualStudents").doc(studentId));
       if (!studentSnap.exists) studentSnap = await transaction.get(adminDb.collection("students").doc(studentId));
-      if (!studentSnap.exists || asString(studentSnap.data()?.parentId) !== userId) throw new Error("PAYMENT_STUDENT_OWNER_MISMATCH");
+      const sData = studentSnap.data() || {};
+      const parentEmailNorm = asString(userRecord.email).toLowerCase();
+      const sParentEmail = asString(sData.parentEmail || sData.guardianEmail).toLowerCase();
+      const sParentId = asString(sData.parentId || sData.parentUid || sData.parentUserId);
+      const ownedDirect = (Boolean(sParentId) && sParentId === userId) || (Boolean(parentEmailNorm) && sParentEmail === parentEmailNorm);
+      if (!studentSnap.exists || !ownedDirect) {
+        const list = [...(Array.isArray(userRecord.children) ? userRecord.children : []), ...(Array.isArray(userRecord.linkedStudentIds) ? userRecord.linkedStudentIds : [])];
+        const inChildrenList = list.some((it: any) => asString(it && typeof it === "object" ? it.id || it.studentId : it) === studentId);
+        if (!studentSnap.exists || !inChildrenList) throw new Error("PAYMENT_STUDENT_OWNER_MISMATCH");
+      }
     }
 
     const durationWeeks = Number(metadata.durationWeeks || enrollment.durationWeeks || plan.durationWeeks || 4);
@@ -163,25 +344,43 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
     const escrowQuarter = `Q${quarterNumber} ${paidAt.getFullYear()}`;
     const paymentSource = asString(metadata.paymentSource || "This Quarter's Escrow Account");
 
+    let tutorName: string | null = null;
+    let tutorEmail: string | null = null;
+    if (tutorId) {
+      const tutorSnap = await transaction.get(adminDb.collection("users").doc(tutorId));
+      const tutor = tutorSnap.exists ? tutorSnap.data() || {} : {};
+      tutorName = tutor.name || tutor.displayName || tutor.email || tutorId;
+      tutorEmail = tutor.email || null;
+    }
+
+    const hasVerifiedTutorAllocation = Boolean(
+      tutorId ||
+      (verifiedSelectedItems.length > 0 && verifiedSelectedItems.some(i => Boolean(i.tutorId) && i.tutorId !== "lead_tutor"))
+    );
+
     paymentData = {
       userId,
       parentId: role === "parent" ? userId : null,
       schoolId: role === "school" ? schoolId || userId : schoolId || null,
       studentId: studentId || null,
       studentName: studentName || null,
-      studentIds: Array.isArray(metadata.studentIds) ? metadata.studentIds : (studentId ? [studentId] : []),
-      selectedItems: Array.isArray(metadata.selectedItems) ? metadata.selectedItems : null,
+      studentIds: verifiedSelectedItems.length > 0 ? Array.from(new Set(verifiedSelectedItems.map(i => i.childId))) : (studentId ? [studentId] : []),
+      selectedItems: verifiedSelectedItems.length > 0 ? verifiedSelectedItems : null,
       tutorId: tutorId || null,
-      tutorName: null,
-      tutorEmail: null,
+      tutorName,
+      tutorEmail,
       enrollmentRequestId: enrollmentRequestId || null,
       enrollmentStudentName: studentName || null,
       planId,
       plan: plan.name,
       baseAmount: plan.baseAmount,
+      fullContractAmount: fullSchoolContractAmount || plan.baseAmount,
+      remainingBalance: role === "school" ? remainingSchoolBalance : 0,
       transactionFee: actualTransactionFee,
       estimatedTransactionFee: chargePreview.transactionFee,
-      amount: providerAmountMinor,
+      amount: customerTotal,
+      amountInNaira: true,
+      amountMinor: providerAmountMinor,
       providerAmount: providerAmountMinor,
       customerTotal,
       currency: "NGN",
@@ -204,32 +403,29 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
       createdAt: new Date(),
       verifiedAt: new Date(),
       verifiedBy: verifiedUserId ? "portal_return" : "paystack_webhook",
-      walletCredited: Boolean(tutorId || (Array.isArray(metadata.selectedItems) && metadata.selectedItems.some((i: any) => i.tutorId)))
+      walletCredited: hasVerifiedTutorAllocation
     };
-
-    if (tutorId) {
-      const tutorSnap = await transaction.get(adminDb.collection("users").doc(tutorId));
-      const tutor = tutorSnap.exists ? tutorSnap.data() || {} : {};
-      paymentData.tutorName = tutor.name || tutor.displayName || tutor.email || tutorId;
-      paymentData.tutorEmail = tutor.email || null;
-    }
 
     transaction.create(canonicalPaymentRef, paymentData);
     created = true;
 
-    // Update school or user billing record with active paid status and 4-week renewal due date
+    // Update school billing record (supports full and partial installment settlements)
     if (role === "school" && (schoolId || userId)) {
       const targetSchoolRef = adminDb.collection("schools").doc(schoolId || userId);
+      const isSchoolPartial = remainingSchoolBalance > 0;
+      const contractTotal = fullSchoolContractAmount > 0 ? fullSchoolContractAmount : plan.baseAmount;
       transaction.set(targetSchoolRef, {
         billing: {
-          status: "PAID",
+          status: isSchoolPartial ? "PARTIALLY_PAID" : "PAID",
           lastPaidAt: paidAt.toISOString(),
           paidThrough: paidThrough.toISOString(),
           nextDueDate: paidThrough.toISOString(),
           paymentSource,
           escrowQuarter,
           cycle: durationWeeks === 12 ? "termly" : "monthly",
-          baseAmount: plan.baseAmount,
+          baseAmount: contractTotal,
+          amountPaid: Number((contractTotal - remainingSchoolBalance).toFixed(2)),
+          remainingBalance: remainingSchoolBalance,
           updatedAt: new Date().toISOString()
         }
       }, { merge: true });
@@ -247,32 +443,30 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
           escrowQuarter,
           cycle: "monthly",
           baseAmount: plan.baseAmount,
+          remainingBalance: 0,
           updatedAt: new Date().toISOString()
         }
       }, { merge: true });
 
-      // Update student document(s) for linked children to reflect active paid status
-      const targetStudentIds = Array.isArray(metadata.studentIds) ? metadata.studentIds : (studentId ? [studentId] : []);
+      const targetStudentIds = verifiedSelectedItems.length > 0
+        ? Array.from(new Set(verifiedSelectedItems.map(i => i.childId)))
+        : (studentId ? [studentId] : []);
+
       for (const targetSid of targetStudentIds) {
         if (!targetSid) continue;
         const indRef = adminDb.collection("individualStudents").doc(targetSid);
         const stdRef = adminDb.collection("students").doc(targetSid);
-        transaction.set(indRef, {
+        const studentPaidPayload = {
           paymentStatus: "PAID",
           status: "ACTIVE",
+          remainingBalance: 0,
           lastPaymentReference: reference,
           lastPaidAt: paidAt.toISOString(),
           paidThrough: paidThrough.toISOString(),
           nextDueDate: paidThrough.toISOString()
-        }, { merge: true });
-        transaction.set(stdRef, {
-          paymentStatus: "PAID",
-          status: "ACTIVE",
-          lastPaymentReference: reference,
-          lastPaidAt: paidAt.toISOString(),
-          paidThrough: paidThrough.toISOString(),
-          nextDueDate: paidThrough.toISOString()
-        }, { merge: true });
+        };
+        transaction.set(indRef, studentPaidPayload, { merge: true });
+        transaction.set(stdRef, studentPaidPayload, { merge: true });
       }
     }
 
@@ -296,10 +490,9 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
       updatedAt: new Date()
     }, { merge: true });
 
-    if (Array.isArray(metadata.selectedItems) && metadata.selectedItems.length > 0) {
-      // Credit each respective tutor according to their allocated program fees
+    if (verifiedSelectedItems.length > 0) {
       const tutorAmounts = new Map<string, number>();
-      for (const item of metadata.selectedItems) {
+      for (const item of verifiedSelectedItems) {
         const itemTid = asString(item.tutorId);
         const itemAmt = Number(item.amount || 0);
         if (itemTid && itemTid !== "lead_tutor" && itemAmt > 0) {
@@ -314,12 +507,15 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
         }, { merge: true });
       }
     } else if (tutorId) {
-      transaction.set(adminDb.collection("staffWallets").doc(tutorId), { availableBalance: FieldValue.increment(plan.baseAmount), lifetimeEarned: FieldValue.increment(plan.baseAmount), updatedAt: new Date() }, { merge: true });
+      transaction.set(adminDb.collection("staffWallets").doc(tutorId), {
+        availableBalance: FieldValue.increment(plan.baseAmount),
+        lifetimeEarned: FieldValue.increment(plan.baseAmount),
+        updatedAt: new Date()
+      }, { merge: true });
     }
   });
 
   if (!created) return { created: false, payment: null };
-  // Financial notifications are targeted to each admin UID, never broadcast.
   const adminUsers = await adminDb.collection("users").limit(1000).get();
   const adminRoles = new Set(["super_admin", "superadmin", "admin"]);
   const paymentSummary = String(role === "school" ? "School" : role === "parent" ? "Parent" : "Student") + " payment received: " + String(paymentData.plan) + " — ₦" + Number(paymentData.customerTotal).toLocaleString() + " (reference " + reference + ").";
@@ -336,3 +532,4 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
   if (paymentData.tutorId && paymentData.tutorEmail) await createPortalNotification({ recipientId: paymentData.tutorId, email: paymentData.tutorEmail, title: "Student payment received", message: `${paymentData.studentName || "An assigned student"} has paid ${paymentData.plan}. ₦${paymentData.baseAmount.toLocaleString()} has been credited to your staff wallet.`, type: "STUDENT_PAYMENT", data: { paymentId: reference, studentId: paymentData.studentId, amount: paymentData.baseAmount } });
   return { created: true, payment: paymentData };
 }
+

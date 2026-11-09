@@ -7,8 +7,9 @@ import {
 } from 'lucide-react';
 
 
-import { formatCurrency, formatReceiptDate, generatePdfReceipt, parseDate, getReceiptDetails } from '../../lib/receiptGenerator';
+import { formatCurrency, formatReceiptDate, generatePdfStatement, parseDate, getReceiptDetails } from '../../lib/receiptGenerator';
 import type { TransactionReceiptData } from '../../lib/receiptGenerator';
+import { isSuccessfulPaymentStatus, isPartiallyPaidStatus } from '../../lib/billing';
 import { FintechTransactionDetailsModal } from './FintechTransactionDetailsModal';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -97,6 +98,7 @@ export const FintechTransactionHistory: React.FC<FintechTransactionHistoryProps>
   const statuses = [
     { key: 'all', label: 'All Status' },
     { key: 'successful', label: 'Successful' },
+    { key: 'partially_paid', label: 'Partially Paid' },
     { key: 'pending', label: 'Pending' },
     { key: 'failed', label: 'Failed' },
   ];
@@ -115,12 +117,14 @@ export const FintechTransactionHistory: React.FC<FintechTransactionHistoryProps>
         if (selectedCategory === 'parent_tuition' && !catStr.includes('parent') && !catStr.includes('cadet') && !catStr.includes('student') && !catStr.includes('mentorship') && !catStr.includes('coding')) return false;
       }
 
-      // Status filter
+      // Status filter — missing or unknown status never counts as successful
       if (selectedStatus !== 'all') {
-        const st = String(t.status || 'successful').toLowerCase();
-        if (selectedStatus === 'successful' && !['successful', 'success', 'paid', 'verified', 'completed', 'approved'].includes(st)) return false;
-        if (selectedStatus === 'pending' && !['pending', 'processing'].includes(st)) return false;
-        if (selectedStatus === 'failed' && !['failed', 'declined', 'cancelled'].includes(st)) return false;
+        const rawStatus = String(t.status ?? '').trim();
+        const stLower = rawStatus.toLowerCase();
+        if (selectedStatus === 'successful' && !isSuccessfulPaymentStatus(rawStatus)) return false;
+        if (selectedStatus === 'partially_paid' && !isPartiallyPaidStatus(rawStatus)) return false;
+        if (selectedStatus === 'pending' && !['pending', 'processing'].includes(stLower)) return false;
+        if (selectedStatus === 'failed' && !['failed', 'declined', 'cancelled', 'reversed'].includes(stLower)) return false;
       }
 
       // Month filter
@@ -142,13 +146,15 @@ export const FintechTransactionHistory: React.FC<FintechTransactionHistoryProps>
     });
   }, [transactions, selectedCategory, selectedStatus, selectedMonth, searchQuery]);
 
-  // Financial Summary (In / Out)
+  // Financial Summary (In / Out) — only count verified successful / partially paid settlements
   const summary = useMemo(() => {
     let totalIn = 0;
     let totalOut = 0;
 
     filtered.forEach(t => {
+      if (!isSuccessfulPaymentStatus(t.status) && !isPartiallyPaidStatus(t.status)) return;
       const amt = Number(t.customerTotal || t.amount || t.baseAmount || 0);
+      if (!Number.isFinite(amt) || amt <= 0) return;
       const isOutflow = t.type === 'outflow' || t.type === 'payout' || role === 'parent' || role === 'student';
       if (isOutflow) {
         totalOut += amt;
@@ -169,8 +175,13 @@ export const FintechTransactionHistory: React.FC<FintechTransactionHistoryProps>
       toast.error('No transactions to download');
       return;
     }
-    generatePdfReceipt(filtered[0]);
-    toast.success(`Generated official statement receipt (${filtered.length} total records on file)`);
+    const periodText = selectedMonth === 'all' ? 'All Months' : (availableMonths.find(m => m.key === selectedMonth)?.label || selectedMonth);
+    generatePdfStatement(filtered, {
+      title: `${title || 'Official Account Statement'} (${filtered.length} Record${filtered.length === 1 ? '' : 's'})`,
+      periodLabel: periodText,
+      accountLabel: role
+    });
+    toast.success(`Exported official statement containing all ${filtered.length} selected record${filtered.length === 1 ? '' : 's'}.`);
   };
 
   const getTransactionIcon = (t: TransactionReceiptData) => {
@@ -425,9 +436,12 @@ export const FintechTransactionHistory: React.FC<FintechTransactionHistoryProps>
             const formattedDate = formatReceiptDate(date);
             const isNegative = txn.type === 'outflow' || txn.type === 'payout' || role === 'parent' || role === 'student';
             const iconConfig = getTransactionIcon(txn);
-            const status = String(txn.status || 'Successful').toLowerCase();
-            const isSuccess = ['successful', 'success', 'paid', 'verified'].includes(status);
+            const rawStatus = String(txn.status ?? '').trim();
+            const status = rawStatus.toLowerCase();
+            const isSuccess = isSuccessfulPaymentStatus(rawStatus);
+            const isPartial = isPartiallyPaidStatus(rawStatus);
             const isPending = ['pending', 'processing'].includes(status);
+            const isFailed = ['failed', 'declined', 'cancelled', 'reversed'].includes(status);
 
             const details = getReceiptDetails(txn);
 
@@ -469,10 +483,14 @@ export const FintechTransactionHistory: React.FC<FintechTransactionHistoryProps>
                   <div className="text-[11px] font-bold mt-0.5">
                     {isSuccess ? (
                       <span className="text-emerald-600 dark:text-emerald-400">Successful</span>
+                    ) : isPartial ? (
+                      <span className="text-amber-600 dark:text-amber-400">Partially Paid</span>
                     ) : isPending ? (
                       <span className="text-amber-600 dark:text-amber-400">Pending</span>
-                    ) : (
+                    ) : isFailed ? (
                       <span className="text-rose-600 dark:text-rose-400">Failed</span>
+                    ) : (
+                      <span className="text-slate-500 dark:text-slate-400">{rawStatus || 'Unknown'}</span>
                     )}
                   </div>
                 </div>

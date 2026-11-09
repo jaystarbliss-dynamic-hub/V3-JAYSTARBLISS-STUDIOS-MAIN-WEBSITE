@@ -52,12 +52,10 @@ export const FintechAddMoneyModal: React.FC<FintechAddMoneyModalProps> = ({
     }
     setLoading(true);
     try {
-      if (onPaystackTopUp) {
-        await onPaystackTopUp(num);
-      } else {
-        // Fallback simulation
-        toast.success(`Redirecting to Paystack secure checkout for ${formatCurrency(num)}...`);
+      if (!onPaystackTopUp) {
+        throw new Error('Online card top-up is not configured for this account.');
       }
+      await onPaystackTopUp(num);
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to initiate top-up.');

@@ -153,7 +153,7 @@ export const FintechTransactionDetailsModal: React.FC<FintechTransactionDetailsM
               </p>
               <div className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 text-xs font-bold pt-1">
                 <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400" />
-                <span>{(transaction.status || 'Successful').toUpperCase()}</span>
+                <span>{String(transaction.status || 'UNKNOWN').trim().toUpperCase()}</span>
               </div>
             </div>
 

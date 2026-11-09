@@ -1,6 +1,16 @@
 import type { Handler } from "@netlify/functions";
 import { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
-import { calculateCustomerCharge, getFeePolicy, getPaymentConfig, getUserRecord, normaliseRole, isActiveRecord } from "../../api/_lib/billing";
+import {
+  calculateCustomerCharge,
+  getFeePolicy,
+  getPaymentConfig,
+  getUserRecord,
+  normaliseRole,
+  isActiveRecord,
+  isPartiallyPaidStatus,
+  resolveTrustedStudentFeeAndTutor,
+  PaymentPlan
+} from "../../api/_lib/billing";
 
 const token = (event: any) => { const header = event.headers?.authorization || event.headers?.Authorization || ""; return header.startsWith("Bearer ") ? header.slice(7) : ""; };
 const json = (statusCode: number, body: Record<string, unknown>) => ({ statusCode, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify(body) });
@@ -17,7 +27,6 @@ const findStudent = async (studentId: string, ownerId: string, ownerType: "paren
       const sParentEmail = String(student.parentEmail || student.guardianEmail || "").toLowerCase().trim();
       owned = (sParentId && sParentId === ownerId) || (parentEmailNorm && sParentEmail === parentEmailNorm);
       if (!owned) {
-        // Also check parent doc in users / parents collections
         const [uSnap, pSnap] = await Promise.all([
           adminDb.collection("users").doc(ownerId).get().catch(() => null),
           adminDb.collection("parents").doc(ownerId).get().catch(() => null)
@@ -44,7 +53,7 @@ export const handler: Handler = async (event) => {
   try {
     const authToken = token(event); if (!authToken) return json(401, { error: "Authentication required." });
     const decoded = await adminAuth.verifyIdToken(authToken);
-    const user = await getUserRecord(decoded.uid); if (!isActiveRecord(user) || !user.role) return json(403, { error: "An active portal profile is required before making a payment." });
+    const user = await getUserRecord(decoded.uid, decoded.email); if (!isActiveRecord(user) || !user.role) return json(403, { error: "An active portal profile is required before making a payment." });
     const actualRole = normaliseRole(user.role);
     const body = JSON.parse(event.body || "{}"); const requestedRole = String(body.role || actualRole).toLowerCase();
     if (requestedRole !== actualRole) return json(403, { error: "Payment role does not match your active portal role." });
@@ -56,6 +65,8 @@ export const handler: Handler = async (event) => {
     let enrollment: Record<string, any> | null = null;
     let student: Record<string, any> | null = null;
     let studentId = String(body.studentId || "").trim();
+    let assignedBilling = (user as any).billing || null;
+    let plan: PaymentPlan | undefined;
 
     if (enrollmentRequestId) {
       if (actualRole !== "parent") return json(400, { error: "Enrollment-linked payments are available to parents only." });
@@ -68,47 +79,93 @@ export const handler: Handler = async (event) => {
       studentId = studentId || String(enrollment.studentId || "").trim();
     }
 
-    // Multi-item hierarchical tuition checkout for parents
-    let multiItems: any[] = [];
+    // Multi-item hierarchical tuition checkout for parents: verify every student & resolve fees from DB
+    const verifiedMultiItems: Array<{
+      id: string;
+      childId: string;
+      childName: string;
+      programId: string;
+      programName: string;
+      tutorId: string;
+      tutorName: string;
+      amount: number;
+    }> = [];
+
     if (actualRole === "parent" && Array.isArray(body.selectedItems) && body.selectedItems.length > 0) {
-      multiItems = body.selectedItems;
-      for (const item of multiItems) {
-        const cId = String(item.childId || "").trim();
-        if (cId) {
-          await findStudent(cId, decoded.uid, "parent", decoded.email);
+      for (const rawItem of body.selectedItems) {
+        const cId = String(rawItem?.childId || "").trim();
+        if (!cId) return json(400, { error: "Each selected tuition item must reference a valid student." });
+        const verifiedChild: Record<string, any> | null = await findStudent(cId, decoded.uid, "parent", decoded.email);
+        if (!verifiedChild) return json(404, { error: "Selected student could not be found." });
+
+        const resolved = await resolveTrustedStudentFeeAndTutor({
+          student: verifiedChild,
+          programId: String(rawItem?.programId || "").trim(),
+          programName: String(rawItem?.programName || "").trim(),
+          config,
+          parentBilling: assignedBilling
+        });
+
+        if (resolved.amount <= 0) {
+          return json(400, { error: `No approved tuition fee is configured for ${verifiedChild.fullName || verifiedChild.studentName || "the selected student"}.` });
         }
+
+        verifiedMultiItems.push({
+          id: String(rawItem?.id || `${cId}_${resolved.programId}`),
+          childId: cId,
+          childName: String(verifiedChild.fullName || verifiedChild.studentName || verifiedChild.name || rawItem?.childName || "Enrolled Child"),
+          programId: resolved.programId,
+          programName: resolved.programName,
+          tutorId: resolved.tutorId,
+          tutorName: resolved.tutorName || "Assigned Tutor",
+          amount: resolved.amount
+        });
       }
-      const sumAmount = multiItems.reduce((acc, item) => acc + Number(item.amount || 0), 0);
-      const uniqueChildNames = Array.from(new Set(multiItems.map((i: any) => i.childName).filter(Boolean)));
-      const compositeName = body.planName || (uniqueChildNames.length > 0 
-        ? `Tuition: ${uniqueChildNames.join(", ")} (${multiItems.length} Program${multiItems.length > 1 ? 's' : ''})`
-        : `Tuition Settlement (${multiItems.length} Items)`);
-      
+
+      const sumAmount = Number(verifiedMultiItems.reduce((acc, item) => acc + item.amount, 0).toFixed(2));
+      const uniqueChildNames = Array.from(new Set(verifiedMultiItems.map(i => i.childName).filter(Boolean)));
+      const compositeName = uniqueChildNames.length > 0
+        ? `Tuition: ${uniqueChildNames.join(", ")} (${verifiedMultiItems.length} Program${verifiedMultiItems.length > 1 ? "s" : ""})`
+        : `Tuition Settlement (${verifiedMultiItems.length} Items)`;
+
       plan = {
         id: "parent_multi_tuition",
         name: compositeName,
         baseAmount: sumAmount,
         durationWeeks: 4,
         teachingModes: ["Standard Delivery", "Hybrid / Physical"],
+        description: "Verified multi-programme parent tuition settlement",
         role: "student",
         active: true
       };
       planId = plan.id;
     }
 
-    // Resolve the selected child before applying any parent billing configuration.
-    // For parent payments, the approved child's tuitionFee/fee is the authoritative
-    // amount whenever it exists. This prevents a stale parent-level billing record
-    // (for example ₦45,000) from replacing an approved child fee (for example ₦35,000).
-    if (actualRole === "parent" && studentId && multiItems.length === 0) {
+    // Resolve single student for parent or student role before resolving fees
+    if (actualRole === "parent" && studentId && verifiedMultiItems.length === 0) {
       student = await findStudent(studentId, decoded.uid, "parent", decoded.email);
     }
 
-    const customAmount = Number(body.amount || body.customAmount || 0);
-    if (!plan) plan = config.plans[planId];
+    if (actualRole === "student") {
+      studentId = studentId || String((user as any).studentDocId || "").trim();
+      if (!studentId || !String((user as any).studentDocId || "").trim()) {
+        return json(403, { error: "Your student profile is not ready for billing." });
+      }
+      let studentLookup = await adminDb.collection("individualStudents").doc(studentId).get();
+      if (!studentLookup.exists) {
+        studentLookup = await adminDb.collection("students").doc(studentId).get();
+      }
+      if (!studentLookup.exists || String(studentLookup.data()?.firebaseUid || studentLookup.data()?.userId || "") !== decoded.uid) {
+        return json(403, { error: "Your student profile could not be verified." });
+      }
+      student = { id: studentLookup.id, ...studentLookup.data() };
+    }
 
-    let assignedBilling = (user as any).billing || null;
-    let schoolDocData: any = null;
+    let schoolDocData: Record<string, any> | null = null;
+    let fullSchoolContractAmount = 0;
+    let appliedPaymentPercentage = 100;
+    let calculatedRemainingBalance = 0;
+
     if (actualRole === "school") {
       const sId = String((user as any).schoolId || decoded.uid);
       const schoolSnap = await adminDb.collection("schools").doc(sId).get();
@@ -116,16 +173,23 @@ export const handler: Handler = async (event) => {
         schoolDocData = schoolSnap.data() || {};
         if (schoolDocData.billing) assignedBilling = schoolDocData.billing;
       }
+      if (studentId) student = await findStudent(studentId, sId, "school");
     }
 
-    // Parent billing is child-specific when the selected student has an approved fee.
-    if (actualRole === "parent" && student && multiItems.length === 0) {
-      const childAmount = Number(student.tuitionFee ?? student.fee ?? student.amount ?? 0);
-      if (childAmount > 0) {
+    // Resolve authoritative single-student fee for parent or student
+    if ((actualRole === "parent" || actualRole === "student") && student && verifiedMultiItems.length === 0) {
+      const resolved = await resolveTrustedStudentFeeAndTutor({
+        student,
+        programId: planId,
+        programName: String(body.planName || "").trim(),
+        config,
+        parentBilling: assignedBilling
+      });
+      if (resolved.amount > 0) {
         assignedBilling = {
-          planId: String(student.programId || planId || "assigned_student_plan"),
-          planName: String(student.programName || student.programTitle || student.plan || student.track || body.planName || "Assigned Tuition Plan"),
-          baseAmount: childAmount,
+          planId: resolved.programId,
+          planName: resolved.programName,
+          baseAmount: resolved.amount,
           cycle: String(student.cycle || "monthly"),
           status: "ACTIVE"
         };
@@ -133,14 +197,13 @@ export const handler: Handler = async (event) => {
       }
     }
 
-    // If the parent is paying an enrollment request before the student record exists,
-    // use the amount recorded on the request when available.
-    if (actualRole === "parent" && !student && enrollment && multiItems.length === 0) {
-      const enrollmentAmount = Number(enrollment.tuitionFee ?? enrollment.fee ?? enrollment.amount ?? 0);
+    // If parent is paying an enrollment request before the student record exists, use the request's database fee
+    if (actualRole === "parent" && !student && enrollment && verifiedMultiItems.length === 0) {
+      const enrollmentAmount = Number(enrollment.tuitionFee ?? enrollment.fee ?? enrollment.amount ?? enrollment.paymentBaseAmount ?? 0);
       if (enrollmentAmount > 0) {
         assignedBilling = {
           planId: String(enrollment.planId || planId || "assigned_enrollment_plan"),
-          planName: String(enrollment.programName || enrollment.programTitle || enrollment.plan || body.planName || "Assigned Tuition Plan"),
+          planName: String(enrollment.programName || enrollment.programTitle || enrollment.plan || "Assigned Tuition Plan"),
           baseAmount: enrollmentAmount,
           cycle: String(enrollment.cycle || "monthly"),
           status: "ACTIVE"
@@ -149,62 +212,110 @@ export const handler: Handler = async (event) => {
       }
     }
 
-    // Admin-assigned billing remains authoritative for records without a child-specific
-    // approved fee. Client custom amounts are accepted only when explicitly permitted.
-    if (!multiItems.length && assignedBilling && Number(assignedBilling.baseAmount) > 0 && assignedBilling.status !== "DISABLED") {
+    // For school accounts, check school billing or school assigned programmes
+    if (actualRole === "school" && schoolDocData) {
+      let schoolBase = Number(assignedBilling?.baseAmount || 0);
+      let schoolPlanName = String(assignedBilling?.planName || "School Learning Partnership");
+      let schoolPlanId = String(assignedBilling?.planId || planId || "school_assigned_plan");
+
+      if (schoolBase <= 0 && Array.isArray(schoolDocData.programs) && schoolDocData.programs.length > 0) {
+        const targetProg = schoolDocData.programs.find((p: any) => p && typeof p === "object" && (p.id === planId || p.programId === planId || p.name === body.planName)) || schoolDocData.programs[0];
+        if (targetProg && typeof targetProg === "object") {
+          const pFee = Number(targetProg.price ?? targetProg.tuitionFee ?? targetProg.fee ?? targetProg.amount ?? 0);
+          if (pFee > 0) {
+            schoolBase = pFee;
+            schoolPlanName = String(targetProg.title || targetProg.name || schoolPlanName);
+            schoolPlanId = String(targetProg.id || targetProg.programId || schoolPlanId);
+          }
+        }
+      }
+
+      if (schoolBase <= 0 && config.plans[planId]?.role === "school") {
+        schoolBase = Number(config.plans[planId].baseAmount);
+        schoolPlanName = config.plans[planId].name;
+        schoolPlanId = config.plans[planId].id;
+      }
+
+      if (schoolBase > 0) {
+        fullSchoolContractAmount = schoolBase;
+        const isPartial = isPartiallyPaidStatus(assignedBilling?.status);
+        const existingRemaining = Number(assignedBilling?.remainingBalance || 0);
+        const requestedPct = Number(body.paymentPercentage || 100);
+        const validPct = [100, 70, 50].includes(requestedPct) ? requestedPct : 100;
+
+        let payableNow = schoolBase;
+        if (isPartial && existingRemaining > 0 && requestedPct === 100) {
+          payableNow = existingRemaining;
+          appliedPaymentPercentage = 100;
+          calculatedRemainingBalance = 0;
+        } else if (validPct < 100) {
+          payableNow = Number(((schoolBase * validPct) / 100).toFixed(2));
+          appliedPaymentPercentage = validPct;
+          calculatedRemainingBalance = Number(Math.max(0, schoolBase - payableNow).toFixed(2));
+        }
+
+        assignedBilling = {
+          ...(assignedBilling || {}),
+          planId: schoolPlanId,
+          planName: schoolPlanName,
+          baseAmount: payableNow,
+          fullContractAmount: schoolBase,
+          cycle: String(assignedBilling?.cycle || body.cycle || "termly"),
+          status: "ACTIVE"
+        };
+        planId = schoolPlanId;
+      }
+    }
+
+    if (!plan && verifiedMultiItems.length === 0 && assignedBilling && Number(assignedBilling.baseAmount) > 0 && String(assignedBilling.status || "ACTIVE").toUpperCase() !== "DISABLED") {
       const cycle = String(assignedBilling.cycle || body.cycle || "monthly").toLowerCase();
-      const baseAmt = customAmount > 0 && Boolean(body.allowCustomAmount) ? customAmount : Number(assignedBilling.baseAmount);
+      const isPartial = isPartiallyPaidStatus(assignedBilling.status);
+      const existingRemaining = Number(assignedBilling.remainingBalance || 0);
+      const authoritativeBase = actualRole !== "school" && isPartial && existingRemaining > 0
+        ? existingRemaining
+        : Number(assignedBilling.baseAmount);
+
       plan = {
         id: String(assignedBilling.planId || planId || "assigned_plan"),
-        name: String(assignedBilling.planName || body.planName || (actualRole === "school" ? "Fees/Payments" : "Assigned Tuition Plan")),
-        baseAmount: baseAmt,
+        name: String(assignedBilling.planName || (actualRole === "school" ? "School Learning Partnership" : "Assigned Tuition Plan")),
+        baseAmount: authoritativeBase,
         durationWeeks: cycle === "termly" ? 12 : 4,
         teachingModes: ["Standard Delivery", "Hybrid / Physical"],
+        description: "Database-verified billing plan",
         role: actualRole === "school" ? "school" : "student",
         active: true
       };
       planId = plan.id;
     }
 
-    if (!plan && customAmount > 0) {
-      plan = {
-        id: planId || "custom_plan",
-        name: String(body.planName || (actualRole === "school" ? "Institutional Partner Fee" : actualRole === "parent" ? "Parent Tuition Fee" : "Course Tuition Fee")),
-        baseAmount: customAmount,
-        durationWeeks: actualRole === "school" ? (String(body.cycle || "").toLowerCase() === "termly" ? 12 : 4) : 4,
-        teachingModes: ["Standard Delivery", "Hybrid / Physical"],
-        role: actualRole === "school" ? "school" : "student",
-        active: true
-      };
-      planId = plan.id;
+    if (!plan && planId && config.plans[planId]) {
+      plan = config.plans[planId];
     }
 
     if (plan && !plan.active) plan = { ...plan, active: true };
-    if (!plan) return json(400, { error: "The selected payment plan or fee is unavailable." });
-    if (actualRole === "school" && plan.role !== "school" && !customAmount && !assignedBilling) return json(400, { error: "Please select a school payment plan." });
-    if (actualRole !== "school" && plan.role !== "student" && !customAmount && !assignedBilling) return json(400, { error: "Please select a parent/student payment plan." });
-    if (actualRole === "parent" && !studentId && !enrollmentRequestId && !customAmount && !assignedBilling && multiItems.length === 0) return json(400, { error: "Select the child or program this parent payment is for." });
-
-    if (actualRole === "school") {
-      const schoolId = String((user as any).schoolId || decoded.uid);
-      if (studentId) student = await findStudent(studentId, schoolId, "school");
+    if (!plan || !(Number(plan.baseAmount) > 0)) {
+      return json(400, { error: "No approved payment plan or tuition fee was found for this account." });
     }
-    if (actualRole === "student") {
-      studentId = studentId || String((user as any).studentDocId || "");
-      if (!studentId || !String((user as any).studentDocId || "")) return json(403, { error: "Your student profile is not ready for billing." });
-      const studentLookup = await adminDb.collection("individualStudents").doc(studentId).get();
-      if (!studentLookup.exists || String(studentLookup.data()?.firebaseUid || studentLookup.data()?.userId || "") !== decoded.uid) return json(403, { error: "Your student profile could not be verified." });
-      student = { id: studentLookup.id, ...studentLookup.data() };
+    if (actualRole === "school" && plan.role !== "school") return json(400, { error: "Please select a valid school payment plan." });
+    if (actualRole !== "school" && plan.role !== "student") return json(400, { error: "Please select a valid student/parent payment plan." });
+    if (actualRole === "parent" && !studentId && !enrollmentRequestId && !assignedBilling && verifiedMultiItems.length === 0) {
+      return json(400, { error: "Select the child or programme this parent payment is for." });
     }
 
     const teachingMode = String(body.teachingMode || enrollment?.teachingMode || enrollment?.modeOfTeaching || student?.teachingMode || plan.teachingModes[0] || "Standard delivery").trim();
-    const durationWeeks = actualRole === "school" ? Math.max(1, Number(body.durationWeeks || enrollment?.durationWeeks || plan.durationWeeks)) : 4;
-    const tutorId = String(enrollment?.tutorId || student?.tutorId || student?.staffId || student?.assignedTutorId || student?.assignedStaffId || student?.instructorId || "").trim();
+    const durationWeeks = actualRole === "school" ? Math.max(1, Number(enrollment?.durationWeeks || plan.durationWeeks || 12)) : 4;
+    const resolvedTutorId = String(
+      enrollment?.tutorId ||
+      student?.tutorId ||
+      student?.staffId ||
+      student?.assignedTutorId ||
+      student?.assignedStaffId ||
+      student?.instructorId ||
+      (verifiedMultiItems.length > 0 ? verifiedMultiItems[0].tutorId : "")
+    ).trim();
     const schoolId = actualRole === "school" ? String((user as any).schoolId || decoded.uid) : String(student?.schoolId || "").trim();
     const feeRole = actualRole === "school" ? "school" : "parent";
 
-    // Paystack is configured to pass transaction fees to the customer. Only the base
-    // tuition amount is sent to Paystack. The estimated gateway fee is metadata/UI data.
     const chargePreview = calculateCustomerCharge(plan.baseAmount, getFeePolicy(config, feeRole));
     const paymentMethod = String(body.paymentMethod || "card").toLowerCase();
     const channelMap: Record<string, string> = { card: "card", bank_transfer: "bank_transfer", opay: "mobile_money" };
@@ -230,15 +341,18 @@ export const handler: Handler = async (event) => {
           planId,
           planName: plan.name,
           baseAmount: plan.baseAmount,
+          fullContractAmount: fullSchoolContractAmount || plan.baseAmount,
+          paymentPercentage: appliedPaymentPercentage,
+          remainingBalance: calculatedRemainingBalance,
           estimatedTransactionFee: chargePreview.transactionFee,
           estimatedCustomerTotal: chargePreview.totalAmount,
           durationWeeks,
           teachingMode,
-          studentId: studentId || (multiItems.length > 0 ? multiItems[0].childId : null),
-          studentName: student?.fullName || student?.studentName || enrollment?.studentName || (multiItems.length > 0 ? Array.from(new Set(multiItems.map(i => i.childName))).join(", ") : null),
-          tutorId: tutorId || (multiItems.length > 0 ? multiItems[0].tutorId : null),
-          selectedItems: multiItems.length > 0 ? multiItems : null,
-          studentIds: multiItems.length > 0 ? Array.from(new Set(multiItems.map(i => i.childId))) : (studentId ? [studentId] : []),
+          studentId: studentId || (verifiedMultiItems.length > 0 ? verifiedMultiItems[0].childId : null),
+          studentName: student?.fullName || student?.studentName || enrollment?.studentName || (verifiedMultiItems.length > 0 ? Array.from(new Set(verifiedMultiItems.map(i => i.childName))).join(", ") : null),
+          tutorId: resolvedTutorId || null,
+          selectedItems: verifiedMultiItems.length > 0 ? verifiedMultiItems : null,
+          studentIds: verifiedMultiItems.length > 0 ? Array.from(new Set(verifiedMultiItems.map(i => i.childId))) : (studentId ? [studentId] : []),
           enrollmentRequestId: enrollmentRequestId || null,
           schoolId: schoolId || null,
           paymentMethod,
@@ -249,8 +363,39 @@ export const handler: Handler = async (event) => {
     const data = await response.json();
     if (!response.ok || !data.status || !data.data?.authorization_url) { console.error("Paystack initialization failed:", data); return json(502, { error: "Unable to initialize payment." }); }
 
-    if (enrollmentRequestId) await adminDb.collection("enrollment_requests").doc(enrollmentRequestId).set({ planId, teachingMode, durationWeeks, paymentPlanName: plan.name, paymentBaseAmount: plan.baseAmount, paymentTransactionFee: chargePreview.transactionFee, paymentTotal: chargePreview.totalAmount, paymentFeeStatus: "PAYSTACK_CALCULATED_AT_CHECKOUT", studentId: studentId || null, tutorId: tutorId || null, schoolId: schoolId || null, paymentReference: data.data.reference, paymentStatus: "PENDING", updatedAt: new Date() }, { merge: true });
-    return json(200, { authorizationUrl: data.data.authorization_url, reference: data.data.reference, planId, planName: plan.name, baseAmount: plan.baseAmount, transactionFee: chargePreview.transactionFee, totalAmount: chargePreview.totalAmount, feeIsEstimated: true, feeSource: "Paystack checkout", durationWeeks, teachingMode, studentId: studentId || null, tutorId: tutorId || null });
+    if (enrollmentRequestId) {
+      await adminDb.collection("enrollment_requests").doc(enrollmentRequestId).set({
+        planId,
+        teachingMode,
+        durationWeeks,
+        paymentPlanName: plan.name,
+        paymentBaseAmount: plan.baseAmount,
+        paymentTransactionFee: chargePreview.transactionFee,
+        paymentTotal: chargePreview.totalAmount,
+        paymentFeeStatus: "PAYSTACK_CALCULATED_AT_CHECKOUT",
+        studentId: studentId || null,
+        tutorId: resolvedTutorId || null,
+        schoolId: schoolId || null,
+        paymentReference: data.data.reference,
+        paymentStatus: "PENDING",
+        updatedAt: new Date()
+      }, { merge: true });
+    }
+    return json(200, {
+      authorizationUrl: data.data.authorization_url,
+      reference: data.data.reference,
+      planId,
+      planName: plan.name,
+      baseAmount: plan.baseAmount,
+      transactionFee: chargePreview.transactionFee,
+      totalAmount: chargePreview.totalAmount,
+      feeIsEstimated: true,
+      feeSource: "Paystack checkout",
+      durationWeeks,
+      teachingMode,
+      studentId: studentId || null,
+      tutorId: resolvedTutorId || null
+    });
   } catch (error) {
     const code = error instanceof Error ? error.message : "";
     if (code === "STUDENT_OWNER_MISMATCH") return json(403, { error: "That student is not linked to your account." });
@@ -258,3 +403,4 @@ export const handler: Handler = async (event) => {
     console.error("Payment initialization error:", error); return json(500, { error: "Unable to authenticate or initialize this payment." });
   }
 };
+

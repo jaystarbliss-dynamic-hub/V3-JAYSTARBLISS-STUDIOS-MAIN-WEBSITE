@@ -233,6 +233,10 @@ export const generatePdfReceipt = (data: TransactionReceiptData) => {
   const amountStr = formatCurrency(rawAmount);
 
   const details = getReceiptDetails(data);
+  const statusUpper = String(data.status || 'UNKNOWN').trim().toUpperCase();
+  const isPaid = ['SUCCESS', 'SUCCESSFUL', 'PAID', 'COMPLETED', 'APPROVED', 'CONFIRMED', 'VERIFIED'].includes(statusUpper);
+  const isPartial = ['PARTIALLY_PAID', 'PARTIAL'].includes(statusUpper);
+  const isPending = ['PENDING', 'PROCESSING'].includes(statusUpper);
 
   // Background Header Accent
   pdf.setFillColor(15, 23, 42); // #0f172a
@@ -251,12 +255,18 @@ export const generatePdfReceipt = (data: TransactionReceiptData) => {
   pdf.text('Portal: jaystarbliss-studios.name.ng/portal | Billing Support: jaystarblissstudios@gmail.com', 15, 32);
 
   // Status Badge in Header
-  pdf.setFillColor(16, 185, 129); // Emerald
-  pdf.roundedRect(155, 14, 40, 10, 3, 3, 'F');
+  if (isPaid) {
+    pdf.setFillColor(16, 185, 129); // Emerald
+  } else if (isPartial || isPending) {
+    pdf.setFillColor(245, 158, 11); // Amber
+  } else {
+    pdf.setFillColor(225, 29, 72); // Rose
+  }
+  pdf.roundedRect(150, 14, 45, 10, 3, 3, 'F');
   pdf.setTextColor(255, 255, 255);
   pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8.5);
-  pdf.text((data.status || 'SUCCESSFUL').toUpperCase(), 175, 20.5, { align: 'center' });
+  pdf.setFontSize(8);
+  pdf.text(statusUpper.replace('_', ' '), 172.5, 20.5, { align: 'center' });
 
   // Main Card Wrapper
   pdf.setFillColor(248, 250, 252);
@@ -277,8 +287,16 @@ export const generatePdfReceipt = (data: TransactionReceiptData) => {
 
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(16, 185, 129);
-  pdf.text('✓ Verified & Reconciled on Jaystarbliss Ledger', 22, 85);
+  if (isPaid) {
+    pdf.setTextColor(16, 185, 129);
+    pdf.text('✓ Verified & Reconciled on Jaystarbliss Ledger', 22, 85);
+  } else if (isPartial) {
+    pdf.setTextColor(217, 119, 6);
+    pdf.text('• Partially Settled — Remaining Balance Tracked on Ledger', 22, 85);
+  } else {
+    pdf.setTextColor(100, 116, 139);
+    pdf.text(`Status: ${statusUpper}`, 22, 85);
+  }
 
   // Table Details
   pdf.setTextColor(15, 23, 42);
@@ -298,8 +316,8 @@ export const generatePdfReceipt = (data: TransactionReceiptData) => {
     ...(data.selectedPrograms ? [
       ['Selected Program Tracks', String(data.selectedPrograms)] as [string, string]
     ] : []),
-    ...(data.paymentPercentage && Number(data.paymentPercentage) < 100 ? [
-      ['Payment Mode / Percentage', `${data.paymentPercentage}% Installment Settlement`] as [string, string],
+    ...((data.paymentPercentage && Number(data.paymentPercentage) < 100) || Number(data.remainingBalance || 0) > 0 ? [
+      ['Payment Mode / Percentage', data.paymentPercentage ? `${data.paymentPercentage}% Installment Settlement` : 'Partial Settlement'] as [string, string],
       ['Full Invoice Amount', formatCurrency(data.fullProgramFee || data.amount)] as [string, string],
       ['Remaining Balance Due', formatCurrency(data.remainingBalance || 0)] as [string, string],
     ] : []),
@@ -312,7 +330,7 @@ export const generatePdfReceipt = (data: TransactionReceiptData) => {
     ['Payment Method', data.paymentMethod || 'Paystack Direct Bank / Card'],
     ['Teaching Delivery Mode', data.teachingMode || 'Standard Practical Coding Delivery'],
     ['Duration / Coverage', data.durationWeeks ? `${data.durationWeeks} Weeks` : 'Termly Track'],
-    ['Settlement Status', (data.status || 'Successful').toUpperCase()],
+    ['Settlement Status', statusUpper],
   ];
 
   rows.forEach(([label, val], idx) => {
@@ -361,4 +379,171 @@ export const generatePdfReceipt = (data: TransactionReceiptData) => {
   const filename = `receipt-${reference}.pdf`;
   pdf.save(filename);
 };
+
+export interface StatementExportOptions {
+  title?: string;
+  periodLabel?: string;
+  accountLabel?: string;
+}
+
+/**
+ * Generates a complete multi-page PDF statement containing EVERY selected/filtered transaction.
+ */
+export const generatePdfStatement = (
+  transactions: TransactionReceiptData[],
+  options?: StatementExportOptions
+): { exportedCount: number; totalInflow: number; totalOutflow: number } => {
+  const list = Array.isArray(transactions) ? transactions : [];
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const isConfirmedSuccess = (st: unknown) => {
+    const norm = String(st ?? '').trim().toUpperCase();
+    return ['SUCCESS', 'SUCCESSFUL', 'PAID', 'COMPLETED', 'APPROVED', 'CONFIRMED', 'VERIFIED', 'PARTIALLY_PAID', 'PARTIAL'].includes(norm);
+  };
+
+  let totalInflow = 0;
+  let totalOutflow = 0;
+  list.forEach(t => {
+    if (!isConfirmedSuccess(t.status)) return;
+    const amt = Number(t.customerTotal || t.amount || t.baseAmount || 0);
+    if (!Number.isFinite(amt) || amt <= 0) return;
+    const isOut = t.type === 'outflow' || t.type === 'payout' || t.type === 'transfer';
+    if (isOut) totalOutflow += amt;
+    else totalInflow += amt;
+  });
+
+  const drawPageHeader = (pageNumber: number) => {
+    pdf.setFillColor(15, 23, 42);
+    pdf.rect(0, 0, 210, 38, 'F');
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(15);
+    pdf.text('JAYSTARBLISS DIGITAL ACADEMY', 14, 16);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text(options?.title || 'Official Account Statement & Transaction Ledger', 14, 23);
+    pdf.text(
+      `Generated: ${formatReceiptDate(new Date())}${options?.periodLabel ? ` • Period: ${options.periodLabel}` : ''}`,
+      14,
+      29
+    );
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8.5);
+    pdf.text(`Page ${pageNumber}`, 196, 16, { align: 'right' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(148, 163, 184);
+    pdf.text(`${list.length} Record${list.length === 1 ? '' : 's'}`, 196, 23, { align: 'right' });
+  };
+
+  const drawTableColumnsHeader = (startY: number) => {
+    pdf.setFillColor(241, 245, 249);
+    pdf.rect(14, startY - 5, 182, 8, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text('#', 16, startY);
+    pdf.text('DATE', 24, startY);
+    pdf.text('REFERENCE', 52, startY);
+    pdf.text('DESCRIPTION / BENEFICIARY', 85, startY);
+    pdf.text('STATUS', 148, startY);
+    pdf.text('AMOUNT (NGN)', 194, startY, { align: 'right' });
+    return startY + 7;
+  };
+
+  let pageNumber = 1;
+  drawPageHeader(pageNumber);
+
+  // Summary Box on Page 1
+  pdf.setFillColor(248, 250, 252);
+  pdf.roundedRect(14, 43, 182, 22, 3, 3, 'F');
+  pdf.setDrawColor(226, 232, 240);
+  pdf.roundedRect(14, 43, 182, 22, 3, 3, 'S');
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(100, 116, 139);
+  pdf.text('TOTAL RECORDS', 20, 50);
+  pdf.text('VERIFIED INFLOW', 65, 50);
+  pdf.text('VERIFIED OUTFLOW', 120, 50);
+
+  pdf.setFontSize(11);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text(`${list.length}`, 20, 58);
+  pdf.setTextColor(16, 185, 129);
+  pdf.text(formatCurrency(totalInflow), 65, 58);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text(formatCurrency(totalOutflow), 120, 58);
+
+  let y = drawTableColumnsHeader(74);
+
+  list.forEach((item, index) => {
+    if (y > 268) {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text('Jaystarbliss Studios • Official Multi-Record Financial Statement', 105, 286, { align: 'center' });
+
+      pdf.addPage();
+      pageNumber += 1;
+      drawPageHeader(pageNumber);
+      y = drawTableColumnsHeader(48);
+    }
+
+    if (index % 2 === 1) {
+      pdf.setFillColor(248, 250, 252);
+      pdf.rect(14, y - 4.5, 182, 7.5, 'F');
+    }
+
+    const d = parseDate(item.paidAt || item.createdAt);
+    const shortDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const ref = String(item.reference || item.id || '—').slice(0, 16);
+    const details = getReceiptDetails(item);
+    const desc = details.displayTitle.length > 35 ? details.displayTitle.slice(0, 32) + '...' : details.displayTitle;
+    const statusText = String(item.status || 'UNKNOWN').trim().toUpperCase().slice(0, 14);
+    const rawAmt = Number(item.customerTotal || item.amount || item.baseAmount || 0);
+    const isOut = item.type === 'outflow' || item.type === 'payout' || item.type === 'transfer';
+    const amtFormatted = `${isOut ? '-' : '+'}${formatCurrency(rawAmt)}`;
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(String(index + 1), 16, y);
+    pdf.text(shortDate, 24, y);
+    pdf.text(ref, 52, y);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(15, 23, 42);
+    pdf.text(desc, 85, y);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(isConfirmedSuccess(item.status) ? 16 : 100, isConfirmedSuccess(item.status) ? 185 : 116, isConfirmedSuccess(item.status) ? 129 : 139);
+    pdf.text(statusText, 148, y);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(isOut ? 15 : 16, isOut ? 23 : 185, isOut ? 42 : 129);
+    pdf.text(amtFormatted, 194, y, { align: 'right' });
+
+    y += 7.5;
+  });
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(7);
+  pdf.setTextColor(148, 163, 184);
+  pdf.text('Jaystarbliss Studios • Official Multi-Record Financial Statement', 105, 286, { align: 'center' });
+
+  const dateSlug = new Date().toISOString().slice(0, 10);
+  pdf.save(`jaystarbliss-statement-${dateSlug}-${list.length}-records.pdf`);
+
+  return {
+    exportedCount: list.length,
+    totalInflow: Number(totalInflow.toFixed(2)),
+    totalOutflow: Number(totalOutflow.toFixed(2))
+  };
+};
+
 

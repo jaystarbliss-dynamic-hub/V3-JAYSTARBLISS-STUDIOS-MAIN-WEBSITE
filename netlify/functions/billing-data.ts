@@ -1,6 +1,16 @@
 import type { Handler } from "@netlify/functions";
 import { adminAuth, adminDb, hasAdminAuth, hasAdminDb } from "../../api/_lib/firebase-admin";
-import { getPaymentConfig, getUserRecord, normaliseRole, isPrivilegedRole, isStaffRole, isActiveRecord } from "../../api/_lib/billing";
+import {
+  getPaymentConfig,
+  getUserRecord,
+  normaliseRole,
+  isPrivilegedRole,
+  isStaffRole,
+  isActiveRecord,
+  isSuccessfulPaymentRecord,
+  isPartiallyPaidStatus,
+  extractPaymentAmountNaira
+} from "../../api/_lib/billing";
 
 const tokenFromEvent = (event: any) => {
   const header = event.headers?.authorization || event.headers?.Authorization || "";
@@ -64,13 +74,7 @@ const staffPayments = async (uid: string) => {
   return Array.from(paymentMap.values());
 };
 
-const numericAmount = (payment: any) => {
-  for (const candidate of [payment.customerTotal, payment.totalAmount, payment.amountPaid, payment.amount, payment.grossAmount]) {
-    const amount = Number(candidate);
-    if (Number.isFinite(amount) && amount >= 0) return amount;
-  }
-  return 0;
-};
+const numericAmount = (payment: any) => extractPaymentAmountNaira(payment);
 
 const paymentDate = (payment: any) => {
   const value = payment.paidAt || payment.paymentDate || payment.createdAt || payment.updatedAt;
@@ -79,8 +83,9 @@ const paymentDate = (payment: any) => {
 };
 
 const isSuccessfulPayment = (payment: any) => {
-  const status = String(payment.status || payment.paymentStatus || "").toUpperCase();
-  return !status || ["SUCCESS", "SUCCESSFUL", "PAID", "COMPLETED", "APPROVED"].includes(status);
+  if (!payment || typeof payment !== "object") return false;
+  if (payment.type === "transfer_to" || payment.type === "outflow") return false;
+  return isSuccessfulPaymentRecord(payment);
 };
 
 const billingSummary = (payments: any[]) => {
@@ -542,29 +547,56 @@ export const handler: Handler = async event => {
       verifiedStudents.forEach(child => {
         const childName = child.fullName || child.studentName || child.name || "Student";
         const childPlan = child.plan || child.track || child.programName || "Academy Track";
-        const childFee = Number(child.tuitionFee || child.fee || child.amount || 35000);
-        const childTutorId = String(child.tutorId || child.staffId || child.assignedTutorId || child.assignedStaffId || child.instructorId || "lead_tutor").trim();
+        const parentAssignedBase = Number((user as any).billing?.baseAmount || 0);
+        const childIsPartial = isPartiallyPaidStatus(child.paymentStatus ?? child.status);
+        const childRemaining = Number(child.remainingBalance || 0);
+        const rawChildFee = childIsPartial && childRemaining > 0
+          ? childRemaining
+          : Number(child.tuitionFee ?? child.fee ?? child.amount ?? child.price ?? parentAssignedBase ?? 0);
+        const childFee = Number.isFinite(rawChildFee) && rawChildFee > 0 ? rawChildFee : 0;
+        const childTutorId = String(child.tutorId || child.staffId || child.assignedTutorId || child.assignedStaffId || child.instructorId || "").trim();
         const childTutorName = String(child.tutorName || child.assignedTutorName || child.mentorName || "Assigned Academy Tutor").trim();
 
-        // Check if child has multi-program breakdown in enrolledPrograms, programs, or tutorAssignments
+        const matchesVerifiedRecentPayment = (p: any, progId?: string, progName?: string) => {
+          if (!isSuccessfulPayment(p)) return false;
+          const matchesStudent =
+            p.studentId === child.id ||
+            (Array.isArray(p.studentIds) && p.studentIds.includes(child.id));
+          if (!matchesStudent) return false;
+          const paidTime = new Date(p.paidAt || p.createdAt || 0).getTime();
+          if (!(nowMs - paidTime < fourWeeksMs)) return false;
+          if (!progId && !progName) return true;
+          if (Array.isArray(p.selectedItems) && p.selectedItems.length > 0) {
+            return p.selectedItems.some((item: any) =>
+              item &&
+              item.childId === child.id &&
+              ((progId && item.programId === progId) || (progName && String(item.programName || "").toLowerCase() === progName.toLowerCase()))
+            );
+          }
+          const pPlanName = String(p.planName || p.plan || "").toLowerCase();
+          return !pPlanName || (Boolean(progName) && pPlanName.includes(progName!.toLowerCase())) || (Boolean(progId) && p.planId === progId);
+        };
+
         if (Array.isArray(child.enrolledPrograms) && child.enrolledPrograms.length > 0) {
           child.enrolledPrograms.forEach((ep: any, index: number) => {
             const progId = String(ep.id || ep.programId || `prog_${index}`);
             const progName = String(ep.name || ep.programName || ep.title || childPlan);
-            const progAmount = Number(ep.fee || ep.amount || ep.tuitionFee || Math.round(childFee / child.enrolledPrograms.length));
-            const progTutorId = String(ep.tutorId || childTutorId);
-            const progTutorName = String(ep.tutorName || childTutorName);
+            const progAmount = Number(
+              ep.remainingBalance ??
+              ep.fee ??
+              ep.amount ??
+              ep.tuitionFee ??
+              ep.price ??
+              (childFee > 0 ? Math.round(childFee / child.enrolledPrograms.length) : 0)
+            );
+            const progTutorId = String(ep.tutorId || ep.assignedTutorId || childTutorId);
+            const progTutorName = String(ep.tutorName || ep.assignedTutorName || childTutorName);
 
-            // Determine paid status
-            const hasMatchingPaid = payments.some(p => {
-              const matchesStudent = p.studentId === child.id;
-              const matchesProg = !p.planName || p.planName.toLowerCase().includes(progName.toLowerCase()) || p.planId === progId;
-              const paidTime = new Date(p.paidAt || p.createdAt || 0).getTime();
-              return matchesStudent && matchesProg && (nowMs - paidTime < fourWeeksMs);
-            });
+            const hasMatchingPaid = matchesVerifiedRecentPayment(ep, progId, progName) || payments.some(p => matchesVerifiedRecentPayment(p, progId, progName));
+            const epStatusNorm = String(ep.status || ep.paymentStatus || "").toUpperCase();
 
             feeItems.push({
-              id: `${child.id}::${progTutorId}::${progId}`,
+              id: `${child.id}::${progTutorId || "unassigned"}::${progId}`,
               childId: child.id,
               childName,
               childUsername: child.username,
@@ -573,26 +605,24 @@ export const handler: Handler = async event => {
               tutorName: progTutorName,
               programId: progId,
               programName: progName,
-              amount: progAmount > 0 ? progAmount : 15000,
-              status: (ep.status === "PAID" || hasMatchingPaid) ? "PAID" : "DUE",
+              amount: Number.isFinite(progAmount) && progAmount > 0 ? progAmount : 0,
+              status: (epStatusNorm === "PAID" || hasMatchingPaid)
+                ? "PAID"
+                : isPartiallyPaidStatus(epStatusNorm)
+                  ? "PARTIALLY_PAID"
+                  : "DUE",
               cycle: ep.cycle || "monthly"
             });
           });
         } else if (Array.isArray(child.subjects) && child.subjects.length > 1) {
-          // Multiple subjects listed: itemize each subject
-          const perSubjectFee = Math.round(childFee / child.subjects.length);
+          const perSubjectFee = childFee > 0 ? Math.round(childFee / child.subjects.length) : 0;
           child.subjects.forEach((subj: string, index: number) => {
-            const progId = `subj_${index}_${subj.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+            const progId = `subj_${index}_${subj.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
             const progName = String(subj).trim();
-
-            const hasMatchingPaid = payments.some(p => {
-              const matchesStudent = p.studentId === child.id;
-              const paidTime = new Date(p.paidAt || p.createdAt || 0).getTime();
-              return matchesStudent && (nowMs - paidTime < fourWeeksMs);
-            });
+            const hasMatchingPaid = payments.some(p => matchesVerifiedRecentPayment(p, progId, progName));
 
             feeItems.push({
-              id: `${child.id}::${childTutorId}::${progId}`,
+              id: `${child.id}::${childTutorId || "unassigned"}::${progId}`,
               childId: child.id,
               childName,
               childUsername: child.username,
@@ -601,32 +631,29 @@ export const handler: Handler = async event => {
               tutorName: childTutorName,
               programId: progId,
               programName: progName,
-              amount: perSubjectFee > 0 ? perSubjectFee : 15000,
-              status: hasMatchingPaid ? "PAID" : "DUE",
+              amount: perSubjectFee > 0 ? perSubjectFee : 0,
+              status: hasMatchingPaid ? "PAID" : childIsPartial ? "PARTIALLY_PAID" : "DUE",
               cycle: "monthly"
             });
           });
         } else {
-          // Single program item
-          const hasMatchingPaid = payments.some(p => {
-            const matchesStudent = p.studentId === child.id;
-            const paidTime = new Date(p.paidAt || p.createdAt || 0).getTime();
-            return matchesStudent && (nowMs - paidTime < fourWeeksMs);
-          });
+          const hasMatchingPaid =
+            String(child.paymentStatus || "").toUpperCase() === "PAID" ||
+            payments.some(p => matchesVerifiedRecentPayment(p));
 
           feeItems.push({
-            id: `${child.id}::${childTutorId}::core_program`,
+            id: `${child.id}::${childTutorId || "unassigned"}::core_program`,
             childId: child.id,
             childName,
             childUsername: child.username,
             childClass: child.class || child.grade || "Standard Track",
             tutorId: childTutorId,
             tutorName: childTutorName,
-            programId: "core_program",
+            programId: String(child.programId || "core_program"),
             programName: childPlan,
-            amount: childFee > 0 ? childFee : 35000,
-            status: hasMatchingPaid ? "PAID" : "DUE",
-            cycle: "monthly"
+            amount: childFee,
+            status: hasMatchingPaid ? "PAID" : childIsPartial ? "PARTIALLY_PAID" : "DUE",
+            cycle: child.cycle || "monthly"
           });
         }
       });

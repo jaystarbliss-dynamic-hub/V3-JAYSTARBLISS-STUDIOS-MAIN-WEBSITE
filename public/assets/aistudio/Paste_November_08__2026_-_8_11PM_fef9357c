@@ -1,0 +1,1235 @@
+# COMPLETE REDESIGN BRIEF — JAYSTARBLISS STUDIOS
+## Super Admin: Programs & Courses Workspace
+
+Act as a senior product designer, UX architect, and experienced frontend engineer. Your task is to redesign the **Programs & Courses section of the Jaystarbliss Studios Super Admin Portal** into a polished, modern, intuitive, and fully interactive programme-management workspace.
+
+This is not a request to change colours, round some corners, or rearrange existing cards. I want you to rethink how the entire workspace is organised, how its different functions are accessed, and how an administrator completes everyday tasks.
+
+The final result should feel like a professional education-management platform built for a real organisation, not a generic admin dashboard template.
+
+---
+
+# 1. FIRST: INSPECT THE EXISTING PROJECT
+
+Before writing or changing code, thoroughly inspect the existing implementation.
+
+Pay particular attention to:
+
+- `src/pages/admin/AdminPrograms.tsx`
+- `src/pages/admin/AdminProgramForm.tsx`
+- `src/lib/programHierarchy.ts`
+- `src/components/admin/ProgramHierarchySelector.tsx`
+- `src/pages/admin/AdminTutorSubjects.tsx`
+- `src/pages/admin/AdminServices.tsx`
+- `src/pages/portal/PortalCourses.tsx`
+- `src/App.tsx`
+- Existing admin and portal layout components.
+- Existing styling, shared components, icons, and design tokens.
+
+Understand how the existing programme hierarchy works, which fields are supported, what actions are available, and how the different programme-management screens relate to one another.
+
+**The existing codebase and its data structures are the source of truth.** The attached screenshots are visual references, not specifications for creating a different data model.
+
+Do not invent new entities, collections, fields, or business processes simply because they appear in a visual reference.
+
+Where a feature is already implemented, preserve its purpose and make its interface better. Where a feature is incomplete or confusing, improve its presentation without breaking the existing architecture.
+
+---
+
+# 2. SCOPE AND TECHNICAL RESTRICTIONS
+
+This task concerns the authenticated **Super Admin Programs & Courses workspace only**.
+
+Do not redesign or modify:
+
+- The public marketing website.
+- Public programme catalogue pages.
+- Public programme-detail pages.
+- Other portal roles or their dashboards.
+- Firebase Authentication.
+- Firestore structures or security rules.
+- Cloud Functions.
+- Cloud Storage.
+- Existing backend services or integrations.
+
+This is a frontend redesign and interactive prototype.
+
+Create an isolated preview workspace at:
+
+`/portal-preview/programs-courses`
+
+If a `/portal-preview` route or preview environment already exists, extend it cleanly rather than duplicating the preview system.
+
+Use local mock data and React state to make the prototype interactive. Do not make Firebase calls, external API requests, or actual cloud-storage requests from this preview.
+
+The preview must not interfere with the actual production routes or live records. Do not replace the live `/admin/programs` implementation until the redesigned interface has been reviewed and approved.
+
+All mock changes should remain local to the preview session. Make it clear that mock operations do not modify live records or save to the actual database.
+
+Do not commit changes to GitHub.
+
+---
+
+# 3. THE MAIN DESIGN OBJECTIVE
+
+Create a complete programme-management experience where an administrator can easily:
+
+1. Browse all programmes.
+2. Explore the entire programme hierarchy.
+3. Create new programmes.
+4. Create sub-programmes.
+5. Edit existing programme information.
+6. Manage curriculum content.
+7. Manage delivery options and pricing.
+8. Review tutor programme proposals.
+9. Handle programmes that have not been assigned to a parent.
+10. Archive and restore programmes.
+11. Reorder or move programme branches.
+12. Preview hierarchy migrations.
+13. Export and inspect backups.
+14. Identify hierarchy integrity problems.
+15. Publish, unpublish, and manage programme visibility.
+
+These functions must not be hidden behind a confusing collection of unrelated tabs or menus.
+
+Organise the workspace so that an administrator understands where each task belongs without having to search through several screens.
+
+---
+
+# 4. INFORMATION ARCHITECTURE
+
+Redesign the workspace around these primary sections:
+
+### A. Programme Catalogue
+
+The main landing page for browsing and managing all programme records.
+
+### B. Programme Hierarchy
+
+A dedicated hierarchy explorer for viewing and managing parent programmes, sub-programmes, and their relationships.
+
+### C. Curriculum Management
+
+A workspace for managing curriculum documents, modules, learning objectives, and the curriculum information supported by the existing data structure.
+
+### D. Tutor Proposals
+
+A dedicated workspace for reviewing and processing programme proposals submitted by tutors.
+
+### E. Unassigned Programmes
+
+A workspace for reviewing programme records that do not yet have a valid hierarchy placement.
+
+### F. Archive & Advanced Tools
+
+A dedicated area for archived programmes, migration preview, backup, and hierarchy integrity checks.
+
+Use an appropriate combination of page navigation, compact tabs, nested navigation, or secondary navigation.
+
+Do not force every function into one enormous page.
+
+Also, do not create unnecessary navigation levels. The user should be able to move between related programme-management tasks easily.
+
+**Important separation:** Tutor Subject approvals already belong to the separate Tutor Subjects management area. Public Website Services already have their own Services management section. Do not continue placing these unrelated management functions inside the Programs & Courses workspace. Provide sensible links to those separate areas where useful.
+
+---
+
+# 5. SHARED ADMIN INTERFACE
+
+Create a consistent administrative shell for every screen in this workspace.
+
+### Sidebar
+
+Use a professional dark navy sidebar containing the existing admin navigation, with Programs & Courses clearly highlighted.
+
+Retain the organisation's established navigation structure where appropriate. Do not invent unrelated navigation items.
+
+The sidebar should support:
+
+- Clear active navigation states.
+- Compact, restrained Lucide icons.
+- Proper spacing between navigation groups.
+- Collapsible behaviour on desktop where appropriate.
+- An overlay drawer on mobile.
+
+The mobile navigation drawer must appear above the content with a properly configured z-index. It must never become trapped behind the page, modals, tables, or other interface elements.
+
+### Top navigation
+
+Include:
+
+- Global or workspace search where appropriate.
+- Breadcrumb navigation.
+- Notification access if already supported by the shared shell.
+- Super Admin profile/menu.
+- Page title and concise explanatory subtitle.
+
+Avoid repeating the same title, navigation, and description unnecessarily.
+
+---
+
+# 6. SCREEN ONE — PROGRAMME CATALOGUE
+
+This should be the first screen administrators see when opening Programs & Courses.
+
+Design a clean catalogue interface that makes finding and managing programmes effortless.
+
+### Header
+
+Title: `Programs & Courses`
+
+Subtitle: `Manage your programmes, learning pathways, and curriculum structure.`
+
+Include a prominent `Create Programme` action.
+
+### Search and filtering
+
+Provide a useful toolbar with:
+
+- Search programmes.
+- Category filter.
+- Parent/root programme filter.
+- Publication status filter.
+- Node type filter.
+- Delivery format filter.
+- Target audience filter.
+- Clear filters action.
+
+Filters must actually affect the displayed results.
+
+### Programme list
+
+Use a professional data table or structured list rather than turning every programme into a large card.
+
+Suggested columns:
+
+- Programme name.
+- Category.
+- Parent programme.
+- Node type.
+- Delivery format.
+- Pricing information.
+- Publication status.
+- Actions.
+
+Include:
+
+- Pagination when needed.
+- Sorting where useful.
+- Clear status indicators.
+- Row-level action menus.
+- Empty states when no results match the filters.
+
+Clicking a programme should open its details or take the administrator to the relevant management workspace.
+
+Do not invent enrolment statistics, course counts, or prices when actual data is not available.
+
+Where sample data is used for the prototype, clearly identify it as demonstration data.
+
+---
+
+# 7. SCREEN TWO — PROGRAMME HIERARCHY EXPLORER
+
+This is one of the most important parts of the entire redesign.
+
+The existing hierarchical structure must be represented clearly and professionally.
+
+There are four canonical root programmes:
+
+1. Technology Programme
+2. Design & Graphics Programme
+3. Music Programme
+4. Academics Programme
+
+The existing hierarchy also defines these predefined sub-programme relationships:
+
+- Smart Techies Programme under Technology Programme.
+- Digital Literacy Programme under Technology Programme.
+- Graphic Design Programme under Design & Graphics Programme.
+- WAEC Preparation Track under Academics Programme.
+- JAMB Preparation Track under Academics Programme.
+
+These are predefined hierarchy concepts, not confirmation that every corresponding record currently exists in Firestore. Do not automatically insert them as live records.
+
+### Recommended layout
+
+Use a two-panel workspace.
+
+**Left panel: Hierarchy Tree**
+
+Display the programme roots and their nested children as an expandable tree.
+
+The tree must support:
+
+- Expand and collapse individual branches.
+- Expand all.
+- Collapse all.
+- Search within the hierarchy.
+- Select a node.
+- Visually distinguish root programmes from children.
+- Display child counts when available.
+- Show node types.
+- Indicate published, draft, or archived status.
+- Clearly show the selected programme.
+
+Use indentation, connecting lines, restrained folder/node icons, and typography to communicate hierarchy.
+
+Do not make every tree node look like a separate card.
+
+**Right panel: Selected Programme Inspector**
+
+When an administrator selects a node, show its details in a structured inspector.
+
+Include:
+
+- Programme name.
+- Description.
+- Parent programme.
+- Root programme.
+- Breadcrumb path.
+- Category.
+- Node type.
+- Delivery format.
+- Target audience.
+- Pricing information.
+- Publication status.
+- Direct enrolment setting.
+- Whether it can contain children.
+- Required or optional status.
+- Progression rule.
+- Prerequisites.
+- Child programmes.
+
+Use appropriate tabs or grouped information sections such as:
+
+- Overview.
+- Child Programmes.
+- Details.
+- Progression.
+- Actions.
+
+### Hierarchy actions
+
+Provide accessible actions for:
+
+- Add Root Programme.
+- Add Child Programme.
+- Edit Programme.
+- Rename.
+- Move Programme.
+- Reorder.
+- Publish.
+- Unpublish or save as draft.
+- Archive.
+- Restore archived programme.
+- View details.
+
+These actions should be available through a clean contextual menu or well-organised action area.
+
+Avoid putting too many buttons beside every node.
+
+### Node types
+
+The existing system supports three node types:
+
+**CONTAINER**
+
+A structural folder that organises other programmes. It is not directly enrolable.
+
+**ENROLLABLE**
+
+An actual learning unit that can be enrolled in.
+
+**HYBRID**
+
+A programme that can support direct enrolment while also containing nested child programmes.
+
+Display these distinctions clearly with small labels or badges.
+
+Do not use colour alone to communicate the differences.
+
+### Progression
+
+The hierarchy supports:
+
+- Sequential progression.
+- Flexible progression.
+- Prerequisites.
+- Required or optional programmes.
+
+Make these relationships understandable without cluttering the tree.
+
+Where useful, show a simple progression visualisation or relationship panel.
+
+---
+
+# 8. SCREEN THREE — CREATE AND EDIT PROGRAMME
+
+The existing programme editor contains a substantial number of fields. It should not be presented as one long, exhausting form.
+
+Create a structured, multi-section editor with a clear step navigator or well-organised vertical section navigation.
+
+Recommended sections:
+
+### Step 1: Programme Identity
+
+Fields:
+
+- Programme title.
+- Slug.
+- Category.
+- Short description.
+- Detailed description.
+- Cover image.
+- Target audience.
+
+Category options:
+
+- Digital & Technology.
+- Creative.
+- Music.
+- Academics.
+- Exam Preparation.
+- Personalised Learning.
+- School Programs.
+
+Target audience options:
+
+- B2C.
+- B2B Schools.
+- Corporate.
+
+### Step 2: Hierarchy Placement
+
+Fields:
+
+- Parent programme.
+- Sibling sort order.
+- Node type.
+- Can contain sub-programmes.
+- Directly enrolable.
+- Required in parent branch.
+- Progression rule.
+- Prerequisites.
+
+Clearly explain the consequences of selecting each node type.
+
+Avoid displaying irrelevant configuration fields when a setting makes them unnecessary.
+
+### Step 3: Delivery
+
+Delivery format options:
+
+- Online.
+- Physical.
+- Hybrid.
+
+Delivery options:
+
+- Public Group.
+- Private Mentorship.
+- School Cohort.
+- Self-Paced.
+
+Also include relevant scheduling information:
+
+- Sessions per week.
+- Session duration.
+- Programme duration where supported.
+- Live classes setting where supported.
+
+### Step 4: Pricing
+
+Support editable pricing configuration for the delivery options.
+
+Existing form defaults include:
+
+- Public/group option: ₦35,000 per term/cohort.
+- Private mentorship: ₦60,000 per month, one-on-one.
+
+These are defaults in the existing form, not fixed universal prices.
+
+Allow the administrator to edit amounts and billing cycles.
+
+Display the pricing information clearly and avoid confusing pricing fields with delivery-format settings.
+
+### Step 5: Curriculum
+
+Include the curriculum information already supported by the application:
+
+- Curriculum document title.
+- PDF or Google Drive URL.
+- Curriculum summary.
+- Curriculum modules/topics.
+- Learning objectives.
+- Learning outcomes.
+
+Make modules and objectives easy to add, remove, edit, and reorder within the local prototype.
+
+Do not invent a new curriculum database model. Inspect the existing structures and represent the available fields accurately.
+
+### Step 6: Features and Access
+
+Include the existing feature settings:
+
+- EdClub.
+- General Partner School Curriculum.
+- Learning Resources.
+- Assessment Centre.
+
+Use clean toggles with brief explanations.
+
+### Step 7: Publication and Review
+
+Allow the administrator to review the full programme configuration before:
+
+- Saving as Draft.
+- Publishing.
+- Saving changes to an existing record.
+
+Display validation errors beside the appropriate fields.
+
+Provide a clear summary of incomplete required information.
+
+### Editor design rules
+
+- Do not put every field inside an individual card.
+- Use proper section groupings.
+- Use a two-column layout where it improves readability.
+- Keep labels above inputs.
+- Use sensible field widths.
+- Keep related fields together.
+- Use consistent spacing.
+- Avoid excessively long pages.
+- Provide sticky Save Draft and Publish actions when appropriate.
+- Ensure the mobile form remains comfortable to complete.
+
+---
+
+# 9. SCREEN FOUR — CURRICULUM MANAGEMENT
+
+Create a dedicated interface for managing the curriculum associated with a programme.
+
+The administrator should be able to select a programme and manage its curriculum without having to reopen the entire programme editor.
+
+Design a clear curriculum workspace containing:
+
+**Programme selector**
+
+Allow the administrator to choose the programme whose curriculum they want to manage.
+
+**Curriculum overview**
+
+Display the current curriculum document, summary, and relevant metadata.
+
+**Modules/topics**
+
+Display modules in a structured, reorderable list.
+
+Each item should support:
+
+- View.
+- Edit.
+- Reorder.
+- Remove.
+- Add new module.
+
+**Learning objectives and outcomes**
+
+Provide a clean interface for reviewing and editing the supported objectives and outcomes.
+
+**Curriculum resources**
+
+Show the relevant curriculum document title and external document URL where available.
+
+When the programme has no curriculum information, present a helpful empty state with an action to add it.
+
+Do not display fake lesson counts, video lessons, or resource attachments unless those features exist in the underlying data.
+
+---
+
+# 10. SCREEN FIVE — TUTOR PROGRAMME PROPOSALS
+
+Tutors can submit programme proposals for administrative review.
+
+Create a professional review workspace for this workflow.
+
+### Proposal overview
+
+Use tabs or filters for:
+
+- Pending.
+- Approved.
+- Rejected.
+- Changes Requested.
+
+Show a compact summary of proposal counts where data is available.
+
+### Proposal table
+
+Suggested columns:
+
+- Proposed programme.
+- Proposed by.
+- Intended parent programme.
+- Submission date.
+- Status.
+- Actions.
+
+### Review drawer or detail page
+
+When a proposal is opened, show:
+
+- Proposed programme title.
+- Description.
+- Proposed category.
+- Proposed parent programme.
+- Proposed delivery information.
+- Submitted pricing.
+- Tutor information.
+- Any additional proposal details supported by the existing system.
+
+Provide the administrator with the relevant actions:
+
+**Approve**
+
+Allow the administrator to review or set public-group and mentorship pricing where supported, and choose whether to publish immediately.
+
+**Reject**
+
+Require a rejection reason.
+
+**Request Changes**
+
+Allow the administrator to provide clear feedback to the tutor.
+
+Show the proposal status and review history where supported.
+
+All actions in the preview must update local mock state only.
+
+---
+
+# 11. SCREEN SIX — UNASSIGNED PROGRAMMES
+
+Create a dedicated workspace for programme records that do not have a valid parent placement or have not been confidently mapped into the new hierarchy.
+
+The screen should show:
+
+- Programme name.
+- Existing category.
+- Current parent information.
+- Reason it is unassigned.
+- Suggested possible placement, where available.
+- Review status.
+- Actions.
+
+Allow an administrator to inspect a record and assign it to an appropriate parent programme through a controlled interface.
+
+Do not automatically assign uncertain records.
+
+The administrator must be able to review and confirm placements.
+
+Clearly distinguish:
+
+- Missing parent references.
+- Unmapped programmes.
+- Uncertain hierarchy matches.
+- Invalid references.
+
+---
+
+# 12. SCREEN SEVEN — MOVE AND RESTRUCTURE PROGRAMME
+
+Moving a programme branch must be a controlled operation.
+
+Do not make it possible to accidentally damage the hierarchy.
+
+When an administrator selects Move Programme, open a well-designed modal or side drawer.
+
+Show:
+
+- Current programme.
+- Current parent.
+- Current breadcrumb path.
+- Proposed destination parent.
+- New breadcrumb path.
+- Number of descendants affected.
+- A preview of the affected branch.
+
+Validate the following:
+
+- A programme cannot be moved into itself.
+- A programme cannot be moved into one of its descendants.
+- Invalid hierarchy cycles must be prevented.
+- The selected destination must support the proposed child relationship.
+- Required hierarchy relationships must be respected.
+
+For valid moves, provide a clear confirmation step.
+
+The prototype should update the local hierarchy and its derived parent, root, ancestor, and breadcrumb information.
+
+### Reordering
+
+Support moving a programme up or down among its siblings.
+
+Where drag-and-drop is provided, make sure there is also an accessible non-drag alternative.
+
+Do not allow drag-and-drop to bypass hierarchy validation.
+
+---
+
+# 13. SCREEN EIGHT — ARCHIVE & RESTORE
+
+Create a dedicated archive workspace.
+
+Display archived programmes in a structured table with:
+
+- Programme title.
+- Original parent.
+- Archive date where available.
+- Status information.
+- Actions.
+
+Provide:
+
+- Search.
+- Filters.
+- View details.
+- Restore.
+- Relevant confirmation dialogs.
+
+When restoring an archived programme, preserve its previous publication state where that state is available.
+
+Do not automatically convert every restored Draft programme into Published.
+
+Do not silently archive an entire branch when the existing application only archives the selected record.
+
+Make the effect of each action clear before confirmation.
+
+---
+
+# 14. SCREEN NINE — MIGRATION & BACKUP
+
+The existing hierarchy system supports migration previews and JSON backups.
+
+Give this important functionality its own clean and understandable workspace.
+
+### Migration overview
+
+Show a summary of:
+
+- Root programmes.
+- Missing roots.
+- High-confidence mappings.
+- Uncertain mappings.
+- Existing mappings.
+- Invalid references.
+- Potential hierarchy cycles.
+
+Use a combination of compact data summaries, structured tables, and clear warning sections.
+
+Do not bury serious integrity warnings in ordinary status cards.
+
+### Migration preview
+
+Allow the administrator to inspect proposed mappings before confirming anything.
+
+Display:
+
+- Existing programme.
+- Proposed parent.
+- Mapping confidence.
+- Reason for uncertainty.
+- Potential issues.
+- Review status.
+
+Uncertain programme mappings must remain unassigned until reviewed. Never guess.
+
+### Backup
+
+Provide a clear interface for:
+
+- Creating a JSON backup preview.
+- Viewing backup metadata.
+- Inspecting a backup's contents.
+- Reviewing the number of programme records represented.
+- Simulating export of the mock backup.
+
+The preview must not execute a real migration or write to the live database.
+
+Where possible, use a local client-side demonstration of the JSON export.
+
+### Integrity checking
+
+Provide a readable integrity report that distinguishes:
+
+- Healthy hierarchy relationships.
+- Missing references.
+- Invalid references.
+- Possible cycles.
+- Unexpected hierarchy structures.
+
+Make the results actionable rather than displaying technical errors without explanation.
+
+---
+
+# 15. INTERACTION REQUIREMENTS
+
+This must be a working interactive prototype, not a static collection of screenshots.
+
+Every visible control must have a meaningful response.
+
+Implement local-state interactions for:
+
+- Navigation between workspace sections.
+- Search.
+- Filtering.
+- Sorting.
+- Pagination.
+- Programme selection.
+- Expand and collapse.
+- Expand all and collapse all.
+- Add programme.
+- Add child programme.
+- Edit programme.
+- Rename programme.
+- Move programme.
+- Reorder siblings.
+- Publish and unpublish.
+- Archive and restore.
+- Curriculum module creation and editing.
+- Curriculum module reordering.
+- Proposal approval.
+- Proposal rejection.
+- Requesting proposal changes.
+- Unassigned programme placement.
+- Migration preview.
+- Backup preview.
+- Integrity checks.
+- Confirmation dialogs.
+- Toast or inline feedback.
+
+Use realistic mock data that reflects Jaystarbliss Studios' programme structure.
+
+Where an action requires a real backend, demonstrate the intended interaction with local state and clearly indicate that it is a preview operation.
+
+Do not create buttons that do nothing.
+
+Do not display success messages unless the local mock action has actually completed.
+
+---
+
+# 16. DESIGN SYSTEM AND VISUAL RULES
+
+This section is extremely important.
+
+I do not want the entire workspace to look like a grid of identical cards.
+
+Use a refined, professional design system that prioritises clarity, structure, and efficient workflows.
+
+### Brand direction
+
+Use the established Jaystarbliss Studios visual identity:
+
+- Primary navy: `#1E293B`
+- Brand red: `#B91C1C`
+- Light background: `#F8FAFC`
+
+You may use carefully selected supporting neutral colours for borders, backgrounds, muted text, dividers, and status indicators.
+
+Retain a light, clean workspace with a dark navy navigation sidebar and restrained red accents.
+
+Avoid unnecessary colour decoration.
+
+### CARD USAGE — IMPORTANT
+
+Cards should be used intentionally, not automatically.
+
+Do not turn every section, input, table, row, statistic, or control into a card.
+
+Use cards when content genuinely needs visual separation, such as:
+
+- A selected programme overview.
+- A small group of key summary metrics.
+- A contextual information panel.
+- A focused action area.
+- A distinct preview or warning.
+
+For most administrative information, prefer:
+
+- Tables.
+- Structured lists.
+- Expandable hierarchy trees.
+- Divided content sections.
+- Side panels.
+- Forms with clear field groupings.
+- Tabs.
+- Drawers.
+- Modals.
+- Timelines where relevant.
+- Compact status summaries.
+
+Avoid a dashboard where every piece of information is placed inside a rounded rectangle.
+
+Avoid repeated nested cards.
+
+Avoid excessive shadows, unnecessary borders, and large empty spaces inside components.
+
+### VARY THE LAYOUT
+
+Different functions should have layouts suited to their purpose.
+
+Examples:
+
+- Catalogue: structured table or list.
+- Hierarchy: tree and selected-node inspector.
+- Programme editor: guided multi-section form.
+- Curriculum: module list and content editor.
+- Tutor proposals: review table and side drawer.
+- Unassigned programmes: exception-management table.
+- Move programme: confirmation modal with hierarchy preview.
+- Archive: searchable table.
+- Migration: summary, validation report, and mapping review table.
+- Backup: metadata and JSON preview.
+
+Do not use the same layout pattern everywhere simply to achieve consistency.
+
+Consistency should come from typography, spacing, colours, controls, and interaction behaviour—not from forcing every screen into the same card layout.
+
+### TYPOGRAPHY
+
+Use a clear typography hierarchy.
+
+- Strong page titles.
+- Smaller section headings.
+- Readable body text.
+- Subtle secondary descriptions.
+- Distinct field labels.
+- Clear table headings.
+- Readable metadata.
+
+Do not make every heading oversized.
+
+Avoid excessive bold text.
+
+### ICONS
+
+Use Lucide icons consistently and sparingly.
+
+No emojis.
+
+Do not use the Sparkles icon anywhere.
+
+Avoid placing an icon beside every heading or every line of information.
+
+Use icons only when they communicate a recognisable action, navigation item, or function.
+
+Buttons with text labels should not also contain unnecessary decorative icons.
+
+### BUTTONS
+
+Establish clear button hierarchy:
+
+- One primary action per relevant screen or action area.
+- Secondary actions with neutral styling.
+- Destructive actions clearly differentiated.
+- Icon-only controls only when their meaning is obvious, with accessible labels or tooltips.
+
+Avoid multiple visually competing primary buttons.
+
+### FORMS
+
+Forms should feel organised, not overwhelming.
+
+- Consistent label placement.
+- Clear input states.
+- Proper spacing.
+- Useful validation messages.
+- Logical field grouping.
+- Select controls for predefined values.
+- Toggles for genuine on/off settings.
+- Textareas for longer descriptions.
+- Helpful hints only where necessary.
+
+### TABLES AND LISTS
+
+Tables must be readable and professionally structured.
+
+- Do not cram too many columns into a narrow layout.
+- Use consistent row heights.
+- Align text and numeric values properly.
+- Keep actions accessible.
+- Use subtle row separators.
+- Provide proper empty states.
+- Make the selected row clear where applicable.
+
+### STATUS INDICATORS
+
+Use restrained, consistent status labels.
+
+Examples:
+
+- Published.
+- Draft.
+- Archived.
+- Pending.
+- Approved.
+- Rejected.
+- Changes Requested.
+- Healthy.
+- Needs Review.
+
+Do not rely exclusively on colour to communicate status.
+
+### VISUAL SIMPLICITY
+
+Avoid:
+
+- Excessive cards.
+- Excessive rounded containers.
+- Bright gradients.
+- Glassmorphism.
+- Unnecessary animations.
+- Decorative charts that communicate no useful information.
+- Huge empty areas.
+- Oversized icons.
+- Unnecessary explanatory paragraphs.
+- Repeated statistics.
+- Too many tabs.
+- Excessive button groups.
+- Overly dense toolbars.
+
+The workspace should feel calm, premium, organised, and efficient.
+
+---
+
+# 17. RESPONSIVE DESIGN
+
+The interface must work properly on:
+
+- Desktop monitors.
+- Standard laptops.
+- Tablets.
+- Mobile phones.
+
+Do not simply shrink the desktop design.
+
+For mobile:
+
+- Use a proper overlay navigation drawer.
+- Give the navigation a high enough z-index to sit above page content.
+- Make hierarchy exploration usable with expandable branches.
+- Convert wide tables into mobile-friendly layouts where necessary.
+- Prevent horizontal overflow.
+- Keep important actions accessible.
+- Use full-width forms.
+- Make modals responsive.
+- Keep text readable.
+- Ensure buttons have comfortable touch targets.
+
+Do not allow dropdowns, popovers, or action menus to be clipped by parent containers.
+
+The mobile experience should be deliberately designed, not treated as an afterthought.
+
+---
+
+# 18. ACCESSIBILITY AND USABILITY
+
+Ensure:
+
+- Clear keyboard focus states.
+- Accessible form labels.
+- Proper button names.
+- Readable colour contrast.
+- Keyboard-accessible menus and dialogs.
+- Logical tab order.
+- Confirmation before destructive actions.
+- Clear error and success feedback.
+- No information conveyed through colour alone.
+
+Keep frequently used actions easy to locate.
+
+An administrator should not need to open five different menus just to edit a programme or add a child programme.
+
+---
+
+# 19. MOCK DATA GUIDELINES
+
+Use realistic Jaystarbliss Studios programme data for the preview.
+
+The four main programme roots must be represented correctly:
+
+- Technology Programme.
+- Design & Graphics Programme.
+- Music Programme.
+- Academics Programme.
+
+Use plausible demonstration children only where needed to show the hierarchy and workflows.
+
+Possible demonstration examples include:
+
+- Smart Techies Programme.
+- Digital Literacy Programme.
+- Web Development.
+- Graphic Design Programme.
+- Piano Lessons.
+- Recorder Lessons.
+- WAEC Preparation Track.
+- JAMB Preparation Track.
+
+Make it clear which records are sample data.
+
+Do not present placeholder values as actual database statistics.
+
+Use Nigerian currency formatting where sample prices are needed.
+
+Do not invent actual student enrolment numbers or tutor statistics.
+
+---
+
+# 20. EXISTING BEHAVIOURS AND EDGE CASES TO PRESERVE
+
+Pay particular attention to the following behaviours in the existing application:
+
+1. Programme records support parent, sort order, node type, and hierarchy relationships.
+2. The hierarchy calculates root programme IDs, ancestor IDs, and breadcrumb paths.
+3. Moving branches must update their hierarchy relationships consistently.
+4. Invalid moves and hierarchy cycles must be prevented.
+5. Uncertain migration matches must remain unassigned.
+6. Tutor proposals have distinct review states: Pending, Approved, Rejected, and Changes Requested.
+7. Archive and restore operations should be handled carefully.
+8. Programme delivery options and prices are separately configurable.
+9. Programme features include EdClub, General Partner School Curriculum, Learning Resources, and Assessment Centre.
+10. Existing route navigation and edit links should be reviewed for consistency.
+
+In particular, inspect the existing programme edit navigation. There is an apparent mismatch between the edit link pattern and the route definitions. Do not reproduce broken navigation in the redesign.
+
+Do not alter actual backend logic as part of this frontend-only preview.
+
+---
+
+# 21. COMPONENT AND CODE QUALITY
+
+Build the redesign using reusable components.
+
+Possible component groupings include:
+
+- ProgrammeWorkspaceLayout.
+- ProgrammeCatalogue.
+- ProgrammeFilters.
+- ProgrammeTable.
+- ProgrammeHierarchyExplorer.
+- HierarchyTree.
+- HierarchyNode.
+- ProgrammeInspector.
+- ProgrammeEditor.
+- CurriculumBuilder.
+- TutorProposalTable.
+- ProposalReviewDrawer.
+- UnassignedProgrammeTable.
+- MoveProgrammeDialog.
+- ArchiveWorkspace.
+- MigrationPreview.
+- BackupViewer.
+- IntegrityReport.
+
+These are suggestions, not mandatory filenames. Use the existing codebase's conventions.
+
+Avoid creating one enormous component containing the entire workspace.
+
+Keep the implementation maintainable.
+
+Reuse existing shared components where appropriate, but do not preserve poor design patterns simply because they already exist.
+
+Do not introduce unnecessary dependencies.
+
+Do not break the existing TypeScript conventions.
+
+---
+
+# 22. ACCEPTANCE TESTS
+
+Before considering the prototype complete, verify all of the following:
+
+### Catalogue
+- The catalogue loads with realistic mock records.
+- Search works.
+- Filters work.
+- Programme selection works.
+- Actions are accessible.
+
+### Hierarchy
+- All four root programmes appear.
+- Children can be expanded and collapsed.
+- Selecting a node updates the inspector.
+- New child programmes can be added locally.
+- Root and child relationships are understandable.
+- Invalid moves are blocked.
+- Reordering works.
+
+### Programme Editor
+- All existing important programme fields are represented.
+- Node type options work.
+- Category options work.
+- Delivery formats work.
+- Pricing fields are editable.
+- Prerequisites can be selected.
+- Curriculum fields work.
+- Feature settings work.
+- Draft and publish actions respond correctly.
+
+### Tutor Proposals
+- Proposals can be inspected.
+- Approval updates local state.
+- Rejection requires a reason.
+- Requesting changes requires feedback.
+- Status filters work.
+
+### Unassigned Programmes
+- Unassigned records can be reviewed.
+- Parent placement can be selected.
+- Uncertain mappings are not automatically assigned.
+
+### Archive and Advanced Tools
+- Archived programmes appear in the archive.
+- Restore works locally.
+- Migration issues are visible.
+- Uncertain mappings are flagged.
+- Backup preview works.
+- Integrity checks produce understandable results.
+
+### Responsive Interface
+- Mobile navigation overlays the page correctly.
+- No horizontal overflow occurs.
+- Tables remain usable.
+- Modals fit mobile screens.
+- Buttons remain accessible.
+
+### Regression
+- The public website remains unchanged.
+- Existing authenticated portal routes remain unchanged.
+- No Firebase or backend files are modified.
+- No live records are altered.
+- No changes are committed to GitHub.
+
+---
+
+# 23. FINAL DELIVERY EXPECTATIONS
+
+Do not stop after producing the first dashboard screen.
+
+I want the complete Programs & Courses workspace, with every major management function represented by its own appropriate interface.
+
+The final preview must include the catalogue, hierarchy explorer, programme creation/editor, curriculum management, tutor proposals, unassigned programmes, move/restructure workflow, archive, migration preview, backup, and integrity checking.
+
+Make every visible control meaningful and interactive using local mock state.
+
+Use the attached images as visual inspiration, but do not copy their placeholder text, inaccurate data, or generic course-management assumptions.
+
+Prioritise the actual Jaystarbliss programme hierarchy and existing application functionality.
+
+**The final design should feel like a serious programme-management system: clean, structured, modern, easy to navigate, and efficient to use.**
+
+Do not sacrifice functionality for appearance, and do not sacrifice good design by cramming everything into cards.
+
+Build the complete preview now, inspect it at desktop and mobile sizes, correct visual and interaction problems, and provide a concise report describing the screens implemented, interactions tested, and files changed.

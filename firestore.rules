@@ -348,25 +348,22 @@ service cloud.firestore {
     
     match /payments/{paymentId} {
       allow read: if isAnyAdmin() || (isAuth() && (resource.data.userId == request.auth.uid || resource.data.parentId == request.auth.uid || resource.data.tutorId == request.auth.uid || resource.data.staffId == request.auth.uid || isSameSchool(resource.data.schoolId)));
-      allow create: if isAnyAdmin() || isAuth();
-      allow update, delete: if isAnyAdmin();
+      allow create, update, delete: if isAnyAdmin();
     }
     
     match /staffWallets/{staffId} {
       allow read: if isAnyAdmin() || (isAuth() && request.auth.uid == staffId);
-      allow write: if isAnyAdmin() || (isAuth() && request.auth.uid == staffId);
+      allow write: if isAnyAdmin();
     }
     
     match /withdrawals/{withdrawalId} {
       allow read: if isAnyAdmin() || (isAuth() && (resource.data.userId == request.auth.uid || resource.data.staffId == request.auth.uid || resource.data.tutorId == request.auth.uid));
-      allow create: if isAuth() && (request.resource.data.userId == request.auth.uid || request.resource.data.staffId == request.auth.uid || isAnyAdmin());
-      allow update, delete: if isAnyAdmin();
+      allow create, update, delete: if isAnyAdmin();
     }
     
     match /walletWithdrawals/{withdrawalId} {
       allow read: if isAnyAdmin() || (isAuth() && (resource.data.userId == request.auth.uid || resource.data.staffId == request.auth.uid || resource.data.tutorId == request.auth.uid));
-      allow create: if isAuth() && (request.resource.data.userId == request.auth.uid || request.resource.data.staffId == request.auth.uid || isAnyAdmin());
-      allow update, delete: if isAnyAdmin();
+      allow create, update, delete: if isAnyAdmin();
     }
     
     match /tutorSettlements/{settlementId} {

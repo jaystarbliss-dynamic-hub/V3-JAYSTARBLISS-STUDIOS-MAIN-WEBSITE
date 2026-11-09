@@ -3,10 +3,11 @@ import {
   X, Save, BookOpen, Clock, UserCheck, CreditCard, Download,
   CheckCircle2, AlertCircle, ShieldCheck
 } from 'lucide-react';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { formatCurrency, generatePdfReceipt } from '../../lib/receiptGenerator';
+import { billingPost, isPartiallyPaidStatus } from '../../lib/billing';
 
 export interface UnifiedParentStudent {
   id: string;
@@ -204,47 +205,103 @@ export const ParentTuitionModal: React.FC<ParentTuitionModalProps> = ({
     try {
       const txRef = payReference.trim() || `TX-PARENT-${Date.now()}`;
       const paidAt = payDate ? new Date(payDate).toISOString() : new Date().toISOString();
-      const paymentRecord = {
-        reference: txRef,
-        studentId: student.id,
-        studentName: studentName || student.studentName,
-        parentName: parentName || student.parentName,
-        payerName: parentName || studentName || 'Parent',
-        payerEmail: parentEmail || '',
-        payerPhone: parentPhone || '',
-        amount: numAmount,
-        customerTotal: numAmount,
-        baseAmount: numAmount,
-        transactionFee: 0,
-        type: 'inflow',
-        category: 'parent_tuition',
-        status: 'PAID',
-        channel: 'bank_transfer',
-        method: 'bank_transfer',
-        plan: plan || student.plan || '',
-        description: `Tuition Settlement (${plan || student.plan || 'Programme'}) - ${studentName || student.studentName}`,
-        teachingMode,
-        cycle,
-        notes: payNotes,
-        paidAt,
-        createdAt: serverTimestamp()
-      };
+      const contractFee = Number(amount || student.amount || 0);
 
-      await setDoc(doc(db, 'payments', txRef), paymentRecord);
+      let resultingStatus = 'PAID';
+      let resultingRemainingBalance = 0;
 
-      const studentUpdate = {
-        status: 'PAID',
-        accountStatus: 'ACTIVE',
-        lastPaymentAmount: numAmount,
-        lastPaymentDate: paidAt,
-        updatedAt: serverTimestamp()
-      };
+      try {
+        const res = await billingPost<{ recorded: boolean; status: string; remainingBalance: number }>('billing-admin', {
+          action: 'record_offline_payment',
+          targetType: 'STUDENT',
+          studentId: student.id,
+          amount: numAmount,
+          contractAmount: contractFee,
+          reference: txRef,
+          paymentMethod: 'bank_transfer',
+          paymentDate: paidAt,
+          cycle,
+          notes: payNotes,
+          planName: plan || student.plan || 'Private Tuition',
+          studentName: studentName || student.studentName,
+          parentName: parentName || student.parentName,
+          email: parentEmail,
+          tutorId: tutorId || student.tutorId || '',
+          tutorName: assignedTutor?.name || student.tutorName || ''
+        });
+        resultingStatus = res.status || 'PAID';
+        resultingRemainingBalance = Number(res.remainingBalance || 0);
+      } catch (apiErr) {
+        const errMsg = apiErr instanceof Error ? apiErr.message : '';
+        if (errMsg && !errMsg.includes('could not complete this request')) {
+          throw apiErr;
+        }
+        // Safe non-overwriting fallback when serverless function is offline in local dev
+        const existingTxSnap = await getDoc(doc(db, 'payments', txRef));
+        if (existingTxSnap.exists()) {
+          throw new Error('A transaction with this reference already exists. Existing transactions cannot be overwritten.');
+        }
 
-      await Promise.all([
-        setDoc(doc(db, 'individualStudents', student.id), studentUpdate, { merge: true }),
-        setDoc(doc(db, 'students', student.id), studentUpdate, { merge: true }),
-        setDoc(doc(db, 'enrollment_requests', student.id), studentUpdate, { merge: true })
-      ]);
+        const indSnap = await getDoc(doc(db, 'individualStudents', student.id)).catch(() => null);
+        const sData = indSnap && indSnap.exists() ? indSnap.data() : {};
+        const wasPartial = isPartiallyPaidStatus(sData?.paymentStatus ?? sData?.status ?? student.status);
+        const prevPaid = wasPartial
+          ? Math.max(0, Number(sData?.amountPaid || (contractFee - Number(sData?.remainingBalance || contractFee))))
+          : 0;
+        const cumulativePaid = Number((prevPaid + numAmount).toFixed(2));
+        resultingRemainingBalance = contractFee > 0 ? Number(Math.max(0, contractFee - cumulativePaid).toFixed(2)) : 0;
+        resultingStatus = resultingRemainingBalance > 0 ? 'PARTIALLY_PAID' : 'PAID';
+
+        const paymentRecord = {
+          reference: txRef,
+          studentId: student.id,
+          studentName: studentName || student.studentName,
+          parentName: parentName || student.parentName,
+          payerName: parentName || studentName || 'Parent',
+          payerEmail: parentEmail || '',
+          payerPhone: parentPhone || '',
+          amount: numAmount,
+          amountInNaira: true,
+          customerTotal: numAmount,
+          baseAmount: numAmount,
+          fullContractAmount: contractFee || numAmount,
+          remainingBalance: resultingRemainingBalance,
+          transactionFee: 0,
+          type: 'inflow',
+          category: 'parent_tuition',
+          status: resultingStatus,
+          paymentStatus: resultingStatus,
+          channel: 'bank_transfer',
+          method: 'bank_transfer',
+          plan: plan || student.plan || '',
+          description: `Tuition Settlement (${plan || student.plan || 'Programme'}) - ${studentName || student.studentName}${resultingRemainingBalance > 0 ? ' (Partial)' : ''}`,
+          teachingMode,
+          cycle,
+          notes: payNotes,
+          paidAt,
+          createdAt: serverTimestamp()
+        };
+
+        await setDoc(doc(db, 'payments', txRef), paymentRecord);
+
+        const studentUpdate = {
+          status: resultingStatus === 'PAID' ? 'ACTIVE' : 'PARTIALLY_PAID',
+          paymentStatus: resultingStatus,
+          accountStatus: 'ACTIVE',
+          amountPaid: cumulativePaid,
+          remainingBalance: resultingRemainingBalance,
+          lastPaymentAmount: numAmount,
+          lastPaymentDate: paidAt,
+          lastPaymentReference: txRef,
+          updatedAt: serverTimestamp()
+        };
+
+        await Promise.all([
+          setDoc(doc(db, 'individualStudents', student.id), studentUpdate, { merge: true }),
+          setDoc(doc(db, 'students', student.id), studentUpdate, { merge: true }),
+          setDoc(doc(db, 'enrollment_requests', student.id), studentUpdate, { merge: true })
+        ]);
+      }
 
       generatePdfReceipt({
         id: txRef,
@@ -254,17 +311,23 @@ export const ParentTuitionModal: React.FC<ParentTuitionModalProps> = ({
         amount: numAmount,
         customerTotal: numAmount,
         baseAmount: numAmount,
-        description: paymentRecord.description,
+        fullProgramFee: contractFee || numAmount,
+        remainingBalance: resultingRemainingBalance,
+        description: `Tuition Settlement (${plan || student.plan || 'Programme'}) - ${studentName || student.studentName}`,
         plan: plan || student.plan || '',
         category: 'parent_tuition',
-        status: 'PAID',
+        status: resultingStatus,
         paymentMethod: 'Bank Transfer',
         paidAt,
         studentName: studentName || student.studentName
       });
 
       await onSaved();
-      toast.success(`Tuition payment of ${formatCurrency(numAmount)} recorded successfully.`);
+      toast.success(
+        resultingStatus === 'PARTIALLY_PAID'
+          ? `Partial payment of ${formatCurrency(numAmount)} recorded. Remaining balance: ${formatCurrency(resultingRemainingBalance)}.`
+          : `Tuition payment of ${formatCurrency(numAmount)} recorded successfully.`
+      );
       onClose();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to record parent payment.');

@@ -829,7 +829,7 @@ export function schoolSafeQuestion(question) {
     prompt: String(question?.prompt || ""),
     type: String(question?.type || ""),
     points: Math.max(0, Math.min(1000, Number(question?.points ?? (question?.type === "learning_resource" ? 0 : 1)) || 0)),
-    required: question?.type === "learning_resource" ? false : question?.required !== false,
+    ...(question?.required !== undefined ? { required: question.type === "learning_resource" ? false : Boolean(question.required) } : {}),
     options: Array.isArray(question?.options)
       ? question.options.map(option => ({
           id: String(option?.id || ""),

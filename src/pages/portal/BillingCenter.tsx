@@ -8,7 +8,16 @@ import {
   CheckSquare, Square, MinusSquare, User, Users, Sparkles,
   Filter, Layers, ArrowRight, Clock, AlertCircle
 } from 'lucide-react';
-import { billingGet, billingPost, dateLabel, feeFromBase, formatNaira } from '../../lib/billing';
+import {
+  billingGet,
+  billingPost,
+  dateLabel,
+  feeFromBase,
+  formatNaira,
+  isSuccessfulPaymentRecord,
+  isPartiallyPaidStatus,
+  extractPaymentAmountNaira
+} from '../../lib/billing';
 import { useToast } from '../../contexts/ToastContext';
 import SEO from '../../components/ui/SEO';
 import { MetricGridSkeleton, TableSkeleton } from '../../components/ui/Skeleton';
@@ -16,7 +25,7 @@ import { FintechTransactionHistory } from '../../components/portal/FintechTransa
 import { FintechWalletCard } from '../../components/portal/FintechWalletCard';
 import { FintechWithdrawalModal } from '../../components/portal/FintechWithdrawalModal';
 import { auth, db } from '../../lib/firebase';
-import { collection, addDoc, serverTimestamp, getDocs, getDoc, doc, query, where, limit } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, query, where, limit } from 'firebase/firestore';
 import { getEffectiveAuth, isMasqueradingActive } from '../../utils/impersonation';
 import { resolveParentLinkedChildren } from '../../lib/academicSyncEngine';
 
@@ -101,40 +110,16 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
       toast.error('Payout withdrawals are disabled in Superadmin Impersonation Mode.');
       return;
     }
-    try {
-      await billingPost('wallet-withdraw', { 
-        action: 'withdraw', 
-        amount: payoutData.amount,
-        bankCode: payoutData.bankCode,
-        bankName: payoutData.bankName,
-        accountNumber: payoutData.accountNumber,
-        accountName: payoutData.accountName
-      }); 
-      toast.success('Withdrawal request submitted successfully.');
-      await load();
-    } catch (err) {
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        await addDoc(collection(db, 'withdrawals'), {
-          userId: currentUser.uid,
-          userEmail: currentUser.email || '',
-          userName: data.wallet?.userName || currentUser.displayName || 'Faculty Member',
-          amount: payoutData.amount,
-          fee: payoutData.fee,
-          netAmount: payoutData.netAmount,
-          bankCode: payoutData.bankCode,
-          bankName: payoutData.bankName,
-          accountNumber: payoutData.accountNumber,
-          accountName: payoutData.accountName,
-          status: 'pending',
-          createdAt: serverTimestamp()
-        });
-        toast.success('Withdrawal queued for instant settlement.');
-        await load();
-      } else {
-        throw err;
-      }
-    }
+    await billingPost('wallet-withdraw', { 
+      action: 'withdraw', 
+      amount: payoutData.amount,
+      bankCode: payoutData.bankCode,
+      bankName: payoutData.bankName,
+      accountNumber: payoutData.accountNumber,
+      accountName: payoutData.accountName
+    }); 
+    toast.success('Withdrawal request submitted successfully.');
+    await load();
   };
 
   const load = async () => { 
@@ -434,15 +419,18 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   const schoolFee = Math.round(baseTotalForPrograms * (paymentPercentage / 100));
   const remainingBalance = baseTotalForPrograms - schoolFee;
 
-  // Payments
-  const payments = useMemo(() => {
-    return (data.payments || [])
-      .filter((p: PaymentRecord) => {
-        const st = String(p.status || p.paymentStatus || '').toUpperCase();
-        return !st || ['PAID', 'SUCCESS', 'SUCCESSFUL', 'COMPLETED', 'APPROVED', 'CONFIRMED', 'VERIFIED'].includes(st);
-      })
-      .sort((a: PaymentRecord, b: PaymentRecord) => new Date(b.paidAt || b.createdAt || 0).getTime() - new Date(a.paidAt || a.createdAt || 0).getTime());
+  // All user transactions sorted chronologically (preserving pending/failed/partial statuses for history filtering)
+  const allTransactions = useMemo(() => {
+    return [...(data.payments || [])].sort(
+      (a: PaymentRecord, b: PaymentRecord) =>
+        new Date(b.paidAt || b.createdAt || 0).getTime() - new Date(a.paidAt || a.createdAt || 0).getTime()
+    );
   }, [data.payments]);
+
+  // Verified Successful Payments only (missing or unknown status is never treated as paid)
+  const payments = useMemo(() => {
+    return allTransactions.filter((p: PaymentRecord) => isSuccessfulPaymentRecord(p));
+  }, [allTransactions]);
 
   const dueDate = dueDateFor(payments[0]);
 
@@ -461,20 +449,45 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
     (data.students || []).forEach((child: any) => {
       const childName = child.fullName || child.studentName || child.name || 'Student';
       const childPlan = child.plan || child.track || child.programName || 'Academy Track';
-      const childFee = Number(child.tuitionFee || child.fee || child.amount || 35000);
-      const tutorId = String(child.tutorId || child.staffId || child.assignedTutorId || child.assignedStaffId || 'lead_tutor');
-      const tutorName = String(child.tutorName || child.assignedTutorName || child.mentorName || 'Assigned Academy Tutor');
+      const childFee = Number(child.tuitionFee ?? child.fee ?? child.amount ?? 0);
+      const childBillingStatus = String(child.billingStatus || '').toUpperCase();
+      const childRemainingBalance = Number(child.remainingBalance || 0);
+      const tutorId = String(child.tutorId || child.staffId || child.assignedTutorId || child.assignedStaffId || 'unassigned');
+      const tutorName = String(child.tutorName || child.assignedTutorName || child.mentorName || 'Unassigned Tutor');
+
+      const hasRecentPaid = (progId?: string, progName?: string) =>
+        (payments || []).some((p: any) => {
+          if (!isSuccessfulPaymentRecord(p) || isPartiallyPaidStatus(p.status ?? p.paymentStatus)) return false;
+          const matchChild = p.studentId === child.id;
+          const isRecent = nowMs - new Date(p.paidAt || p.createdAt || 0).getTime() < fourWeeksMs;
+          if (!matchChild || !isRecent) return false;
+          if (Array.isArray(p.selectedItems) && p.selectedItems.length > 0 && (progId || progName)) {
+            return p.selectedItems.some(
+              (si: any) =>
+                si.childId === child.id &&
+                (si.programId === progId ||
+                  String(si.programName || '').toLowerCase() === String(progName || '').toLowerCase())
+            );
+          }
+          return true;
+        });
+
+      const resolveItemStatus = (progId?: string, progName?: string): 'PAID' | 'PARTIALLY_PAID' | 'DUE' => {
+        if (childBillingStatus === 'PAID' || hasRecentPaid(progId, progName)) return 'PAID';
+        if (childBillingStatus === 'PARTIALLY_PAID' && childRemainingBalance > 0) return 'PARTIALLY_PAID';
+        return 'DUE';
+      };
 
       if (Array.isArray(child.enrolledPrograms) && child.enrolledPrograms.length > 0) {
         child.enrolledPrograms.forEach((ep: any, idx: number) => {
           const progId = String(ep.id || ep.programId || `prog_${idx}`);
           const progName = String(ep.name || ep.programName || ep.title || childPlan);
-          const progAmt = Number(ep.fee || ep.amount || ep.tuitionFee || Math.round(childFee / child.enrolledPrograms.length));
+          const progAmt = Number(
+            ep.fee ?? ep.amount ?? ep.tuitionFee ?? (childFee > 0 ? Math.round(childFee / child.enrolledPrograms.length) : 0)
+          );
           const progTutorId = String(ep.tutorId || tutorId);
           const progTutorName = String(ep.tutorName || tutorName);
-          const isPaid = (payments || []).some((p: any) => {
-            return p.studentId === child.id && (nowMs - new Date(p.paidAt || p.createdAt || 0).getTime() < fourWeeksMs);
-          });
+          const itemStatus = resolveItemStatus(progId, progName);
           items.push({
             id: `${child.id}::${progTutorId}::${progId}`,
             childId: child.id,
@@ -485,18 +498,17 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
             tutorName: progTutorName,
             programId: progId,
             programName: progName,
-            amount: progAmt > 0 ? progAmt : 15000,
-            status: isPaid ? 'PAID' : 'DUE',
+            amount: itemStatus === 'PARTIALLY_PAID' && childRemainingBalance > 0 ? childRemainingBalance : Math.max(0, progAmt),
+            contractAmount: Math.max(0, progAmt),
+            status: itemStatus,
             cycle: 'monthly'
           });
         });
       } else if (Array.isArray(child.subjects) && child.subjects.length > 1) {
-        const perSubj = Math.round(childFee / child.subjects.length);
+        const perSubj = childFee > 0 ? Math.round(childFee / child.subjects.length) : 0;
         child.subjects.forEach((subj: string, idx: number) => {
           const progId = `subj_${idx}_${subj.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-          const isPaid = (payments || []).some((p: any) => {
-            return p.studentId === child.id && (nowMs - new Date(p.paidAt || p.createdAt || 0).getTime() < fourWeeksMs);
-          });
+          const itemStatus = resolveItemStatus(progId, subj);
           items.push({
             id: `${child.id}::${tutorId}::${progId}`,
             childId: child.id,
@@ -507,15 +519,16 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
             tutorName,
             programId: progId,
             programName: subj,
-            amount: perSubj > 0 ? perSubj : 15000,
-            status: isPaid ? 'PAID' : 'DUE',
+            amount: Math.max(0, perSubj),
+            contractAmount: Math.max(0, perSubj),
+            status: itemStatus,
             cycle: 'monthly'
           });
         });
       } else {
-        const isPaid = (payments || []).some((p: any) => {
-          return p.studentId === child.id && (nowMs - new Date(p.paidAt || p.createdAt || 0).getTime() < fourWeeksMs);
-        });
+        const itemStatus = resolveItemStatus('core_program', childPlan);
+        const effectiveAmt =
+          itemStatus === 'PARTIALLY_PAID' && childRemainingBalance > 0 ? childRemainingBalance : Math.max(0, childFee);
         items.push({
           id: `${child.id}::${tutorId}::core_program`,
           childId: child.id,
@@ -526,8 +539,9 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
           tutorName,
           programId: 'core_program',
           programName: childPlan,
-          amount: childFee > 0 ? childFee : 35000,
-          status: isPaid ? 'PAID' : 'DUE',
+          amount: effectiveAmt,
+          contractAmount: Math.max(0, childFee),
+          status: itemStatus,
           cycle: 'monthly'
         });
       }
@@ -572,7 +586,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
         tutorName: t.tutorName,
         programs: t.programs,
         totalAmount: t.programs.reduce((acc, p) => acc + p.amount, 0),
-        dueAmount: t.programs.filter(p => p.status === 'DUE').reduce((acc, p) => acc + p.amount, 0)
+        dueAmount: t.programs.filter(p => p.status === 'DUE' || p.status === 'PARTIALLY_PAID').reduce((acc, p) => acc + p.amount, 0)
       }));
       const allPrograms = tutors.flatMap(t => t.programs);
       return {
@@ -583,7 +597,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
         tutors,
         allPrograms,
         totalTuition: allPrograms.reduce((acc, p) => acc + p.amount, 0),
-        totalDue: allPrograms.filter(p => p.status === 'DUE').reduce((acc, p) => acc + p.amount, 0),
+        totalDue: allPrograms.filter(p => p.status === 'DUE' || p.status === 'PARTIALLY_PAID').reduce((acc, p) => acc + p.amount, 0),
         allPaid: allPrograms.every(p => p.status === 'PAID')
       };
     });
@@ -628,7 +642,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   };
 
   const selectAllDue = () => {
-    const dueIds = parentFeeItems.filter(i => i.status === 'DUE').map(i => i.id);
+    const dueIds = parentFeeItems.filter(i => i.status === 'DUE' || i.status === 'PARTIALLY_PAID').map(i => i.id);
     setSelectedFeeItemIds(dueIds);
   };
 
@@ -684,9 +698,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
           window.location.href = result.authorizationUrl;
         }
       } else {
-        toast.success('Payment recorded successfully.');
-        await load();
-        setShowParentCheckoutModal(false);
+        throw new Error('Paystack checkout URL was not returned by the payment server.');
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to initialize checkout.');
@@ -761,9 +773,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
           window.location.href = result.authorizationUrl;
         }
       } else {
-        toast.success('Payment recorded successfully.');
-        await load();
-        setShowCheckout(false);
+        throw new Error('Paystack checkout URL was not returned by the payment server.');
       } 
     } catch (error) { 
       toast.error(error instanceof Error ? error.message : 'Unable to start checkout.'); 
@@ -1949,7 +1959,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                   <div><p className="text-[10px] font-black uppercase tracking-widest text-brand-red">Billing</p><h2 className="text-lg font-black text-slate-900 dark:text-white">Teaching Payouts &amp; Settlement History</h2></div>
                   <button type="button" onClick={() => setShowStaffTransactionHistory(false)} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"><X size={16}/></button>
                 </div>
-                <FintechTransactionHistory transactions={payments} title="Teaching Payouts & Settlement History" role="staff" emptyMessage="No teaching payout transactions are recorded yet." />
+                <FintechTransactionHistory transactions={allTransactions.map(p => ({ ...p, amount: extractPaymentAmountNaira(p) }))} title="Teaching Payouts & Settlement History" role="staff" emptyMessage="No teaching payout transactions are recorded yet." />
               </div>
             </div>
           )}
@@ -1960,7 +1970,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
       {role !== 'staff' && (
         <div id="fintech-tx-history" className="mt-8">
           <FintechTransactionHistory 
-            transactions={payments} 
+            transactions={allTransactions.map(p => ({ ...p, amount: extractPaymentAmountNaira(p) }))} 
             title="Transactions & Invoices"
             role={role}
             emptyMessage="No transaction receipts on record yet"

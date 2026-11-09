@@ -39,18 +39,27 @@ export const handler: Handler = async (event) => {
       const withdrawalQuery = await adminDb.collection("walletWithdrawals").where("transferReference", "==", reference).limit(1).get();
       if (withdrawalQuery.empty) return json(200, "Event acknowledged");
       const withdrawalDoc = withdrawalQuery.docs[0];
-      const withdrawal = withdrawalDoc.data() || {};
-      const staffId = String(withdrawal.staffId || "");
-      const amount = Number(withdrawal.amount || 0);
+      const outerWithdrawal = withdrawalDoc.data() || {};
+      const staffId = String(outerWithdrawal.staffId || "");
+      const amount = Number(outerWithdrawal.amount || 0);
       const walletRef = adminDb.collection("staffWallets").doc(staffId);
       const success = payload.event === "transfer.success";
+      let updatedInTx = false;
       await adminDb.runTransaction(async transaction => {
-        const walletSnap = await transaction.get(walletRef);
+        const [freshWithdrawalSnap, walletSnap] = await Promise.all([
+          transaction.get(withdrawalDoc.ref),
+          transaction.get(walletRef)
+        ]);
+        if (!freshWithdrawalSnap.exists) return;
+        const freshWithdrawal = freshWithdrawalSnap.data() || {};
+        if (String(freshWithdrawal.status || "").toUpperCase() !== "PROCESSING") return;
         const wallet = walletSnap.exists ? walletSnap.data() || {} : {};
-        if (String(withdrawal.status || "").toUpperCase() !== "PROCESSING") return;
+        const txAmount = Number(freshWithdrawal.amount || amount || 0);
         transaction.set(walletRef, {
-          availableBalance: success ? Number(wallet.availableBalance || 0) : Number(wallet.availableBalance || 0) + amount,
-          reservedBalance: Math.max(0, Number(wallet.reservedBalance || 0) - amount),
+          availableBalance: success
+            ? Number(wallet.availableBalance || 0)
+            : Number((Number(wallet.availableBalance || 0) + txAmount).toFixed(2)),
+          reservedBalance: Number(Math.max(0, Number(wallet.reservedBalance || 0) - txAmount).toFixed(2)),
           updatedAt: new Date()
         }, { merge: true });
         transaction.update(withdrawalDoc.ref, {
@@ -61,8 +70,9 @@ export const handler: Handler = async (event) => {
           failureReason: success ? null : String(transfer.failure_reason || transfer.gateway_response || payload.event),
           updatedAt: new Date()
         });
+        updatedInTx = true;
       });
-      if (staffId) {
+      if (updatedInTx && staffId) {
         await createPortalNotification({
           recipientId: staffId,
           email: undefined,

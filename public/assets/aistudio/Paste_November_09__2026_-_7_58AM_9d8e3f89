@@ -1,0 +1,922 @@
+# TASK: IMPORT HISTORICAL TEST RESULTS INTO THE STUDENT RECORDS DATABASE — SOUTHGOLD MONTESSORI SCHOOL
+
+Act as a senior full-stack developer and database migration engineer working on the existing school management platform.
+
+I need you to import historical test results for students of **SOUTHGOLD MONTESSORI SCHOOL** into the platform's database.
+
+These students have already taken their tests physically or through an external system. However, their test attempts were not recorded on this school portal at the time.
+
+The purpose of this task is to enter their historical test records into the database so that the platform recognizes these students as having completed the tests and recorded their results.
+
+This must be a proper database operation integrated with the existing assessment, results, and student-record systems.
+
+## 1. IMPORTANT: HOW THE IMPORT MUST WORK
+
+Before making changes, inspect the existing application architecture, database schema, assessment system, student records, school records, and results-management workflows.
+
+Understand how the platform currently stores:
+- Schools and their students.
+- Classes and academic levels.
+- Assessments and assessment questions.
+- Student assessment attempts.
+- Submitted answers and scores.
+- Assessment dates and submission timestamps.
+- Student assessment history and results.
+- Parent access to their children's assessment records.
+
+Use the existing database structure, relationships, services, and conventions. Do not create a separate or disconnected results system.
+
+### A. School restriction
+
+All the records supplied below belong exclusively to:
+
+**SOUTHGOLD MONTESSORI SCHOOL**
+
+Ensure that every imported assessment and student attempt is associated with the correct school ID.
+
+Do not associate these records with any other school, even if students with similar names exist elsewhere on the platform.
+
+### B. Historical test attempts
+
+These tests have already been taken.
+
+Therefore:
+- Do not create new pending tests for the students.
+- Do not assign the tests to students again.
+- Do not require students to retake them.
+- Do not generate new attempts using today's date.
+- Do not send notifications asking students to take the tests.
+- Do not alter students' existing academic or enrollment records.
+
+Instead, insert historical completed assessment attempts into the appropriate database tables.
+
+Each imported attempt should behave like an ordinary completed test attempt when viewed in the student portal, parent portal, tutor portal, and admin results interface.
+
+Use the appropriate existing status, such as `completed` or `submitted`, based on the application's current assessment model.
+
+Record the import as a historical/manual import in the audit metadata if the application supports it.
+
+### C. Score conversion — VERY IMPORTANT
+
+The original tests contained **15 questions**, with each question originally carrying 1 mark.
+
+I now want each question to carry **2 marks**.
+
+Consequently:
+
+- Original total: 15 marks.
+- New total: 30 marks.
+- Each question: 2 marks.
+- Each student's original score must be multiplied by 2.
+
+Use the following conversion:
+
+| Original Score | Imported Score |
+|---|---|
+| 7 / 15 | 14 / 30 |
+| 8 / 15 | 16 / 30 |
+| 4 / 15 | 8 / 30 |
+| 14 / 15 | 28 / 30 |
+| 3 / 15 | 6 / 30 |
+| 5 / 15 | 10 / 30 |
+| 9 / 15 | 18 / 30 |
+| 11 / 15 | 22 / 30 |
+| 13 / 15 | 26 / 30 |
+
+Apply this conversion to every student in the supplied records.
+
+**Do not forget to update the assessment's maximum score to 30 and the individual question mark allocation to 2.**
+
+Do not accidentally double the scores a second time when displaying or retrieving results.
+
+### D. Student identification and matching
+
+Locate each student using their name, school association, and class/year.
+
+Use case-insensitive matching and ignore accidental leading/trailing spaces when searching.
+
+However:
+- Do not create duplicate student accounts.
+- Do not create new student profiles just because a name is not immediately found.
+- If a student cannot be confidently matched, skip that particular record and report it.
+- If multiple students have similar names, do not guess. Flag the ambiguity for manual review.
+- Never attach a student's results to another student's account.
+
+### E. Assessment creation or reuse
+
+For each year, inspect whether the corresponding assessment already exists.
+
+If the exact assessment already exists for Southgold Montessori School and the appropriate year, reuse its assessment record where appropriate.
+
+If it does not exist, create an appropriate historical assessment record with the following suggested title:
+
+**Digital Literacy Test – Historical Record – 28 October 2026**
+
+Create a separate assessment for each year because each year has a different set of questions.
+
+These historical assessments must not be published as new tests or assigned for students to take.
+
+### F. Answers and grading
+
+The data below contains the actual answers each student submitted.
+
+Preserve every answer exactly as supplied, apart from harmless whitespace normalization.
+
+Do not:
+- Replace incorrect answers with correct answers.
+- Alter the students' submitted responses.
+- Generate answers that were not supplied.
+- Invent question-level marks.
+- Recalculate students' original results using an assumed answer key.
+
+The original scores are already available. The purpose is to preserve those scores and convert them to the new `/30` marking scale.
+
+Where the existing database supports storing individual responses, attach each student's supplied answer to the corresponding question.
+
+Where question-level correctness or marks are required but no marking key or per-question marking data is available, preserve the imported total score and mark the question-level grading as unavailable/imported rather than fabricating it.
+
+### G. Date and time preservation
+
+The supplied timestamps represent the original test submission times on **28 October 2026**.
+
+Preserve those timestamps as the historical submission dates.
+
+Interpret them using the school's configured timezone. If no timezone is configured, use `Africa/Lagos`.
+
+Do not use the current date or import date as the students' test submission dates.
+
+---
+
+# 2. HISTORICAL STUDENT TEST DATA
+
+The following data is the authoritative source for this import.
+
+Each class has 15 questions. Students' answers are arranged in the exact same order as the questions listed for their class.
+
+Preserve the question-to-answer alignment carefully.
+
+## YEAR 1
+
+**Number of questions:** 15  
+**Marks per question:** 2  
+**Maximum score:** 30
+
+### Questions
+
+Q01. A computer is a __________.
+
+Q02. What does a computer need in order to work?
+
+Q03. Which one is a portable type of computer?
+
+Q04. Which part shows text, pictures and programs on the screen?
+
+Q05. Which computer part is used to type letters and numbers?
+
+Q06. Which part is called the brain of the computer?
+
+Q07. What does a single left-click usually do?
+
+Q08. What is a double-click commonly used for?
+
+Q09. What should you do when the mouse pointer looks like an hourglass?
+
+Q10. Which key makes a space between words?
+
+Q11. How can you type one capital letter?
+
+Q12. What does Backspace remove?
+
+Q13. Which is a safe habit when using a computer?
+
+Q14. What should you keep away from the computer?
+
+Q15. If the screen goes blank, what should you try first?
+
+### Student records
+
+**Student 1**
+- Name: Jayden Eze
+- Original timestamp: 28 October 2026, 11:44:12
+- Original score: 7/15
+- Imported score: **14/30**
+- Answers:
+
+1. electronic machine
+2. electricity
+3. desktop system unit
+4. keyboard
+5. mouse
+6. CPU
+7. print a page
+8. opening a program
+9. keep clicking quickly
+10. Backspace
+11. hold Shift and press the letter
+12. the whole program
+13. use clean, dry hands
+14. food and drinks
+15. hit the monitor
+
+**Student 2**
+- Name: NathAniel Okenla
+- Original timestamp: 28 October 2026, 11:48:17
+- Original score: 8/15
+- Imported score: **16/30**
+- Answers:
+
+1. electronic machine
+2. electricity
+3. laptop
+4. mouse
+5. CPU
+6. mouse
+7. select an item
+8. typing a sentence
+9. wait while the computer works
+10. Space Bar
+11. press Space Bar twice
+12. the next line
+13. use wet hands
+14. food and drinks
+15. gently move the mouse or press a key
+
+**Student 3**
+- Name: Chizaram
+- Original timestamp: 28 October 2026, 12:07:39
+- Original score: 8/15
+- Imported score: **16/30**
+- Answers:
+
+1. living thing
+2. electricity
+3. monitor
+4. mouse
+5. monitor
+6. CPU
+7. turn off the computer
+8. opening a program
+9. keep clicking quickly
+10. Space Bar
+11. hold Shift and press the letter
+12. the character just before the cursor
+13. bang the keys
+14. food and drinks
+15. gently move the mouse or press a key
+
+**Student 4**
+- Name: ugonnaya okoye
+- Original timestamp: 28 October 2026, 12:09:06
+- Original score: 7/15
+- Imported score: **14/30**
+- Answers:
+
+1. electronic machine
+2. electricity
+3. desktop system unit
+4. mouse
+5. keyboard
+6. monitor
+7. delete a file
+8. typing a sentence
+9. keep clicking quickly
+10. Space Bar
+11. press Enter first
+12. the next line
+13. use clean, dry hands
+14. food and drinks
+15. gently move the mouse or press a key
+
+**Student 5**
+- Name: hanameel
+- Original timestamp: 28 October 2026, 12:09:25
+- Original score: 4/15
+- Imported score: **8/30**
+- Answers:
+
+1. paper book
+2. water
+3. desktop system unit
+4. monitor
+5. CPU
+6. CPU
+7. print a page
+8. opening a program
+9. keep clicking quickly
+10. Enter
+11. press Backspace first
+12. the character just before the cursor
+13. bang the keys
+14. your notebook
+15. hit the monitor
+
+---
+
+## YEAR 2
+
+**Number of questions:** 15  
+**Marks per question:** 2  
+**Maximum score:** 30
+
+### Questions
+
+Q01. Which part is called the brain of the computer?
+
+Q02. Which key combination types one capital letter?
+
+Q03. Which shortcut quickly saves your work?
+
+Q04. What is a sentence?
+
+Q05. How should a sentence begin?
+
+Q06. Which punctuation mark can end a statement such as 'I like computers.'?
+
+Q07. What does Backspace delete?
+
+Q08. What does the Delete key remove when the cursor is before a character?
+
+Q09. What does proofreading mean?
+
+Q10. What does drag and drop allow you to do?
+
+Q11. What should you do while dragging an item?
+
+Q12. When you minimise a window, what happens?
+
+Q13. What is a folder used for?
+
+Q14. Which is the clearest file name?
+
+Q15. How can you open a saved file?
+
+### Student records
+
+**Student 1**
+- Name: Kosi
+- Original timestamp: 28 October 2026, 12:05:17
+- Original score: 6/15
+- Imported score: **12/30**
+- Answers:
+
+1. mouse
+2. Shift + letter
+3. Ctrl + S
+4. a group of words expressing a complete thought
+5. with a comma
+6. full stop
+7. the whole folder
+8. the character on the right
+9. changing the screen colour
+10. move an object on the screen to another place
+11. release the mouse before moving
+12. the computer shuts down
+13. typing capital letters
+14. New file
+15. press Space Bar
+
+**Student 2**
+- Name: Zino
+- Original timestamp: 28 October 2026, 12:08:07
+- Original score: 8/15
+- Imported score: **16/30**
+- Answers:
+
+1. mouse
+2. Shift + letter
+3. Ctrl + S
+4. a group of words expressing a complete thought
+5. with a capital letter
+6. full stop
+7. the whole folder
+8. the character on the left
+9. closing a program without saving
+10. move an object on the screen to another place
+11. hold the left mouse button, move the item, then release
+12. the file is deleted
+13. moving the mouse pointer
+14. Year2_Amina_Typing
+15. press Caps Lock
+
+**Note:** The empty row following Zino's entry in the original source is not a student record. Do not create an empty attempt.
+
+---
+
+## YEAR 3
+
+**Number of questions:** 15  
+**Marks per question:** 2  
+**Maximum score:** 30
+
+### Questions
+
+Q01. Which shortcut saves a document quickly?
+
+Q02. What does Ctrl + B do in Word?
+
+Q03. Which is a safe internet habit?
+
+Q04. What is word processing?
+
+Q05. What is the usual file extension for a Microsoft Word document?
+
+Q06. What does Word Wrap do?
+
+Q07. What does Copy (Ctrl + C) do?
+
+Q08. What does Cut (Ctrl + X) do?
+
+Q09. What does Paste (Ctrl + V) do?
+
+Q10. When is a bullet list most useful?
+
+Q11. When should you use a numbered list?
+
+Q12. Where can you find the Bullets button in Word?
+
+Q13. What are page margins?
+
+Q14. Where do you go to change page margins in Word?
+
+Q15. Which shortcut centres selected text?
+
+### Student records
+
+**Student 1**
+- Name: Zina Chimezie Chimdaalu Ukaamka
+- Original timestamp: 28 October 2026, 12:32:24
+- Original score: 14/15
+- Imported score: **28/30**
+- Answers:
+
+1. Ctrl + S
+2. makes selected text bold
+3. keep personal information private
+4. creating and editing text documents on a computer
+5. .docx
+6. automatically moves text to the next line as it reaches the margin
+7. makes a duplicate while the original stays
+8. removes the selected content so it can be placed elsewhere
+9. places copied or cut content at the cursor
+10. when steps must be in strict order
+11. when order or sequence matters
+12. Home tab
+13. blank spaces between the page edge and the text
+14. Layout > Margins
+15. Ctrl + E
+
+**Student 2**
+- Name: ginka oshai
+- Original timestamp: 28 October 2026, 12:32:44
+- Original score: 3/15
+- Imported score: **6/30**
+- Answers:
+
+1. Ctrl + B
+2. makes selected text bold
+3. keep personal information private
+4. drawing only with a mouse
+5. .docx
+6. deletes every space
+7. removes the original text
+8. makes text bold
+9. undoes the last action
+10. when ranking scores from highest to lowest
+11. for unrelated features in no order
+12. Status bar only
+13. the colour of text
+14. Review > Spelling
+15. Ctrl + L
+
+**Student 3**
+- Name: Opeyemi Akinyosoye
+- Original timestamp: 28 October 2026, 12:35:43
+- Original score: 5/15
+- Imported score: **10/30**
+- Answers:
+
+1. Ctrl + V
+2. makes selected text bold
+3. open every website
+4. creating and editing text documents on a computer
+5. .docx
+6. saves a document
+7. removes the original text
+8. removes the selected content so it can be placed elsewhere
+9. undoes the last action
+10. when steps must be in strict order
+11. only for pictures
+12. Home tab
+13. the colour of text
+14. Review > Spelling
+15. Ctrl + L
+
+**Student 4**
+- Name: Jason oyeniyi
+- Original timestamp: 28 October 2026, 12:40:12
+- Original score: 9/15
+- Imported score: **18/30**
+- Answers:
+
+1. Ctrl + S
+2. copies a file
+3. keep personal information private
+4. creating and editing text documents on a computer
+5. .docx
+6. automatically moves text to the next line as it reaches the margin
+7. removes the original text
+8. removes the selected content so it can be placed elsewhere
+9. places copied or cut content at the cursor
+10. when ranking scores from highest to lowest
+11. to change font size
+12. Home tab
+13. the number of words in a document
+14. Layout > Margins
+15. Ctrl + L
+
+---
+
+## YEAR 4
+
+**Number of questions:** 15  
+**Marks per question:** 2  
+**Maximum score:** 30
+
+### Questions
+
+Q01. What is one way to check whether an internet source is reliable?
+
+Q02. What do Narrow page margins do in Word?
+
+Q03. What does Ctrl + J do in Word?
+
+Q04. What is an Excel workbook?
+
+Q05. What does the cell address C4 mean?
+
+Q06. What is the active cell in Excel?
+
+Q07. What sign must begin an Excel formula?
+
+Q08. Which formula adds the values from B2 through B6?
+
+Q09. If B2=10, B3=15, B4=20, B5=5 and B6=25, what is =SUM(B2:B6)?
+
+Q10. In Excel, what does Fill Colour change?
+
+Q11. What does AutoFit do to a column?
+
+Q12. What may happen when you apply Percentage format to 0.75?
+
+Q13. What is ascending order for numbers?
+
+Q14. To show the highest total marks first, which sort order should you choose?
+
+Q15. What does AutoFilter do?
+
+### Student records
+
+**Student 1**
+- Name: Esther chimamanda
+- Original timestamp: 28 October 2026, 13:14:59
+- Original score: 11/15
+- Imported score: **22/30**
+- Answers:
+
+1. check its author and date and compare with other sources
+2. leave more room for text
+3. justify text between both margins
+4. a printed chart
+5. column C, row 4
+6. the currently selected cell
+7. =
+8. =SUM(B2:B6)
+9. 80
+10. the words typed in a cell only
+11. deletes empty rows
+12. it displays as 75%
+13. smallest to largest
+14. descending
+15. shows matching rows and hides rows that do not match the chosen condition
+
+**Student 2**
+- Name: sarah koleoso
+- Original timestamp: 28 October 2026, 13:25:59
+- Original score: 8/15
+- Imported score: **16/30**
+- Answers:
+
+1. check its author and date and compare with other sources
+2. leave more room for text
+3. justify text between both margins
+4. an Excel file that can contain worksheets
+5. column C, row 4
+6. the title bar
+7. +
+8. =SUM(B2:B6)
+9. 80
+10. the formula result
+11. sorts data from A to Z
+12. it displays as 7.5
+13. largest to smallest
+14. descending
+15. shows matching rows and hides rows that do not match the chosen condition
+
+**Student 3**
+- Name: Precious agofure
+- Original timestamp: 28 October 2026, 13:28:23
+- Original score: 7/15
+- Imported score: **14/30**
+- Answers:
+
+1. check its author and date and compare with other sources
+2. leave more room for text
+3. align text to the right
+4. an Excel file that can contain worksheets
+5. column C, row 4
+6. the title bar
+7. +
+8. SUM=B2:B6
+9. 75
+10. the cell background
+11. adds a formula
+12. it displays as 7.5
+13. largest to smallest
+14. alphabetical by first name
+15. shows matching rows and hides rows that do not match the chosen condition
+
+**Student 4**
+- Name: Egbo ifechukwu Anthony
+- Original timestamp: 28 October 2026, 13:34:53
+- Original score: 4/15
+- Imported score: **8/30**
+- Answers:
+
+1. check its author and date and compare with other sources
+2. leave more room for text
+3. align text to the left
+4. a printed chart
+5. column C, row 4
+6. the worksheet that is closed
+7. +
+8. =SUM(B2:B6)
+9. 70
+10. the words typed in a cell only
+11. sorts data from A to Z
+12. it becomes 0.075
+13. largest to smallest
+14. ascending
+15. changes every number into text
+
+---
+
+## YEAR 5
+
+**Number of questions:** 15  
+**Marks per question:** 2  
+**Maximum score:** 30
+
+### Questions
+
+Q01. Which chart is useful for comparing values across categories?
+
+Q02. Which is the strongest password choice?
+
+Q03. Copying another person's work and presenting it as your own is called...
+
+Q04. Which parts are included in a basic structured document?
+
+Q05. What should a conclusion do?
+
+Q06. Which heading style is intended for main section headings?
+
+Q07. What does Excel's MAX function find?
+
+Q08. What does COUNTA count?
+
+Q09. If F2 contains 42, what result does =IF(F2>=50,"Pass","Fail") return?
+
+Q10. What is Microsoft PowerPoint mainly used to create?
+
+Q11. What is the standard file extension for a PowerPoint presentation?
+
+Q12. Who can normally see notes typed in PowerPoint's Notes panel during a presentation?
+
+Q13. Where do you usually go to add a picture from your computer to a slide?
+
+Q14. How should you resize a picture to keep its proportions?
+
+Q15. What is a good rule for images on a presentation slide?
+
+### Student records
+
+**Student 1**
+- Name: esther akpotoboro
+- Original timestamp: 28 October 2026, 13:25:26
+- Original score: 9/15
+- Imported score: **18/30**
+- Answers:
+
+1. bar chart
+2. password
+3. sorting
+4. only a conclusion
+5. introduce many new facts
+6. Heading 2
+7. the highest value in a range
+8. only formulas that return zero
+9. Fail
+10. presentations made of slides
+11. .docx
+12. the presenter, not the audience
+13. Insert > Pictures > This Device
+14. drag a corner handle
+15. every image should have a purpose and should not cover the text
+
+**Student 2**
+- Name: Akinyosoye damilola
+- Original timestamp: 28 October 2026, 13:33:14
+- Original score: 11/15
+- Imported score: **22/30**
+- Answers:
+
+1. bar chart
+2. a long mix of uppercase and lowercase letters, numbers and symbols
+3. plagiarism
+4. title, introduction, body sections and conclusion
+5. introduce many new facts
+6. Heading 2
+7. the highest value in a range
+8. cells containing any data, including text or numbers
+9. Pass
+10. presentations made of slides
+11. .docx
+12. the presenter, not the audience
+13. Insert > Pictures > This Device
+14. drag only the middle-left handle
+15. every image should have a purpose and should not cover the text
+
+**Student 3**
+- Name: NAOMI NDUKA
+- Original timestamp: 28 October 2026, 13:34:46
+- Original score: 9/15
+- Imported score: **18/30**
+- Answers:
+
+1. bar chart
+2. password
+3. proofreading
+4. title, introduction, body sections and conclusion
+5. introduce many new facts
+6. Heading 1 only for every paragraph
+7. the highest value in a range
+8. cells containing any data, including text or numbers
+9. Fail
+10. presentations made of slides
+11. .docx
+12. the presenter, not the audience
+13. Insert > Pictures > This Device
+14. stretch it until it looks narrow
+15. every image should have a purpose and should not cover the text
+
+**Student 4**
+- Name: Kandili okoye
+- Original timestamp: 28 October 2026, 13:36:48
+- Original score: 13/15
+- Imported score: **26/30**
+- Answers:
+
+1. bar chart
+2. a long mix of uppercase and lowercase letters, numbers and symbols
+3. proofreading
+4. title, introduction, body sections and conclusion
+5. summarise what has already been presented
+6. Heading 2
+7. the highest value in a range
+8. cells containing any data, including text or numbers
+9. Fail
+10. presentations made of slides
+11. .pptx
+12. the whole audience on the slide
+13. Insert > Pictures > This Device
+14. drag a corner handle
+15. every image should have a purpose and should not cover the text
+
+---
+
+# 3. POST-IMPORT REQUIREMENTS AND VALIDATION
+
+After importing the data, perform a verification exercise.
+
+### A. Expected number of records
+
+The import should create exactly **19 completed student test attempts**, provided all 19 students are successfully matched.
+
+| Class | Students | Questions per test | Maximum score |
+|---|---:|---:|---:|
+| Year 1 | 5 | 15 | 30 |
+| Year 2 | 2 | 15 | 30 |
+| Year 3 | 4 | 15 | 30 |
+| Year 4 | 4 | 15 | 30 |
+| Year 5 | 4 | 15 | 30 |
+| **Total** | **19** | | |
+
+### B. Expected imported scores
+
+Use this table to validate the results after the database operation.
+
+| Class | Student | Original Score | Expected Imported Score |
+|---|---|---:|---:|
+| Year 1 | Jayden Eze | 7/15 | 14/30 |
+| Year 1 | NathAniel Okenla | 8/15 | 16/30 |
+| Year 1 | Chizaram | 8/15 | 16/30 |
+| Year 1 | ugonnaya okoye | 7/15 | 14/30 |
+| Year 1 | hanameel | 4/15 | 8/30 |
+| Year 2 | Kosi | 6/15 | 12/30 |
+| Year 2 | Zino | 8/15 | 16/30 |
+| Year 3 | Zina Chimezie Chimdaalu Ukaamka | 14/15 | 28/30 |
+| Year 3 | ginka oshai | 3/15 | 6/30 |
+| Year 3 | Opeyemi Akinyosoye | 5/15 | 10/30 |
+| Year 3 | Jason oyeniyi | 9/15 | 18/30 |
+| Year 4 | Esther chimamanda | 11/15 | 22/30 |
+| Year 4 | sarah koleoso | 8/15 | 16/30 |
+| Year 4 | Precious agofure | 7/15 | 14/30 |
+| Year 4 | Egbo ifechukwu Anthony | 4/15 | 8/30 |
+| Year 5 | esther akpotoboro | 9/15 | 18/30 |
+| Year 5 | Akinyosoye damilola | 11/15 | 22/30 |
+| Year 5 | NAOMI NDUKA | 9/15 | 18/30 |
+| Year 5 | Kandili okoye | 13/15 | 26/30 |
+
+### C. Make the records appear in the appropriate portal sections
+
+Ensure the imported records are accessible through the existing platform interfaces.
+
+**Admin portal:**
+- The school should be able to see the five class assessments.
+- The assessment results should show the imported students and their scores.
+- Admin should be able to view individual attempts and submitted answers.
+- The records should be associated with Southgold Montessori School only.
+
+**Student portal:**
+- Each matched student should see the appropriate historical test in their completed assessment/test history.
+- The student should see their score out of 30.
+- The student should be able to view their recorded answers and result wherever supported by the existing interface.
+
+**Parent portal:**
+- A parent should see the imported assessment results only for their own child or children.
+- Imported records should appear in the same assessment-history/results sections used by existing tests.
+- Do not expose another student's records to a parent.
+
+**Tutor portal:**
+- Where tutors have permission to view assessment results for their assigned students, these historical results should be accessible through the existing results interface.
+
+Do not build duplicate dashboards or separate results pages for imported records. Integrate with the existing assessment-history and results systems.
+
+### D. Database integrity and duplicate prevention
+
+The import must be safe to run more than once.
+
+Before inserting an attempt, check whether the same historical attempt has already been imported.
+
+Use an appropriate unique key or idempotency mechanism based on the school, student, assessment, and original submission timestamp.
+
+If an identical historical attempt already exists:
+- Do not create another attempt.
+- Check whether its score and answers match the supplied source.
+- Correct an existing incomplete import where appropriate, without creating duplicates.
+- Preserve unrelated existing student assessment history.
+
+Use transactions or the application's equivalent safe database-write mechanism. Respect authentication, authorization, and row-level security policies.
+
+Do not weaken existing database security policies to make the import work.
+
+### E. Final verification report
+
+Once the import has been completed, return a report containing:
+
+1. Number of students successfully matched.
+2. Number of historical assessment records created or reused.
+3. Number of completed test attempts successfully imported.
+4. Number of records skipped due to missing or ambiguous student matches.
+5. Number of duplicate records detected and prevented.
+6. Confirmation that all five assessments have a maximum score of 30.
+7. Confirmation that each question carries 2 marks.
+8. Confirmation that all original timestamps were preserved.
+9. Confirmation that the records are visible in the appropriate student, parent, tutor, and admin interfaces.
+10. Any database or interface problems that prevented full completion.
+
+Do not report success simply because SQL statements ran. Verify the actual records and their relationships.
+
+---
+
+# 4. FINAL INSTRUCTION
+
+Proceed with this historical data migration using the existing application's architecture and database.
+
+**The priority is data accuracy, student identity accuracy, school isolation, and correct integration with the existing assessment results system.**
+
+These are already-completed tests. The goal is to make their historical results available on the portal exactly as though the students had originally taken the assessments through the portal, while preserving the fact that these records were imported retrospectively.
+
+Do not invent missing information, do not fabricate grades or answers, and do not modify unrelated school or student data.
+
+After execution, provide the verification report and clearly identify any records that could not be imported.

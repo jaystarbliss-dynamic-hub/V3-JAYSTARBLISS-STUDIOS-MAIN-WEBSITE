@@ -227,6 +227,7 @@ export const billingGet = async <T>(path: string): Promise<T> => {
           billing: schoolBilling
         };
 
+        const verifiedSchoolPayments = schoolPayments.filter((p: any) => isSuccessfulPaymentRecord(p));
         return {
           role: 'school',
           config,
@@ -235,11 +236,11 @@ export const billingGet = async <T>(path: string): Promise<T> => {
           schoolPrograms,
           payments: schoolPayments,
           billingSummary: {
-            totalPaid: schoolPayments.reduce((acc: number, p: any) => acc + Number(p.customerTotal || p.totalAmount || p.baseAmount || p.amount || 0), 0),
+            totalPaid: verifiedSchoolPayments.reduce((acc: number, p: any) => acc + extractPaymentAmountNaira(p), 0),
             monthlyRevenue: 0,
-            transactionFees: schoolPayments.reduce((acc: number, p: any) => acc + Number(p.transactionFee || 0), 0),
-            paymentCount: schoolPayments.length,
-            lastPaidAt: schoolPayments[0]?.paidAt || null,
+            transactionFees: verifiedSchoolPayments.reduce((acc: number, p: any) => acc + Number(p.transactionFee || 0), 0),
+            paymentCount: verifiedSchoolPayments.length,
+            lastPaidAt: verifiedSchoolPayments[0]?.paidAt || null,
             nextPaymentDue: schoolBilling ? schoolBilling.nextDueDate || null : null,
             overdue: schoolBilling ? schoolBilling.status === 'OVERDUE' : false
           },
@@ -266,6 +267,7 @@ export const billingGet = async <T>(path: string): Promise<T> => {
           String(p.userId || '') === user.uid ||
           (userEmail && String(p.parentEmail || p.email || '').toLowerCase() === userEmail)
         );
+        const verifiedParentPayments = parentPayments.filter((p: any) => isSuccessfulPaymentRecord(p));
 
         const childrenMap = new Map<string, any>();
         [...indivStudentsSnap.docs, ...studentsSnap.docs].forEach((d: any) => {
@@ -288,11 +290,11 @@ export const billingGet = async <T>(path: string): Promise<T> => {
           payments: parentPayments,
           programs: publishedPrograms,
           billingSummary: {
-            totalPaid: parentPayments.reduce((acc: number, p: any) => acc + Number(p.baseAmount || p.amount || 0), 0),
+            totalPaid: verifiedParentPayments.reduce((acc: number, p: any) => acc + extractPaymentAmountNaira(p), 0),
             monthlyRevenue: 0,
-            transactionFees: 0,
-            paymentCount: parentPayments.length,
-            lastPaidAt: parentPayments[0]?.paidAt || null,
+            transactionFees: verifiedParentPayments.reduce((acc: number, p: any) => acc + Number(p.transactionFee || 0), 0),
+            paymentCount: verifiedParentPayments.length,
+            lastPaidAt: verifiedParentPayments[0]?.paidAt || null,
             nextPaymentDue: null,
             overdue: false
           },
@@ -340,6 +342,7 @@ export const billingGet = async <T>(path: string): Promise<T> => {
 
         const paymentsSnap = await getDocs(query(collection(db, 'payments'), limit(50))).catch(() => ({ docs: [] } as any));
         const studentPayments = paymentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })).filter((p: any) => String(p.userId || '') === user.uid);
+        const verifiedStudentPayments = studentPayments.filter((p: any) => isSuccessfulPaymentRecord(p));
 
         return {
           role: 'student',
@@ -349,11 +352,11 @@ export const billingGet = async <T>(path: string): Promise<T> => {
           managerName,
           payments: studentPayments,
           billingSummary: {
-            totalPaid: studentPayments.reduce((acc: number, p: any) => acc + Number(p.baseAmount || p.amount || 0), 0),
+            totalPaid: verifiedStudentPayments.reduce((acc: number, p: any) => acc + extractPaymentAmountNaira(p), 0),
             monthlyRevenue: 0,
-            transactionFees: 0,
-            paymentCount: studentPayments.length,
-            lastPaidAt: studentPayments[0]?.paidAt || null,
+            transactionFees: verifiedStudentPayments.reduce((acc: number, p: any) => acc + Number(p.transactionFee || 0), 0),
+            paymentCount: verifiedStudentPayments.length,
+            lastPaidAt: verifiedStudentPayments[0]?.paidAt || null,
             nextPaymentDue: null,
             overdue: false
           }
@@ -372,6 +375,7 @@ export const billingGet = async <T>(path: string): Promise<T> => {
         const wallet = walletSnap && walletSnap.exists() ? walletSnap.data() : { availableBalance: 0, reservedBalance: 0, lifetimeEarned: 0 };
         const staffWithdrawals = withdrawalsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })).filter((w: any) => String(w.staffId || '') === user.uid);
         const staffPayments = paymentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })).filter((p: any) => String(p.tutorId || p.staffId || '') === user.uid);
+        const verifiedStaffPayments = staffPayments.filter((p: any) => isSuccessfulPaymentRecord(p));
         const assignedStudents = studentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })).filter((s: any) => String(s.tutorId || s.staffId || '') === user.uid);
 
         return {
@@ -380,11 +384,11 @@ export const billingGet = async <T>(path: string): Promise<T> => {
           wallet,
           payments: staffPayments,
           billingSummary: {
-            totalPaid: staffPayments.reduce((acc: number, p: any) => acc + Number(p.baseAmount || p.amount || 0), 0),
+            totalPaid: verifiedStaffPayments.reduce((acc: number, p: any) => acc + extractPaymentBaseAmountNaira(p), 0),
             monthlyRevenue: 0,
             transactionFees: 0,
-            paymentCount: staffPayments.length,
-            lastPaidAt: staffPayments[0]?.paidAt || null,
+            paymentCount: verifiedStaffPayments.length,
+            lastPaidAt: verifiedStaffPayments[0]?.paidAt || null,
             nextPaymentDue: null,
             overdue: false
           },
@@ -403,6 +407,7 @@ export const billingGet = async <T>(path: string): Promise<T> => {
       ]);
 
       const payments = paymentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      const verifiedAdminPayments = payments.filter((p: any) => isSuccessfulPaymentRecord(p) && p.type !== 'transfer_to' && p.type !== 'outflow');
       const schools = schoolsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
       const enrollments = enrollmentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
       const withdrawals = withdrawalsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
@@ -413,10 +418,10 @@ export const billingGet = async <T>(path: string): Promise<T> => {
         config,
         payments,
         billingSummary: {
-          totalPaid: payments.reduce((acc: number, p: any) => acc + (Number(p.baseAmount || p.amount || 0)), 0),
+          totalPaid: verifiedAdminPayments.reduce((acc: number, p: any) => acc + extractPaymentAmountNaira(p), 0),
           monthlyRevenue: 0,
-          transactionFees: 0,
-          paymentCount: payments.length,
+          transactionFees: verifiedAdminPayments.reduce((acc: number, p: any) => acc + Number(p.transactionFee || 0), 0),
+          paymentCount: verifiedAdminPayments.length,
           lastPaidAt: null,
           nextPaymentDue: null,
           overdue: false
@@ -445,13 +450,16 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
   const user = auth.currentUser;
   if (!user) throw new Error('Please sign in again.');
 
+  const action = String(body.action || '').toLowerCase();
+
   // Try API first
   let apiSuccess = false;
   let apiResult: any = null;
+  let serverErrorMessage: string | null = null;
   try {
     const token = await user.getIdToken();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
     const response = await fetch(`/.netlify/functions/${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -460,20 +468,41 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
     }).catch(() => null);
     clearTimeout(timeoutId);
 
-    if (response && response.ok) {
-      apiResult = await response.json().catch(() => null);
-      if (apiResult && !apiResult.fallback && apiResult.status !== 'dev_mock_success') apiSuccess = true;
+    if (response) {
+      const contentType = response.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      const parsedBody = isJson ? await response.json().catch(() => null) : null;
+
+      if (response.ok) {
+        apiResult = parsedBody;
+        if (apiResult && !apiResult.fallback && apiResult.status !== 'dev_mock_success') {
+          apiSuccess = true;
+        }
+      } else if (parsedBody && typeof parsedBody.error === 'string' && parsedBody.error.trim()) {
+        // Explicit server validation / gateway error — never swallow or bypass!
+        serverErrorMessage = parsedBody.error.trim();
+      }
     }
   } catch {
-    // Continue to direct firestore action
+    // Network or abort error
+  }
+
+  if (serverErrorMessage) {
+    throw new Error(serverErrorMessage);
   }
 
   if (apiSuccess && apiResult) {
     return apiResult as T;
   }
 
-  // Direct Firestore handlers for when Netlify functions are not hosted in the dev environment
-  const action = String(body.action || '').toLowerCase();
+  // Strictly block any client-side fallback for Paystack checkout, verification, or payouts
+  if (path === 'paystack-initialize' || action === 'initialize_payment') {
+    throw new Error('Unable to initialize Paystack checkout. Please ensure the payment gateway service is online and configured.');
+  }
+
+  if (path === 'paystack-verify') {
+    throw new Error('Unable to verify payment with Paystack right now. Please refresh or wait for webhook confirmation.');
+  }
 
   if (path === 'wallet-withdraw') {
     throw new Error('The wallet payout service is unavailable. Please try again when the payout service is online.');
@@ -487,7 +516,6 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
     let studentData: any = null;
     let collectionName = 'individualStudents';
 
-    // Try finding in individualStudents first, then students
     const indDoc = await getDoc(doc(db, 'individualStudents', studentId)).catch(() => null);
     if (indDoc && indDoc.exists()) {
       targetDocRef = doc(db, 'individualStudents', studentId);
@@ -503,13 +531,11 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
     }
 
     if (!targetDocRef || !studentData) {
-      // Create or update in individualStudents
       targetDocRef = doc(db, 'individualStudents', studentId);
       studentData = {};
       collectionName = 'individualStudents';
     }
 
-    // Generate random code in format JBS-XXXX-XXXX
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let p1 = '';
     let p2 = '';
@@ -523,7 +549,6 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
       username = `${baseName}${Math.floor(100 + Math.random() * 900)}`;
     }
 
-    // Calculate sha256 hash using browser crypto
     let accessCodeHash = '';
     try {
       const msgBuffer = new TextEncoder().encode(accessCode.toUpperCase());
@@ -550,14 +575,12 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
 
     await setDoc(targetDocRef, updatePayload, { merge: true });
 
-    // Also mirror to students collection to keep legacy and current queries synchronized
     if (collectionName === 'individualStudents') {
       await setDoc(doc(db, 'students', studentId), updatePayload, { merge: true }).catch(() => null);
     } else {
       await setDoc(doc(db, 'individualStudents', studentId), updatePayload, { merge: true }).catch(() => null);
     }
 
-    // Sync to linked users doc if available
     const linkedUid = String(studentData.firebaseUid || studentData.userId || '');
     if (linkedUid) {
       await setDoc(doc(db, 'users', linkedUid), {
@@ -573,7 +596,6 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
       }, { merge: true }).catch(() => null);
     }
 
-    // Add activity log
     await addDoc(collection(db, 'activityLogs'), {
       actorId: user.uid,
       action: 'STUDENT_CREDENTIAL_ISSUED',
@@ -616,13 +638,11 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
       updatedAt: new Date().toISOString()
     };
 
-    // Update School Doc
     await setDoc(doc(db, 'schools', schoolId), {
       billing: billingPayload,
       updatedAt: serverTimestamp()
     }, { merge: true });
 
-    // Sync to linked school admin user account
     try {
       const usersSnap = await getDocs(query(collection(db, 'users'), where('schoolId', '==', schoolId)));
       if (!usersSnap.empty) {
@@ -724,57 +744,6 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
     return { sent: true, sentAt: new Date().toISOString() } as unknown as T;
   }
 
-  if (path === 'paystack-initialize' || action === 'initialize_payment') {
-    const config = await getClientPaymentConfig();
-    const amount = Number(body.amount || body.customAmount || body.baseAmount || 0);
-    const role = String(body.role || 'school').toLowerCase();
-    const policy = role === 'school' ? config.schoolFeePolicy : config.parentFeePolicy;
-    const chargePreview = feeFromBase(amount, policy);
-    const durationWeeks = Number(body.durationWeeks || (body.cycle === 'termly' ? 12 : 4));
-    const ref = `JAY-${Date.now()}-${Math.floor(Math.random() * 8999 + 1000)}`;
-
-    try {
-      await addDoc(collection(db, 'payments'), {
-        reference: ref,
-        userId: user.uid,
-        userEmail: user.email || '',
-        schoolId: String(body.schoolId || (role === 'school' ? user.uid : '')),
-        parentId: String(body.parentId || (role === 'parent' ? user.uid : '')),
-        studentId: String(body.studentId || ''),
-        studentName: String(body.studentName || (role === 'school' ? 'Institutional Partner Account' : 'Student Account')),
-        plan: String(body.planName || body.planId || 'Institutional Lab Fee'),
-        paymentPlanName: String(body.planName || body.planId || 'Institutional Lab Fee'),
-        amount: Math.round(amount * 100),
-        baseAmount: amount,
-        transactionFee: chargePreview.transactionFee,
-        customerTotal: chargePreview.totalAmount,
-        status: 'PAID',
-        paymentStatus: 'PAID',
-        paidAt: new Date().toISOString(),
-        paidThrough: new Date(Date.now() + durationWeeks * 7 * 24 * 60 * 60 * 1000).toISOString(),
-        paymentMethod: String(body.paymentMethod || 'card'),
-        teachingMode: String(body.teachingMode || 'Standard Institutional Lab Delivery'),
-        durationWeeks,
-        paymentSource: String(body.paymentSource || "This Quarter's Escrow Account"),
-        createdAt: serverTimestamp()
-      });
-    } catch (saveErr) {
-      console.warn('Payment recording note:', saveErr);
-    }
-
-    return {
-      authorizationUrl: `${window.location.pathname}?reference=${ref}`,
-      reference: ref,
-      planId: String(body.planId || 'school_custom_fee'),
-      planName: String(body.planName || 'Institutional Lab Fee'),
-      baseAmount: amount,
-      transactionFee: chargePreview.transactionFee,
-      totalAmount: chargePreview.totalAmount,
-      durationWeeks,
-      success: true
-    } as unknown as T;
-  }
-
   if (action === 'update_school_programs') {
     const schoolId = String(body.schoolId || '');
     const programs = Array.isArray(body.programs) ? body.programs : [];
@@ -787,7 +756,72 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
     return { updated: true, programs } as unknown as T;
   }
 
-  return { success: true } as unknown as T;
+  throw new Error('The billing service could not complete this request right now.');
+};
+
+const CLIENT_SUCCESSFUL_STATUSES = new Set([
+  'SUCCESS',
+  'SUCCESSFUL',
+  'PAID',
+  'COMPLETED',
+  'APPROVED',
+  'CONFIRMED',
+  'VERIFIED'
+]);
+
+const CLIENT_PARTIAL_STATUSES = new Set([
+  'PARTIALLY_PAID',
+  'PARTIAL'
+]);
+
+export const isSuccessfulPaymentStatus = (status: unknown): boolean => {
+  const norm = String(status ?? '').trim().toUpperCase();
+  if (!norm) return false;
+  return CLIENT_SUCCESSFUL_STATUSES.has(norm);
+};
+
+export const isPartiallyPaidStatus = (status: unknown): boolean => {
+  const norm = String(status ?? '').trim().toUpperCase();
+  if (!norm) return false;
+  return CLIENT_PARTIAL_STATUSES.has(norm);
+};
+
+export const isSuccessfulPaymentRecord = (payment: any): boolean => {
+  if (!payment || typeof payment !== 'object') return false;
+  return isSuccessfulPaymentStatus(payment.status ?? payment.paymentStatus);
+};
+
+export const extractPaymentAmountNaira = (payment: any): number => {
+  if (!payment || typeof payment !== 'object') return 0;
+  for (const key of ['customerTotal', 'totalAmount', 'amountPaid', 'grossAmount']) {
+    const val = Number(payment[key]);
+    if (Number.isFinite(val) && val > 0) return Number(val.toFixed(2));
+  }
+  const base = Number(payment.baseAmount);
+  const fee = Number(payment.transactionFee || 0);
+  if (Number.isFinite(base) && base > 0) {
+    return Number((base + (Number.isFinite(fee) && fee > 0 ? fee : 0)).toFixed(2));
+  }
+  const rawAmount = Number(payment.amount);
+  if (!Number.isFinite(rawAmount) || rawAmount <= 0) return 0;
+  const providerMinor = Number(payment.providerAmount || payment.amountMinor || 0);
+  const looksLikeLegacyKobo =
+    (providerMinor > 0 && rawAmount === providerMinor && !payment.amountInNaira) ||
+    (Boolean(payment.gatewayFeeVerified || payment.verifiedBy) && !payment.amountInNaira && rawAmount >= 100000 && rawAmount % 100 === 0);
+  const naira = looksLikeLegacyKobo ? rawAmount / 100 : rawAmount;
+  return Number(naira.toFixed(2));
+};
+
+export const extractPaymentBaseAmountNaira = (payment: any): number => {
+  if (!payment || typeof payment !== 'object') return 0;
+  const base = Number(payment.baseAmount);
+  if (Number.isFinite(base) && base > 0) return Number(base.toFixed(2));
+  const total = extractPaymentAmountNaira(payment);
+  const fee = Number(payment.transactionFee || 0);
+  if (total > 0 && Number.isFinite(fee) && fee > 0 && total > fee) {
+    return Number((total - fee).toFixed(2));
+  }
+  return total;
 };
 
 export const formatNaira = (value: number | string | undefined | null) => {
@@ -823,4 +857,5 @@ export const feeFromBase = (base: number, policy: any) => {
   total = Math.ceil(total * 100) / 100;
   return { baseAmount: amount, transactionFee: Number((total - amount).toFixed(2)), totalAmount: total };
 };
+
 

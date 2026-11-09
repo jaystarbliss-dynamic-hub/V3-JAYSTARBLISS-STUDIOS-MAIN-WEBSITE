@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/receiptGenerator';
 import { useToast } from '../../contexts/ToastContext';
-import { billingPost } from '../../lib/billing';
+import { billingGet, billingPost, type PaymentConfig } from '../../lib/billing';
 import { auth } from '../../lib/firebase';
 
 export interface BankOption {
@@ -22,6 +22,8 @@ export interface FintechWithdrawalModalProps {
   savedAccountLast4?: string;
   savedAccountName?: string;
   banksList?: BankOption[];
+  withdrawalFeePolicy?: { percentage: number; flat: number; cap: number; enabled: boolean };
+  minimumWithdrawalAmount?: number;
   onConfirmWithdrawal: (data: {
     destination: 'bank';
     bankCode: string;
@@ -45,6 +47,8 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
   savedAccountLast4 = '',
   savedAccountName = '',
   banksList = [],
+  withdrawalFeePolicy,
+  minimumWithdrawalAmount,
   onConfirmWithdrawal
 }) => {
   const { toast } = useToast();
@@ -60,10 +64,22 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [directoryBanks, setDirectoryBanks] = useState<BankOption[]>(banksList || []);
   const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [loadedConfig, setLoadedConfig] = useState<PaymentConfig | null>(null);
 
   useEffect(() => {
     setDirectoryBanks(banksList || []);
   }, [banksList]);
+
+  useEffect(() => {
+    if (!isOpen || (withdrawalFeePolicy && minimumWithdrawalAmount !== undefined)) return;
+    let cancelled = false;
+    billingGet<PaymentConfig>('payment-config')
+      .then(cfg => {
+        if (!cancelled && cfg) setLoadedConfig(cfg);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isOpen, withdrawalFeePolicy, minimumWithdrawalAmount]);
 
   useEffect(() => {
     if (!isOpen || directoryBanks.length > 0) return;
@@ -116,8 +132,17 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
 
   const selectedBank = availableBanks.find(bank => bank.code === bankCode);
   const numAmount = Number(amount) || 0;
-  const fee = 0;
-  const netAmount = Math.max(0, numAmount - fee);
+  const effectivePolicy = withdrawalFeePolicy || loadedConfig?.withdrawalFeePolicy || { percentage: 0, flat: 0, cap: 0, enabled: false };
+  const effectiveMinimum = Number(minimumWithdrawalAmount ?? loadedConfig?.minimumWithdrawalAmount ?? 10000);
+  const fee = useMemo(() => {
+    if (!effectivePolicy.enabled || numAmount <= 0) return 0;
+    const pct = numAmount * (Math.max(0, Number(effectivePolicy.percentage) || 0) / 100);
+    const flat = Math.max(0, Number(effectivePolicy.flat) || 0);
+    const uncapped = pct + flat;
+    const cap = Number(effectivePolicy.cap) > 0 ? Number(effectivePolicy.cap) : Number.POSITIVE_INFINITY;
+    return Number(Math.min(uncapped, cap).toFixed(2));
+  }, [effectivePolicy, numAmount]);
+  const netAmount = Number(Math.max(0, numAmount - fee).toFixed(2));
 
   const resetToAnotherAccount = () => {
     setStep('form');
@@ -174,8 +199,16 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
       toast.error('Enter a withdrawal amount.');
       return;
     }
+    if (effectiveMinimum > 0 && numAmount < effectiveMinimum) {
+      toast.error(`Minimum withdrawal amount is ${formatCurrency(effectiveMinimum)}.`);
+      return;
+    }
     if (numAmount > availableBalance) {
       toast.error('Withdrawal amount exceeds your available balance.');
+      return;
+    }
+    if (netAmount <= 0) {
+      toast.error('Withdrawal amount must exceed the service fee.');
       return;
     }
     setStep('confirm');
