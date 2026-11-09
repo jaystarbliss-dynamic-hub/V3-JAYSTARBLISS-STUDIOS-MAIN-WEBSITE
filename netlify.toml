@@ -13,6 +13,32 @@
 [functions]
   directory = "netlify/functions"
 
+# Legacy domain migration: permanently redirect the old .name.ng host to the new .com domain.
+# Keep these hostname-specific rules before the API proxy and SPA fallback rules.
+[[redirects]]
+  from = "https://jaystarbliss-studios.name.ng/*"
+  to = "https://jaystarblissstudios.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "http://jaystarbliss-studios.name.ng/*"
+  to = "https://jaystarblissstudios.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "https://www.jaystarbliss-studios.name.ng/*"
+  to = "https://jaystarblissstudios.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "http://www.jaystarbliss-studios.name.ng/*"
+  to = "https://jaystarblissstudios.com/:splat"
+  status = 301
+  force = true
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
