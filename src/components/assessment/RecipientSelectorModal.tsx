@@ -68,6 +68,9 @@ interface RecipientSelectorModalProps {
   onConfirm?: (result: RecipientSelectionResult) => void;
 }
 
+const EMPTY_STRING_ARRAY: string[] = [];
+const EMPTY_STUDENT_ARRAY: RecipientPrivateStudent[] = [];
+
 export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
   isOpen,
   onClose,
@@ -75,14 +78,14 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
   availableSchools,
   privateStudents: privateStudentsProp,
   availablePrivateStudents,
-  schoolStudents = [],
+  schoolStudents = EMPTY_STUDENT_ARRAY,
   initialRecipientType,
   initialSchoolIds,
   initialSelectedSchoolIds,
   initialStudentIds,
   initialSelectedStudentIds,
   initialClassScopeMode = 'ALL',
-  initialSelectedClasses = [],
+  initialSelectedClasses = EMPTY_STRING_ARRAY,
   onApply,
   onConfirm,
 }) => {
@@ -92,11 +95,11 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
     [privateStudentsProp, availablePrivateStudents]
   );
   const resolvedInitSchoolIds = useMemo(
-    () => initialSchoolIds || initialSelectedSchoolIds || [],
+    () => initialSchoolIds || initialSelectedSchoolIds || EMPTY_STRING_ARRAY,
     [initialSchoolIds, initialSelectedSchoolIds]
   );
   const resolvedInitStudentIds = useMemo(
-    () => initialStudentIds || initialSelectedStudentIds || [],
+    () => initialStudentIds || initialSelectedStudentIds || EMPTY_STRING_ARRAY,
     [initialStudentIds, initialSelectedStudentIds]
   );
   const resolvedInitType: 'ALL' | 'SCHOOL' | 'PRIVATE' = useMemo(() => {
@@ -119,10 +122,11 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
     resolvedInitType === 'SCHOOL' && resolvedInitStudentIds.length > 0 ? 'SELECTED' : 'ALL'
   );
   const [schoolStudentSearch, setSchoolStudentSearch] = useState('');
+  const prevOpenRef = React.useRef<boolean>(false);
 
-  // Reset state when modal opens
+  // Reset state strictly when modal transitions from closed to open
   React.useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevOpenRef.current) {
       setRecipientType(resolvedInitType);
       setTargetSchoolIds(resolvedInitSchoolIds);
       setTargetStudentIds(resolvedInitStudentIds);
@@ -135,6 +139,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
       );
       setSchoolStudentSearch('');
     }
+    prevOpenRef.current = isOpen;
   }, [
     isOpen,
     resolvedInitType,
@@ -162,19 +167,22 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
       if (!s || !s.id || seen.has(s.id)) continue;
       const classification = classifyStudentEnrolment({
         ...s,
-        fullName: s.name,
+        fullName: s.name || s.fullName,
         studentType: s.studentType || (s.privateSubType === 'parent' ? 'parent' : s.privateSubType === 'individual' ? 'personal' : ''),
       });
-      if (classification.isSchool || !classification.isPrivate) continue;
+      const isExplicitPrivate =
+        s.assignmentCategory === 'private' && (!s.schoolId || s.schoolId === 'private');
+      if (classification.isSchool || (!classification.isPrivate && !isExplicitPrivate)) continue;
       seen.add(s.id);
       const resolvedSubType: 'parent' | 'individual' =
-        s.privateSubType === 'parent' || classification.privateSubType === 'parent'
+        s.privateSubType === 'parent' || classification.privateSubType === 'parent' || Boolean(s.parentId || s.parentName)
           ? 'parent'
           : 'individual';
       const resolvedLabel =
         resolvedSubType === 'parent' ? 'Parent-Enrolled Private' : 'Individual Private';
       list.push({
         ...s,
+        name: s.name || s.fullName || 'Private Learner',
         resolvedSubType,
         resolvedLabel,
       });
@@ -440,10 +448,11 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                   filteredSchools.map((school) => {
                     const checked = targetSchoolIds.includes(school.id);
                     return (
-                      <label
+                      <button
                         key={school.id}
+                        type="button"
                         onClick={() => toggleSchool(school.id)}
-                        className={`flex items-center justify-between px-3.5 py-2.5 cursor-pointer transition-colors ${
+                        className={`w-full flex items-center justify-between px-3.5 py-2.5 cursor-pointer text-left transition-colors ${
                           checked
                             ? 'bg-blue-50/50 dark:bg-blue-950/25'
                             : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
@@ -468,7 +477,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                             {school.code}
                           </span>
                         )}
-                      </label>
+                      </button>
                     );
                   })
                 )}
@@ -558,10 +567,11 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                     const checked = targetStudentIds.includes(student.id);
                     const isParent = student.resolvedSubType === 'parent';
                     return (
-                      <label
+                      <button
                         key={student.id}
+                        type="button"
                         onClick={() => toggleStudent(student.id)}
-                        className={`flex items-center justify-between px-3.5 py-2.5 cursor-pointer transition-colors gap-2 ${
+                        className={`w-full flex items-center justify-between px-3.5 py-2.5 cursor-pointer text-left transition-colors gap-2 ${
                           checked
                             ? 'bg-blue-50/50 dark:bg-blue-950/25'
                             : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
@@ -607,7 +617,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                             {student.grade}
                           </span>
                         )}
-                      </label>
+                      </button>
                     );
                   })
                 )}
@@ -739,10 +749,11 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                       matchingSchoolStudents.map((st) => {
                         const checked = targetStudentIds.includes(st.id);
                         return (
-                          <label
+                          <button
                             key={st.id}
+                            type="button"
                             onClick={() => toggleStudent(st.id)}
-                            className={`flex items-center justify-between px-3.5 py-2 cursor-pointer transition-colors ${
+                            className={`w-full flex items-center justify-between px-3.5 py-2 cursor-pointer text-left transition-colors ${
                               checked
                                 ? 'bg-blue-50/50 dark:bg-blue-950/25'
                                 : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
@@ -774,7 +785,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                                 </span>
                               )}
                             </div>
-                          </label>
+                          </button>
                         );
                       })
                     )}

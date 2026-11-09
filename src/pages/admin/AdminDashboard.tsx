@@ -1,21 +1,29 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Users, BookOpen, Download, 
   RefreshCw, School, Award, ArrowUpRight,
   ShieldCheck, CheckCircle2, MessageSquare,
   Keyboard, ExternalLink, Copy, Check, Edit2, Save, X, Image as ImageIcon,
-  Clock, AlertCircle, ChevronRight, UserCheck, XCircle, Mail, Phone
+  Clock, AlertCircle, ChevronRight, UserCheck, XCircle, Mail, Phone,
+  CreditCard, FileText, Layers, Briefcase, Bell
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { onAuthStateChanged } from 'firebase/auth';
 import { 
   collection, getDocs, query, orderBy, limit,
   doc, getDoc, setDoc, updateDoc, serverTimestamp, where 
 } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { auth, db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import AdminAnalyticsWidget from '../../components/admin/AdminAnalyticsWidget';
 import PhotoUpload from '../../components/admin/PhotoUpload';
 import { StudentEnrollmentApprovalModal } from '../../components/admin/StudentEnrollmentApprovalModal';
+import {
+  getAdminDashboardCapabilities,
+  resolveCanonicalAdminScope,
+  SUPER_ADMIN_EMAILS,
+} from '../../utils/adminRbac';
+import { getActiveImpersonation } from '../../utils/impersonation';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
   ResponsiveContainer, PieChart, Pie, Cell, Legend
@@ -27,6 +35,65 @@ const AdminDashboard: React.FC = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [activeRole, setActiveRole] = useState<string>(() => {
+    const imp = getActiveImpersonation();
+    if (imp?.isMasquerading && imp.targetRole) {
+      return String(imp.targetRole).toUpperCase();
+    }
+    return (
+      sessionStorage.getItem('userRole') ||
+      localStorage.getItem('jaystar_cached_user_role') ||
+      'SUPER_ADMIN'
+    ).toUpperCase();
+  });
+
+  useEffect(() => {
+    const syncRole = async (uid?: string, email?: string | null) => {
+      const imp = getActiveImpersonation();
+      if (imp?.isMasquerading && imp.targetRole) {
+        setActiveRole(String(imp.targetRole).toUpperCase());
+        return;
+      }
+
+      const stored = (
+        sessionStorage.getItem('userRole') ||
+        localStorage.getItem('jaystar_cached_user_role') ||
+        ''
+      ).toUpperCase();
+      if (stored && resolveCanonicalAdminScope(stored)) {
+        setActiveRole(stored);
+      }
+
+      if (uid) {
+        try {
+          const snap = await getDoc(doc(db, 'users', uid));
+          if (snap.exists()) {
+            const dbRole = String(snap.data()?.role || '').trim().toUpperCase();
+            if (resolveCanonicalAdminScope(dbRole)) {
+              setActiveRole(dbRole);
+              return;
+            }
+          }
+        } catch {}
+      }
+
+      if (email && SUPER_ADMIN_EMAILS.has(email.toLowerCase())) {
+        setActiveRole('SUPER_ADMIN');
+      }
+    };
+
+    void syncRole(auth.currentUser?.uid, auth.currentUser?.email);
+    const unsub = onAuthStateChanged(auth, user => {
+      void syncRole(user?.uid, user?.email);
+    });
+    return () => unsub();
+  }, []);
+
+  const capabilities = useMemo(
+    () => getAdminDashboardCapabilities(activeRole),
+    [activeRole]
+  );
 
   const [metrics, setMetrics] = useState({
     users: 0,
@@ -288,48 +355,178 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const stats = [
-    { 
-      name: 'Enrolled Students', 
-      value: metrics.students, 
-      icon: Users, 
-      color: 'from-sky-500 to-blue-600', 
-      iconBg: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20',
-      href: '/admin/students', 
-      badge: 'Active Cohorts',
-      trend: '+14% this month'
-    },
-    { 
-      name: 'Partner Schools', 
-      value: metrics.schools, 
-      icon: School, 
-      color: 'from-blue-600 to-indigo-700', 
-      iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20',
-      href: '/admin/schools', 
-      badge: 'Montessori Portals',
-      trend: '100% operational'
-    },
-    { 
-      name: 'Curriculum Guides', 
-      value: metrics.resources, 
-      icon: BookOpen, 
-      color: 'from-cyan-500 to-sky-600', 
-      iconBg: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20',
-      href: '/admin/resources', 
-      badge: 'PDF & Labs',
-      trend: 'Updated recently'
-    },
-    { 
-      name: 'CBT Assessments', 
-      value: metrics.exams, 
-      icon: Award, 
-      color: 'from-emerald-500 to-teal-600', 
-      iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
-      href: '/admin/schools', 
-      badge: 'Testing Windows',
-      trend: 'Realtime grading'
-    },
-  ];
+  const stats = useMemo(() => {
+    if (capabilities.scope === 'FINANCE_ADMIN') {
+      return [
+        {
+          name: 'Billings & Ledger',
+          value: 'Active',
+          icon: CreditCard,
+          color: 'from-emerald-500 to-teal-600',
+          iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
+          href: '/admin/billing',
+          badge: 'Tuition & Invoices',
+          trend: 'Verified transactions',
+        },
+        {
+          name: 'Pending Approvals',
+          value: metrics.pendingEnrollments,
+          icon: UserCheck,
+          color: 'from-amber-500 to-orange-600',
+          iconBg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20',
+          href: '/admin/approvals',
+          badge: 'Fee & Access Queue',
+          trend: 'Awaiting review',
+        },
+        {
+          name: 'Agreements Centre',
+          value: 'Contracts',
+          icon: FileText,
+          color: 'from-blue-600 to-indigo-700',
+          iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20',
+          href: '/admin/agreements',
+          badge: 'Institutional & Tutor',
+          trend: 'Active agreements',
+        },
+        {
+          name: 'Enrolled Students',
+          value: metrics.students,
+          icon: Users,
+          color: 'from-sky-500 to-blue-600',
+          iconBg: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20',
+          href: '/admin/billing',
+          badge: 'Billing Accounts',
+          trend: 'Active billing profiles',
+        },
+      ];
+    }
+
+    if (capabilities.scope === 'CMS_ADMIN') {
+      return [
+        {
+          name: 'Programs & Courses',
+          value: metrics.programs,
+          icon: BookOpen,
+          color: 'from-sky-500 to-blue-600',
+          iconBg: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20',
+          href: '/admin/programs',
+          badge: 'Curriculum Catalog',
+          trend: 'Published tracks',
+        },
+        {
+          name: 'Services Catalog',
+          value: metrics.services,
+          icon: Briefcase,
+          color: 'from-blue-600 to-indigo-700',
+          iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20',
+          href: '/admin/services',
+          badge: 'Enterprise & Studio',
+          trend: 'Live offerings',
+        },
+        {
+          name: 'Public Inquiries',
+          value: metrics.inquiries,
+          icon: MessageSquare,
+          color: 'from-cyan-500 to-sky-600',
+          iconBg: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20',
+          href: '/admin/inquiries',
+          badge: 'Leads & Contact',
+          trend: 'Incoming requests',
+        },
+        {
+          name: 'Pages & Section CMS',
+          value: 'Live',
+          icon: Layers,
+          color: 'from-emerald-500 to-teal-600',
+          iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
+          href: '/admin/pages',
+          badge: 'Website Editor',
+          trend: 'Realtime publishing',
+        },
+      ];
+    }
+
+    // SUPER_ADMIN & ACADEMIC_ADMIN
+    return [
+      { 
+        name: 'Enrolled Students', 
+        value: metrics.students, 
+        icon: Users, 
+        color: 'from-sky-500 to-blue-600', 
+        iconBg: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20',
+        href: '/admin/students', 
+        badge: 'Active Cohorts',
+        trend: '+14% this month'
+      },
+      { 
+        name: 'Partner Schools', 
+        value: metrics.schools, 
+        icon: School, 
+        color: 'from-blue-600 to-indigo-700', 
+        iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20',
+        href: '/admin/schools', 
+        badge: 'Montessori Portals',
+        trend: '100% operational'
+      },
+      { 
+        name: 'Curriculum Guides', 
+        value: metrics.resources, 
+        icon: BookOpen, 
+        color: 'from-cyan-500 to-sky-600', 
+        iconBg: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20',
+        href: '/admin/resources', 
+        badge: 'PDF & Labs',
+        trend: 'Updated recently'
+      },
+      { 
+        name: 'CBT Assessments', 
+        value: metrics.exams, 
+        icon: Award, 
+        color: 'from-emerald-500 to-teal-600', 
+        iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
+        href: '/admin/examinations', 
+        badge: 'Testing Windows',
+        trend: 'Realtime grading'
+      },
+    ];
+  }, [capabilities.scope, metrics]);
+
+  const quickActions = useMemo(() => {
+    if (capabilities.scope === 'ACADEMIC_ADMIN') {
+      return [
+        { label: 'Pending Approvals', href: '/admin/approvals', icon: ShieldCheck, badge: `${metrics.pendingEnrollments} Requests` },
+        { label: 'Scholars & Students', href: '/admin/students', icon: Users, badge: 'Registry' },
+        { label: 'Programs & Courses', href: '/admin/programs', icon: BookOpen, badge: 'Curriculum' },
+        { label: 'CBT Assessments', href: '/admin/examinations', icon: Award, badge: 'Exams & Grading' },
+      ];
+    }
+
+    if (capabilities.scope === 'FINANCE_ADMIN') {
+      return [
+        { label: 'Billings / Fees', href: '/admin/billing', icon: CreditCard, badge: 'Ledger & Invoices' },
+        { label: 'Pending Approvals', href: '/admin/approvals', icon: ShieldCheck, badge: `${metrics.pendingEnrollments} Requests` },
+        { label: 'Agreements Centre', href: '/admin/agreements', icon: FileText, badge: 'Contracts' },
+        { label: 'Notifications', href: '/admin/notifications', icon: Bell, badge: 'Alerts' },
+      ];
+    }
+
+    if (capabilities.scope === 'CMS_ADMIN') {
+      return [
+        { label: 'Pages & Section CMS', href: '/admin/pages', icon: Layers, badge: 'Website Sections' },
+        { label: 'Programs & Courses', href: '/admin/programs', icon: BookOpen, badge: 'Curriculum' },
+        { label: 'Services Catalog', href: '/admin/services', icon: Briefcase, badge: 'Offerings' },
+        { label: 'Public Inquiries', href: '/admin/inquiries', icon: MessageSquare, badge: 'Admissions' },
+      ];
+    }
+
+    // SUPER_ADMIN
+    return [
+      { label: 'Pending Approvals', href: '/admin/approvals', icon: ShieldCheck, badge: `${metrics.pendingEnrollments} Requests` },
+      { label: 'Students', href: '/admin/students', icon: Users, badge: 'Registry' },
+      { label: 'Curriculum & CBT', href: '/admin/resources', icon: BookOpen, badge: 'Library' },
+      { label: 'Public Inquiries', href: '/admin/inquiries', icon: MessageSquare, badge: 'Admissions' },
+    ];
+  }, [capabilities.scope, metrics.pendingEnrollments]);
 
   const inquiriesByType = inquiriesData.reduce((acc, curr) => {
     const type = curr.type || 'GENERAL';
@@ -350,25 +547,37 @@ const AdminDashboard: React.FC = () => {
   return (
     <div className="dashboard-interface space-y-6">
       {/* Compact Control Actions */}
-      <div className="flex items-center justify-end gap-2.5 flex-wrap">
-        <button 
-          type="button"
-          onClick={() => exportToCSV(studentsData.length > 0 ? studentsData : usersData, 'students_cadets_registry')}
-          className="flex items-center gap-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-slate-200 dark:border-white/10 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-xs cursor-pointer"
-        >
-          <Download size={14} className="text-sky-600 dark:text-sky-400" />
-          <span>Export CSV</span>
-        </button>
-        
-        <button 
-          type="button"
-          onClick={() => fetchDashboardData(true)}
-          disabled={refreshing}
-          className="flex items-center gap-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer"
-        >
-          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-          <span>{refreshing ? 'Syncing...' : 'Sync Firestore'}</span>
-        </button>
+      <div className="flex items-center justify-between gap-2.5 flex-wrap">
+        <div>
+          {capabilities.scope !== 'SUPER_ADMIN' && (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-700 dark:text-sky-300 text-xs font-bold">
+              <ShieldCheck size={14} />
+              <span>{capabilities.roleLabel} Workspace</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {(capabilities.scope === 'SUPER_ADMIN' || capabilities.scope === 'ACADEMIC_ADMIN') && (
+            <button 
+              type="button"
+              onClick={() => exportToCSV(studentsData, 'students_cadets_registry')}
+              className="flex items-center gap-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-slate-200 dark:border-white/10 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-xs cursor-pointer"
+            >
+              <Download size={14} className="text-sky-600 dark:text-sky-400" />
+              <span>Export Students CSV</span>
+            </button>
+          )}
+          
+          <button 
+            type="button"
+            onClick={() => fetchDashboardData(true)}
+            disabled={refreshing}
+            className="flex items-center gap-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+            <span>{refreshing ? 'Syncing...' : 'Sync Firestore'}</span>
+          </button>
+        </div>
       </div>
       
       {/* Key Metric Overview Cards */}
@@ -412,12 +621,7 @@ const AdminDashboard: React.FC = () => {
 
       {/* Quick Navigation Shortcuts Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Pending Approvals', href: '/admin/approvals', icon: ShieldCheck, badge: `${metrics.pendingEnrollments} Requests` },
-          { label: 'Students', href: '/admin/students', icon: Users, badge: 'Registry' },
-          { label: 'Curriculum & CBT', href: '/admin/resources', icon: BookOpen, badge: 'Library' },
-          { label: 'Public Inquiries', href: '/admin/inquiries', icon: MessageSquare, badge: 'Admissions' },
-        ].map((action, idx) => {
+        {quickActions.map((action, idx) => {
           const ActionIcon = action.icon;
           return (
             <Link
@@ -443,7 +647,7 @@ const AdminDashboard: React.FC = () => {
       {/* ========================================================================= */}
       {/* 🚀 PENDING STUDENT ENROLLMENTS & ACCESS APPROVALS QUEUE */}
       {/* ========================================================================= */}
-      {pendingEnrollmentList.length > 0 && (
+      {capabilities.canViewPendingEnrollments && pendingEnrollmentList.length > 0 && (
         <div className="rounded-3xl bg-gradient-to-br from-white via-slate-50/50 to-white dark:from-slate-900 dark:via-slate-900/90 dark:to-slate-900 border-2 border-brand-red/30 p-5 sm:p-6 shadow-xl space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-800 pb-4">
             <div className="flex items-center gap-3">
@@ -559,6 +763,7 @@ const AdminDashboard: React.FC = () => {
       {/* ========================================================================= */}
       {/* TYPING MASTERS ACADEMY • EDCLUB COLLABORATION HUB & BANNER DESIGN */}
       {/* ========================================================================= */}
+      {capabilities.canViewEdclubHub && (
       <div className="relative overflow-hidden rounded-3xl border border-indigo-500/30 p-6 sm:p-8 text-white shadow-2xl transition-all">
         {/* Background Banner Image or Gradient */}
         {edclubBannerUrl ? (
@@ -621,19 +826,21 @@ const AdminDashboard: React.FC = () => {
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setEdclubInput(edclubUrl);
-                setEdclubBannerInput(edclubBannerUrl);
-                setIsEditingEdclub(true);
-              }}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-indigo-100 hover:text-white border border-white/20 text-xs font-bold transition-all shadow-sm"
-              title="Edit EdClub Banner & Portal URL"
-            >
-              <ImageIcon size={15} />
-              <span>Configure Banner &amp; Link</span>
-            </button>
+            {capabilities.canConfigureEdclubHub && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEdclubInput(edclubUrl);
+                  setEdclubBannerInput(edclubBannerUrl);
+                  setIsEditingEdclub(true);
+                }}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-indigo-100 hover:text-white border border-white/20 text-xs font-bold transition-all shadow-sm"
+                title="Edit EdClub Banner & Portal URL"
+              >
+                <ImageIcon size={15} />
+                <span>Configure Banner &amp; Link</span>
+              </button>
+            )}
 
             <a
               href={edclubUrl}
@@ -649,7 +856,7 @@ const AdminDashboard: React.FC = () => {
         </div>
 
         {/* Modal / Editor for EdClub Banner & Collaboration Configuration */}
-        {isEditingEdclub && (
+        {isEditingEdclub && capabilities.canConfigureEdclubHub && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fadeIn">
             <div className="w-full max-w-xl bg-slate-900 rounded-3xl border border-indigo-500/40 shadow-2xl p-6 sm:p-8 space-y-5 text-white max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between pb-4 border-b border-indigo-900/60">
@@ -748,112 +955,127 @@ const AdminDashboard: React.FC = () => {
           </div>
         )}
       </div>
+      )}
 
       {/* ========================================================================= */}
-      {/* SUPER ADMIN INTERACTIVE RECHARTS ANALYTICS WIDGET */}
+      {/* ROLE-SCOPED INTERACTIVE RECHARTS ANALYTICS WIDGET */}
       {/* ========================================================================= */}
-      <AdminAnalyticsWidget
-        studentsData={studentsData}
-        usersData={usersData}
-        activityLogsData={activityLogsData}
-        resourcesData={resourcesData}
-        examsData={examsData}
-        onRefresh={() => fetchDashboardData(true)}
-        isLoading={refreshing}
-      />
+      {capabilities.canViewAcademicAnalytics && (
+        <AdminAnalyticsWidget
+          studentsData={studentsData}
+          usersData={usersData}
+          activityLogsData={activityLogsData}
+          resourcesData={resourcesData}
+          examsData={examsData}
+          onRefresh={() => fetchDashboardData(true)}
+          isLoading={refreshing}
+          allowLoginActivityTab={capabilities.canViewLoginActivityAnalytics}
+          widgetTitle={
+            capabilities.scope === 'SUPER_ADMIN'
+              ? 'Super Admin Telemetry & Analytics Matrix'
+              : 'Academic Telemetry & Assessment Matrix'
+          }
+        />
+      )}
 
-      {/* Secondary Graphs: Inquiries & User Role Composition */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="pro-surface rounded-2xl p-6 flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Public Inquiries &amp; Admissions Influx
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Breakdown of incoming enrollment requests by program track.
-              </p>
+      {/* Secondary Graphs: Inquiries & User Role Composition (Role-Scoped) */}
+      {(capabilities.canViewInquiriesChart || capabilities.canViewRbacDistributionChart) && (
+        <div className={`grid grid-cols-1 ${capabilities.canViewInquiriesChart && capabilities.canViewRbacDistributionChart ? 'lg:grid-cols-2' : ''} gap-6`}>
+          {capabilities.canViewInquiriesChart && (
+            <div className="pro-surface rounded-2xl p-6 flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                    Public Inquiries &amp; Admissions Influx
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Breakdown of incoming enrollment requests by program track.
+                  </p>
+                </div>
+                <Link to="/admin/inquiries" className="text-xs font-bold text-sky-600 dark:text-sky-400 hover:underline">
+                  View All &rarr;
+                </Link>
+              </div>
+
+              <div className="h-[280px] w-full mt-2">
+                {loading ? (
+                  <div className="h-full flex items-center justify-center text-slate-400 text-xs">Loading inquiry metrics...</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartDataInquiries} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.2} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="#64748b" />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="#64748b" />
+                      <RechartsTooltip 
+                        contentStyle={{ 
+                          backgroundColor: 'rgba(15, 23, 42, 0.9)', 
+                          borderRadius: '12px', 
+                          border: '1px solid rgba(255, 255, 255, 0.1)', 
+                          color: '#fff',
+                          backdropFilter: 'blur(10px)'
+                        }} 
+                      />
+                      <Bar dataKey="value" name="Inquiries" fill="#0284c7" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
             </div>
-            <Link to="/admin/inquiries" className="text-xs font-bold text-sky-600 dark:text-sky-400 hover:underline">
-              View All &rarr;
-            </Link>
-          </div>
+          )}
+          
+          {capabilities.canViewRbacDistributionChart && (
+            <div className="pro-surface rounded-2xl p-6 flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                    Platform Account Role Distribution
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Active accounts across Students, Staff, Parents, and School Representatives.
+                  </p>
+                </div>
+                <Link to="/admin/users" className="text-xs font-bold text-sky-600 dark:text-sky-400 hover:underline">
+                  Manage RBAC &rarr;
+                </Link>
+              </div>
 
-          <div className="h-[280px] w-full mt-2">
-            {loading ? (
-              <div className="h-full flex items-center justify-center text-slate-400 text-xs">Loading inquiry metrics...</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartDataInquiries} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.2} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="#64748b" />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="#64748b" />
-                  <RechartsTooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'rgba(15, 23, 42, 0.9)', 
-                      borderRadius: '12px', 
-                      border: '1px solid rgba(255, 255, 255, 0.1)', 
-                      color: '#fff',
-                      backdropFilter: 'blur(10px)'
-                    }} 
-                  />
-                  <Bar dataKey="value" name="Inquiries" fill="#0284c7" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-        
-        <div className="pro-surface rounded-2xl p-6 flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Platform Account Role Distribution
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Active accounts across Students, Staff, Parents, and School Representatives.
-              </p>
+              <div className="h-[280px] w-full mt-2">
+                {loading ? (
+                  <div className="h-full flex items-center justify-center text-slate-400 text-xs">Loading user roles...</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={chartDataUsers}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={90}
+                        paddingAngle={4}
+                        dataKey="value"
+                      >
+                        {chartDataUsers.map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={ROLE_COLORS[index % ROLE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip 
+                        contentStyle={{ 
+                          backgroundColor: 'rgba(15, 23, 42, 0.9)', 
+                          borderRadius: '12px', 
+                          border: '1px solid rgba(255, 255, 255, 0.1)', 
+                          color: '#fff',
+                          backdropFilter: 'blur(10px)'
+                        }} 
+                      />
+                      <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
             </div>
-            <Link to="/admin/users" className="text-xs font-bold text-sky-600 dark:text-sky-400 hover:underline">
-              Manage RBAC &rarr;
-            </Link>
-          </div>
-
-          <div className="h-[280px] w-full mt-2">
-            {loading ? (
-              <div className="h-full flex items-center justify-center text-slate-400 text-xs">Loading user roles...</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={chartDataUsers}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={90}
-                    paddingAngle={4}
-                    dataKey="value"
-                  >
-                    {chartDataUsers.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={ROLE_COLORS[index % ROLE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'rgba(15, 23, 42, 0.9)', 
-                      borderRadius: '12px', 
-                      border: '1px solid rgba(255, 255, 255, 0.1)', 
-                      color: '#fff',
-                      backdropFilter: 'blur(10px)'
-                    }} 
-                  />
-                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Student Enrollment & Access Approval Modal */}
       {isApprovalModalOpen && selectedRequestForApproval && (

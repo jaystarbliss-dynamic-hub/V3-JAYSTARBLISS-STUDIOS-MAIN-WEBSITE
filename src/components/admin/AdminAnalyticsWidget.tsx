@@ -18,6 +18,8 @@ interface AdminAnalyticsWidgetProps {
   examsData?: any[];
   onRefresh?: () => void;
   isLoading?: boolean;
+  allowLoginActivityTab?: boolean;
+  widgetTitle?: string;
 }
 
 const BRAND_PALETTE = {
@@ -41,7 +43,9 @@ export const AdminAnalyticsWidget: React.FC<AdminAnalyticsWidgetProps> = ({
   resourcesData = [],
   examsData = [],
   onRefresh,
-  isLoading = false
+  isLoading = false,
+  allowLoginActivityTab = true,
+  widgetTitle = 'Super Admin Telemetry & Analytics Matrix',
 }) => {
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | '1y'>('30d');
   const [activeTab, setActiveTab] = useState<'growth' | 'logins' | 'resources' | 'cbt'>('growth');
@@ -189,11 +193,13 @@ export const AdminAnalyticsWidget: React.FC<AdminAnalyticsWidgetProps> = ({
               <BarChart3 size={20} />
             </span>
             <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-              Super Admin Telemetry &amp; Analytics Matrix
+              {widgetTitle}
             </h2>
           </div>
           <p className="text-xs text-slate-600 dark:text-slate-300">
-            Dashboard snapshot of student enrolment activity, portal login records, resource inventory, and assessment performance.
+            {allowLoginActivityTab
+              ? 'Dashboard snapshot of student enrolment activity, portal login records, resource inventory, and assessment performance.'
+              : 'Academic snapshot of student enrolment growth, curriculum resource inventory, and CBT assessment performance.'}
           </p>
         </div>
 
@@ -232,7 +238,7 @@ export const AdminAnalyticsWidget: React.FC<AdminAnalyticsWidgetProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 p-6 md:px-8 border-b border-slate-200/60 dark:border-white/10 bg-slate-50/40 dark:bg-black/20">
+      <div className={`grid grid-cols-1 ${allowLoginActivityTab ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'} gap-4 p-6 md:px-8 border-b border-slate-200/60 dark:border-white/10 bg-slate-50/40 dark:bg-black/20`}>
         <div className="p-4 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-slate-200/80 dark:border-white/10 shadow-2xs backdrop-blur-md">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
             <span className="font-semibold">Student Records</span>
@@ -246,18 +252,20 @@ export const AdminAnalyticsWidget: React.FC<AdminAnalyticsWidgetProps> = ({
           </div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-slate-200/80 dark:border-white/10 shadow-2xs backdrop-blur-md">
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
-            <span className="font-semibold">Recorded Login Activity</span>
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold">From logs</span>
+        {allowLoginActivityTab && (
+          <div className="p-4 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-slate-200/80 dark:border-white/10 shadow-2xs backdrop-blur-md">
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
+              <span className="font-semibold">Recorded Login Activity</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold">From logs</span>
+            </div>
+            <div className="text-2xl font-black text-slate-900 dark:text-white">
+              {totalLogins} <span className="text-xs font-medium text-slate-400">Sessions</span>
+            </div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              {totalActiveUsers} user accounts active
+            </div>
           </div>
-          <div className="text-2xl font-black text-slate-900 dark:text-white">
-            {totalLogins} <span className="text-xs font-medium text-slate-400">Sessions</span>
-          </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-            {totalActiveUsers} user accounts active
-          </div>
-        </div>
+        )}
 
         <div className="p-4 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-slate-200/80 dark:border-white/10 shadow-2xs backdrop-blur-md">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
@@ -290,11 +298,11 @@ export const AdminAnalyticsWidget: React.FC<AdminAnalyticsWidgetProps> = ({
 
       <div className="px-6 md:px-8 pt-4 border-b border-slate-200/60 dark:border-white/10 flex items-center gap-2 overflow-x-auto no-scrollbar" role="tablist" aria-label="Admin analytics views">
         {[
-          { key: 'growth', label: 'Student Growth Trend', icon: Users },
-          { key: 'logins', label: 'Portal Login Frequency', icon: Activity },
-          { key: 'resources', label: 'Published Resource Inventory', icon: BookOpen },
-          { key: 'cbt', label: 'CBT Assessment Performance', icon: Award },
-        ].map(tab => {
+          { key: 'growth', label: 'Student Growth Trend', icon: Users, visible: true },
+          { key: 'logins', label: 'Portal Login Frequency', icon: Activity, visible: allowLoginActivityTab },
+          { key: 'resources', label: 'Published Resource Inventory', icon: BookOpen, visible: true },
+          { key: 'cbt', label: 'CBT Assessment Performance', icon: Award, visible: true },
+        ].filter(t => t.visible).map(tab => {
           const Icon = tab.icon;
           const selected = activeTab === tab.key;
           return (

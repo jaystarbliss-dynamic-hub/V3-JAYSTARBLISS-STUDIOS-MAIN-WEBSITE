@@ -205,7 +205,12 @@ export default function TutorExaminations() {
   // Top-level Navigation & Workflow State: Defaults to 'overview' as initial landing page
   const [viewMode, setViewMode] = useState<"overview" | "create" | "edit" | "monitor">(() => {
     const params = new URLSearchParams(location.search);
-    if (params.get("create") === "true" || location.pathname.includes("exam-authoring")) {
+    if (
+      params.get("create") === "true" ||
+      params.get("createForStudentId") ||
+      params.get("studentId") ||
+      location.pathname.includes("exam-authoring")
+    ) {
       return "create";
     }
     return "overview";
@@ -231,10 +236,20 @@ export default function TutorExaminations() {
   const [taskMaxMarks, setTaskMaxMarks] = useState<number>(20);
   const [resourceUrl, setResourceUrl] = useState<string>("");
   const [dueDate, setDueDate] = useState<string>("");
-  const [recipientMode, setRecipientMode] = useState<"SCHOOL_CLASS" | "PRIVATE_LEARNERS" | "MULTI_TARGET">("SCHOOL_CLASS");
+  const [recipientMode, setRecipientMode] = useState<"SCHOOL_CLASS" | "PRIVATE_LEARNERS" | "MULTI_TARGET">(() => {
+    const params = new URLSearchParams(location.search);
+    const sid = params.get("createForStudentId") || params.get("studentId");
+    const schId = params.get("schoolId");
+    if (sid && (!schId || schId === "private")) return "PRIVATE_LEARNERS";
+    return "SCHOOL_CLASS";
+  });
   const [privateLearners, setPrivateLearners] = useState<EnrolledStudent[]>([]);
   const [schoolStudentsList, setSchoolStudentsList] = useState<EnrolledStudent[]>([]);
-  const [targetStudentIds, setTargetStudentIds] = useState<string[]>([]);
+  const [targetStudentIds, setTargetStudentIds] = useState<string[]>(() => {
+    const params = new URLSearchParams(location.search);
+    const sid = params.get("createForStudentId") || params.get("studentId");
+    return sid ? [sid] : [];
+  });
   const [studentCategoryTab, setStudentCategoryTab] = useState<"all" | "school" | "private">("all");
   const [studentSearchFilter, setStudentSearchFilter] = useState<string>("");
   const [workTypeFilter, setWorkTypeFilter] = useState<"ALL" | AcademicWorkType>("ALL");
@@ -249,9 +264,17 @@ export default function TutorExaminations() {
 
   // School & Class State
   const [assignedSchools, setAssignedSchools] = useState<{ id: string; name: string }[]>([]);
-  const [schoolId, setSchoolId] = useState("");
+  const [schoolId, setSchoolId] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    const schId = params.get("schoolId") || "";
+    return schId !== "private" ? schId : "";
+  });
   const [availableClasses, setAvailableClasses] = useState<string[]>([...CANONICAL_CLASSES]);
-  const [selectedClass, setSelectedClass] = useState<string>(CANONICAL_CLASSES[1]); // Grade 1
+  const [selectedClass, setSelectedClass] = useState<string>(() => {
+    const params = new URLSearchParams(location.search);
+    const cls = params.get("className");
+    return (cls && normalizeClassName(cls)) || CANONICAL_CLASSES[1];
+  }); // Grade 1
   const [schoolsLoading, setSchoolsLoading] = useState(true);
 
   // Questions State — starts empty without hardcoded/seeded demo questions
@@ -2504,7 +2527,20 @@ ANSWER KEY
       {/* ============================================================== */}
       {(viewMode === "create" || viewMode === "edit" || viewMode === "monitor") && (
         <AssessmentEditor
-          initialExam={editingExamId ? existingExams.find((e) => e.id === editingExamId) : null}
+          initialExam={
+            editingExamId
+              ? existingExams.find((e) => e.id === editingExamId)
+              : targetStudentIds.length > 0
+              ? {
+                  workType,
+                  recipientMode,
+                  targetStudentIds,
+                  targetSchoolIds: schoolId && schoolId !== "private" ? [schoolId] : [],
+                  schoolId: schoolId || "private",
+                  targetClass: selectedClass,
+                }
+              : null
+          }
           isCreatingNew={viewMode === "create"}
           initialTab={viewMode === "monitor" ? "responses" : "questions"}
           assignedSchools={formattedSchools}

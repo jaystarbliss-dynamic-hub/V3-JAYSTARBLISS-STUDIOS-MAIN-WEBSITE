@@ -216,6 +216,7 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
         if (roleFilter === 'TUTOR' && !['TUTOR', 'STAFF', 'TEACHER', 'INSTRUCTOR'].includes(uRole)) return false;
         if (roleFilter === 'SCHOOL' && uRole !== 'SCHOOL') return false;
         if (roleFilter === 'PARENT' && uRole !== 'PARENT') return false;
+        if (roleFilter === 'SUB_ADMIN' && !uRole.includes('ADMIN')) return false;
       }
 
       // Search Query
@@ -305,6 +306,7 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
               { id: 'TUTOR', label: 'Tutors & Staff', icon: Briefcase },
               { id: 'SCHOOL', label: 'School Admins', icon: School },
               { id: 'PARENT', label: 'Parents', icon: Shield },
+              { id: 'SUB_ADMIN', label: 'Admins & Sub-Admins', icon: UserCheck },
             ].map(tab => {
               const Icon = tab.icon;
               return (

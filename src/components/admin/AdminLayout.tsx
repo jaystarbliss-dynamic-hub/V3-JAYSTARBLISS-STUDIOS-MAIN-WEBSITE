@@ -12,8 +12,9 @@ import {
   SlidersHorizontal, Trophy, Radio, GraduationCap, Award,
   HelpCircle, Headphones, PanelLeftClose
 } from 'lucide-react';
-import { signOut } from 'firebase/auth';
-import { auth } from '../../lib/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Tooltip } from '../ui/Tooltip';
@@ -24,6 +25,12 @@ import NotificationBell from '../common/NotificationBell';
 import SEO from '../ui/SEO';
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
 import { useEdgeSwipeDrawer } from '../../hooks/useEdgeSwipeDrawer';
+import {
+  getAdminDashboardCapabilities,
+  resolveCanonicalAdminScope,
+  SUPER_ADMIN_EMAILS,
+} from '../../utils/adminRbac';
+import { getActiveImpersonation } from '../../utils/impersonation';
 
 interface NavItem {
   name: string;
@@ -120,7 +127,79 @@ const AdminLayout: React.FC = () => {
     navigate('/portal');
   };
 
-  const currentRole = (sessionStorage.getItem('userRole') || 'super_admin').toUpperCase();
+  const [activeRole, setActiveRole] = useState<string>(() => {
+    const imp = getActiveImpersonation();
+    if (imp?.isMasquerading && imp.targetRole) {
+      return String(imp.targetRole).toUpperCase();
+    }
+    return (
+      sessionStorage.getItem('userRole') ||
+      localStorage.getItem('jaystar_cached_user_role') ||
+      'SUPER_ADMIN'
+    ).toUpperCase();
+  });
+
+  useEffect(() => {
+    const syncRoleFromStorageAndAuth = async (uid?: string, email?: string | null) => {
+      const imp = getActiveImpersonation();
+      if (imp?.isMasquerading && imp.targetRole) {
+        setActiveRole(String(imp.targetRole).toUpperCase());
+        return;
+      }
+
+      const storedRole = (
+        sessionStorage.getItem('userRole') ||
+        localStorage.getItem('jaystar_cached_user_role') ||
+        ''
+      ).toUpperCase();
+
+      if (storedRole && resolveCanonicalAdminScope(storedRole)) {
+        setActiveRole(storedRole);
+      }
+
+      if (uid) {
+        try {
+          const snap = await getDoc(doc(db, 'users', uid));
+          if (snap.exists()) {
+            const dbRole = String(snap.data()?.role || '').trim().toUpperCase();
+            if (resolveCanonicalAdminScope(dbRole)) {
+              setActiveRole(dbRole);
+              sessionStorage.setItem('userRole', dbRole.toLowerCase());
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('AdminLayout role lookup warning:', err);
+        }
+      }
+
+      if (email && SUPER_ADMIN_EMAILS.has(email.toLowerCase())) {
+        setActiveRole('SUPER_ADMIN');
+      }
+    };
+
+    void syncRoleFromStorageAndAuth(auth.currentUser?.uid, auth.currentUser?.email);
+
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      void syncRoleFromStorageAndAuth(user?.uid, user?.email);
+    });
+
+    return () => unsubscribe();
+  }, [location.pathname]);
+
+  const isMasquerading = Boolean(getActiveImpersonation()?.isMasquerading);
+  const currentScope = useMemo(() => {
+    if (!isMasquerading && auth.currentUser?.email && SUPER_ADMIN_EMAILS.has(auth.currentUser.email.toLowerCase())) {
+      const explicitScope = resolveCanonicalAdminScope(activeRole);
+      return explicitScope || 'SUPER_ADMIN';
+    }
+    return resolveCanonicalAdminScope(activeRole) || 'ACADEMIC_ADMIN';
+  }, [activeRole, isMasquerading]);
+
+  const capabilities = useMemo(
+    () => getAdminDashboardCapabilities(activeRole || currentScope),
+    [activeRole, currentScope]
+  );
 
   const allNavigationGroups: NavGroup[] = [
     {
@@ -175,28 +254,56 @@ const AdminLayout: React.FC = () => {
   ];
 
   const navigationGroups: NavGroup[] = useMemo(() => {
-    if (currentRole === 'SUPER_ADMIN' || currentRole === 'ADMIN' || auth.currentUser?.email === 'johnrufai242@gmail.com') {
+    if (currentScope === 'SUPER_ADMIN') {
       return allNavigationGroups;
     }
 
-    if (currentRole === 'CMS_ADMIN' || currentRole === 'CONTENT_ADMIN') {
+    if (currentScope === 'ACADEMIC_ADMIN') {
       return [
         {
           sectionTitle: "Overview & Operations",
           items: [
-            { name: "Dashboard", href: "/admin", icon: LayoutDashboard, desc: "System KPIs, metrics & analytics" },
-            { name: "Inquiries & Leads", href: "/admin/inquiries", icon: MessageSquare, desc: "Public inquiries & contact requests" },
+            { name: "Dashboard", href: "/admin", icon: LayoutDashboard, desc: "Academic KPIs, metrics & analytics" },
           ]
         },
         {
-          sectionTitle: "Website & Pages CMS",
+          sectionTitle: "Portals & Academic Hub",
           items: [
-            { name: "Pages & Section CMS", href: "/admin/pages", icon: Layers, desc: "Live content & visual sections editor" },
             { name: "Programs & Courses", href: "/admin/programs", icon: BookOpen, desc: "Curriculum tracks, stages & syllabi" },
-            { name: "Services Catalog", href: "/admin/services", icon: Briefcase, desc: "Custom software & institutional solutions" },
-            { name: "Portfolio Showcase", href: "/admin/portfolio", icon: FolderOpen, desc: "Client deliverables & case studies" },
-            { name: "Kids Zone Builds", href: "/admin/kids-projects", icon: Gamepad2, desc: "Scholars gaming & app showcase" },
-            { name: "News Corner & Blog", href: "/admin/blog", icon: FileText, desc: "Articles, announcements & press" },
+            { name: "Approvals & Requests", href: "/admin/approvals", icon: UserCheck, desc: "Student, tutor & enrollment approvals" },
+            { name: "Scholars & Students", href: "/admin/students", icon: GraduationCap, desc: "Student credentials & individual dispatches" },
+            { name: "Agreements Centre", href: "/admin/agreements", icon: FileText, desc: "Proposals, communications & institutional contracts" },
+            { name: "Faculty & Staff", href: "/admin/staff", icon: Users, desc: "Staff invitations & faculty curriculum" },
+            { name: "Tutor Subjects", href: "/admin/tutor-subjects", icon: Award, desc: "Approve subjects & find matching tutors" },
+            { name: "Affiliated Schools", href: "/admin/schools", icon: School, desc: "Partner school portals & exams" },
+            { name: "Class Schedules", href: "/admin/schedules", icon: CalendarDays, desc: "Recurring school classes & attendance history" },
+            { name: "Learning Resources", href: "/admin/resources", icon: Library, desc: "General downloads, links & tests" },
+          ]
+        },
+        {
+          sectionTitle: "CBT Assessment",
+          items: [
+            { name: "Assessments", href: "/admin/examinations", icon: FileText, desc: "Create, schedule, secure and manage assessments" },
+            { name: "Assessment History", href: "/admin/examination-history", icon: FileText, desc: "Review submissions, grading, results and export reports" },
+          ]
+        }
+      ];
+    }
+
+    if (currentScope === 'FINANCE_ADMIN') {
+      return [
+        {
+          sectionTitle: "Overview & Operations",
+          items: [
+            { name: "Dashboard", href: "/admin", icon: LayoutDashboard, desc: "Financial & enrollment summary" },
+          ]
+        },
+        {
+          sectionTitle: "Portals & Academic Hub",
+          items: [
+            { name: "Billings / Fees", href: "/admin/billing", icon: CreditCard, desc: "Tuition transactions, treasury & ledger" },
+            { name: "Approvals & Requests", href: "/admin/approvals", icon: UserCheck, desc: "Enrollment & fee approvals" },
+            { name: "Agreements Centre", href: "/admin/agreements", icon: FileText, desc: "Proposals, communications & institutional contracts" },
           ]
         },
         {
@@ -208,8 +315,34 @@ const AdminLayout: React.FC = () => {
       ];
     }
 
-    return allNavigationGroups;
-  }, [currentRole]);
+    // CMS_ADMIN / CONTENT_ADMIN
+    return [
+      {
+        sectionTitle: "Overview & Operations",
+        items: [
+          { name: "Dashboard", href: "/admin", icon: LayoutDashboard, desc: "Content & inquiry summary" },
+          { name: "Inquiries & Leads", href: "/admin/inquiries", icon: MessageSquare, desc: "Public inquiries & contact requests" },
+        ]
+      },
+      {
+        sectionTitle: "Website & Pages CMS",
+        items: [
+          { name: "Pages & Section CMS", href: "/admin/pages", icon: Layers, desc: "Live content & visual sections editor" },
+          { name: "Programs & Courses", href: "/admin/programs", icon: BookOpen, desc: "Curriculum tracks, stages & syllabi" },
+          { name: "Services Catalog", href: "/admin/services", icon: Briefcase, desc: "Custom software & institutional solutions" },
+          { name: "Portfolio Showcase", href: "/admin/portfolio", icon: FolderOpen, desc: "Client deliverables & case studies" },
+          { name: "Kids Zone Builds", href: "/admin/kids-projects", icon: Gamepad2, desc: "Scholars gaming & app showcase" },
+          { name: "News Corner & Blog", href: "/admin/blog", icon: FileText, desc: "Articles, announcements & press" },
+        ]
+      },
+      {
+        sectionTitle: "System & Management",
+        items: [
+          { name: "Notifications", href: "/admin/notifications", icon: Bell, desc: "Push broadcasts & alerts" },
+        ]
+      }
+    ];
+  }, [currentScope]);
 
   const flatNavList = useMemo(() => {
     return navigationGroups.flatMap(g => g.items);
@@ -286,20 +419,22 @@ const AdminLayout: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Impersonation Quick Button on Mobile */}
-                <div className="my-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSidebarOpen(false);
-                      setImpersonateModalOpen(true);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-bold"
-                  >
-                    <UserCheck size={14} />
-                    <span>Log in as Scholar / School / Tutor</span>
-                  </button>
-                </div>
+                {/* Impersonation Quick Button on Mobile (Super Admin or active Masquerade only) */}
+                {(capabilities.canImpersonateUsers || isMasquerading) && (
+                  <div className="my-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSidebarOpen(false);
+                        setImpersonateModalOpen(true);
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-bold"
+                    >
+                      <UserCheck size={14} />
+                      <span>Log in as Scholar / School / Tutor</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* Nav items */}
                 <div className="space-y-4 pt-1">
@@ -550,25 +685,37 @@ const AdminLayout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <Link
-              to="/wireframes"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px] font-bold transition-colors"
-            >
-              <Layers size={14} />
-              <span className="hidden sm:inline">Redesign Wireframes (5 Boards)</span>
-              <span className="sm:hidden">Wireframes</span>
-            </Link>
-            {/* Impersonate Icon Button */}
-            <Tooltip content="Log in directly as student, school admin or tutor" placement="bottom">
-              <button
-                type="button"
-                onClick={() => setImpersonateModalOpen(true)}
-                className="p-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 transition-colors cursor-pointer shrink-0"
-                aria-label="Log in as user"
+            {currentScope !== 'SUPER_ADMIN' && (
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold">
+                <ShieldCheck size={13} className="text-sky-600 dark:text-sky-400" />
+                <span>{capabilities.roleLabel}</span>
+              </span>
+            )}
+
+            {currentScope === 'SUPER_ADMIN' && (
+              <Link
+                to="/wireframes"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px] font-bold transition-colors"
               >
-                <UserCheck size={17} />
-              </button>
-            </Tooltip>
+                <Layers size={14} />
+                <span className="hidden sm:inline">Redesign Wireframes (5 Boards)</span>
+                <span className="sm:hidden">Wireframes</span>
+              </Link>
+            )}
+
+            {/* Impersonate Icon Button */}
+            {(capabilities.canImpersonateUsers || isMasquerading) && (
+              <Tooltip content="Log in directly as student, school admin or tutor" placement="bottom">
+                <button
+                  type="button"
+                  onClick={() => setImpersonateModalOpen(true)}
+                  className="p-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 transition-colors cursor-pointer shrink-0"
+                  aria-label="Log in as user"
+                >
+                  <UserCheck size={17} />
+                </button>
+              </Tooltip>
+            )}
 
             {/* Global Search Button */}
             <Tooltip content="Global search" placement="bottom">
@@ -583,15 +730,17 @@ const AdminLayout: React.FC = () => {
             </Tooltip>
 
             {/* Help & Support Button */}
-            <Tooltip content="Help & Support Desk" placement="bottom">
-              <Link
-                to="/admin/support"
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center justify-center"
-                aria-label="Support Desk"
-              >
-                <HelpCircle size={17} />
-              </Link>
-            </Tooltip>
+            {capabilities.canAccessSupportDesk && (
+              <Tooltip content="Help & Support Desk" placement="bottom">
+                <Link
+                  to="/admin/support"
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center justify-center"
+                  aria-label="Support Desk"
+                >
+                  <HelpCircle size={17} />
+                </Link>
+              </Tooltip>
+            )}
 
             {/* Theme Toggle */}
             <Tooltip content={theme === 'dark' ? 'Light Theme' : 'Dark Theme'} placement="bottom">
@@ -608,18 +757,31 @@ const AdminLayout: React.FC = () => {
             {/* Notification Bell */}
             <NotificationBell role="admin" />
 
-            {/* Profile Settings Avatar Link (Icon/Avatar only — no extra visible text in header) */}
-            <Tooltip content="Global Settings" placement="bottom">
-              <Link
-                to="/admin/settings"
-                aria-label="Global Settings"
-                className="p-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center justify-center"
-              >
-                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-sky-600 to-blue-600 text-white flex items-center justify-center shadow-xs">
-                  <ShieldCheck size={15} />
+            {/* Profile Settings Avatar Link (only links to Global Settings for Super Admin) */}
+            {capabilities.canAccessGlobalSettings ? (
+              <Tooltip content="Global Settings" placement="bottom">
+                <Link
+                  to="/admin/settings"
+                  aria-label="Global Settings"
+                  className="p-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center justify-center"
+                >
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-sky-600 to-blue-600 text-white flex items-center justify-center shadow-xs">
+                    <ShieldCheck size={15} />
+                  </div>
+                </Link>
+              </Tooltip>
+            ) : (
+              <Tooltip content={capabilities.roleLabel} placement="bottom">
+                <div
+                  aria-label={capabilities.roleLabel}
+                  className="p-1 rounded-xl flex items-center justify-center"
+                >
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-sky-600 to-blue-600 text-white flex items-center justify-center shadow-xs">
+                    <ShieldCheck size={15} />
+                  </div>
                 </div>
-              </Link>
-            </Tooltip>
+              </Tooltip>
+            )}
           </div>
         </header>
 

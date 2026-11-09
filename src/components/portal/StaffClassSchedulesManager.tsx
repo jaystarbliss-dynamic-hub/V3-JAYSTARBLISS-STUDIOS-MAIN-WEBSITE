@@ -144,6 +144,7 @@ interface Props {
   assignedSchools?: any[];
   assignedStudents?: any[];
   initialSchoolFilter?: string;
+  onBroadcastLiveLink?: () => void;
 }
 
 export const StaffClassSchedulesManager: React.FC<Props> = ({
@@ -152,6 +153,7 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
   assignedSchools: propSchools,
   assignedStudents: propStudents,
   initialSchoolFilter = 'ALL',
+  onBroadcastLiveLink,
 }) => {
   const { toast } = useToast();
   const effective = getEffectiveAuth();
@@ -163,6 +165,7 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
   const [tutorScope, setTutorScope] = useState<TutorSchedulingScope | null>(null);
   const [students, setStudents] = useState<any[]>([]);
   const [selectedSchoolTab, setSelectedSchoolTab] = useState<string>(initialSchoolFilter);
+  const [selectedPrivateStudentId, setSelectedPrivateStudentId] = useState<string>('ALL');
 
   // Single Session Edit Modal
   const [editing, setEditing] = useState<Schedule | null>(null);
@@ -371,19 +374,23 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
         return false;
       }
       if (selectedSchoolTab === 'PRIVATE') {
-        return (
+        const isPrivateRow =
           !r.schoolId ||
           ['INDIVIDUAL', 'PRIVATE', 'STUDENT', 'PARENT'].includes(
             String(r.targetType || '').toUpperCase()
-          )
-        );
+          );
+        if (!isPrivateRow) return false;
+        if (selectedPrivateStudentId !== 'ALL') {
+          return String(r.studentId || '') === selectedPrivateStudentId;
+        }
+        return true;
       }
       if (selectedSchoolTab !== 'ALL') {
         return String(r.schoolId || '') === selectedSchoolTab;
       }
       return true;
     });
-  }, [rows, filterStatus, selectedSchoolTab]);
+  }, [rows, filterStatus, selectedSchoolTab, selectedPrivateStudentId]);
 
   const weeks = useMemo(() => {
     const map = new Map<string, Schedule[]>();
@@ -1067,125 +1074,185 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
     [linkModalUrl]
   );
 
+  const isSchoolScopeActive = selectedSchoolTab !== 'ALL' && selectedSchoolTab !== 'PRIVATE';
+  const privateRowsCount = useMemo(
+    () =>
+      rows.filter(
+        (r) =>
+          !r.schoolId ||
+          ['INDIVIDUAL', 'PRIVATE', 'STUDENT', 'PARENT'].includes(
+            String(r.targetType || '').toUpperCase()
+          )
+      ).length,
+    [rows]
+  );
+
   return (
     <div className="space-y-4">
-      {/* Top Action Header Bar for Tutor Schedule Creation */}
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-lg bg-brand-red/10 px-2.5 py-0.5 text-[10px] font-black uppercase text-brand-red">
-              <Sparkles size={11} /> Tutor Schedule Workspace
-            </span>
-            <span className="text-[11px] font-bold text-slate-500">
-              {schools.length} Assigned School{schools.length === 1 ? '' : 's'} ·{' '}
-              {privateStudents.length} Assigned Private Student{privateStudents.length === 1 ? '' : 's'}
-            </span>
+      {/* Unified Schedule Filter & Action Toolbar (No redundant text block, no horizontal scrolling) */}
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3.5">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+          {/* Left: Structured Audience Filter (All Schedules / Partner Schools / Private Learners) */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex flex-wrap items-center gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedSchoolTab('ALL');
+                  setSelectedPrivateStudentId('ALL');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  selectedSchoolTab === 'ALL'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                All Schedules ({rows.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedPrivateStudentId('ALL');
+                  if (!isSchoolScopeActive && schools.length > 0) {
+                    setSelectedSchoolTab(schools[0].id);
+                  }
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  isSchoolScopeActive
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <School size={13} />
+                <span>Partner Schools ({schools.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedSchoolTab('PRIVATE')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  selectedSchoolTab === 'PRIVATE'
+                    ? 'bg-brand-red text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Users size={13} />
+                <span>Private Learners ({privateRowsCount})</span>
+              </button>
+            </div>
+
+            {/* Contextual Dropdown for Partner School or Private Learner */}
+            {isSchoolScopeActive && schools.length > 0 && (
+              <select
+                value={selectedSchoolTab}
+                onChange={(e) => setSelectedSchoolTab(e.target.value)}
+                aria-label="Filter schedules by partner school"
+                className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-600"
+              >
+                {schools.map((sch) => {
+                  const count = rows.filter((r) => String(r.schoolId || '') === sch.id).length;
+                  return (
+                    <option key={sch.id} value={sch.id}>
+                      {sch.name} ({count} sessions)
+                    </option>
+                  );
+                })}
+              </select>
+            )}
+
+            {selectedSchoolTab === 'PRIVATE' && privateStudents.length > 0 && (
+              <select
+                value={selectedPrivateStudentId}
+                onChange={(e) => setSelectedPrivateStudentId(e.target.value)}
+                aria-label="Filter schedules by private learner"
+                className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-brand-red"
+              >
+                <option value="ALL">All Assigned Private Learners ({privateStudents.length})</option>
+                {privateStudents.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name} ({st.className})
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
-          <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
-            Create and manage class schedules &amp; joining links for your assigned private students and school programs.
-          </p>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
-          >
-            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-            <span>Refresh</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => openCreateScheduleModal('private')}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-black shadow-xs cursor-pointer"
-          >
-            <User size={13} />
-            <span>+ Private Student Schedule</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => openCreateScheduleModal('school')}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-brand-red hover:bg-red-700 text-white px-3.5 py-2 text-xs font-black shadow-xs cursor-pointer"
-          >
-            <CalendarPlus size={14} />
-            <span>+ School Program Schedule</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Clean Horizontal Assigned-School & Private Student Selector */}
-      <div className="flex items-center gap-6 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-slate-800 touch-pan-x">
-        <button
-          type="button"
-          onClick={() => setSelectedSchoolTab('ALL')}
-          className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer ${
-            selectedSchoolTab === 'ALL'
-              ? 'text-[#14284B] dark:text-white'
-              : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-          }`}
-        >
-          All Authorised Schedules ({rows.length})
-          {selectedSchoolTab === 'ALL' && (
-            <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
-          )}
-        </button>
-
-        {schools.map((sch) => {
-          const active = selectedSchoolTab === sch.id;
-          const count = rows.filter((r) => String(r.schoolId || '') === sch.id).length;
-          return (
+          {/* Right: Rearranged Action Buttons (Red & Blue only) */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
-              key={sch.id}
               type="button"
-              onClick={() => setSelectedSchoolTab(sch.id)}
-              className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
-                active
-                  ? 'text-[#14284B] dark:text-white'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-              }`}
+              onClick={() => void load()}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
             >
-              <School size={14} className="text-blue-600 shrink-0" />
-              <span>{sch.name}</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                {count}
-              </span>
-              {active && (
-                <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
-              )}
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              <span>Refresh</span>
             </button>
-          );
-        })}
 
-        <button
-          type="button"
-          onClick={() => setSelectedSchoolTab('PRIVATE')}
-          className={`relative pb-3 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
-            selectedSchoolTab === 'PRIVATE'
-              ? 'text-[#14284B] dark:text-white'
-              : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-          }`}
-        >
-          <Users size={14} className="text-emerald-600 shrink-0" />
-          <span>
-            Private Learners (
-            {
-              rows.filter(
-                (r) =>
-                  !r.schoolId ||
-                  ['INDIVIDUAL', 'PRIVATE', 'STUDENT', 'PARENT'].includes(
-                    String(r.targetType || '').toUpperCase()
-                  )
-              ).length
-            }
-            )
-          </span>
-          {selectedSchoolTab === 'PRIVATE' && (
-            <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
-          )}
-        </button>
+            <button
+              type="button"
+              onClick={() => openCreateScheduleModal('private')}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 text-xs font-black shadow-xs cursor-pointer transition-colors"
+            >
+              <User size={13} />
+              <span>+ Private Student Schedule</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openCreateScheduleModal('school')}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-red hover:bg-red-700 text-white px-3.5 py-2 text-xs font-black shadow-xs cursor-pointer transition-colors"
+            >
+              <CalendarPlus size={14} />
+              <span>+ School Program Schedule</span>
+            </button>
+
+            {onBroadcastLiveLink && (
+              <button
+                type="button"
+                onClick={onBroadcastLiveLink}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 text-xs font-black shadow-xs cursor-pointer transition-colors"
+              >
+                <Video size={14} />
+                <span>Broadcast Live Link</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Wrapped Partner School Pills when Partner Schools mode is active (Zero horizontal scroll) */}
+        {isSchoolScopeActive && schools.length > 1 && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+            {schools.map((sch) => {
+              const active = selectedSchoolTab === sch.id;
+              const count = rows.filter((r) => String(r.schoolId || '') === sch.id).length;
+              return (
+                <button
+                  key={sch.id}
+                  type="button"
+                  onClick={() => setSelectedSchoolTab(sch.id)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    active
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  <School size={12} className={active ? 'text-white' : 'text-blue-600'} />
+                  <span>{sch.name}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-md font-black ${
+                      active
+                        ? 'bg-white/20 text-white'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Status Filter Bar */}
@@ -1237,14 +1304,14 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => openCreateScheduleModal('private')}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-xs font-black cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-xs font-black cursor-pointer transition-colors"
             >
               <Plus size={14} /> Schedule Private Student
             </button>
             <button
               type="button"
               onClick={() => openCreateScheduleModal('school')}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-red hover:bg-red-700 text-white px-4 py-2 text-xs font-black cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-red hover:bg-red-700 text-white px-4 py-2 text-xs font-black cursor-pointer transition-colors"
             >
               <Plus size={14} /> Schedule School Program
             </button>
@@ -1269,7 +1336,7 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => setHolidayWeek(week)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 text-amber-700 px-3 py-2 text-[11px] font-black cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-brand-red/30 text-brand-red hover:bg-brand-red/5 px-3 py-2 text-[11px] font-black cursor-pointer"
               >
                 <Umbrella size={13} /> Mark week as holiday
               </button>
@@ -1303,7 +1370,7 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
                             <School size={11} /> {r.schoolName || 'Partner School'}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-300">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 text-[10px] font-black uppercase text-blue-700 dark:text-blue-300">
                             <User size={11} /> Private: {r.studentName || 'Private Learner'}
                           </span>
                         )}
@@ -1329,7 +1396,7 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
 
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
                         {linkCheck.valid ? (
-                          <span className="text-emerald-600 dark:text-emerald-400 font-bold inline-flex items-center gap-1">
+                          <span className="text-blue-600 dark:text-blue-400 font-bold inline-flex items-center gap-1">
                             <Video size={12} /> {linkCheck.platform} Link Active
                           </span>
                         ) : (
@@ -1371,7 +1438,7 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
                           href={linkCheck.normalizedUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 text-[11px] font-black shadow-2xs"
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand-red hover:bg-red-700 text-white px-3 py-2 text-[11px] font-black shadow-2xs transition-colors"
                         >
                           <Video size={13} /> Join Class <ExternalLink size={11} />
                         </a>
@@ -1379,14 +1446,14 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
                       <button
                         type="button"
                         onClick={() => openQuickLinkModal(r)}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/70 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 px-3 py-2 text-[11px] font-black cursor-pointer hover:bg-sky-100"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 text-[11px] font-black cursor-pointer transition-colors"
                       >
                         <Link2 size={13} /> {linkCheck.valid ? 'Update Link' : 'Set Class Link'}
                       </button>
                       <button
                         type="button"
                         onClick={() => void openTakeAttendance(r)}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 text-[11px] font-black cursor-pointer"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 text-[11px] font-black cursor-pointer transition-colors"
                       >
                         <ClipboardCheck size={13} /> Take Attendance
                       </button>
@@ -1464,11 +1531,11 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
                     }}
                     className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-start gap-3 ${
                       createForm.scheduleLevel === 'private'
-                        ? 'border-emerald-600 bg-emerald-50/60 dark:bg-emerald-950/30 ring-2 ring-emerald-500/20'
+                        ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/30 ring-2 ring-blue-500/20'
                         : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                     }`}
                   >
-                    <div className="p-2 rounded-xl bg-emerald-600 text-white shrink-0">
+                    <div className="p-2 rounded-xl bg-blue-600 text-white shrink-0">
                       <User size={16} />
                     </div>
                     <div>
@@ -2114,7 +2181,7 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={handleMarkAllPresent}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-bold cursor-pointer transition-colors"
                 >
                   <CheckCircle2 size={14} /> Mark All Present
                 </button>
@@ -2160,12 +2227,12 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
                               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
                                 active
                                   ? st === 'PRESENT'
-                                    ? 'bg-emerald-600 text-white'
+                                    ? 'bg-blue-600 text-white'
                                     : st === 'ABSENT'
-                                    ? 'bg-rose-600 text-white'
+                                    ? 'bg-brand-red text-white'
                                     : st === 'LATE'
-                                    ? 'bg-amber-600 text-white'
-                                    : 'bg-blue-600 text-white'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-slate-800 text-white'
                                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                               }`}
                             >

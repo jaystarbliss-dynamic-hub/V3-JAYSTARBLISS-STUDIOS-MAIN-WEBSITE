@@ -57,7 +57,9 @@ export const startImpersonation = (
   if (target.class || target.classLevel) sessionStorage.setItem('studentClass', target.class || target.classLevel || '');
 
   // Route to the appropriate portal
-  if (normRole === 'STUDENT') {
+  if (normRole.includes('ADMIN')) {
+    navigate('/admin');
+  } else if (normRole === 'STUDENT') {
     navigate('/portal/student');
   } else if (normRole === 'TUTOR' || normRole === 'STAFF') {
     navigate('/portal/staff');

@@ -401,8 +401,7 @@ const PortalLayout: React.FC = () => {
           label: 'Teaching & Schedule',
           items: [
             { name: 'Live Classes', path: '/portal/staff/classes', icon: <Radio size={19} />, desc: 'Teaching roster, schedules & attendance' },
-            { name: 'Calendar', path: '/portal/staff/calendar', icon: <CalendarDays size={19} />, desc: 'Teaching timetable' },
-            { name: 'Subjects I Teach', path: '/portal/staff/subjects', icon: <Award size={19} />, desc: 'Teaching subjects & approvals' }
+            { name: 'Calendar', path: '/portal/staff/calendar', icon: <CalendarDays size={19} />, desc: 'Teaching timetable' }
           ]
         },
         {

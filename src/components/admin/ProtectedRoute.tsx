@@ -13,50 +13,17 @@ interface ProtectedRouteProps {
   redirectPath?: string;
 }
 
+import { ADMIN_ROLE_LIST, isSubAdminAllowedForPath } from '../../utils/adminRbac';
+
 const blockedStatuses = ['banned', 'suspended', 'disabled'];
-const adminRoles = [
-  'SUPER_ADMIN', 
-  'ADMIN', 
-  'CMS_ADMIN', 
-  'ACADEMIC_ADMIN', 
-  'FINANCE_ADMIN', 
-  'CONTENT_ADMIN', 
-  'EDUCATION_ADMIN', 
-  'SERVICES_ADMIN', 
-  'MARKETING_ADMIN', 
-  'SUPPORT_ADMIN'
-];
-
-const isSubAdminAllowedForPath = (role: string, pathname: string): boolean => {
-  const norm = role.toUpperCase();
-  if (norm === 'SUPER_ADMIN' || norm === 'ADMIN') return true;
-
-  if (norm === 'CMS_ADMIN' || norm === 'CONTENT_ADMIN') {
-    const cmsAllowed = ['/admin', '/admin/pages', '/admin/programs', '/admin/services', '/admin/portfolio', '/admin/kids-projects', '/admin/blog', '/admin/inquiries', '/admin/notifications'];
-    return cmsAllowed.some(p => pathname === p || (pathname.startsWith(p) && p !== '/admin'));
-  }
-
-  if (norm === 'ACADEMIC_ADMIN' || norm === 'EDUCATION_ADMIN') {
-    if (pathname.startsWith('/admin/billing') || pathname.startsWith('/admin/users') || pathname.startsWith('/admin/settings')) {
-      return false;
-    }
-    const academicAllowed = ['/admin', '/admin/inquiries', '/admin/approvals', '/admin/students', '/admin/staff', '/admin/tutor-subjects', '/admin/schools', '/admin/schedules', '/admin/resources', '/admin/programs', '/admin/notifications'];
-    return academicAllowed.some(p => pathname === p || (pathname.startsWith(p) && p !== '/admin'));
-  }
-
-  if (norm === 'FINANCE_ADMIN') {
-    const financeAllowed = ['/admin', '/admin/billing', '/admin/approvals', '/admin/activity', '/admin/notifications'];
-    return financeAllowed.some(p => pathname === p || (pathname.startsWith(p) && p !== '/admin'));
-  }
-
-  return true;
-};
+const adminRoles: readonly string[] = ADMIN_ROLE_LIST;
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles, redirectPath = '/portal' }) => {
   const [loading, setLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [mustResetPassword, setMustResetPassword] = useState(false);
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
+  const [unauthorizedRedirect, setUnauthorizedRedirect] = useState<string>(redirectPath);
   const location = useLocation();
   const rolesKey = allowedRoles ? allowedRoles.slice().sort().join(',') : '';
 
@@ -432,7 +399,18 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
           const targetUser = masquerade.targetUser || {};
           const isAllowedForTarget = allowedRoles?.length
             ? allowedRoles.some(candidate => candidate.toUpperCase() === targetRole)
-            : true;
+            : location.pathname.startsWith('/admin')
+              ? (adminRoles.includes(targetRole) && isSubAdminAllowedForPath(targetRole, location.pathname))
+              : true;
+
+          if (!isAllowedForTarget && location.pathname.startsWith('/admin') && adminRoles.includes(targetRole)) {
+            if (mounted) {
+              setUnauthorizedRedirect('/admin');
+              setIsAuthorized(false);
+              setLoading(false);
+            }
+            return;
+          }
 
           if (isAllowedForTarget) {
             sessionStorage.setItem('userRole', targetRole.toLowerCase());
@@ -492,7 +470,14 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
             : true;
 
         if (!allowed) {
-          if (mounted) setIsAuthorized(false);
+          if (mounted) {
+            if (location.pathname.startsWith('/admin') && location.pathname !== '/admin' && adminRoles.includes(role)) {
+              setUnauthorizedRedirect('/admin');
+            } else {
+              setUnauthorizedRedirect(redirectPath);
+            }
+            setIsAuthorized(false);
+          }
           return;
         }
 
@@ -521,13 +506,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
       }
     });
     return () => { mounted = false; unsubscribe(); };
-  }, [rolesKey, location.pathname]);
+  }, [rolesKey, location.pathname, redirectPath]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900"><Loader2 className="w-10 h-10 animate-spin text-brand-red" /></div>;
 
   if (!isAuthorized) {
     if (blockedMessage) return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-950 p-6"><div className="max-w-md w-full rounded-2xl border border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-900 p-7 text-center shadow-xl"><div className="mx-auto mb-4 w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/50 text-red-600 flex items-center justify-center font-black text-lg">!</div><h1 className="text-xl font-black text-gray-900 dark:text-white">Account access restricted</h1><p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{blockedMessage}</p></div></div>;
-    return <Navigate to={redirectPath} replace />;
+    return <Navigate to={unauthorizedRedirect} replace />;
   }
 
   return <>{mustResetPassword && <ChangePasswordModal isOpen={true} isForced={true} onSuccess={() => setMustResetPassword(false)} />}{children}</>;

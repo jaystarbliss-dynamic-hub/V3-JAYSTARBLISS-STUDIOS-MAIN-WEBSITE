@@ -292,9 +292,14 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
     const schoolNames = assignedSchools
       .filter((s) => targetSchoolIds.includes(s.id))
       .map((s) => s.name);
-    const studentNames = assignedPrivateStudents
-      .filter((st) => targetStudentIds.includes(st.id))
-      .map((st) => st.fullName);
+    const allKnownStudents = [...assignedPrivateStudents, ...assignedSchoolStudents];
+    const studentMap = new Map<string, string>();
+    allKnownStudents.forEach((st) => {
+      if (st?.id && targetStudentIds.includes(st.id)) {
+        studentMap.set(st.id, st.fullName || st.name || 'Student');
+      }
+    });
+    const studentNames = Array.from(studentMap.values());
 
     return {
       schools: schoolNames,
@@ -302,14 +307,14 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
       totalCount: schoolNames.length + studentNames.length,
       label:
         schoolNames.length > 0 && studentNames.length > 0
-          ? `${schoolNames.length} School(s) & ${studentNames.length} Private Student(s)`
+          ? `${schoolNames.length} School(s) & ${studentNames.length} Student(s)`
           : schoolNames.length > 0
           ? `${schoolNames.length} School(s)`
           : studentNames.length > 0
-          ? `${studentNames.length} Private Student(s)`
+          ? `${studentNames.length} Student(s)`
           : 'None Selected',
     };
-  }, [assignedSchools, assignedPrivateStudents, targetSchoolIds, targetStudentIds]);
+  }, [assignedSchools, assignedPrivateStudents, assignedSchoolStudents, targetSchoolIds, targetStudentIds]);
 
   // Proctor Metrics for Responses Tab
   const proctorMetrics = useMemo(() => {

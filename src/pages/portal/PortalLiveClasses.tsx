@@ -183,17 +183,6 @@ const PortalLiveClasses: React.FC = () => {
         noindex={true} 
       />
 
-      <div className="flex items-center justify-end">
-        <button
-          type="button"
-          onClick={() => setShowLinkModal(true)}
-          className="px-4 py-2.5 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold shadow-xs inline-flex items-center gap-1.5 transition-all cursor-pointer"
-        >
-          <Plus size={14} />
-          <span>Broadcast Live Link</span>
-        </button>
-      </div>
-
       {message && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs font-bold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
           {message}
@@ -207,6 +196,7 @@ const PortalLiveClasses: React.FC = () => {
           tutorName={tutorName}
           assignedSchools={assignedSchools}
           assignedStudents={students}
+          onBroadcastLiveLink={() => setShowLinkModal(true)}
         />
       </div>
 
@@ -222,9 +212,19 @@ const PortalLiveClasses: React.FC = () => {
               Virtual meeting rooms (Google Meet, Zoom, MS Teams) sent directly to student dashboards.
             </p>
           </div>
-          <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 self-start sm:self-auto">
-            {links.length} Published
-          </span>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+              {links.length} Published
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowLinkModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold shadow-xs inline-flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Plus size={14} />
+              <span>Broadcast Live Link</span>
+            </button>
+          </div>
         </div>
 
         {loading ? (
