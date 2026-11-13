@@ -1838,7 +1838,8 @@ ANSWER KEY
         defaultPointValue,
         shuffleQuestions,
         shuffleOptions,
-        limitOneAttempt,
+        limitOneAttempt: Boolean(limitOneAttempt),
+        maxAttempts: limitOneAttempt ? 1 : 10,
         confirmationMessage,
         createdBy: currentUser.uid,
         tutorId: currentUser.uid,
@@ -2077,6 +2078,7 @@ ANSWER KEY
       showPointValues: payload.showPointValues !== false,
       defaultPointValue: Number(payload.defaultPointValue || 2),
       limitOneAttempt: payload.limitOneAttempt !== false,
+      maxAttempts: payload.limitOneAttempt === false ? 10 : 1,
       shuffleQuestions: Boolean(payload.shuffleQuestions),
       shuffleOptions: Boolean(payload.shuffleOptions),
       confirmationMessage:
@@ -3047,6 +3049,7 @@ ANSWER KEY
           }
           isCreatingNew={viewMode === "create"}
           initialTab={viewMode === "monitor" ? "responses" : "questions"}
+          initialPreviewOpen={showPreview}
           assignedSchools={formattedSchools}
           assignedPrivateStudents={formattedPrivateStudents}
           assignedSchoolStudents={formattedSchoolStudents}
@@ -3054,6 +3057,7 @@ ANSWER KEY
           currentUserRole={userRole || (isAdminWorkspace ? "admin" : "tutor")}
           isTutor={!isAdminWorkspace}
           onBackToOverview={() => {
+            setShowPreview(false);
             setViewMode("overview");
             void loadExistingExams();
           }}

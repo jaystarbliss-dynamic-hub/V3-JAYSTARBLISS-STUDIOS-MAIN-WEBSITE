@@ -37,6 +37,7 @@ import {
   isAttemptResultReleased,
   canViewOrPrintAttemptResult,
   getWorkTypeLabels,
+  isAttemptOverdueForExpiry,
 } from "../api/_lib/jdi-assessment.js";
 
 const objective = (overrides = {}) => ({
@@ -836,3 +837,64 @@ test("preserves exact workType labels (Test, Activity, Assignment, Examination) 
   assert.equal(examLabels.startCta, "Start Examination");
   assert.equal(examLabels.publishCta, "Publish Examination");
 });
+
+test("never prematurely expires an active 15-minute test started on or near its due date and supports limitOneAttempt=false retakes", () => {
+  const nowMs = new Date("2026-11-13T14:30:00.000Z").getTime();
+  const startedAtIso = new Date(nowMs - 60_000).toISOString(); // Started 1 minute ago
+  const deadlineAtIso = new Date(nowMs + 14 * 60_000).toISOString(); // 14 minutes remaining
+
+  const timedTestOnDueDate = {
+    id: "test-15min",
+    workType: "TEST",
+    hasTimeLimit: true,
+    durationMinutes: 15,
+    dueDate: "2026-11-13",
+    availableUntil: "2026-11-13",
+  };
+
+  const activeAttempt = {
+    id: "att-live",
+    status: "in_progress",
+    startedAt: startedAtIso,
+    deadlineAt: deadlineAtIso,
+  };
+
+  // Must NOT expire while 14 minutes remain on the attempt countdown
+  assert.equal(isAttemptOverdueForExpiry(activeAttempt, timedTestOnDueDate, nowMs), false);
+
+  // Even if deadlineAt was omitted on the attempt document, startedAt + durationMinutes keeps it alive
+  assert.equal(
+    isAttemptOverdueForExpiry(
+      { id: "att-no-deadline-field", status: "in_progress", startedAt: startedAtIso },
+      timedTestOnDueDate,
+      nowMs
+    ),
+    false
+  );
+
+  // Once 16 minutes have elapsed, it must expire
+  assert.equal(
+    isAttemptOverdueForExpiry(activeAttempt, timedTestOnDueDate, nowMs + 16 * 60_000),
+    true
+  );
+
+  // Verify limitOneAttempt=false persists maxAttempts > 1 for student retakes
+  const retakeEnabledTest = validateExamCreationPayload({
+    deliveryMode: "NATIVE",
+    workType: "TEST",
+    title: "Retakeable 15-Min Test",
+    subject: "Robotics",
+    passcode: "TEST-15M",
+    hasTimeLimit: true,
+    durationMinutes: 15,
+    limitOneAttempt: false,
+    schoolId: "sch-1",
+    classIds: ["Grade 6"],
+    questions: [objective()],
+    status: "active",
+  });
+  assert.equal(retakeEnabledTest.error, undefined);
+  assert.equal(retakeEnabledTest.limitOneAttempt, false);
+  assert.equal(retakeEnabledTest.maxAttempts, 10);
+});
+

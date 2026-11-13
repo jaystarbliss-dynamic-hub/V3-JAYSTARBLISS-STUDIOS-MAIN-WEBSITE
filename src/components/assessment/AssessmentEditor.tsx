@@ -49,6 +49,7 @@ import {
 import { NativeQuestionCard, type NativeQuestionData, type QuestionTypeChoice } from './NativeQuestionCard';
 import { ImportQuestionsModal, type QuestionBankItem } from './ImportQuestionsModal';
 import { AssessmentProgramPicker, type SelectedProgramPathway } from './AssessmentProgramPicker';
+import EmbeddedLearningMedia from '../portal/EmbeddedLearningMedia';
 import {
   type ProgramRecord,
   fetchAllProgramsMap,
@@ -96,6 +97,7 @@ export interface AssessmentEditorProps {
   onExportCsv?: () => void;
   onPreviewStudent?: (exam: any) => void;
   initialTab?: 'questions' | 'responses' | 'settings';
+  initialPreviewOpen?: boolean;
 }
 
 export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
@@ -116,6 +118,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   onExportCsv,
   onPreviewStudent,
   initialTab = 'questions',
+  initialPreviewOpen = false,
 }) => {
   // Whether initial 3-stage setup modal is open (only when creating brand new)
   const [showInitialSetupModal, setShowInitialSetupModal] = useState<boolean>(isCreatingNew);
@@ -123,6 +126,18 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
 
   // Active Workspace Tab (Questions | Responses | Settings)
   const [activeTab, setActiveTab] = useState<'questions' | 'responses' | 'settings'>(initialTab);
+
+  // Interactive Student Preview Modal State
+  const [showPreviewModal, setShowPreviewModal] = useState<boolean>(Boolean(initialPreviewOpen));
+  const [previewAnswers, setPreviewAnswers] = useState<Record<string, any>>({});
+  const [previewSubmitted, setPreviewSubmitted] = useState<boolean>(false);
+  const [previewShowKey, setPreviewShowKey] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (initialPreviewOpen) {
+      setShowPreviewModal(true);
+    }
+  }, [initialPreviewOpen]);
 
   // Unsaved changes tracking
   const [isDirty, setIsDirty] = useState<boolean>(false);
@@ -771,7 +786,8 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
             : availableFrom || null,
         availableUntil: availableUntil || null,
         dueDate: dueDate || null,
-        limitOneAttempt,
+        limitOneAttempt: Boolean(limitOneAttempt),
+        maxAttempts: limitOneAttempt ? 1 : 10,
         shuffleQuestions,
         shuffleOptions,
         confirmationMessage: confirmationMessage.trim(),
@@ -1180,17 +1196,22 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 <span>{recipientSummary.totalCount} Cohorts</span>
               </button>
 
-              {onPreviewStudent && (
-                <button
-                  type="button"
-                  onClick={() => onPreviewStudent({ title, questions, passcode, workType })}
-                  className="p-1 sm:px-2 sm:py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 whitespace-nowrap shrink-0"
-                  title="Interactive Student Preview"
-                >
-                  <Eye size={12} className="shrink-0" />
-                  <span className="hidden sm:inline">Preview</span>
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewAnswers({});
+                  setPreviewSubmitted(false);
+                  setShowPreviewModal(true);
+                  if (onPreviewStudent) {
+                    onPreviewStudent({ title, questions, passcode, workType });
+                  }
+                }}
+                className="p-1 sm:px-2.5 sm:py-1 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                title="Interactive Student Preview"
+              >
+                <Eye size={12} className="shrink-0" />
+                <span className="hidden sm:inline">Preview</span>
+              </button>
 
               <button
                 type="button"
@@ -2878,9 +2899,22 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
                 <label className="flex items-center justify-between gap-3 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
                   <div>
-                    <p>Limit to 1 attempt</p>
-                    <p className="text-[11px] text-slate-500 font-normal">
-                      Students can only submit once per student record.
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p>Limit to 1 attempt</p>
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                          limitOneAttempt
+                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                            : 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                        }`}
+                      >
+                        {limitOneAttempt ? '1 Attempt Only' : 'Retakes Enabled'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-normal mt-0.5">
+                      {limitOneAttempt
+                        ? 'Students can only submit once per student record. Uncheck this box to allow students to retake this assessment.'
+                        : 'Unchecked — Students will see a "Retake" button after submitting and under their Completed Assessments so they can retake this assessment.'}
                     </p>
                   </div>
                   <input
@@ -2890,7 +2924,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       setLimitOneAttempt(e.target.checked);
                       markDirty();
                     }}
-                    className="w-4 h-4 text-blue-600 rounded"
+                    className="w-4 h-4 text-blue-600 rounded cursor-pointer"
                   />
                 </label>
 
@@ -2940,6 +2974,356 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
           </div>
         )}
       </main>
+
+      {/* Interactive Student Assessment Preview Modal */}
+      {showPreviewModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white dark:bg-[#11151F] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]">
+            {/* Top Preview Bar */}
+            <div className="bg-slate-900 text-white px-4 py-3.5 sm:px-6 sm:py-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-800">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-blue-200">
+                    <Eye size={11} /> Student View Preview · {workType}
+                  </span>
+                  <span className="inline-flex items-center rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-200">
+                    {limitOneAttempt ? '1 Attempt Max' : 'Retakes Allowed'}
+                  </span>
+                  <span className="inline-flex items-center rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-200">
+                    {gradingMode === 'automatic' && releaseGradesPolicy === 'immediate'
+                      ? 'Auto-Graded (Immediate Score)'
+                      : 'Manual Tutor Review'}
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-black text-white mt-1 break-words">
+                  {title.trim() || 'Untitled Assessment'}
+                </h3>
+                <p className="text-xs text-slate-300">
+                  {programTitle} · {subject} · Target: {targetClass} · Total Marks: {totalMarks}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {hasTimeLimit ? (
+                  <div className="rounded-xl border border-amber-400/30 bg-white/10 px-3 py-1.5 flex items-center gap-2">
+                    <Clock size={15} className="text-amber-400 shrink-0" />
+                    <div>
+                      <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-300 leading-none">
+                        Time Limit
+                      </span>
+                      <span className="font-mono text-sm font-black text-amber-300 leading-none">
+                        {String(durationMinutes).padStart(2, '0')}:00
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <span className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300">
+                    No Time Limit
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setPreviewShowKey((prev) => !prev)}
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-colors ${
+                    previewShowKey
+                      ? 'border-emerald-400 bg-emerald-500/20 text-emerald-200'
+                      : 'border-white/15 bg-white/5 text-slate-300 hover:bg-white/10'
+                  }`}
+                >
+                  {previewShowKey ? 'Hide Answer Key' : 'Show Answer Key'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPreviewModal(false)}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+                  aria-label="Close preview"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Preview Body */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 bg-slate-50 dark:bg-[#0D111A]">
+              {/* Security & Schedule Summary Strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-3">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                    Passcode Gate
+                  </span>
+                  <p className="font-bold text-slate-900 dark:text-white mt-0.5">
+                    {isPasscodeMandatory || hasPasscode
+                      ? `Required (${passcode || 'Auto-Generated'})`
+                      : 'No Passcode Required'}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-3">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                    Due Date / Closing
+                  </span>
+                  <p className="font-bold text-slate-900 dark:text-white mt-0.5">
+                    {dueDate || availableUntil
+                      ? new Date(dueDate || availableUntil).toLocaleDateString()
+                      : 'Open (No Closing Date Set)'}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-3">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                    Target Recipients
+                  </span>
+                  <p className="font-bold text-slate-900 dark:text-white mt-0.5">
+                    {recipientSummary.label}
+                  </p>
+                </div>
+              </div>
+
+              {/* Instructions, Deliverables & Embedded Learning Media */}
+              {(description.trim() || deliverables.trim() || learningResources.some((r) => r.url || r.youtubeUrl)) && (
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-3">
+                  {description.trim() && (
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 block">
+                        Instructions
+                      </span>
+                      <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap mt-1">
+                        {description}
+                      </p>
+                    </div>
+                  )}
+                  {deliverables.trim() && (
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400 block">
+                        Expected Deliverables
+                      </span>
+                      <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap mt-1">
+                        {deliverables}
+                      </p>
+                    </div>
+                  )}
+                  {learningResources
+                    .filter((r) => r.url.trim() || r.youtubeUrl.trim())
+                    .map((res, rIdx) => (
+                      <div key={res.id || rIdx} className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <EmbeddedLearningMedia
+                          url={res.youtubeUrl.trim() || res.url.trim()}
+                          title={res.title || `Reference Resource ${rIdx + 1}`}
+                          hideExternalLink={false}
+                        />
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              {/* External Link Delivery Mode Preview */}
+              {deliveryMode === 'EXTERNAL_LINK' ? (
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-center space-y-3">
+                  <ExternalLink size={32} className="mx-auto text-blue-600" />
+                  <h4 className="font-bold text-base text-slate-900 dark:text-white">
+                    External Link {workType}
+                  </h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Students will unlock and launch the external assessment URL below:
+                  </p>
+                  {externalUrl ? (
+                    <a
+                      href={externalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 text-xs font-bold"
+                    >
+                      Test External Link <ExternalLink size={14} />
+                    </a>
+                  ) : (
+                    <p className="text-xs font-semibold text-amber-600">
+                      No external URL entered yet.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                /* Native Questions Interactive Try-Out */
+                <div className="space-y-4">
+                  {previewSubmitted && (
+                    <div className="rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                          <CheckCircle2 size={15} /> Simulated Student Submission Result
+                        </span>
+                        <p className="text-sm font-bold text-slate-900 dark:text-white">
+                          {confirmationMessage || 'Your response has been recorded. Good job!'}
+                        </p>
+                        {gradingMode === 'automatic' && releaseGradesPolicy === 'immediate' ? (
+                          <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                            Immediate Score Displayed to Student:{' '}
+                            {questions.reduce((acc, q) => {
+                              const ans = previewAnswers[q.id];
+                              const expected = Array.isArray(q.correctOptionIds) ? q.correctOptionIds : [];
+                              if (
+                                ['multiple_choice', 'single_choice', 'true_false', 'dropdown'].includes(q.type)
+                              ) {
+                                return expected.includes(String(ans || '')) ? acc + (Number(q.points) || 0) : acc;
+                              }
+                              return acc;
+                            }, 0)}{' '}
+                            / {totalMarks} pts
+                          </p>
+                        ) : (
+                          <p className="text-xs text-amber-700 dark:text-amber-300 font-semibold">
+                            Score is held for Tutor Review before release (as configured in Settings).
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        {!limitOneAttempt && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewAnswers({});
+                              setPreviewSubmitted(false);
+                            }}
+                            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer"
+                          >
+                            Retake {workType.charAt(0) + workType.slice(1).toLowerCase()} (Student Retake Button)
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setPreviewSubmitted(false)}
+                          className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                        >
+                          Edit Preview Answers
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {questions.map((q, qIdx) => {
+                    const selectedVal = previewAnswers[q.id];
+                    const correctIds = Array.isArray(q.correctOptionIds) ? q.correctOptionIds : [];
+                    return (
+                      <div
+                        key={q.id || qIdx}
+                        className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-3 shadow-2xs"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                            <span className="text-blue-600 dark:text-blue-400 mr-1.5">
+                              Q{qIdx + 1}.
+                            </span>
+                            {q.prompt || <span className="italic text-slate-400">Untitled question prompt</span>}
+                          </h4>
+                          {showPointValues && (
+                            <span className="shrink-0 rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                              {q.points} {q.points === 1 ? 'mark' : 'marks'}
+                            </span>
+                          )}
+                        </div>
+
+                        {Array.isArray(q.options) &&
+                        q.options.length > 0 &&
+                        ['multiple_choice', 'single_choice', 'true_false', 'checkboxes', 'dropdown'].includes(
+                          q.type
+                        ) ? (
+                          <div className="space-y-2 pt-1">
+                            {q.options.map((opt) => {
+                              const isSelected =
+                                Array.isArray(selectedVal)
+                                  ? selectedVal.includes(opt.id)
+                                  : String(selectedVal || '') === String(opt.id);
+                              const isCorrectOpt = correctIds.includes(opt.id);
+                              return (
+                                <label
+                                  key={opt.id}
+                                  onClick={() => {
+                                    if (previewSubmitted) return;
+                                    if (q.type === 'checkboxes') {
+                                      const prevArr = Array.isArray(selectedVal) ? selectedVal : [];
+                                      const nextArr = prevArr.includes(opt.id)
+                                        ? prevArr.filter((i: string) => i !== opt.id)
+                                        : [...prevArr, opt.id];
+                                      setPreviewAnswers((p) => ({ ...p, [q.id]: nextArr }));
+                                    } else {
+                                      setPreviewAnswers((p) => ({ ...p, [q.id]: opt.id }));
+                                    }
+                                  }}
+                                  className={`flex items-center justify-between gap-3 p-3 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                                    isSelected
+                                      ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200'
+                                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-black text-slate-700 dark:text-slate-300">
+                                      {opt.id}
+                                    </span>
+                                    <span>{opt.text}</span>
+                                  </div>
+                                  {(previewShowKey || (previewSubmitted && showCorrectAnswers)) &&
+                                    isCorrectOpt && (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                        <Check size={11} /> Correct Key
+                                      </span>
+                                    )}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="pt-1 space-y-2">
+                            <textarea
+                              rows={2}
+                              disabled={previewSubmitted}
+                              value={String(selectedVal || '')}
+                              onChange={(e) =>
+                                setPreviewAnswers((p) => ({ ...p, [q.id]: e.target.value }))
+                              }
+                              placeholder="Student types response or pastes deliverable link here..."
+                              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 text-xs"
+                            />
+                            {(previewShowKey || (previewSubmitted && showCorrectAnswers)) &&
+                              Array.isArray(q.acceptedAnswers) &&
+                              q.acceptedAnswers.length > 0 && (
+                                <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                                  Accepted Answer Key: {q.acceptedAnswers.join(', ')}
+                                </p>
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Preview Footer */}
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-wrap items-center justify-between gap-3">
+              <span className="text-xs text-slate-500">
+                Previewing exact student layout · {questions.length} question(s) · {totalMarks} total marks
+              </span>
+              <div className="flex items-center gap-2">
+                {deliveryMode === 'NATIVE' && !previewSubmitted && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewSubmitted(true)}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Simulate Student Submit
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowPreviewModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Close Preview
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Recipient Selector Modal */}
       <RecipientSelectorModal

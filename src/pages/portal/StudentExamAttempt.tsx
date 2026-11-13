@@ -45,6 +45,7 @@ import {
   LayoutGrid,
   List,
   CheckCircle,
+  RotateCcw,
 } from "lucide-react";
 
 type Q = {
@@ -136,6 +137,8 @@ type D = {
     instructions?: string;
     hasTimeLimit?: boolean;
     durationMinutes?: number | null;
+    limitOneAttempt?: boolean;
+    maxAttempts?: number;
     gradingMode?: string;
     releaseGradesPolicy?: string;
     questions?: Q[];
@@ -259,6 +262,7 @@ export default function StudentExamAttempt() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [viewMode, setViewMode] = useState<"focused" | "all">("focused");
   const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
+  const [retakingBusy, setRetakingBusy] = useState<boolean>(false);
 
   // Load Exam Attempt Data (Server + Direct Firestore Fallback)
   const loadAttemptData = async () => {
@@ -267,7 +271,7 @@ export default function StudentExamAttempt() {
 
       let loadedData: D | null = null;
 
-      // 1. Try server function
+      // 1. Try server function (skip if server returns an expired attempt with empty questions so client can inspect/auto-heal if premature)
       try {
         const token = await auth.currentUser.getIdToken();
         const url = `/.netlify/functions/examination-attempt?attemptId=${encodeURIComponent(attemptId)}`;
@@ -277,7 +281,9 @@ export default function StudentExamAttempt() {
         });
         if (res.ok) {
           const d = await res.json().catch(() => null);
-          if (d && d.attempt) loadedData = d;
+          if (d && d.attempt && d.attempt.status !== "expired") {
+            loadedData = d;
+          }
         }
       } catch (err) {
         console.warn("Server exam attempt notice, engaging Firestore resolver:", err);
@@ -340,9 +346,77 @@ export default function StudentExamAttempt() {
                 sessionStorage.getItem("schoolName") || ""
               );
 
+        const hasTimeLimit =
+          examData.hasTimeLimit !== undefined
+            ? Boolean(examData.hasTimeLimit)
+            : examData.durationMinutes != null && Number(examData.durationMinutes) > 0;
+        const configuredDurationMin = hasTimeLimit
+          ? Math.max(1, Number(examData.durationMinutes) || 30)
+          : null;
+        const limitOneAttempt =
+          examData.limitOneAttempt !== undefined
+            ? Boolean(examData.limitOneAttempt)
+            : Number(examData.maxAttempts || 1) <= 1;
+        const maxAttempts = limitOneAttempt
+          ? 1
+          : Math.max(2, Number(examData.maxAttempts || 10));
+
+        // Self-healing check: if this attempt was prematurely marked "expired" with 0 answers
+        // while its duration window from startedAt (or deadlineAt) has not actually elapsed, restore it to in_progress!
+        const startedMs =
+          typeof attemptData.startedAt?.toDate === "function"
+            ? attemptData.startedAt.toDate().getTime()
+            : typeof attemptData.startedAt?.toMillis === "function"
+            ? attemptData.startedAt.toMillis()
+            : attemptData.startedAt
+            ? new Date(attemptData.startedAt).getTime()
+            : NaN;
+        const existingDeadlineMs =
+          typeof attemptData.deadlineAt?.toDate === "function"
+            ? attemptData.deadlineAt.toDate().getTime()
+            : attemptData.deadlineAt
+            ? new Date(attemptData.deadlineAt).getTime()
+            : NaN;
+        const expectedEndMs =
+          Number.isFinite(existingDeadlineMs) && existingDeadlineMs > 0
+            ? existingDeadlineMs
+            : Number.isFinite(startedMs) && startedMs > 0 && configuredDurationMin
+            ? startedMs + configuredDurationMin * 60 * 1000
+            : NaN;
+        const hasNoSubmittedAnswers = Object.keys(attemptData.answers || {}).length === 0;
+
+        if (
+          attemptData.status === "expired" &&
+          hasNoSubmittedAnswers &&
+          ((Number.isFinite(expectedEndMs) && Date.now() < expectedEndMs) || !hasTimeLimit)
+        ) {
+          const restoredDeadline = hasTimeLimit
+            ? new Date(
+                Number.isFinite(expectedEndMs) && expectedEndMs > Date.now()
+                  ? expectedEndMs
+                  : Date.now() + (configuredDurationMin || 15) * 60 * 1000
+              ).toISOString()
+            : null;
+          attemptData.status = "in_progress";
+          attemptData.deadlineAt = restoredDeadline;
+          attemptData.resultReleased = false;
+          for (const dbInst of allDbs) {
+            setDoc(
+              doc(dbInst, "jdiExamAttempts", attemptId),
+              {
+                status: "in_progress",
+                deadlineAt: restoredDeadline,
+                resultReleased: false,
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            ).catch(() => undefined);
+          }
+        }
+
         const rawQuestions: Q[] = resolveAttemptQuestions(examData, attemptData) as Q[];
         const isClosed = attemptData.status !== "in_progress";
-        const isReleased = isAttemptResultReleased(attemptData, examData);
+        const isReleased = isClosed && isAttemptResultReleased(attemptData, examData);
 
         const safeQuestions: Q[] = rawQuestions.map((q) => {
           if (!isClosed || !isReleased) {
@@ -354,13 +428,31 @@ export default function StudentExamAttempt() {
 
         const maxScore = computeExamMaxScore(examData, attemptData);
         const score = isReleased && typeof attemptData.score === "number" ? attemptData.score : undefined;
-        const hasTimeLimit =
-          examData.hasTimeLimit !== undefined
-            ? Boolean(examData.hasTimeLimit)
-            : examData.durationMinutes != null && Number(examData.durationMinutes) > 0;
-        const configuredDurationMin = hasTimeLimit
-          ? Math.max(1, Number(examData.durationMinutes) || 30)
-          : null;
+
+        const resolvedAttemptDeadlineIso = (() => {
+          if (!hasTimeLimit) return null;
+          if (attemptData.deadlineAt) {
+            const dMs =
+              typeof attemptData.deadlineAt?.toDate === "function"
+                ? attemptData.deadlineAt.toDate().getTime()
+                : new Date(attemptData.deadlineAt).getTime();
+            if (Number.isFinite(dMs) && dMs > 0) {
+              return new Date(dMs).toISOString();
+            }
+          }
+          if (attemptData.status === "in_progress") {
+            const freshIso = new Date(Date.now() + (configuredDurationMin || 30) * 60000).toISOString();
+            for (const dbInst of allDbs) {
+              setDoc(
+                doc(dbInst, "jdiExamAttempts", attemptId),
+                { deadlineAt: freshIso },
+                { merge: true }
+              ).catch(() => undefined);
+            }
+            return freshIso;
+          }
+          return null;
+        })();
 
         loadedData = {
           attempt: {
@@ -386,10 +478,7 @@ export default function StudentExamAttempt() {
             schoolId: effectiveSchoolId,
             schoolName: resolvedSchoolName,
             maxScore,
-            deadlineAt: hasTimeLimit
-              ? attemptData.deadlineAt ||
-                new Date(Date.now() + (configuredDurationMin || 30) * 60000).toISOString()
-              : null,
+            deadlineAt: resolvedAttemptDeadlineIso,
           },
           exam: {
             id: attemptData.examId,
@@ -411,6 +500,8 @@ export default function StudentExamAttempt() {
             instructions: examData.instructions || examData.description || "",
             hasTimeLimit,
             durationMinutes: configuredDurationMin,
+            limitOneAttempt,
+            maxAttempts,
             gradingMode: examData.gradingMode || "automatic",
             releaseGradesPolicy: examData.releaseGradesPolicy,
             questions: isReleased ? rawQuestions : safeQuestions,
@@ -941,7 +1032,7 @@ export default function StudentExamAttempt() {
     }
   };
 
-  // Auto-expire when timer hits 00:00 (only when a time limit / deadline is configured)
+  // Auto-expire when timer hits 00:00 (only when a time limit / deadline is configured and deadlineMs has genuinely passed)
   useEffect(() => {
     const hasDeadline =
       Boolean(data?.attempt.deadlineAt) &&
@@ -955,8 +1046,13 @@ export default function StudentExamAttempt() {
       data?.attempt.status === "in_progress" &&
       !busy
     ) {
-      setAutoExpiredBanner(true);
-      void send("expire");
+      const deadlineMs = data?.attempt.deadlineAt
+        ? new Date(data.attempt.deadlineAt).getTime()
+        : Number.POSITIVE_INFINITY;
+      if (Number.isFinite(deadlineMs) && Date.now() >= deadlineMs) {
+        setAutoExpiredBanner(true);
+        void send("expire");
+      }
     }
   }, [
     seconds,
@@ -967,6 +1063,86 @@ export default function StudentExamAttempt() {
     data?.exam.durationMinutes,
     busy,
   ]);
+
+  // Start a fresh Retake Attempt when limitOneAttempt is unchecked (or after premature empty expiry)
+  const handleRetakeAssessment = async () => {
+    if (!data || retakingBusy) return;
+    setRetakingBusy(true);
+    setError("");
+    try {
+      const targetExamId = String(data.exam.id || data.attempt.examId || "").trim();
+      if (!targetExamId) throw new Error("Assessment ID could not be resolved for retake.");
+
+      const allDbs = getAllClientDatabases();
+      let freshExamData: any = null;
+      for (const dbInst of allDbs) {
+        const snap = await getDoc(doc(dbInst, "jdiExams", targetExamId)).catch(() => null);
+        if (snap?.exists()) {
+          freshExamData = snap.data();
+          break;
+        }
+        const schSnap = await getDoc(doc(dbInst, "schoolExams", targetExamId)).catch(() => null);
+        if (schSnap?.exists()) {
+          freshExamData = schSnap.data();
+          break;
+        }
+      }
+
+      const sourceExam = freshExamData || data.exam;
+      const examHasTimeLimit =
+        sourceExam.hasTimeLimit !== undefined
+          ? Boolean(sourceExam.hasTimeLimit)
+          : sourceExam.durationMinutes != null && Number(sourceExam.durationMinutes) > 0;
+      const durationMin = examHasTimeLimit
+        ? Math.max(1, Number(sourceExam.durationMinutes || data.exam.durationMinutes) || 30)
+        : 0;
+      const freshDeadlineAt =
+        durationMin > 0
+          ? new Date(Date.now() + durationMin * 60 * 1000).toISOString()
+          : null;
+      const newAttemptId = `att_${Date.now().toString(36)}_${Math.random()
+        .toString(36)
+        .slice(2, 6)}`;
+      const questionsSnapshot = Array.isArray(sourceExam.questions)
+        ? sourceExam.questions
+        : Array.isArray(data.attempt.questionsSnapshot) && data.attempt.questionsSnapshot.length > 0
+        ? data.attempt.questionsSnapshot
+        : data.questions;
+
+      const retakePayload = {
+        id: newAttemptId,
+        examId: targetExamId,
+        examTitle: sourceExam.title || data.exam.title,
+        subject: sourceExam.subject || data.exam.subject,
+        studentUid: auth.currentUser?.uid || data.attempt.studentId,
+        studentId: data.attempt.studentId || auth.currentUser?.uid || "student",
+        studentName: data.attempt.studentName || "Student",
+        className: data.attempt.className || "General",
+        schoolId: data.attempt.schoolId || data.exam.schoolId || null,
+        schoolName: data.attempt.schoolName || data.exam.schoolName || "",
+        maxScore: data.exam.maxScore || data.attempt.maxScore || 100,
+        questionsSnapshot,
+        status: "in_progress",
+        answers: {},
+        startedAt: serverTimestamp(),
+        deadlineAt: freshDeadlineAt,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      await Promise.all(
+        allDbs.map((dbInst) =>
+          setDoc(doc(dbInst, "jdiExamAttempts", newAttemptId), retakePayload).catch(() => undefined)
+        )
+      );
+
+      nav(`/portal/student/exams/${encodeURIComponent(newAttemptId)}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not start retake attempt.");
+    } finally {
+      setRetakingBusy(false);
+    }
+  };
 
   // Download PDF Report
   const handleDownloadReport = async () => {
@@ -1263,19 +1439,34 @@ export default function StudentExamAttempt() {
       {isExpiredAttempt && (
         <div
           role="alert"
-          className="rounded-2xl bg-red-50 dark:bg-red-950/60 p-4 sm:p-5 text-xs sm:text-sm text-red-900 dark:text-red-100 border border-red-200 dark:border-red-800 flex items-start gap-3 shadow-sm"
+          className="rounded-2xl bg-red-50 dark:bg-red-950/60 p-4 sm:p-5 text-xs sm:text-sm text-red-900 dark:text-red-100 border border-red-200 dark:border-red-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm"
         >
-          <AlertTriangle size={20} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-bold text-red-950 dark:text-white">
-              Assessment Automatically Closed — Time Expired (00:00)
-            </p>
-            <p className="text-red-800 dark:text-red-200 leading-relaxed">
-              Your allocated time for this {typeLabels.lowerSingular} reached{" "}
-              <span className="font-mono font-bold">00:00</span>. Your attempt and all saved answers
-              have been automatically submitted and locked for grading.
-            </p>
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={20} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-bold text-red-950 dark:text-white">
+                Assessment Automatically Closed — Time Expired (00:00)
+              </p>
+              <p className="text-red-800 dark:text-red-200 leading-relaxed">
+                Your allocated time for this {typeLabels.lowerSingular} reached{" "}
+                <span className="font-mono font-bold">00:00</span>. Your attempt and all saved answers
+                have been automatically submitted and locked for grading.
+              </p>
+            </div>
           </div>
+          {(data.exam.limitOneAttempt === false ||
+            Number(data.exam.maxAttempts || 1) > 1 ||
+            Object.keys(data.attempt.answers || {}).length === 0) && (
+            <button
+              type="button"
+              disabled={retakingBusy}
+              onClick={() => void handleRetakeAssessment()}
+              className="w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              <RotateCcw size={15} />
+              {retakingBusy ? "Starting Retake…" : `Retake ${typeLabels.singular}`}
+            </button>
+          )}
         </div>
       )}
 
@@ -1315,6 +1506,18 @@ export default function StudentExamAttempt() {
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row flex-wrap gap-2">
+                  {(data.exam.limitOneAttempt === false ||
+                    Number(data.exam.maxAttempts || 1) > 1) && (
+                    <button
+                      type="button"
+                      disabled={retakingBusy}
+                      onClick={() => void handleRetakeAssessment()}
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 px-5 py-2.5 text-xs sm:text-sm font-bold text-white disabled:opacity-50 cursor-pointer shadow-xs"
+                    >
+                      <RotateCcw size={16} />
+                      {retakingBusy ? "Starting Retake…" : `Retake ${typeLabels.singular}`}
+                    </button>
+                  )}
                   <button
                     onClick={handleDownloadReport}
                     disabled={downloadingPdf}
@@ -1572,7 +1775,19 @@ export default function StudentExamAttempt() {
                   until your tutor reviews and releases the results.
                 </p>
               </div>
-              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <div className="pt-2 flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3">
+                {(data.exam.limitOneAttempt === false ||
+                  Number(data.exam.maxAttempts || 1) > 1) && (
+                  <button
+                    type="button"
+                    disabled={retakingBusy}
+                    onClick={() => void handleRetakeAssessment()}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-5 py-3 text-xs sm:text-sm font-bold text-white shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    <RotateCcw size={16} />
+                    {retakingBusy ? "Starting Retake…" : `Retake ${typeLabels.singular}`}
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled

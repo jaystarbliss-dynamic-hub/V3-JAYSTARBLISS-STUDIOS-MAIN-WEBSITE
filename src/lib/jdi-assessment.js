@@ -677,6 +677,15 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
   const programId = String(body.programId ?? existingDoc?.programId ?? "").trim();
   const programName = String(body.programName ?? body.programTitle ?? existingDoc?.programName ?? existingDoc?.programTitle ?? "").trim();
   const subProgramName = String(body.subProgramName ?? existingDoc?.subProgramName ?? "").trim();
+  const limitOneAttempt =
+    body.limitOneAttempt !== undefined
+      ? Boolean(body.limitOneAttempt)
+      : existingDoc?.limitOneAttempt !== undefined
+      ? Boolean(existingDoc.limitOneAttempt)
+      : Number(body.maxAttempts ?? existingDoc?.maxAttempts ?? 1) <= 1;
+  const maxAttempts = limitOneAttempt
+    ? 1
+    : Math.max(2, Math.min(50, Number(body.maxAttempts ?? existingDoc?.maxAttempts ?? 10) || 10));
 
   if (deliveryMode === "EXTERNAL_LINK") {
     const urlCandidate = body.externalUrl ?? body.url ?? existingDoc?.externalUrl ?? existingDoc?.url ?? "";
@@ -696,6 +705,8 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
       workType,
       hasPasscode,
       hasTimeLimit: durationMinutes > 0,
+      limitOneAttempt,
+      maxAttempts,
       title,
       subject,
       description,
@@ -779,6 +790,8 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
       workType,
       hasPasscode,
       hasTimeLimit,
+      limitOneAttempt,
+      maxAttempts,
       title,
       subject,
       description,
@@ -815,6 +828,8 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
     workType,
     hasPasscode,
     hasTimeLimit,
+    limitOneAttempt,
+    maxAttempts,
     title,
     subject,
     description,
@@ -1832,28 +1847,51 @@ export function classifyStudentEnrolment(studentRecord = {}, options = {}) {
   };
 }
 
-/**
- * Determines whether an in-progress attempt has passed its timer deadline or
- * an assessment closing date that already passed on a previous date.
- */
 export function isAttemptOverdueForExpiry(attempt = {}, exam = {}, nowMs = Date.now()) {
   if (!attempt || String(attempt.status || "").trim().toLowerCase() !== "in_progress") {
     return false;
   }
 
-  // 1. Check attempt-specific countdown deadlineAt
+  // 1. If the attempt has an explicit countdown deadlineAt, ONLY expire when that timer elapses.
+  // Never expire an active timed attempt early due to dueDate or availableUntil timezone/date-only parsing.
   if (attempt.deadlineAt) {
-    const attemptDeadlineMs = new Date(attempt.deadlineAt).getTime();
-    if (Number.isFinite(attemptDeadlineMs) && nowMs >= attemptDeadlineMs) {
-      return true;
+    const attemptDeadlineMs =
+      typeof attempt.deadlineAt?.toDate === "function"
+        ? attempt.deadlineAt.toDate().getTime()
+        : typeof attempt.deadlineAt?.toMillis === "function"
+        ? attempt.deadlineAt.toMillis()
+        : new Date(attempt.deadlineAt).getTime();
+    if (Number.isFinite(attemptDeadlineMs) && attemptDeadlineMs > 0) {
+      return nowMs >= attemptDeadlineMs;
     }
   }
 
-  // 2. Check assessment-level availableUntil / dueDate
-  const startOfToday = new Date(nowMs);
-  startOfToday.setHours(0, 0, 0, 0);
-  const startOfTodayMs = startOfToday.getTime();
+  // 2. If the parent exam is configured with a time limit (hasTimeLimit or durationMinutes > 0),
+  // compute the countdown from startedAt if available; otherwise do not prematurely expire.
+  const examHasTimeLimit =
+    exam?.hasTimeLimit !== undefined
+      ? Boolean(exam.hasTimeLimit)
+      : exam?.durationMinutes !== null &&
+        exam?.durationMinutes !== undefined &&
+        Number(exam?.durationMinutes) > 0;
+  if (examHasTimeLimit) {
+    const durationMin = Math.max(1, Number(exam?.durationMinutes) || 30);
+    const startedMs =
+      typeof attempt.startedAt?.toDate === "function"
+        ? attempt.startedAt.toDate().getTime()
+        : typeof attempt.startedAt?.toMillis === "function"
+        ? attempt.startedAt.toMillis()
+        : attempt.startedAt
+        ? new Date(attempt.startedAt).getTime()
+        : NaN;
+    if (Number.isFinite(startedMs) && startedMs > 0) {
+      return nowMs >= startedMs + durationMin * 60 * 1000;
+    }
+    return false;
+  }
 
+  // 3. For untimed assessments (no countdown timer), check availableUntil / dueDate,
+  // treating date-only YYYY-MM-DD (or midnight T00:00) strings as the end of that calendar day (23:59:59.999 local).
   const rawClosing =
     exam?.availableUntil ||
     exam?.dueDate ||
@@ -1863,27 +1901,43 @@ export function isAttemptOverdueForExpiry(attempt = {}, exam = {}, nowMs = Date.
 
   if (rawClosing) {
     const rawStr = typeof rawClosing === "string" ? rawClosing.trim() : "";
-    const parsedMs =
-      typeof rawClosing?.toDate === "function"
-        ? rawClosing.toDate().getTime()
-        : new Date(rawClosing).getTime();
+    let closingDeadlineMs = NaN;
 
-    if (Number.isFinite(parsedMs)) {
-      // If it's a date-only string (e.g. YYYY-MM-DD), expire only if it was on a previous date (before today)
-      const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(rawStr);
-      if (isDateOnly) {
-        if (parsedMs < startOfTodayMs) {
-          return true;
-        }
-      } else {
-        // Full timestamp with time: expire if timestamp is on a previous date OR already past nowMs
-        if (parsedMs < startOfTodayMs || nowMs >= parsedMs) {
-          return true;
-        }
+    if (typeof rawClosing?.toDate === "function") {
+      closingDeadlineMs = rawClosing.toDate().getTime();
+    } else if (typeof rawClosing?.toMillis === "function") {
+      closingDeadlineMs = rawClosing.toMillis();
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(rawStr)) {
+      const [y, m, d] = rawStr.split("-").map(Number);
+      closingDeadlineMs = new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+    } else if (/^\d{4}-\d{2}-\d{2}T00:00(:00(\.000)?)?$/.test(rawStr)) {
+      const [y, m, d] = rawStr.slice(0, 10).split("-").map(Number);
+      closingDeadlineMs = new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+    } else {
+      closingDeadlineMs = new Date(rawClosing).getTime();
+    }
+
+    if (Number.isFinite(closingDeadlineMs) && closingDeadlineMs > 0) {
+      // If the student started the attempt after the old closing date (e.g. tutor reopened it)
+      // or within the last 2 minutes, do not immediately auto-expire on open.
+      const startedMs =
+        typeof attempt.startedAt?.toDate === "function"
+          ? attempt.startedAt.toDate().getTime()
+          : typeof attempt.startedAt?.toMillis === "function"
+          ? attempt.startedAt.toMillis()
+          : attempt.startedAt
+          ? new Date(attempt.startedAt).getTime()
+          : NaN;
+      if (Number.isFinite(startedMs) && (startedMs >= closingDeadlineMs || nowMs - startedMs < 120000)) {
+        return false;
+      }
+      if (nowMs > closingDeadlineMs) {
+        return true;
       }
     }
   }
 
   return false;
 }
+
 

@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Lock,
   Play,
+  RotateCcw,
 } from "lucide-react";
 import { auth, db, getAllClientDatabases } from "../../lib/firebase";
 import {
@@ -60,7 +61,11 @@ type ExamCard = {
   resourceUrl?: string;
   videoUrl?: string;
   status: "active" | "upcoming" | "completed";
+  hasTimeLimit?: boolean;
   durationMinutes: number;
+  limitOneAttempt?: boolean;
+  maxAttempts?: number;
+  hasEmptyExpiredAttempt?: boolean;
   maxScore?: number;
   questionCount?: number;
   seriesName?: string;
@@ -408,6 +413,53 @@ export default function StudentExaminations() {
             const parentExam = rawDocsMap.get(examKey) || examMap.get(examKey);
             let effectiveStatus = String(a.status || "");
 
+            const startedAtMs =
+              typeof a.startedAt?.toMillis === "function"
+                ? a.startedAt.toMillis()
+                : typeof a.startedAt?.toDate === "function"
+                ? a.startedAt.toDate().getTime()
+                : a.startedAt
+                ? new Date(a.startedAt).getTime()
+                : typeof a.createdAt?.toMillis === "function"
+                ? a.createdAt.toMillis()
+                : 0;
+            const hasNoAnswers = Object.keys(a.answers || {}).length === 0;
+            const parentHasTimeLimit =
+              parentExam?.hasTimeLimit !== undefined
+                ? Boolean(parentExam.hasTimeLimit)
+                : parentExam?.durationMinutes != null && Number(parentExam.durationMinutes) > 0;
+            const parentDurationMin = parentHasTimeLimit
+              ? Math.max(1, Number(parentExam?.durationMinutes) || 30)
+              : 0;
+            const expectedEndMs =
+              a.deadlineAt && Number.isFinite(new Date(a.deadlineAt).getTime())
+                ? new Date(a.deadlineAt).getTime()
+                : startedAtMs > 0 && parentDurationMin > 0
+                ? startedAtMs + parentDurationMin * 60 * 1000
+                : 0;
+
+            // Self-heal attempts that were prematurely marked "expired" with 0 answers while their duration window had not elapsed
+            if (
+              effectiveStatus === "expired" &&
+              hasNoAnswers &&
+              expectedEndMs > now
+            ) {
+              effectiveStatus = "in_progress";
+              const healedDeadline = new Date(expectedEndMs).toISOString();
+              allDbs.forEach((dbInst) => {
+                setDoc(
+                  doc(dbInst, "jdiExamAttempts", ad.id),
+                  {
+                    status: "in_progress",
+                    deadlineAt: healedDeadline,
+                    resultReleased: false,
+                    updatedAt: serverTimestamp(),
+                  },
+                  { merge: true }
+                ).catch(() => undefined);
+              });
+            }
+
             // Auto-expire overdue in_progress attempts (timer elapsed or dueDate/availableUntil passed on a previous date)
             if (
               effectiveStatus === "in_progress" &&
@@ -440,31 +492,35 @@ export default function StudentExaminations() {
               });
             }
 
-            const isReleased = isAttemptResultReleased(
-              { ...a, status: effectiveStatus },
-              parentExam || {}
-            );
+            const isReleased =
+              effectiveStatus !== "in_progress" &&
+              isAttemptResultReleased({ ...a, status: effectiveStatus }, parentExam || {});
             const prev = attemptsByExam[examKey];
-            const isCurrentDone = ["submitted", "completed", "graded", "expired"].includes(
-              effectiveStatus.toLowerCase()
-            );
-            const isPrevDone = prev
-              ? ["submitted", "completed", "graded", "expired"].includes(
-                  String(prev.attemptStatus || "").toLowerCase()
-                )
+            const isCurrentInProgress = effectiveStatus.toLowerCase() === "in_progress";
+            const isPrevInProgress = prev
+              ? String(prev.attemptStatus || "").toLowerCase() === "in_progress"
               : false;
+            const prevStartedMs = Number(prev?.startedAtMs || 0);
 
-            if (!prev || isReleased || (isCurrentDone && !isPrevDone) || !prev.resultReleased) {
+            // Always prioritize an active in_progress attempt, or the most recent attempt by startedAtMs
+            const shouldReplacePrev =
+              !prev ||
+              (isCurrentInProgress && !isPrevInProgress) ||
+              (isCurrentInProgress === isPrevInProgress && startedAtMs >= prevStartedMs);
+
+            if (shouldReplacePrev) {
               attemptsByExam[examKey] = {
                 attemptId: ad.id,
                 attemptStatus: effectiveStatus,
+                startedAtMs,
+                hasEmptyExpiredAttempt: effectiveStatus === "expired" && hasNoAnswers,
                 score: isReleased ? a.score : prev?.score,
                 maxScore: a.maxScore ?? prev?.maxScore,
                 feedback: isReleased ? a.feedback || a.tutorFeedback : prev?.feedback,
                 releasedAt: isReleased
                   ? a.releasedAt || a.updatedAt || a.submittedAt || new Date().toISOString()
                   : prev?.releasedAt,
-                resultReleased: Boolean(isReleased || prev?.resultReleased),
+                resultReleased: isCurrentInProgress ? false : Boolean(isReleased || prev?.resultReleased),
               };
             }
           }
@@ -579,6 +635,13 @@ export default function StudentExaminations() {
         const resolvedDurationMinutes = hasTimeLimit
           ? Math.max(1, Number(exam.durationMinutes) || 30)
           : 0;
+        const limitOneAttempt =
+          exam.limitOneAttempt !== undefined
+            ? Boolean(exam.limitOneAttempt)
+            : Number(exam.maxAttempts || 1) <= 1;
+        const maxAttempts = limitOneAttempt
+          ? 1
+          : Math.max(2, Number(exam.maxAttempts || 10));
 
         examMap.set(String(exam.id), {
           id: exam.id,
@@ -593,7 +656,10 @@ export default function StudentExaminations() {
           resourceUrl: String(exam.resourceUrl || exam.videoUrl || exam.learningVideoUrl || "").trim(),
           videoUrl: String(exam.videoUrl || exam.learningVideoUrl || "").trim(),
           status: computedStatus,
+          hasTimeLimit,
           durationMinutes: resolvedDurationMinutes,
+          limitOneAttempt,
+          maxAttempts,
           maxScore,
           questionCount: Array.isArray(exam.questions) ? exam.questions.length : 0,
           seriesName: exam.seriesName,
@@ -604,8 +670,12 @@ export default function StudentExaminations() {
           schoolId: exam.schoolId,
           schoolName: resolvePartnerSchoolName(exam.schoolName, ctx.schoolName),
           targetClass: normalizeClassName(exam.targetClass || exam.className || ""),
-          // Hide passcode while assessment is scheduled/upcoming; reveal once active
-          passcode: computedStatus === "active" ? exam.passcode : undefined,
+          // Hide passcode while assessment is scheduled/upcoming; reveal once active or when eligible for retake
+          passcode:
+            computedStatus === "active" ||
+            (computedStatus === "completed" && (!limitOneAttempt || att.hasEmptyExpiredAttempt) && !isPastDeadline)
+              ? exam.passcode
+              : undefined,
           passcodeHash: exam.passcodeHash,
           questions: exam.questions,
           ...att,
@@ -701,15 +771,18 @@ export default function StudentExaminations() {
     }
   };
 
-  // Validate Passcode & Begin Assessment or Unlock External Link
-  const unlock = async (examId: string, overridePasscode?: string) => {
+  // Validate Passcode & Begin Assessment or Unlock External Link (supports Retake when limitOneAttempt is false)
+  const unlock = async (examId: string, overridePasscode?: string, isRetake = false) => {
     const targetExam = exams.find((e) => e.id === examId);
     const normalizedType = normalizeWorkType(targetExam?.workType, targetExam);
     const requiresCode =
       (normalizedType === "TEST" || normalizedType === "EXAMINATION") &&
       Boolean(targetExam?.passcode || targetExam?.passcodeHash);
 
-    const inputPasscode = overridePasscode !== undefined ? overridePasscode : (passcodes[examId] || "").trim();
+    const inputPasscode =
+      overridePasscode !== undefined
+        ? overridePasscode
+        : (passcodes[examId] || (isRetake ? targetExam?.passcode : "") || "").trim();
     if (requiresCode && !inputPasscode) {
       setMessage({
         id: examId,
@@ -734,7 +807,7 @@ export default function StudentExaminations() {
           const response = await fetch("/.netlify/functions/examination-passcode", {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ examId, passcode: inputPasscode }),
+            body: JSON.stringify({ examId, passcode: inputPasscode, retake: isRetake }),
           });
           if (response.ok) {
             const result = await response.json().catch(() => ({}));
@@ -1058,6 +1131,11 @@ export default function StudentExaminations() {
                             External Link
                           </span>
                         )}
+                        {exam.limitOneAttempt === false && (
+                          <span className="rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 px-2.5 py-0.5 text-[11px] font-bold text-blue-700 dark:text-blue-300">
+                            Retakes Allowed
+                          </span>
+                        )}
                       </div>
 
                       <p className="mt-1 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300">
@@ -1162,6 +1240,27 @@ export default function StudentExaminations() {
                     exam.attemptId &&
                     ["submitted", "expired", "graded"].includes(exam.attemptStatus || "") && (
                       <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-2.5">
+                        {(exam.limitOneAttempt === false ||
+                          Number(exam.maxAttempts || 1) > 1 ||
+                          (exam.attemptStatus === "expired" && exam.hasEmptyExpiredAttempt)) && (
+                          <button
+                            type="button"
+                            disabled={busy === exam.id}
+                            onClick={() =>
+                              unlock(
+                                exam.id,
+                                exam.passcode || passcodes[exam.id] || "",
+                                true
+                              )
+                            }
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-5 py-2.5 text-sm font-bold text-white shadow-xs cursor-pointer disabled:opacity-50"
+                          >
+                            <RotateCcw size={16} />
+                            {busy === exam.id
+                              ? "Starting Retake…"
+                              : `Retake ${typeLabels.singular}`}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() =>

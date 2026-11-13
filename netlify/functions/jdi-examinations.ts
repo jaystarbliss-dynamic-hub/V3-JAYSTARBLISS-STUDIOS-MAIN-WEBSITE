@@ -235,8 +235,16 @@ async function permittedSchool(callerInfo: any, schoolId: string): Promise<boole
 function studentSafe(exam: any) {
   const { passcodeHash, passcodeSalt, passcode, questions, answerKey, createdBy, studentIds, studentUids, ...safe } = exam;
   const normalizedClasses = normalizeClassList(exam.classIds?.length ? exam.classIds : exam.targetClass ? [exam.targetClass] : []);
+  const hasTimeLimit =
+    exam.hasTimeLimit !== undefined
+      ? Boolean(exam.hasTimeLimit)
+      : exam.durationMinutes !== null && exam.durationMinutes !== undefined && Number(exam.durationMinutes) > 0;
+  const limitOneAttempt = exam.limitOneAttempt !== undefined ? Boolean(exam.limitOneAttempt) : Number(exam.maxAttempts || 1) <= 1;
   return {
     ...safe,
+    hasTimeLimit,
+    limitOneAttempt,
+    maxAttempts: limitOneAttempt ? 1 : Math.max(2, Number(exam.maxAttempts || 10)),
     classIds: normalizedClasses,
     targetClass: normalizedClasses[0] || normalizeClassName(exam.targetClass || "") || "",
     maxScore: computeExamMaxScore(exam),
@@ -741,11 +749,12 @@ export const handler: Handler = async event => {
         });
       }
 
+      const isRetakeRequest = body.retake === true;
       const legacyAttemptId = createHash("sha256")
         .update(examId + ":" + student.id)
         .digest("hex");
       const legacyAttempt = await adminDb.collection("jdiExamAttempts").doc(legacyAttemptId).get();
-      if (legacyAttempt.exists) {
+      if (legacyAttempt.exists && !isRetakeRequest) {
         const legacy = legacyAttempt.data() || {};
         if (
           legacy.status === "in_progress" &&
@@ -755,7 +764,10 @@ export const handler: Handler = async event => {
           return json(200, { attemptId: legacyAttemptId, resumed: true, deliveryMode: "NATIVE" });
         }
       }
-      const legacyAttemptsUsed = legacyAttempt.exists ? 1 : 0;
+      const legacyData = legacyAttempt.exists ? legacyAttempt.data() || {} : {};
+      const legacyWasEmptyExpired =
+        legacyData.status === "expired" && Object.keys(legacyData.answers || {}).length === 0;
+      const legacyAttemptsUsed = legacyAttempt.exists && !legacyWasEmptyExpired ? 1 : 0;
       const lockId = createHash("sha256")
         .update(examId + ":" + student.id)
         .digest("hex");
@@ -856,12 +868,19 @@ export const handler: Handler = async event => {
           throw new Error("INACTIVE_EXAM");
         }
         const lock = lockSnap.data() || {};
-        const maxAttempts = Math.min(10, Math.max(1, Number(existingExam.data()?.maxAttempts || 1)));
+        const allowRetakes =
+          currentExam.limitOneAttempt === false ||
+          Number(currentExam.maxAttempts || 1) > 1;
+        const maxAttempts = allowRetakes
+          ? Math.max(50, Number(currentExam.maxAttempts || 50))
+          : Math.min(50, Math.max(1, Number(currentExam.maxAttempts || 1)));
+        let previousActiveWasEmptyExpired = false;
         if (lock.activeAttemptId) {
           const activeRef = adminDb.collection("jdiExamAttempts").doc(String(lock.activeAttemptId));
           const activeSnap = await tx.get(activeRef);
           const activeData = activeSnap.data() || {};
           if (
+            !isRetakeRequest &&
             activeSnap.exists &&
             activeData.status === "in_progress" &&
             activeData.studentUid === c.uid &&
@@ -871,9 +890,18 @@ export const handler: Handler = async event => {
             finalAttemptId = activeRef.id;
             return;
           }
+          if (
+            activeSnap.exists &&
+            activeData.status === "expired" &&
+            Object.keys(activeData.answers || {}).length === 0
+          ) {
+            previousActiveWasEmptyExpired = true;
+          }
         }
-        const usedAttempts = Math.max(Number(lock.attemptCount || 0), legacyAttemptsUsed);
-        if (usedAttempts >= maxAttempts) throw new Error("ATTEMPT_LIMIT");
+        const usedAttempts = previousActiveWasEmptyExpired
+          ? 0
+          : Math.max(Number(lock.attemptCount || 0), legacyAttemptsUsed);
+        if (!allowRetakes && usedAttempts >= maxAttempts) throw new Error("ATTEMPT_LIMIT");
         tx.create(attemptRef, attempt);
         tx.set(
           lockRef,
@@ -1077,6 +1105,11 @@ export const handler: Handler = async event => {
 
       const {
         deliveryMode,
+        workType: validatedWorkType,
+        hasTimeLimit: validatedHasTimeLimit,
+        limitOneAttempt: validatedLimitOneAttempt,
+        maxAttempts: validatedMaxAttempts,
+        releaseGradesPolicy: validatedReleasePolicy,
         title,
         subject,
         description,
@@ -1086,12 +1119,17 @@ export const handler: Handler = async event => {
         maxScore: computedMaxScore,
         durationMinutes,
         gradingMode,
-      } = validatedExam as Exclude<typeof validatedExam, { error: string }>;
+      } = validatedExam as Exclude<typeof validatedExam, { error: string }> & Record<string, any>;
 
-      const requestedMaxAttempts = Number(body.maxAttempts ?? existingDoc?.maxAttempts ?? 1);
-      if (!Number.isInteger(requestedMaxAttempts) || requestedMaxAttempts < 1 || requestedMaxAttempts > 10) {
-        return json(400, { error: "Maximum attempts must be an integer from 1 to 10." });
-      }
+      const resolvedLimitOneAttempt =
+        body.limitOneAttempt !== undefined
+          ? Boolean(body.limitOneAttempt)
+          : validatedLimitOneAttempt !== undefined
+          ? Boolean(validatedLimitOneAttempt)
+          : existingDoc?.limitOneAttempt !== false;
+      const requestedMaxAttempts = resolvedLimitOneAttempt
+        ? 1
+        : Math.min(50, Math.max(2, Number(body.maxAttempts ?? validatedMaxAttempts ?? existingDoc?.maxAttempts ?? 10) || 10));
 
       const fromTime = body.availableFrom ? new Date(String(body.availableFrom)).getTime() : null;
       const untilTime = body.availableUntil ? new Date(String(body.availableUntil)).getTime() : null;
@@ -1104,8 +1142,8 @@ export const handler: Handler = async event => {
       }
 
       const rawPasscode = String(body.passcode || existingDoc?.passcode || randomBytes(4).toString("hex").toUpperCase()).trim();
-      if (rawPasscode.length < 6 || rawPasscode.length > 128) {
-        return json(400, { error: "Passcodes must be between 6 and 128 characters." });
+      if (rawPasscode.length < 4 || rawPasscode.length > 128) {
+        return json(400, { error: "Passcodes must be between 4 and 128 characters." });
       }
       const passcode = rawPasscode.toUpperCase();
       const salt = randomBytes(16).toString("hex");
@@ -1178,12 +1216,18 @@ export const handler: Handler = async event => {
         audienceType,
         studentIds: audienceType === "individual" ? studentIds : [],
         studentUids: audienceType === "individual" ? [...new Set(studentUids)] : [],
+        ...(Array.isArray(body.targetSchoolIds) ? { targetSchoolIds: body.targetSchoolIds } : {}),
+        ...(Array.isArray(body.targetStudentIds) ? { targetStudentIds: body.targetStudentIds } : {}),
+        ...(body.recipientMode ? { recipientMode: body.recipientMode } : {}),
         classIds: normalizedClassIds,
         targetClass: normalizedClassIds[0] || (audienceType === "school" ? "All Classes" : "Individual"),
+        workType: validatedWorkType || body.workType || existingDoc?.workType || "EXAMINATION",
         title,
         subject,
         description,
         instructions: description,
+        ...(body.deliverables !== undefined ? { deliverables: String(body.deliverables || "") } : {}),
+        ...(Array.isArray(body.learningResources) ? { learningResources: body.learningResources } : {}),
         deliveryMode,
         externalUrl: deliveryMode === "EXTERNAL_LINK" ? externalUrl : "",
         url: deliveryMode === "EXTERNAL_LINK" ? externalUrl : "",
@@ -1193,11 +1237,15 @@ export const handler: Handler = async event => {
         questions: deliveryMode === "EXTERNAL_LINK" ? [] : normalizedQuestions,
         questionCount: deliveryMode === "EXTERNAL_LINK" ? 0 : questionCount,
         maxScore,
+        hasTimeLimit: Boolean(validatedHasTimeLimit),
         durationMinutes,
+        limitOneAttempt: resolvedLimitOneAttempt,
         maxAttempts: requestedMaxAttempts,
         shuffleQuestions: body.shuffleQuestions === true,
         shuffleOptions: body.shuffleOptions === true,
         gradingMode,
+        releaseGradesPolicy: validatedReleasePolicy || body.releaseGradesPolicy || (gradingMode === "manual" ? "manual" : "immediate"),
+        dueDate: body.dueDate !== undefined ? body.dueDate : existingDoc?.dueDate || null,
         availableFrom: body.availableFrom ? String(body.availableFrom) : null,
         availableUntil: body.availableUntil ? String(body.availableUntil) : null,
         status,

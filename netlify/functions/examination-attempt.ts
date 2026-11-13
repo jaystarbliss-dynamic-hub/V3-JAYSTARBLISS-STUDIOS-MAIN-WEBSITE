@@ -277,9 +277,25 @@ export const handler: Handler = async event => {
             id: a.examId,
             title: exam.title,
             subject: exam.subject,
+            workType: exam.workType,
             schoolId,
             schoolName,
             classIds: exam.classIds || [],
+            hasTimeLimit:
+              exam.hasTimeLimit !== undefined
+                ? Boolean(exam.hasTimeLimit)
+                : exam.durationMinutes != null && Number(exam.durationMinutes) > 0,
+            durationMinutes: exam.durationMinutes,
+            limitOneAttempt:
+              exam.limitOneAttempt !== undefined
+                ? Boolean(exam.limitOneAttempt)
+                : Number(exam.maxAttempts || 1) <= 1,
+            maxAttempts:
+              exam.limitOneAttempt === false
+                ? Math.max(2, Number(exam.maxAttempts || 10))
+                : Number(exam.maxAttempts || 1),
+            gradingMode: exam.gradingMode || "automatic",
+            releaseGradesPolicy: exam.releaseGradesPolicy,
             maxScore,
           },
           questions: latestReleased ? effectiveQuestions : [],
@@ -351,11 +367,30 @@ export const handler: Handler = async event => {
           id: a.examId,
           title: exam.title,
           subject: exam.subject,
+          workType: exam.workType,
           schoolId,
           schoolName,
           classIds: exam.classIds || [],
-          instructions: exam.instructions,
+          instructions: exam.instructions || exam.description || "",
+          deliverables: exam.deliverables || "",
+          learningResources: Array.isArray(exam.learningResources) ? exam.learningResources : [],
+          resourceUrl: exam.resourceUrl || exam.videoUrl || exam.learningVideoUrl || "",
+          videoUrl: exam.videoUrl || exam.learningVideoUrl || "",
+          hasTimeLimit:
+            exam.hasTimeLimit !== undefined
+              ? Boolean(exam.hasTimeLimit)
+              : exam.durationMinutes != null && Number(exam.durationMinutes) > 0,
           durationMinutes: exam.durationMinutes,
+          limitOneAttempt:
+            exam.limitOneAttempt !== undefined
+              ? Boolean(exam.limitOneAttempt)
+              : Number(exam.maxAttempts || 1) <= 1,
+          maxAttempts:
+            exam.limitOneAttempt === false
+              ? Math.max(2, Number(exam.maxAttempts || 10))
+              : Number(exam.maxAttempts || 1),
+          gradingMode: exam.gradingMode || "automatic",
+          releaseGradesPolicy: exam.releaseGradesPolicy,
           maxScore,
         },
         questions: released ? resultQuestions : submitted ? [] : displayedQuestions,
