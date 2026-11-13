@@ -1790,8 +1790,9 @@ export async function createUnifiedAssignmentOrActivity(input: {
     resourceTitle: norm(input.resourceTitle) || null,
     resourceUrl: norm(input.resourceUrl) || '',
     videoUrl: norm(input.resourceUrl) || '',
+    hasTimeLimit: mappedWorkType === 'EXAMINATION' || mappedWorkType === 'TEST',
     durationMinutes:
-      mappedWorkType === 'EXAMINATION' ? 30 : mappedWorkType === 'TEST' ? 20 : 15,
+      mappedWorkType === 'EXAMINATION' ? 30 : mappedWorkType === 'TEST' ? 20 : null,
     gradingMode: 'manual',
     status: 'active',
     passcode,
@@ -1827,50 +1828,86 @@ export async function createUnifiedAssignmentOrActivity(input: {
     await setDoc(doc(dbInst, 'schoolExams', workId), examPayload, { merge: true });
   }
 
-  // 3. Notify eligible students and their linked parents
+  // 3. Notify eligible students and their linked parents idempotently (Part 5)
+  const isActivity = activityType === 'ACTIVITY';
+  const studentNotifTitle = isActivity ? 'New Activity' : `New ${activityType === 'ASSIGNMENT' ? 'Assignment' : activityType.toLowerCase()}`;
+  const studentNotifMessage = isActivity
+    ? `A new learning activity has been assigned to you by ${tutorName}. Activity: ${title}${subject ? ` (${subject})` : ''}. Open your activities section to get started.`
+    : `You have received a new ${activityType.toLowerCase()} from ${tutorName}. ${activityType === 'ASSIGNMENT' ? 'Assignment' : 'Assessment'}: ${title}${subject ? ` (${subject})` : ''}. Open your assignments section to view the instructions and submission requirements.`;
+  const studentPortalLink =
+    activityType === 'ASSIGNMENT'
+      ? '/portal/student/assignments'
+      : '/portal/student/assessments';
+
   const notifyPromises: Promise<any>[] = [];
+  const notifiedStudentUids = new Set<string>();
+  const notifiedParentIds = new Set<string>();
+
   eligibleStudents.forEach((st) => {
     const studentUid = norm(st.firebaseUid || st.id);
-    if (studentUid) {
-      notifyPromises.push(
-        addDoc(collection(db, 'notifications'), {
-          recipientId: studentUid,
-          title: `New ${activityType.toLowerCase()} assigned: ${title}`,
-          message: `${tutorName} assigned "${title}" (${subject}).`,
-          type: 'broadcast',
-          read: false,
-          priority: 'normal',
-          assignmentId: workId,
-          studentId: st.id,
-          link:
-            activityType === 'ASSIGNMENT'
-              ? '/portal/student/assignments'
-              : '/portal/student/assessments',
-          timestamp: serverTimestamp(),
-          createdAt: serverTimestamp(),
-        }).catch(() => null)
-      );
+    if (studentUid && !notifiedStudentUids.has(studentUid)) {
+      notifiedStudentUids.add(studentUid);
+      const studentNotifId = `notif-assign-${workId}-${studentUid}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const studentPayload = {
+        id: studentNotifId,
+        recipientId: studentUid,
+        userId: studentUid,
+        studentId: st.id,
+        title: studentNotifTitle,
+        message: studentNotifMessage,
+        type: 'assessment_published',
+        category: activityType.toLowerCase(),
+        read: false,
+        priority: 'normal',
+        assignmentId: workId,
+        examId: workId,
+        tutorId: uid,
+        tutorName,
+        link: studentPortalLink,
+        actionUrl: studentPortalLink,
+        timestamp: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      };
+      for (const dbInst of getAllClientDatabases()) {
+        notifyPromises.push(
+          setDoc(doc(dbInst, 'notifications', studentNotifId), studentPayload, { merge: true }).catch(() => null),
+          setDoc(doc(dbInst, 'jdiNotifications', studentNotifId), studentPayload, { merge: true }).catch(() => null)
+        );
+      }
     }
     const pId = norm(st.parentId);
-    if (pId) {
-      notifyPromises.push(
-        addDoc(collection(db, 'notifications'), {
-          recipientId: pId,
-          title: `New ${activityType.toLowerCase()} for ${st.fullName || 'your child'}`,
-          message: `${st.fullName || 'Your child'} has a new ${activityType.toLowerCase()} in ${subject}: "${title}".`,
-          type: 'broadcast',
-          read: false,
-          priority: 'normal',
-          assignmentId: workId,
-          studentId: st.id,
-          link:
-            activityType === 'ASSIGNMENT'
-              ? '/portal/parent/assignments'
-              : '/portal/parent/assessments',
-          timestamp: serverTimestamp(),
-          createdAt: serverTimestamp(),
-        }).catch(() => null)
-      );
+    if (pId && !notifiedParentIds.has(pId)) {
+      notifiedParentIds.add(pId);
+      const parentNotifId = `notif-assign-parent-${workId}-${pId}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const parentPortalLink =
+        activityType === 'ASSIGNMENT'
+          ? '/portal/parent/assignments'
+          : '/portal/parent/assessments';
+      const parentPayload = {
+        id: parentNotifId,
+        recipientId: pId,
+        userId: pId,
+        title: `New ${activityType.toLowerCase()} for ${st.fullName || 'your child'}`,
+        message: `${st.fullName || 'Your child'} has received a new ${activityType.toLowerCase()} from ${tutorName} in ${subject}: "${title}".`,
+        type: 'assessment_published',
+        read: false,
+        priority: 'normal',
+        assignmentId: workId,
+        examId: workId,
+        studentId: st.id,
+        tutorId: uid,
+        tutorName,
+        link: parentPortalLink,
+        actionUrl: parentPortalLink,
+        timestamp: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      };
+      for (const dbInst of getAllClientDatabases()) {
+        notifyPromises.push(
+          setDoc(doc(dbInst, 'notifications', parentNotifId), parentPayload, { merge: true }).catch(() => null),
+          setDoc(doc(dbInst, 'jdiNotifications', parentNotifId), parentPayload, { merge: true }).catch(() => null)
+        );
+      }
     }
   });
   await Promise.all(notifyPromises);

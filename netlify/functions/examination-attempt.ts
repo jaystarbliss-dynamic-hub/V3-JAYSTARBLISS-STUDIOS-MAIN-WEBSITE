@@ -22,6 +22,7 @@ import {
   resolveAttemptQuestions,
   normalizeClassName,
   isAttemptResultReleased,
+  shouldAutoReleaseAttemptResult,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -202,22 +203,26 @@ export const handler: Handler = async event => {
       );
       const className = normalizeClassName(rawClass) || rawClass;
 
-      const deadline = new Date(a.deadlineAt).getTime();
-      if (a.status === "in_progress" && (!Number.isFinite(deadline) || Date.now() >= deadline)) {
+      const hasDeadline = Boolean(a.deadlineAt);
+      const deadline = hasDeadline ? new Date(a.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
+      if (a.status === "in_progress" && hasDeadline && Number.isFinite(deadline) && Date.now() >= deadline) {
         const expiry = await adminDb.runTransaction(async tx => {
           const currentSnap = await tx.get(ref);
           if (!currentSnap.exists) return { kind: "missing" as const };
           const current = currentSnap.data() || {};
           if (current.studentUid !== c.uid && current.studentId !== student.id) return { kind: "owner" as const };
           if (current.status !== "in_progress") return { kind: "closed" as const, current };
-          const currentDeadline = new Date(current.deadlineAt).getTime();
-          if (Number.isFinite(currentDeadline) && Date.now() < currentDeadline) {
+          const currentDeadline = current.deadlineAt ? new Date(current.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
+          if (!current.deadlineAt || (Number.isFinite(currentDeadline) && Date.now() < currentDeadline)) {
             return { kind: "active" as const, current };
           }
-          const grading = gradeAnswers({ ...exam, questions: effectiveQuestions }, current.answers || {});
+          const effectiveExam = { ...exam, questions: effectiveQuestions };
+          const grading = gradeAnswers(effectiveExam, current.answers || {});
+          const autoReleaseNow = shouldAutoReleaseAttemptResult(effectiveExam, grading);
           tx.update(ref, {
             status: "expired",
             ...grading,
+            ...(autoReleaseNow ? { resultReleased: true, releasedAt: FieldValue.serverTimestamp() } : {}),
             schoolName,
             studentName,
             className,
@@ -225,7 +230,7 @@ export const handler: Handler = async event => {
             submittedAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
           });
-          return { kind: "expired" as const, current, grading };
+          return { kind: "expired" as const, current, grading, autoReleaseNow };
         });
         if (expiry.kind === "missing") return json(404, { error: "Attempt not found." });
         if (expiry.kind === "owner") return json(403, { error: "Not authorised." });
@@ -237,8 +242,16 @@ export const handler: Handler = async event => {
         if (expiry.kind === "active") {
           return json(409, { error: "The assessment timer has not expired yet." });
         }
-        const latest = expiry.kind === "closed" ? expiry.current : { ...expiry.current, status: "expired" };
-        const latestReleased = isAttemptResultReleased(latest);
+        const latest =
+          expiry.kind === "closed"
+            ? expiry.current
+            : {
+                ...expiry.current,
+                status: "expired",
+                ...expiry.grading,
+                ...(expiry.autoReleaseNow ? { resultReleased: true, releasedAt: new Date().toISOString() } : {}),
+              };
+        const latestReleased = isAttemptResultReleased(latest, { ...exam, questions: effectiveQuestions });
         return json(200, {
           attempt: {
             id,
@@ -258,6 +271,7 @@ export const handler: Handler = async event => {
                 : undefined,
             releasedAt: latestReleased ? (latest.releasedAt || latest.updatedAt || new Date().toISOString()) : undefined,
             resultReleased: latestReleased,
+            questionResults: latestReleased ? latest.questionResults : undefined,
           },
           exam: {
             id: a.examId,
@@ -268,12 +282,12 @@ export const handler: Handler = async event => {
             classIds: exam.classIds || [],
             maxScore,
           },
-          questions: [],
+          questions: latestReleased ? effectiveQuestions : [],
         });
       }
 
       const submitted = ["submitted", "expired", "graded"].includes(String(a.status));
-      const released = isAttemptResultReleased(a);
+      const released = isAttemptResultReleased(a, { ...exam, questions: effectiveQuestions });
       const safeQuestions = effectiveQuestions.map(safeQuestion);
       const questionById = new Map(safeQuestions.map((q: any) => [String(q.id), q]));
       const orderedQuestions = Array.isArray(a.questionOrder)
@@ -379,8 +393,9 @@ export const handler: Handler = async event => {
       if (a.status !== "in_progress") {
         return json(409, { error: "This assessment attempt is no longer editable." });
       }
-      const deadline = new Date(a.deadlineAt).getTime();
-      const isExpired = !Number.isFinite(deadline) || Date.now() >= deadline;
+      const hasDeadline = Boolean(a.deadlineAt);
+      const deadline = hasDeadline ? new Date(a.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
+      const isExpired = hasDeadline && Number.isFinite(deadline) && Date.now() >= deadline;
 
       // Fast-path for ordinary non-expired answer autosaves: avoid fetching the exam document if question IDs are already known on the attempt
       if (action === "save" && !isExpired) {
@@ -417,8 +432,9 @@ export const handler: Handler = async event => {
           const current = currentSnap.data() || {};
           if (current.studentUid !== c.uid && (!student || current.studentId !== student.id)) return "owner";
           if (current.status !== "in_progress") return "closed";
-          const currentDeadline = new Date(current.deadlineAt).getTime();
-          if (!Number.isFinite(currentDeadline) || Date.now() >= currentDeadline) return "expired";
+          const currentHasDeadline = Boolean(current.deadlineAt);
+          const currentDeadline = currentHasDeadline ? new Date(current.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
+          if (currentHasDeadline && Number.isFinite(currentDeadline) && Date.now() >= currentDeadline) return "expired";
           tx.update(ref, { answers: clean, updatedAt: FieldValue.serverTimestamp() });
           return "ok";
         });
@@ -450,17 +466,20 @@ export const handler: Handler = async event => {
           if (current.status !== "in_progress") {
             return { kind: "closed" as const, status: String(current.status || "closed") };
           }
-          const currentDeadline = new Date(current.deadlineAt).getTime();
-          if (Number.isFinite(currentDeadline) && Date.now() < currentDeadline) return { kind: "active" as const };
-          const grading = gradeAnswers({ ...exam, questions: effectiveQuestions }, current.answers || {});
+          const currentDeadline = current.deadlineAt ? new Date(current.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
+          if (!current.deadlineAt || (Number.isFinite(currentDeadline) && Date.now() < currentDeadline)) return { kind: "active" as const };
+          const effectiveExam = { ...exam, questions: effectiveQuestions };
+          const grading = gradeAnswers(effectiveExam, current.answers || {});
+          const autoReleaseNow = shouldAutoReleaseAttemptResult(effectiveExam, grading);
           tx.update(ref, {
             status: "expired",
             ...grading,
+            ...(autoReleaseNow ? { resultReleased: true, releasedAt: FieldValue.serverTimestamp() } : {}),
             deadlineAt: FieldValue.delete(),
             submittedAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
           });
-          return { kind: "expired" as const, grading, attempt: current };
+          return { kind: "expired" as const, grading, attempt: current, autoReleaseNow };
         });
         if (expiry.kind === "missing") return json(404, { error: "Attempt not found." });
         if (expiry.kind === "owner") return json(403, { error: "Not authorised." });
@@ -480,7 +499,7 @@ export const handler: Handler = async event => {
         });
       }
 
-      if (action === "expire" && Date.now() < deadline) {
+      if (action === "expire" && (!hasDeadline || Date.now() < deadline)) {
         return json(403, { error: "The assessment timer has not expired yet." });
       }
 
@@ -504,6 +523,7 @@ export const handler: Handler = async event => {
             });
           }
         }
+        const effectiveExam = { ...exam, questions: effectiveQuestions };
         const submission = await adminDb.runTransaction(async tx => {
           const currentSnap = await tx.get(ref);
           if (!currentSnap.exists) return { kind: "missing" as const };
@@ -514,32 +534,38 @@ export const handler: Handler = async event => {
           if (current.status !== "in_progress") {
             return { kind: "closed" as const, status: String(current.status || "closed") };
           }
-          const currentDeadline = new Date(current.deadlineAt).getTime();
-          const deadlinePassed = !Number.isFinite(currentDeadline) || Date.now() >= currentDeadline;
+          const currentHasDeadline = Boolean(current.deadlineAt);
+          const currentDeadline = currentHasDeadline ? new Date(current.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
+          const deadlinePassed = currentHasDeadline && Number.isFinite(currentDeadline) && Date.now() >= currentDeadline;
           const finalAnswers = answersForFinalization(current.answers, requestedAnswers, deadlinePassed);
           if (deadlinePassed) {
-            const grading = gradeAnswers({ ...exam, questions: effectiveQuestions }, finalAnswers);
+            const grading = gradeAnswers(effectiveExam, finalAnswers);
+            const autoReleaseNow = shouldAutoReleaseAttemptResult(effectiveExam, grading);
             tx.update(ref, {
               answers: finalAnswers,
               status: "expired",
               ...grading,
+              ...(autoReleaseNow ? { resultReleased: true, releasedAt: FieldValue.serverTimestamp() } : {}),
               deadlineAt: FieldValue.delete(),
               submittedAt: FieldValue.serverTimestamp(),
               updatedAt: FieldValue.serverTimestamp(),
             });
-            return { kind: "expired" as const, grading, attempt: current };
+            return { kind: "expired" as const, grading, attempt: current, autoReleaseNow };
           }
           if (action === "expire") return { kind: "active" as const };
-          const grading = gradeAnswers({ ...exam, questions: effectiveQuestions }, finalAnswers);
+          const grading = gradeAnswers(effectiveExam, finalAnswers);
+          const autoReleaseNow = shouldAutoReleaseAttemptResult(effectiveExam, grading);
+          const finalStatus = autoReleaseNow ? "graded" : "submitted";
           tx.update(ref, {
             answers: finalAnswers,
             ...grading,
-            status: "submitted",
+            status: finalStatus,
+            ...(autoReleaseNow ? { resultReleased: true, releasedAt: FieldValue.serverTimestamp() } : {}),
             deadlineAt: FieldValue.delete(),
             submittedAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
           });
-          return { kind: "submitted" as const, grading, attempt: current };
+          return { kind: "submitted" as const, status: finalStatus, grading, attempt: current, autoReleaseNow };
         });
         if (submission.kind === "missing") return json(404, { error: "Attempt not found." });
         if (submission.kind === "owner") return json(403, { error: "Not authorised." });
@@ -565,7 +591,17 @@ export const handler: Handler = async event => {
           await notifyStaff(submission.attempt, exam, id).catch(err =>
             console.warn("JDI staff notification failed", err)
           );
-          return json(200, { ok: true, status: "expired", autoGraded: submission.grading.autoGraded });
+          return json(200, {
+            ok: true,
+            status: "expired",
+            autoGraded: submission.grading.autoGraded,
+            resultReleased: submission.autoReleaseNow,
+            score: submission.autoReleaseNow ? submission.grading.score : undefined,
+            maxScore: submission.grading.maxScore,
+            percentage: submission.autoReleaseNow ? submission.grading.percentage : undefined,
+            questionResults: submission.autoReleaseNow ? submission.grading.questionResults : undefined,
+            questions: submission.autoReleaseNow ? effectiveQuestions : undefined,
+          });
         }
         const latestSnap = await ref.get().catch(() => null);
         if (latestSnap?.exists) {
@@ -590,13 +626,17 @@ export const handler: Handler = async event => {
         await notifyStaff(submission.attempt, exam, id).catch(err =>
           console.warn("JDI staff notification failed", err)
         );
-        const released = isAttemptResultReleased(submission.attempt);
+        const released = Boolean(submission.autoReleaseNow) || isAttemptResultReleased(submission.attempt, effectiveExam);
         return json(200, {
           ok: true,
-          status: "submitted",
+          status: submission.status,
           autoGraded: submission.grading.autoGraded,
-          score: released && submission.grading.autoGraded ? submission.grading.score : undefined,
+          score: released ? submission.grading.score : undefined,
           maxScore: submission.grading.maxScore,
+          percentage: released ? submission.grading.percentage : undefined,
+          questionResults: released ? submission.grading.questionResults : undefined,
+          questions: released ? effectiveQuestions : undefined,
+          releasedAt: released ? new Date().toISOString() : undefined,
           resultReleased: released,
         });
       }

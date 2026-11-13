@@ -275,7 +275,7 @@ function tutorSafe(exam: any, callerInfo: any, schoolNameMap: Map<string, string
 
 async function notifyStudentsOfPublishedExam(examId: string, examData: Record<string, any>) {
   const status = String(examData.status || "draft");
-  if (status !== "scheduled" && status !== "active") return;
+  if (status !== "active") return;
 
   const recipients = new Set<string>();
   const schoolId = String(examData.schoolId || "").trim();
@@ -287,16 +287,34 @@ async function notifyStudentsOfPublishedExam(examId: string, examData: Record<st
         : []
   );
 
-  if (examData.audienceType === "individual") {
-    if (Array.isArray(examData.studentUids)) {
-      examData.studentUids.forEach((uid: any) => {
-        if (uid) recipients.add(String(uid).trim());
-      });
+  const isIndividual =
+    examData.audienceType === "individual" ||
+    String(examData.recipientMode || "").toUpperCase() === "PRIVATE_LEARNERS" ||
+    schoolId === "private";
+
+  if (isIndividual) {
+    for (const arr of [examData.studentUids, examData.studentIds, examData.targetStudentIds]) {
+      if (Array.isArray(arr)) {
+        arr.forEach((idVal: any) => {
+          if (idVal) recipients.add(String(idVal).trim());
+        });
+      }
     }
-    if (Array.isArray(examData.studentIds)) {
-      examData.studentIds.forEach((sid: any) => {
-        if (sid) recipients.add(String(sid).trim());
-      });
+    // Resolve firebaseUid for any student doc IDs
+    const currentIds = Array.from(recipients);
+    for (const sid of currentIds) {
+      for (const coll of ["individualStudents", "students"]) {
+        try {
+          const snap = await adminDb.collection(coll).doc(sid).get();
+          if (snap.exists) {
+            const d = snap.data() || {};
+            const fUid = String(d.firebaseUid || d.userId || d.uid || "").trim();
+            if (fUid) recipients.add(fUid);
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
   } else if (schoolId) {
     for (const coll of ["individualStudents", "students"]) {
@@ -320,53 +338,86 @@ async function notifyStudentsOfPublishedExam(examId: string, examData: Record<st
   const recipientList = Array.from(recipients).filter(Boolean);
   if (!recipientList.length) return;
 
-  const classLabel = targetClasses.length ? targetClasses.join(", ") : "All Assigned Learners";
-  const dateLabel = examData.availableFrom
-    ? new Date(String(examData.availableFrom)).toLocaleString("en-GB", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      })
-    : "Now Available";
+  const workType = normalizeWorkType(examData.workType, examData);
+  const workLabel =
+    workType === "ASSIGNMENT"
+      ? "Assignment"
+      : workType === "ACTIVITY"
+      ? "Activity"
+      : workType === "TEST"
+      ? "Test"
+      : "Examination";
+  const classLabel = targetClasses.length ? targetClasses.join(", ") : "Assigned Cohort";
+  const tutorName = String(examData.tutorName || "Your Tutor").trim();
+  const requiresPasscode = workType === "TEST" || workType === "EXAMINATION";
+  const passcodeText =
+    requiresPasscode && examData.passcode ? ` • Passcode: ${String(examData.passcode).toUpperCase()}` : "";
 
-  const title =
-    status === "active"
-      ? `Assessment Now Active: ${examData.title}`
-      : `Upcoming Assessment Scheduled: ${examData.title}`;
-  const message = `${examData.title} (${examData.subject || "General"} • ${classLabel}) is ${
-    status === "active" ? "now open for attempts" : `scheduled for ${dateLabel}`
-  }.`;
+  const title = `New ${workLabel} Active: ${examData.title}`;
+  const message = `${tutorName} published ${workLabel.toLowerCase()} "${examData.title}" (${
+    examData.subject || "General"
+  } • ${classLabel})${passcodeText}. Open your portal to begin.`;
+  const portalLink =
+    workType === "ASSIGNMENT" ? "/portal/student/assignments" : "/portal/student/exams";
 
   for (let offset = 0; offset < recipientList.length; offset += 50) {
     const chunk = recipientList.slice(offset, offset + 50);
     await Promise.all(
       chunk.map(async uid => {
         const dedupeId = createHash("sha256")
-          .update(`exam-publish:${examId}:${status}:${uid}`)
+          .update(`exam-publish:${examId}:active:${uid}`)
           .digest("hex");
-        const notifRef = adminDb.collection("jdiNotifications").doc(dedupeId);
-        await adminDb
-          .runTransaction(async tx => {
-            const existing = await tx.get(notifRef);
-            if (existing.exists) return;
-            tx.create(notifRef, {
-              recipientUid: uid,
-              type: status === "active" ? "exam_active" : "exam_scheduled",
-              title,
-              message,
-              examId,
-              examTitle: examData.title,
-              subject: examData.subject || "",
-              className: classLabel,
-              schoolId: schoolId || null,
-              schoolName: examData.schoolName || null,
-              availableFrom: examData.availableFrom || null,
-              availableUntil: examData.availableUntil || null,
-              status,
-              isRead: false,
-              createdAt: FieldValue.serverTimestamp(),
-            });
-          })
-          .catch(() => undefined);
+        const jdiNotifRef = adminDb.collection("jdiNotifications").doc(dedupeId);
+        const mainNotifRef = adminDb.collection("notifications").doc(dedupeId);
+        await Promise.all([
+          adminDb
+            .runTransaction(async tx => {
+              const existing = await tx.get(jdiNotifRef);
+              if (existing.exists) return;
+              tx.create(jdiNotifRef, {
+                recipientUid: uid,
+                type: "exam_active",
+                title,
+                message,
+                examId,
+                examTitle: examData.title,
+                workType,
+                subject: examData.subject || "",
+                className: classLabel,
+                schoolId: schoolId || null,
+                schoolName: examData.schoolName || null,
+                availableFrom: examData.availableFrom || null,
+                availableUntil: examData.availableUntil || null,
+                status: "active",
+                link: portalLink,
+                isRead: false,
+                createdAt: FieldValue.serverTimestamp(),
+              });
+            })
+            .catch(() => undefined),
+          adminDb
+            .runTransaction(async tx => {
+              const existing = await tx.get(mainNotifRef);
+              if (existing.exists) return;
+              tx.create(mainNotifRef, {
+                recipientId: uid,
+                recipientUid: uid,
+                type: "broadcast",
+                title,
+                message,
+                examId,
+                assignmentId: examId,
+                workType,
+                subject: examData.subject || "",
+                link: portalLink,
+                read: false,
+                priority: "normal",
+                timestamp: FieldValue.serverTimestamp(),
+                createdAt: FieldValue.serverTimestamp(),
+              });
+            })
+            .catch(() => undefined),
+        ]);
       })
     );
   }
@@ -465,16 +516,38 @@ export const handler: Handler = async event => {
             const plus12h = until + 12 * 60 * 60 * 1000;
             until = plus12h > from ? plus12h : Number.MAX_SAFE_INTEGER;
           }
+          // Automatic scheduled activation: if status is scheduled and activation time has arrived, promote to active
+          let effectiveRawStatus = exam._rawStatus;
+          if (
+            effectiveRawStatus === "scheduled" &&
+            from > 0 &&
+            now >= from &&
+            now < until
+          ) {
+            effectiveRawStatus = "active";
+            const activatedData = { ...exam._raw, status: "active" };
+            void Promise.all([
+              adminDb.collection("jdiExams").doc(exam.id).set({ status: "active", updatedAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => undefined),
+              adminDb.collection("schoolExams").doc(exam.id).set({ status: "active", updatedAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => undefined),
+              notifyStudentsOfPublishedExam(exam.id, activatedData).catch(() => undefined),
+            ]);
+          }
           const status =
-            exam._rawStatus === "completed" || (Number.isFinite(until) && now >= until)
+            effectiveRawStatus === "completed" || (Number.isFinite(until) && now >= until)
               ? "completed"
-              : (Number.isFinite(from) && from > 0 && now < from) || exam._rawStatus === "scheduled"
+              : (Number.isFinite(from) && from > 0 && now < from) || effectiveRawStatus === "scheduled"
                 ? "upcoming"
-                : exam._rawStatus === "active"
+                : effectiveRawStatus === "active"
                   ? "active"
                   : "upcoming";
           const { _raw, _rawStatus, ...safeExam } = exam;
-          return { ...safeExam, rawStatus: _rawStatus, status };
+          return {
+            ...safeExam,
+            rawStatus: effectiveRawStatus,
+            status,
+            // Passcode becomes visible to eligible student recipients once the assessment is active
+            passcode: status === "active" && _raw?.passcode ? String(_raw.passcode) : undefined,
+          };
         });
 
       const [attemptsByStudentId, attemptsByUid] = await Promise.all([
@@ -492,7 +565,7 @@ export const handler: Handler = async event => {
         if (!current || startedMs >= (current.startedAtMs || 0)) {
           const examDoc = examDocs.get(String(a.examId))?.data() || {};
           const maxScore = computeExamMaxScore(examDoc, a);
-          const released = isAttemptResultReleased(a);
+          const released = isAttemptResultReleased(a, examDoc);
           const resolvedReleasedAt = a.releasedAt?.toDate
             ? a.releasedAt.toDate().toISOString()
             : a.releasedAt || (released ? (a.updatedAt?.toDate ? a.updatedAt.toDate().toISOString() : a.updatedAt || a.submittedAt || new Date().toISOString()) : undefined);
@@ -592,6 +665,16 @@ export const handler: Handler = async event => {
         exam
       );
 
+      // Auto-promote scheduled assessment when its scheduled activation time has arrived
+      if (exam.status === "scheduled" && from > 0 && now >= from && now < until) {
+        exam.status = "active";
+        await Promise.all([
+          adminDb.collection("jdiExams").doc(examId).set({ status: "active", updatedAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => undefined),
+          adminDb.collection("schoolExams").doc(examId).set({ status: "active", updatedAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => undefined),
+          notifyStudentsOfPublishedExam(examId, { ...exam, status: "active" }).catch(() => undefined),
+        ]);
+      }
+
       const active =
         exam.status === "active" &&
         (!Number.isFinite(from) || now >= from) &&
@@ -667,7 +750,7 @@ export const handler: Handler = async event => {
         if (
           legacy.status === "in_progress" &&
           legacy.studentUid === c.uid &&
-          new Date(legacy.deadlineAt).getTime() > now
+          (!legacy.deadlineAt || new Date(legacy.deadlineAt).getTime() > now)
         ) {
           return json(200, { attemptId: legacyAttemptId, resumed: true, deliveryMode: "NATIVE" });
         }
@@ -679,7 +762,15 @@ export const handler: Handler = async event => {
       const lockRef = adminDb.collection("jdiAttemptLimits").doc(lockId);
       const attemptId = randomBytes(16).toString("hex");
       const attemptRef = adminDb.collection("jdiExamAttempts").doc(attemptId);
-      const duration = Math.min(525600, Math.max(1, Number(exam.durationMinutes || 30)));
+      const hasTimeLimit =
+        exam.hasTimeLimit !== undefined
+          ? Boolean(exam.hasTimeLimit)
+          : exam.durationMinutes !== null &&
+            exam.durationMinutes !== undefined &&
+            Number(exam.durationMinutes) > 0;
+      const duration = hasTimeLimit
+        ? Math.min(525600, Math.max(1, Number(exam.durationMinutes || 30)))
+        : null;
       const questions = Array.isArray(exam.questions) ? exam.questions : [];
       const shuffle = <T,>(items: T[]) => {
         const copy = [...items];
@@ -729,7 +820,7 @@ export const handler: Handler = async event => {
         maxScore,
         questionsSnapshot: questions,
         startedAt: FieldValue.serverTimestamp(),
-        deadlineAt: new Date(now + duration * 60000).toISOString(),
+        deadlineAt: duration ? new Date(now + duration * 60000).toISOString() : null,
         answers: {},
         questionOrder,
         optionOrderMap,
@@ -752,9 +843,13 @@ export const handler: Handler = async event => {
           const plus12h = currentUntil + 12 * 60 * 60 * 1000;
           currentUntil = plus12h > currentFrom ? plus12h : Number.MAX_SAFE_INTEGER;
         }
+        const effectiveStatus =
+          currentExam.status === "scheduled" && currentFrom > 0 && Date.now() >= currentFrom
+            ? "active"
+            : currentExam.status;
         if (
           !existingExam.exists ||
-          currentExam.status !== "active" ||
+          effectiveStatus !== "active" ||
           (Number.isFinite(currentFrom) && Date.now() < currentFrom) ||
           (Number.isFinite(currentUntil) && Date.now() >= currentUntil)
         ) {
@@ -770,7 +865,7 @@ export const handler: Handler = async event => {
             activeSnap.exists &&
             activeData.status === "in_progress" &&
             activeData.studentUid === c.uid &&
-            new Date(activeData.deadlineAt).getTime() > Date.now()
+            (!activeData.deadlineAt || new Date(activeData.deadlineAt).getTime() > Date.now())
           ) {
             resumed = true;
             finalAttemptId = activeRef.id;

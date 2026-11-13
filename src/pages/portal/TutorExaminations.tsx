@@ -34,6 +34,7 @@ import {
   classifyStudentEnrolment,
   isAttemptOverdueForExpiry,
   gradeAnswers,
+  classesMatch,
 } from "../../lib/classes";
 import {
   KeyRound,
@@ -83,18 +84,32 @@ import {
 import { AssessmentOverview, type AssessmentListItem } from "../../components/assessment/AssessmentOverview";
 import { AssessmentEditor } from "../../components/assessment/AssessmentEditor";
 import { AssessmentWizard } from "../../components/assessment/AssessmentWizard";
+import {
+  RecipientSelectorModal,
+  type RecipientSelectionResult,
+} from "../../components/assessment/RecipientSelectorModal";
 import type { QuestionBankItem } from "../../components/assessment/ImportQuestionsModal";
 
 type ExistingExamItem = {
   id: string;
   title: string;
   subject: string;
+  subProgramName?: string;
   workType?: AcademicWorkType;
   isUngradedActivity?: boolean;
   submissionFormat?: "QUESTIONS" | "DELIVERABLE";
   taskSubmissionMethod?: "both" | "link" | "file" | "text" | "none";
+  deliverables?: string;
+  resourceTitle?: string;
   resourceUrl?: string;
   videoUrl?: string;
+  learningResources?: Array<{
+    id?: string;
+    title: string;
+    url: string;
+    instructions?: string;
+    type?: string;
+  }>;
   dueDate?: string | null;
   recipientMode?: "SCHOOL_CLASS" | "PRIVATE_LEARNERS" | "MULTI_TARGET";
   targetSchoolIds?: string[];
@@ -113,8 +128,10 @@ type ExistingExamItem = {
   targetClass?: string;
   className?: string;
   classIds?: string[];
+  hasTimeLimit?: boolean;
   durationMinutes?: number | null;
   gradingMode?: "automatic" | "manual";
+  hasPasscode?: boolean;
   passcode?: string;
   availableFrom?: string | null;
   availableUntil?: string | null;
@@ -122,6 +139,7 @@ type ExistingExamItem = {
   questionCount?: number;
   maxScore?: number;
   description?: string;
+  instructions?: string;
   makeQuiz?: boolean;
   releaseGradesPolicy?: "immediate" | "manual";
   showMissedQuestions?: boolean;
@@ -166,6 +184,8 @@ type ExamAttemptRecord = {
 
 type EnrolledStudent = {
   id: string;
+  uid?: string;
+  firebaseUid?: string;
   fullName: string;
   studentName?: string;
   email?: string;
@@ -177,6 +197,15 @@ type EnrolledStudent = {
   parentName?: string;
   parentEmail?: string;
   plan?: string;
+  track?: string;
+  programId?: string;
+  programName?: string;
+  programs?: any[];
+  enrolledPrograms?: any[];
+  programIds?: string[];
+  selectedProgramIds?: string[];
+  assignedProgramIds?: string[];
+  subjects?: any[];
   assignmentCategory?: "school" | "private";
   isPrivate?: boolean;
   privateSubType?: "parent" | "individual" | null;
@@ -263,7 +292,7 @@ export default function TutorExaminations() {
   const [externalUrl, setExternalUrl] = useState("");
 
   // School & Class State
-  const [assignedSchools, setAssignedSchools] = useState<{ id: string; name: string }[]>([]);
+  const [assignedSchools, setAssignedSchools] = useState<{ id: string; name: string; [key: string]: any }[]>([]);
   const [schoolId, setSchoolId] = useState(() => {
     const params = new URLSearchParams(location.search);
     const schId = params.get("schoolId") || "";
@@ -282,7 +311,7 @@ export default function TutorExaminations() {
 
   // Settings Tab State (for Native Assessments)
   const [makeQuiz, setMakeQuiz] = useState(true);
-  const [releaseGradesPolicy, setReleaseGradesPolicy] = useState<"immediate" | "manual">("manual");
+  const [releaseGradesPolicy, setReleaseGradesPolicy] = useState<"immediate" | "manual">("immediate");
   const [showMissedQuestions, setShowMissedQuestions] = useState(true);
   const [showCorrectAnswers, setShowCorrectAnswers] = useState(true);
   const [showPointValues, setShowPointValues] = useState(true);
@@ -305,6 +334,12 @@ export default function TutorExaminations() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [showPreview, setShowPreview] = useState(false);
+
+  // Duplicate Assessment Workflow State (Part 6)
+  const [duplicatingBusyId, setDuplicatingBusyId] = useState<string | null>(null);
+  const [duplicateRecipientDraft, setDuplicateRecipientDraft] = useState<ExistingExamItem | null>(null);
+  const [linkDuplicateReviewExam, setLinkDuplicateReviewExam] = useState<ExistingExamItem | null>(null);
+  const [savingLinkDuplicate, setSavingLinkDuplicate] = useState<boolean>(false);
 
   // Import Modal State
   const [showImportModal, setShowImportModal] = useState(false);
@@ -542,7 +577,7 @@ export default function TutorExaminations() {
             if (!schoolDocsMap.has(d.id)) schoolDocsMap.set(d.id, d);
           });
         });
-        const schoolsList: { id: string; name: string }[] = [];
+        const schoolsList: { id: string; name: string; [key: string]: any }[] = [];
         const currentEmailLower = String(
           currentUser.email || userData.email || sessionStorage.getItem("userEmail") || ""
         )
@@ -550,14 +585,20 @@ export default function TutorExaminations() {
           .toLowerCase();
 
         Array.from(schoolDocsMap.values()).forEach((d: any) => {
-          const s = d.data();
+          const s = d.data() || {};
           const sId = d.id;
           const sCode = String(s.schoolId || s.code || s.schoolCode || "").trim();
           const sName =
             resolvePartnerSchoolName(s.name, s.schoolName) || `Partner School (${sId})`;
+          const schoolEntry = {
+            ...s,
+            id: sId,
+            name: sName,
+            code: sCode,
+          };
 
           if (isAdmin) {
-            schoolsList.push({ id: sId, name: sName });
+            schoolsList.push(schoolEntry);
           } else {
             const extractIds = (arr: any) =>
               Array.isArray(arr)
@@ -619,7 +660,7 @@ export default function TutorExaminations() {
               s.tutorId === currentUser.uid ||
               s.staffId === currentUser.uid
             ) {
-              schoolsList.push({ id: sId, name: sName });
+              schoolsList.push(schoolEntry);
             }
           }
         });
@@ -635,6 +676,7 @@ export default function TutorExaminations() {
         fallbackSchools.forEach((fs: any) => {
           if (fs.id && !existingSchoolIds.has(fs.id)) {
             schoolsList.push({
+              ...fs,
               id: fs.id,
               name: resolvePartnerSchoolName(fs.name, fs.schoolName) || `Partner School (${fs.id})`,
             });
@@ -681,6 +723,8 @@ export default function TutorExaminations() {
 
           const entry: EnrolledStudent = {
             id,
+            uid: String(raw.firebaseUid || raw.userId || raw.uid || "").trim(),
+            firebaseUid: String(raw.firebaseUid || raw.userId || raw.uid || "").trim(),
             fullName,
             studentName: fullName,
             email: String(raw.email || raw.studentEmail || "").trim(),
@@ -692,6 +736,15 @@ export default function TutorExaminations() {
             parentName: String(raw.parentName || raw.guardianName || "").trim(),
             parentEmail: String(raw.parentEmail || raw.guardianEmail || "").trim(),
             plan: String(raw.plan || raw.programName || raw.track || "").trim(),
+            track: String(raw.track || raw.learningTrack || raw.plan || "").trim(),
+            programId: String(raw.programId || "").trim(),
+            programName: String(raw.programName || raw.programTitle || raw.program || raw.plan || "").trim(),
+            programs: Array.isArray(raw.programs) ? raw.programs : undefined,
+            enrolledPrograms: Array.isArray(raw.enrolledPrograms) ? raw.enrolledPrograms : undefined,
+            programIds: Array.isArray(raw.programIds) ? raw.programIds : undefined,
+            selectedProgramIds: Array.isArray(raw.selectedProgramIds) ? raw.selectedProgramIds : undefined,
+            assignedProgramIds: Array.isArray(raw.assignedProgramIds) ? raw.assignedProgramIds : undefined,
+            subjects: Array.isArray(raw.subjects) ? raw.subjects : undefined,
             assignmentCategory: classification.isSchool ? "school" : "private",
             isPrivate: classification.isPrivate,
             privateSubType: classification.privateSubType,
@@ -771,6 +824,95 @@ export default function TutorExaminations() {
     }
   }, [schoolId]);
 
+  // Helper: Send idempotent in-app notifications to eligible student recipients when an assessment becomes active (Parts 4 & 5)
+  const notifyEligibleStudentsForExam = async (examRecord: Record<string, any>) => {
+    try {
+      if (!examRecord || !examRecord.id || examRecord.status !== "active") return;
+      const wType = normalizeWorkType(examRecord.workType, examRecord);
+      const isAssignment = wType === "ASSIGNMENT";
+      const isActivity = wType === "ACTIVITY";
+      const isTest = wType === "TEST";
+      const notifTitle = isAssignment
+        ? "New Assignment"
+        : isActivity
+        ? "New Activity"
+        : isTest
+        ? "New Test Available"
+        : "New Examination Available";
+      const notifMessage = isAssignment
+        ? `You have received a new assignment from your tutor. Assignment: ${examRecord.title} (${examRecord.subject || "General"}). Open your assignments section to view the instructions and submission requirements.`
+        : isActivity
+        ? `A new learning activity has been assigned to you. Activity: ${examRecord.title} (${examRecord.subject || "General"}). Open your activities section to get started.`
+        : `Your tutor has activated a new ${isTest ? "test" : "examination"}: ${examRecord.subject || "General"} — ${examRecord.title}. The ${isTest ? "test" : "examination"} is now available.${examRecord.passcode ? " Your access passcode is ready in your assessment section." : ""} Open your assessment dashboard to begin.`;
+      const notifLink = isAssignment
+        ? "/portal/student/assignments"
+        : "/portal/student/assessments";
+
+      const targetStuSet = new Set(
+        (Array.isArray(examRecord.targetStudentIds) ? examRecord.targetStudentIds : [])
+          .map((id: any) => String(id || "").trim())
+          .filter(Boolean)
+      );
+      const targetSchoolSet = new Set(
+        [
+          examRecord.schoolId,
+          ...(Array.isArray(examRecord.targetSchoolIds) ? examRecord.targetSchoolIds : []),
+        ]
+          .map((id: any) => String(id || "").trim())
+          .filter((id) => id && id !== "private")
+      );
+      const targetClasses = Array.isArray(examRecord.classIds) && examRecord.classIds.length > 0
+        ? examRecord.classIds
+        : [examRecord.targetClass || examRecord.className || "all"];
+
+      const allCandidateStudents = [...privateLearners, ...schoolStudentsList];
+      const matchedStudents = allCandidateStudents.filter((st) => {
+        if (targetStuSet.has(st.id) || (st.uid && targetStuSet.has(st.uid))) return true;
+        if (examRecord.recipientMode === "PRIVATE_LEARNERS" && targetStuSet.size > 0) return false;
+        if (targetStuSet.size > 0 && targetSchoolSet.size === 0) return false;
+        if (st.schoolId && targetSchoolSet.has(st.schoolId)) {
+          return classesMatch(st.className || st.class || "", targetClasses);
+        }
+        return false;
+      });
+
+      const allDbs = getAllClientDatabases();
+      const writes: Promise<any>[] = [];
+      matchedStudents.forEach((st) => {
+        const recipientUid = String(st.firebaseUid || st.uid || st.id).trim();
+        if (!recipientUid) return;
+        const notifId = `notif-exam-${examRecord.id}-${recipientUid}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const payload = {
+          id: notifId,
+          recipientId: recipientUid,
+          userId: recipientUid,
+          studentId: st.id,
+          examId: examRecord.id,
+          workType: wType,
+          title: notifTitle,
+          message: notifMessage,
+          type: isAssignment ? "assignment" : isActivity ? "activity" : "examination",
+          link: notifLink,
+          read: false,
+          createdAt: new Date().toISOString(),
+          timestamp: serverTimestamp(),
+        };
+        allDbs.forEach((dbInstance) => {
+          writes.push(
+            setDoc(doc(dbInstance, "notifications", notifId), payload, { merge: true }).catch(() => null),
+            setDoc(doc(dbInstance, "jdiNotifications", notifId), payload, { merge: true }).catch(() => null)
+          );
+        });
+      });
+
+      if (writes.length > 0) {
+        await Promise.all(writes);
+      }
+    } catch (err) {
+      console.warn("Could not dispatch student assessment notifications:", err);
+    }
+  };
+
   // 3. Load Existing Assessments & Examinations List
   const loadExistingExams = async () => {
     setExistingBusy(true);
@@ -799,7 +941,10 @@ export default function TutorExaminations() {
       schSnaps.forEach((s) => allExamDocs.push(...(s.docs || [])));
       jdiSnaps.forEach((s) => allExamDocs.push(...(s.docs || [])));
 
+      const nowMs = Date.now();
+      const scheduledPromotions: Array<Record<string, any>> = [];
       const map = new Map<string, ExistingExamItem>();
+
       allExamDocs.forEach((d: any) => {
         const data = d.data();
         const canManage = canManageExamRecord({
@@ -826,18 +971,59 @@ export default function TutorExaminations() {
         const maxScore =
           resolvedMode === "EXTERNAL_LINK" || isUngraded ? 0 : computeExamMaxScore(data);
 
+        // Auto-promote scheduled assessments whose activation time has arrived (Part 4)
+        let effectiveStatus = String(data.status || "draft").toLowerCase();
+        const fromMs = data.availableFrom ? new Date(data.availableFrom).getTime() : NaN;
+        if (effectiveStatus === "scheduled" && Number.isFinite(fromMs) && nowMs >= fromMs) {
+          effectiveStatus = "active";
+          scheduledPromotions.push({ ...data, id: d.id, status: "active" });
+        }
+
+        // Respect optional time limit (Part 2): never force a 30-minute default when untimed
+        const parsedDuration = Number(data.durationMinutes);
+        const hasTimeLimit =
+          typeof data.hasTimeLimit === "boolean"
+            ? data.hasTimeLimit
+            : Number.isFinite(parsedDuration) && parsedDuration > 0;
+        const resolvedDurationMinutes =
+          hasTimeLimit && Number.isFinite(parsedDuration) && parsedDuration > 0
+            ? parsedDuration
+            : null;
+
+        const resolvedGradingMode: "automatic" | "manual" =
+          data.gradingMode === "manual" ? "manual" : "automatic";
+        const resolvedReleasePolicy: "immediate" | "manual" =
+          data.releaseGradesPolicy === "immediate" || data.releaseGradesPolicy === "manual"
+            ? data.releaseGradesPolicy
+            : resolvedGradingMode === "automatic"
+            ? "immediate"
+            : "manual";
+
         map.set(d.id, {
           id: d.id,
           title: data.title || "Untitled Assessment",
           subject: data.subject || "General",
+          subProgramName: data.subProgramName || data.subject || "",
+          programId: data.programId || "",
+          programTitle: data.programTitle || data.programName || "",
+          programName: data.programName || data.programTitle || "",
+          programPath: data.programPath || data.programBreadcrumbs || "",
+          programBreadcrumbs: data.programBreadcrumbs || data.programPath || "",
+          primaryCategory: data.primaryCategory || "",
           workType: resolvedWorkType,
           isUngradedActivity: isUngraded,
           submissionFormat: data.submissionFormat === "DELIVERABLE" ? "DELIVERABLE" : "QUESTIONS",
+          taskSubmissionMethod: data.taskSubmissionMethod || "both",
+          deliverables: data.deliverables || "",
+          resourceTitle: data.resourceTitle || "",
+          resourceUrl: data.resourceUrl || data.videoUrl || "",
+          videoUrl: data.videoUrl || data.resourceUrl || "",
+          learningResources: Array.isArray(data.learningResources) ? data.learningResources : [],
           dueDate: data.dueDate || null,
           recipientMode: data.recipientMode || "SCHOOL_CLASS",
           targetSchoolIds: Array.isArray(data.targetSchoolIds) ? data.targetSchoolIds : sId ? [sId] : [],
           targetStudentIds: Array.isArray(data.targetStudentIds) ? data.targetStudentIds : [],
-          status: data.status || "draft",
+          status: effectiveStatus,
           deliveryMode: resolvedMode,
           externalUrl: String(data.externalUrl || data.url || data.link || "").trim(),
           schoolId: sId,
@@ -853,13 +1039,13 @@ export default function TutorExaminations() {
           classIds: normalizeClassList(
             data.classIds || [data.targetClass || data.className || "all"]
           ),
-          durationMinutes:
-            resolvedMode === "EXTERNAL_LINK"
-              ? data.durationMinutes
-                ? Number(data.durationMinutes)
-                : null
-              : Number(data.durationMinutes) || 30,
-          gradingMode: data.gradingMode || "automatic",
+          hasTimeLimit,
+          durationMinutes: resolvedDurationMinutes,
+          gradingMode: resolvedGradingMode,
+          hasPasscode:
+            resolvedWorkType === "TEST" || resolvedWorkType === "EXAMINATION"
+              ? true
+              : Boolean(data.hasPasscode ?? data.passcode),
           passcode: data.passcode || "",
           availableFrom: data.availableFrom || null,
           availableUntil: data.availableUntil || null,
@@ -867,7 +1053,8 @@ export default function TutorExaminations() {
           questionCount: resolvedMode === "EXTERNAL_LINK" ? 0 : qList.length,
           maxScore,
           description: data.description || data.instructions || "",
-          releaseGradesPolicy: data.releaseGradesPolicy || "manual",
+          instructions: data.instructions || data.description || "",
+          releaseGradesPolicy: resolvedReleasePolicy,
           showMissedQuestions: data.showMissedQuestions !== false,
           showCorrectAnswers: data.showCorrectAnswers !== false,
           showPointValues: data.showPointValues !== false,
@@ -880,11 +1067,30 @@ export default function TutorExaminations() {
             "Your assessment has been recorded and submitted successfully.",
           createdBy: data.createdBy,
           tutorId: data.tutorId,
+          createdAt: data.createdAt,
           updatedAt: data.updatedAt || data.createdAt,
         });
       });
 
       setExistingExams(Array.from(map.values()));
+
+      if (scheduledPromotions.length > 0) {
+        scheduledPromotions.forEach((promoted) => {
+          allDbs.forEach((dbInstance) => {
+            updateDoc(doc(dbInstance, "jdiExams", promoted.id), {
+              status: "active",
+              activatedAt: new Date().toISOString(),
+              updatedAt: serverTimestamp(),
+            }).catch(() => undefined);
+            updateDoc(doc(dbInstance, "schoolExams", promoted.id), {
+              status: "active",
+              activatedAt: new Date().toISOString(),
+              updatedAt: serverTimestamp(),
+            }).catch(() => undefined);
+          });
+          void notifyEligibleStudentsForExam(promoted);
+        });
+      }
     } catch (err) {
       console.warn("Could not load existing examinations:", err);
     } finally {
@@ -1720,25 +1926,8 @@ ANSWER KEY
     }
   };
 
-  // Handles Saving or Publishing from the dedicated AssessmentWizard
-  const handleSaveWizardAssessment = async (payload: {
-    workType: AcademicWorkType;
-    deliveryMode: "NATIVE" | "EXTERNAL_LINK";
-    title: string;
-    description: string;
-    subject: string;
-    externalUrl?: string;
-    targetSchoolIds: string[];
-    targetStudentIds: string[];
-    recipientMode: "SCHOOL_CLASS" | "PRIVATE_LEARNERS" | "MULTI_TARGET";
-    targetClass: string;
-    durationMinutes: number | null;
-    passcode: string;
-    status: "draft" | "active";
-    questions: any[];
-    availableFrom?: string | null;
-    availableUntil?: string | null;
-  }) => {
+  // Handles Saving or Publishing from the dedicated AssessmentEditor / AssessmentWizard
+  const handleSaveWizardAssessment = async (payload: Record<string, any>) => {
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error("Please sign in again to save the assessment.");
 
@@ -1753,65 +1942,153 @@ ANSWER KEY
 
     const normalizedTargets = normalizeRecipientTargets({
       recipientMode: payload.recipientMode,
-      schoolId: payload.targetSchoolIds[0] || (payload.recipientMode === "PRIVATE_LEARNERS" ? "private" : ""),
-      targetSchoolIds: payload.targetSchoolIds,
-      classIds: [payload.targetClass],
-      targetStudentIds: payload.targetStudentIds,
+      schoolId:
+        payload.targetSchoolIds?.[0] ||
+        (payload.recipientMode === "PRIVATE_LEARNERS" ? "private" : ""),
+      targetSchoolIds: payload.targetSchoolIds || [],
+      classIds: payload.classIds || [payload.targetClass || "all"],
+      targetStudentIds: payload.targetStudentIds || [],
     });
 
-    const selectedSchoolObj = assignedSchools.find((s) => payload.targetSchoolIds.includes(s.id));
+    const selectedSchoolObj = assignedSchools.find((s) =>
+      (payload.targetSchoolIds || []).includes(s.id)
+    );
     const schoolName =
       payload.recipientMode === "PRIVATE_LEARNERS"
         ? "Private Learner(s)"
-        : payload.targetSchoolIds.length > 1
+        : (payload.targetSchoolIds || []).length > 1
         ? `Multi-Target (${payload.targetSchoolIds.length} Schools)`
         : resolvePartnerSchoolName(selectedSchoolObj?.name, "Assigned Partner School");
 
-    const finalPasscode = (payload.passcode.trim() || generateAccessCode()).toUpperCase();
+    const resolvedWorkType = normalizeWorkType(payload.workType, payload);
+    const requiresPasscode = resolvedWorkType === "EXAMINATION" || resolvedWorkType === "TEST";
+    const wantsPasscode = requiresPasscode || Boolean(payload.hasPasscode);
+    const finalPasscode = wantsPasscode
+      ? String(payload.passcode || "").trim().toUpperCase() || generateAccessCode()
+      : "";
+
+    if (requiresPasscode && finalPasscode.length < 4 && payload.status !== "draft") {
+      throw new Error("A valid passcode is mandatory for Tests and Examinations.");
+    }
 
     const targetExamId =
+      payload.id ||
       editingExamId ||
-      `${payload.workType.toLowerCase()}-${payload.targetClass.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${Date.now().toString(36)}`;
+      `${resolvedWorkType.toLowerCase()}-${String(payload.targetClass || "all")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "-")}-${Date.now().toString(36)}`;
 
+    const preparedQuestions = Array.isArray(payload.questions) ? payload.questions : [];
     const computedMaxScore =
       payload.deliveryMode === "NATIVE"
-        ? payload.questions.reduce((sum, q) => sum + (q.type === "learning_resource" ? 0 : Number(q.points) || 0), 0)
+        ? preparedQuestions.reduce(
+            (sum: number, q: any) =>
+              sum + (q.type === "learning_resource" ? 0 : Number(q.points) || 0),
+            0
+          )
         : 0;
 
-    const hasManualDeliverable = payload.questions.some((q) =>
-      ["essay", "long_answer", "practical_task", "link_submission", "file_submission"].includes(q.type)
+    const hasManualDeliverable = preparedQuestions.some((q: any) =>
+      ["essay", "long_answer", "practical_task", "link_submission", "file_submission"].includes(
+        q.type
+      )
     );
+
+    const resolvedGradingMode: "automatic" | "manual" =
+      payload.gradingMode === "manual" || hasManualDeliverable ? "manual" : "automatic";
+    const resolvedReleasePolicy: "immediate" | "manual" =
+      resolvedGradingMode === "automatic"
+        ? payload.releaseGradesPolicy === "manual"
+          ? "manual"
+          : "immediate"
+        : "manual";
+
+    const hasTimeLimit =
+      typeof payload.hasTimeLimit === "boolean"
+        ? payload.hasTimeLimit
+        : Number(payload.durationMinutes) > 0;
+    const resolvedDurationMinutes =
+      hasTimeLimit && Number(payload.durationMinutes) > 0
+        ? Number(payload.durationMinutes)
+        : null;
+
+    // Determine effective status ("draft" | "scheduled" | "active")
+    let resolvedStatus: "draft" | "scheduled" | "active" =
+      payload.status === "scheduled"
+        ? "scheduled"
+        : payload.status === "active"
+        ? "active"
+        : "draft";
+    if (resolvedStatus === "scheduled" && payload.availableFrom) {
+      const fromMs = new Date(payload.availableFrom).getTime();
+      if (Number.isFinite(fromMs) && fromMs <= Date.now()) {
+        resolvedStatus = "active";
+      }
+    }
+
+    const cleanResources = Array.isArray(payload.learningResources)
+      ? payload.learningResources.filter((r: any) => r && String(r.url || "").trim())
+      : [];
+    const primaryResource = cleanResources[0] || null;
 
     const examPayload: Record<string, any> = {
       id: targetExamId,
-      title: payload.title.trim(),
-      description: payload.description.trim(),
-      instructions: payload.description.trim(),
-      subject: payload.subject.trim(),
-      programTitle: (payload as any).programTitle || "Technology Programme",
-      programId: (payload as any).programId || "",
-      programPath: (payload as any).programPath || (payload as any).programBreadcrumbs || "",
-      programBreadcrumbs: (payload as any).programBreadcrumbs || (payload as any).programPath || "",
-      primaryCategory: (payload as any).primaryCategory || "",
-      workType: payload.workType,
-      isUngradedActivity: payload.workType === "ACTIVITY",
+      title: String(payload.title || "Untitled Assessment").trim(),
+      description: String(payload.description || payload.instructions || "").trim(),
+      instructions: String(payload.instructions || payload.description || "").trim(),
+      deliverables: String(payload.deliverables || "").trim(),
+      resourceTitle: String(payload.resourceTitle || primaryResource?.title || "").trim(),
+      resourceUrl: String(payload.resourceUrl || primaryResource?.url || "").trim(),
+      videoUrl: String(payload.videoUrl || payload.resourceUrl || primaryResource?.url || "").trim(),
+      learningResources: cleanResources,
+      subject: String(payload.subject || "General").trim(),
+      subProgramName: String(payload.subProgramName || payload.subject || "").trim(),
+      programTitle: String(payload.programTitle || payload.programName || "Technology Programme").trim(),
+      programName: String(payload.programName || payload.programTitle || "Technology Programme").trim(),
+      programId: String(payload.programId || "").trim(),
+      programPath: payload.programPath || payload.programBreadcrumbs || "",
+      programBreadcrumbs: payload.programBreadcrumbs || payload.programPath || "",
+      primaryCategory: payload.primaryCategory || "",
+      workType: resolvedWorkType,
+      isUngradedActivity:
+        resolvedWorkType === "ACTIVITY" && Boolean(payload.isUngradedActivity),
+      dueDate: payload.dueDate || payload.availableUntil || null,
       recipientMode: normalizedTargets.recipientMode,
       targetSchoolIds: normalizedTargets.targetSchoolIds,
       targetStudentIds: normalizedTargets.targetStudentIds,
       deliveryMode: payload.deliveryMode,
       externalUrl: payload.deliveryMode === "EXTERNAL_LINK" ? validatedExternalUrl : "",
       url: payload.deliveryMode === "EXTERNAL_LINK" ? validatedExternalUrl : "",
-      schoolId: normalizedTargets.schoolId || payload.targetSchoolIds[0] || "",
+      schoolId: normalizedTargets.schoolId || payload.targetSchoolIds?.[0] || "",
       schoolName,
-      targetClass: payload.targetClass,
-      className: payload.targetClass,
-      classIds: [payload.targetClass],
-      durationMinutes: payload.durationMinutes,
-      gradingMode: hasManualDeliverable ? "manual" : "automatic",
-      status: payload.status,
+      targetClass: payload.targetClass || "all",
+      className: payload.targetClass || "all",
+      classIds:
+        Array.isArray(payload.classIds) && payload.classIds.length > 0
+          ? payload.classIds
+          : [payload.targetClass || "all"],
+      hasTimeLimit,
+      durationMinutes: resolvedDurationMinutes,
+      gradingMode: resolvedGradingMode,
+      releaseGradesPolicy: resolvedReleasePolicy,
+      makeQuiz: payload.makeQuiz !== false,
+      showMissedQuestions: payload.showMissedQuestions !== false,
+      showCorrectAnswers: payload.showCorrectAnswers !== false,
+      showPointValues: payload.showPointValues !== false,
+      defaultPointValue: Number(payload.defaultPointValue || 2),
+      limitOneAttempt: payload.limitOneAttempt !== false,
+      shuffleQuestions: Boolean(payload.shuffleQuestions),
+      shuffleOptions: Boolean(payload.shuffleOptions),
+      confirmationMessage:
+        payload.confirmationMessage ||
+        "Your assessment has been recorded and submitted successfully.",
+      status: resolvedStatus,
+      hasPasscode: wantsPasscode,
       passcode: finalPasscode,
-      questions: payload.deliveryMode === "NATIVE" ? payload.questions : [],
-      questionCount: payload.deliveryMode === "NATIVE" ? payload.questions.length : 0,
+      availableFrom: payload.availableFrom || null,
+      availableUntil: payload.availableUntil || null,
+      questions: payload.deliveryMode === "NATIVE" ? preparedQuestions : [],
+      questionCount: payload.deliveryMode === "NATIVE" ? preparedQuestions.length : 0,
       maxScore: computedMaxScore,
       createdBy: currentUser.uid,
       tutorId: currentUser.uid,
@@ -1822,6 +2099,52 @@ ANSWER KEY
     for (const dbInstance of getAllClientDatabases()) {
       await setDoc(doc(dbInstance, "jdiExams", targetExamId), examPayload, { merge: true });
       await setDoc(doc(dbInstance, "schoolExams", targetExamId), examPayload, { merge: true });
+      if (
+        (resolvedWorkType === "ASSIGNMENT" || resolvedWorkType === "ACTIVITY") &&
+        resolvedStatus === "active"
+      ) {
+        const assignmentMirrorPayload: Record<string, any> = {
+          id: targetExamId,
+          examId: targetExamId,
+          title: examPayload.title,
+          instructions: examPayload.instructions,
+          description: examPayload.description,
+          deliverables: examPayload.deliverables,
+          subject: examPayload.subject,
+          programName: examPayload.programTitle,
+          programId: examPayload.programId,
+          activityType: resolvedWorkType,
+          workType: resolvedWorkType,
+          targetMode:
+            normalizedTargets.recipientMode === "SCHOOL_CLASS" ? "SCHOOL_GRADE" : "INDIVIDUAL",
+          recipientMode: normalizedTargets.recipientMode,
+          schoolId: examPayload.schoolId,
+          schoolName,
+          targetClass: examPayload.targetClass,
+          className: examPayload.className,
+          classIds: examPayload.classIds,
+          targetSchoolIds: normalizedTargets.targetSchoolIds,
+          targetStudentIds: normalizedTargets.targetStudentIds,
+          studentId:
+            normalizedTargets.recipientMode !== "SCHOOL_CLASS" &&
+            normalizedTargets.targetStudentIds.length === 1
+              ? normalizedTargets.targetStudentIds[0]
+              : "",
+          tutorId: currentUser.uid,
+          tutorName:
+            currentUser.displayName || currentUser.email?.split("@")[0] || "Assigned Tutor",
+          dueDate: examPayload.dueDate,
+          maxMarks: computedMaxScore || 100,
+          resourceTitle: examPayload.resourceTitle || null,
+          resourceUrl: examPayload.resourceUrl || null,
+          learningResources: cleanResources,
+          status: "PUBLISHED",
+          updatedAt: serverTimestamp(),
+        };
+        await setDoc(doc(dbInstance, "assignments", targetExamId), assignmentMirrorPayload, {
+          merge: true,
+        }).catch(() => undefined);
+      }
     }
 
     // Mirror to server endpoint
@@ -1840,11 +2163,22 @@ ANSWER KEY
       });
     } catch {}
 
+    if (resolvedStatus === "active") {
+      await notifyEligibleStudentsForExam(examPayload);
+    }
+
+    setEditingExamId(targetExamId);
     await loadExistingExams();
     setMessage(
-      payload.status === "draft"
-        ? `Assessment "${payload.title}" saved as draft.`
-        : `Assessment "${payload.title}" published successfully.`
+      resolvedStatus === "draft"
+        ? `Assessment "${examPayload.title}" saved as draft.`
+        : resolvedStatus === "scheduled"
+        ? `Assessment "${examPayload.title}" scheduled for ${
+            examPayload.availableFrom
+              ? new Date(examPayload.availableFrom).toLocaleString()
+              : "later activation"
+          }.`
+        : `Assessment "${examPayload.title}" published and activated successfully.`
     );
   };
 
@@ -1886,7 +2220,9 @@ ANSWER KEY
     const savedQuestions = Array.isArray(exam.questions) ? exam.questions : [];
     setQuestions(savedQuestions);
     setMakeQuiz(exam.makeQuiz !== false);
-    setReleaseGradesPolicy(exam.releaseGradesPolicy || "manual");
+    setReleaseGradesPolicy(
+      exam.releaseGradesPolicy || (exam.gradingMode === "manual" ? "manual" : "immediate")
+    );
     setShowMissedQuestions(exam.showMissedQuestions !== false);
     setShowCorrectAnswers(exam.showCorrectAnswers !== false);
     setShowPointValues(exam.showPointValues !== false);
@@ -1903,45 +2239,210 @@ ANSWER KEY
     scrollToCreatorTop();
   };
 
-  // Duplicate an existing assessment into a new draft
-  const handleDuplicateExam = (exam: ExistingExamItem) => {
-    const resolvedMode = normalizeDeliveryMode(exam.deliveryMode, exam);
-    const resolvedWorkType = normalizeWorkType(exam.workType, exam);
-    const freshCode = generateAccessCode();
-    setEditingExamId("");
-    setWorkType(resolvedWorkType);
-    setIsUngradedActivity(Boolean(exam.isUngradedActivity));
-    setSubmissionFormat(exam.submissionFormat === "DELIVERABLE" ? "DELIVERABLE" : "QUESTIONS");
-    setTaskSubmissionMethod(exam.taskSubmissionMethod || "both");
-    setTaskMaxMarks(Number(exam.maxScore) || 20);
-    setResourceUrl(exam.resourceUrl || exam.videoUrl || "");
-    setDueDate(exam.dueDate || "");
-    setRecipientMode(exam.recipientMode || "SCHOOL_CLASS");
-    setTargetStudentIds(Array.isArray(exam.targetStudentIds) ? exam.targetStudentIds : []);
-    setTitle(`${exam.title || "Untitled Assessment"} (Copy)`);
-    setDescription(exam.description || "");
-    setSubject(exam.subject || "");
-    if (exam.schoolId && exam.schoolId !== "private") setSchoolId(exam.schoolId);
-    setSelectedClass(
-      normalizeClassName(exam.targetClass || exam.className || "") || CANONICAL_CLASSES[1]
-    );
-    setDuration(Number(exam.durationMinutes) || 30);
-    setDeliveryMode(resolvedMode);
-    setExternalUrl(exam.externalUrl || "");
-    setCustomPasscode(freshCode);
-    setGeneratedPasscode(freshCode);
-    setStatus("draft");
-    setAvailableFrom("");
-    setAvailableUntil("");
-    setQuestions(
-      Array.isArray(exam.questions)
-        ? exam.questions.map((q: any) => ({ ...q, id: makeId() }))
-        : []
-    );
-    setEditorTab("setup");
+  // Part 6: Duplicate an existing assessment into a new persisted draft and immediately open Recipient Selection
+  const handleDuplicateExam = async (exam: ExistingExamItem) => {
+    if (!exam || duplicatingBusyId === exam.id) return;
+    setDuplicatingBusyId(exam.id);
     setErrorMessage("");
-    setMessage(`Duplicated "${exam.title}" into a new draft.`);
-    scrollToCreatorTop();
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Please sign in to duplicate this assessment.");
+
+      const resolvedMode = normalizeDeliveryMode(exam.deliveryMode, exam);
+      const resolvedWorkType = normalizeWorkType(exam.workType, exam);
+      const requiresPasscode = resolvedWorkType === "EXAMINATION" || resolvedWorkType === "TEST";
+      const wantsPasscode = requiresPasscode || Boolean(exam.hasPasscode ?? exam.passcode);
+      const freshCode = wantsPasscode ? generateAccessCode() : "";
+      const newExamId = `${resolvedWorkType.toLowerCase()}-copy-${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 6)}`;
+
+      const clonedQuestions = Array.isArray(exam.questions)
+        ? exam.questions.map((q: any) => ({
+            ...q,
+            id: makeId(),
+            options: Array.isArray(q.options) ? q.options.map((o: any) => ({ ...o })) : [],
+            correctOptionIds: Array.isArray(q.correctOptionIds) ? [...q.correctOptionIds] : [],
+            acceptedAnswers: Array.isArray(q.acceptedAnswers) ? [...q.acceptedAnswers] : [],
+          }))
+        : [];
+
+      const clonedResources = Array.isArray(exam.learningResources)
+        ? exam.learningResources.map((r: any, idx: number) => ({
+            ...r,
+            id: r.id || `res_${idx + 1}_${Date.now().toString(36)}`,
+          }))
+        : [];
+
+      const hasTimeLimit =
+        typeof exam.hasTimeLimit === "boolean"
+          ? exam.hasTimeLimit
+          : Number(exam.durationMinutes) > 0;
+      const durationMinutes =
+        hasTimeLimit && Number(exam.durationMinutes) > 0 ? Number(exam.durationMinutes) : null;
+
+      const draftRecord: ExistingExamItem = {
+        ...exam,
+        id: newExamId,
+        title: `${exam.title || "Untitled Assessment"} (Copy)`,
+        workType: resolvedWorkType,
+        deliveryMode: resolvedMode,
+        status: "draft",
+        hasTimeLimit,
+        durationMinutes,
+        hasPasscode: wantsPasscode,
+        passcode: freshCode,
+        availableFrom: null,
+        availableUntil: null,
+        questions: resolvedMode === "NATIVE" ? clonedQuestions : [],
+        questionCount: resolvedMode === "NATIVE" ? clonedQuestions.length : 0,
+        learningResources: clonedResources,
+        createdBy: currentUser.uid,
+        tutorId: currentUser.uid,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const firestorePayload: Record<string, any> = {
+        ...draftRecord,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      for (const dbInstance of getAllClientDatabases()) {
+        await setDoc(doc(dbInstance, "jdiExams", newExamId), firestorePayload, { merge: true });
+        await setDoc(doc(dbInstance, "schoolExams", newExamId), firestorePayload, { merge: true });
+      }
+
+      setExistingExams((prev) => [draftRecord, ...prev.filter((item) => item.id !== newExamId)]);
+      setDuplicateRecipientDraft(draftRecord);
+      setMessage(
+        `Created draft copy "${draftRecord.title}". Select the target recipients to continue.`
+      );
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Failed to duplicate assessment.");
+    } finally {
+      setDuplicatingBusyId(null);
+    }
+  };
+
+  // Part 6 Step 2 -> Step 3: After selecting recipients for a duplicated draft
+  const handleConfirmDuplicateRecipients = async (selection: RecipientSelectionResult) => {
+    const draft = duplicateRecipientDraft;
+    setDuplicateRecipientDraft(null);
+    if (!draft) return;
+
+    const chosenClass =
+      selection.classScopeMode === "SELECTED" && selection.selectedClasses.length > 0
+        ? selection.selectedClasses[0]
+        : draft.targetClass || CANONICAL_CLASSES[1];
+    const chosenClasses =
+      selection.classScopeMode === "SELECTED" && selection.selectedClasses.length > 0
+        ? selection.selectedClasses
+        : [chosenClass];
+    const primarySchoolId =
+      selection.recipientMode === "PRIVATE_LEARNERS"
+        ? "private"
+        : selection.targetSchoolIds[0] || draft.schoolId || "";
+    const matchedSchool = assignedSchools.find((s) => s.id === primarySchoolId);
+    const resolvedSchoolName =
+      selection.recipientMode === "PRIVATE_LEARNERS"
+        ? "Private Learner(s)"
+        : selection.targetSchoolIds.length > 1
+        ? `Multi-Target (${selection.targetSchoolIds.length} Schools)`
+        : resolvePartnerSchoolName(matchedSchool?.name, draft.schoolName, "Assigned Partner School");
+
+    const updatedDraft: ExistingExamItem = {
+      ...draft,
+      recipientMode: selection.recipientMode,
+      targetSchoolIds: selection.targetSchoolIds,
+      targetStudentIds: selection.targetStudentIds,
+      schoolId: primarySchoolId,
+      schoolName: resolvedSchoolName,
+      targetClass: chosenClass,
+      className: chosenClass,
+      classIds: chosenClasses,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      for (const dbInstance of getAllClientDatabases()) {
+        await setDoc(
+          doc(dbInstance, "jdiExams", updatedDraft.id),
+          {
+            recipientMode: updatedDraft.recipientMode,
+            targetSchoolIds: updatedDraft.targetSchoolIds,
+            targetStudentIds: updatedDraft.targetStudentIds,
+            schoolId: updatedDraft.schoolId,
+            schoolName: updatedDraft.schoolName,
+            targetClass: updatedDraft.targetClass,
+            className: updatedDraft.className,
+            classIds: updatedDraft.classIds,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        await setDoc(
+          doc(dbInstance, "schoolExams", updatedDraft.id),
+          {
+            recipientMode: updatedDraft.recipientMode,
+            targetSchoolIds: updatedDraft.targetSchoolIds,
+            targetStudentIds: updatedDraft.targetStudentIds,
+            schoolId: updatedDraft.schoolId,
+            schoolName: updatedDraft.schoolName,
+            targetClass: updatedDraft.targetClass,
+            className: updatedDraft.className,
+            classIds: updatedDraft.classIds,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+    } catch (err) {
+      console.warn("Could not persist recipient update on duplicate:", err);
+    }
+
+    setExistingExams((prev) =>
+      prev.map((item) => (item.id === updatedDraft.id ? updatedDraft : item))
+    );
+
+    if (updatedDraft.deliveryMode === "EXTERNAL_LINK") {
+      // Part 6.4: Link assessments skip the native question workspace and go directly to final review & publish
+      setLinkDuplicateReviewExam(updatedDraft);
+    } else {
+      // Part 6.3: Native assessments open directly in the Native Assessment Workspace
+      handleEditExam(updatedDraft, "questions");
+      setViewMode("edit");
+    }
+  };
+
+  // Part 6.4: Save or publish the duplicated Link Assessment from the Final Review modal
+  const handleSaveOrPublishDuplicatedLinkExam = async (
+    targetStatus: "draft" | "scheduled" | "active"
+  ) => {
+    if (!linkDuplicateReviewExam) return;
+    setSavingLinkDuplicate(true);
+    setErrorMessage("");
+    try {
+      if (
+        targetStatus === "scheduled" &&
+        (!linkDuplicateReviewExam.availableFrom ||
+          new Date(linkDuplicateReviewExam.availableFrom).getTime() <= Date.now())
+      ) {
+        throw new Error("Please select a future date and time to schedule this link assessment.");
+      }
+      await handleSaveWizardAssessment({
+        ...linkDuplicateReviewExam,
+        status: targetStatus,
+      });
+      setLinkDuplicateReviewExam(null);
+    } catch (e) {
+      setErrorMessage(
+        e instanceof Error ? e.message : "Could not save duplicated link assessment."
+      );
+    } finally {
+      setSavingLinkDuplicate(false);
+    }
   };
 
   // Save manual per-question or overall grade for a student submission
@@ -2349,6 +2850,7 @@ ANSWER KEY
     return privateLearners
       .filter((pl) => pl.isPrivate !== false && pl.assignmentCategory !== "school")
       .map((pl) => ({
+        ...pl,
         id: pl.id,
         name: pl.fullName || pl.studentName || "Private Learner",
         fullName: pl.fullName || pl.studentName || "Private Learner",
@@ -2370,6 +2872,7 @@ ANSWER KEY
 
   const formattedSchoolStudents = useMemo(() => {
     return schoolStudentsList.map((st) => ({
+      ...st,
       id: st.id,
       name: st.fullName || st.studentName || "School Student",
       fullName: st.fullName || st.studentName || "School Student",
@@ -2385,6 +2888,7 @@ ANSWER KEY
 
   const formattedSchools = useMemo(() => {
     return assignedSchools.map((s) => ({
+      ...s,
       id: s.id,
       name: s.name,
     }));
@@ -2597,7 +3101,242 @@ ANSWER KEY
         />
       )}
 
+      {/* ============================================================== */}
+      {/* DUPLICATE STEP 2: RECIPIENT SELECTION MODAL (PART 6)           */}
+      {/* ============================================================== */}
+      <RecipientSelectorModal
+        isOpen={Boolean(duplicateRecipientDraft)}
+        onClose={() => setDuplicateRecipientDraft(null)}
+        schools={formattedSchools}
+        privateStudents={formattedPrivateStudents}
+        schoolStudents={formattedSchoolStudents}
+        initialRecipientType={
+          duplicateRecipientDraft?.recipientMode === "PRIVATE_LEARNERS"
+            ? "PRIVATE"
+            : duplicateRecipientDraft?.recipientMode === "MULTI_TARGET"
+            ? "ALL"
+            : "SCHOOL"
+        }
+        initialSchoolIds={duplicateRecipientDraft?.targetSchoolIds || []}
+        initialStudentIds={duplicateRecipientDraft?.targetStudentIds || []}
+        initialClassScopeMode={
+          duplicateRecipientDraft?.targetClass && duplicateRecipientDraft.targetClass !== "all"
+            ? "SELECTED"
+            : "ALL"
+        }
+        initialSelectedClasses={
+          duplicateRecipientDraft?.classIds && duplicateRecipientDraft.classIds.length > 0
+            ? duplicateRecipientDraft.classIds.filter((c) => c !== "all")
+            : duplicateRecipientDraft?.targetClass && duplicateRecipientDraft.targetClass !== "all"
+            ? [duplicateRecipientDraft.targetClass]
+            : []
+        }
+        isTutor={!isAdminWorkspace}
+        onConfirm={(selection) => {
+          void handleConfirmDuplicateRecipients(selection);
+        }}
+      />
 
+      {/* ============================================================== */}
+      {/* DUPLICATE STEP 3 (LINK ASSESSMENT): FINAL REVIEW & PUBLISH     */}
+      {/* ============================================================== */}
+      {linkDuplicateReviewExam && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]">
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+              <div>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                  <Link2 size={12} /> Duplicated Link Assessment · Final Review
+                </span>
+                <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-white mt-1">
+                  Review &amp; Publish External Link Assessment
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Target:{" "}
+                  <strong className="text-slate-700 dark:text-slate-200">
+                    {linkDuplicateReviewExam.schoolName || "Selected Recipients"}
+                  </strong>{" "}
+                  ({linkDuplicateReviewExam.targetClass || "All Classes"})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLinkDuplicateReviewExam(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg"
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Assessment Title
+                  </label>
+                  <input
+                    type="text"
+                    value={linkDuplicateReviewExam.title}
+                    onChange={(e) =>
+                      setLinkDuplicateReviewExam({
+                        ...linkDuplicateReviewExam,
+                        title: e.target.value,
+                      })
+                    }
+                    className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Subject / Module
+                  </label>
+                  <input
+                    type="text"
+                    value={linkDuplicateReviewExam.subject}
+                    onChange={(e) =>
+                      setLinkDuplicateReviewExam({
+                        ...linkDuplicateReviewExam,
+                        subject: e.target.value,
+                      })
+                    }
+                    className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  External Assessment URL (Google Forms / External Test Link)
+                </label>
+                <input
+                  type="url"
+                  value={linkDuplicateReviewExam.externalUrl || ""}
+                  onChange={(e) =>
+                    setLinkDuplicateReviewExam({
+                      ...linkDuplicateReviewExam,
+                      externalUrl: e.target.value,
+                    })
+                  }
+                  placeholder="https://docs.google.com/forms/..."
+                  className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Instructions for Students
+                </label>
+                <textarea
+                  rows={3}
+                  value={linkDuplicateReviewExam.description || ""}
+                  onChange={(e) =>
+                    setLinkDuplicateReviewExam({
+                      ...linkDuplicateReviewExam,
+                      description: e.target.value,
+                      instructions: e.target.value,
+                    })
+                  }
+                  placeholder="Instructions students should read before launching the link..."
+                  className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Reference Resource URL (Optional)
+                  </label>
+                  <input
+                    type="url"
+                    value={linkDuplicateReviewExam.resourceUrl || ""}
+                    onChange={(e) =>
+                      setLinkDuplicateReviewExam({
+                        ...linkDuplicateReviewExam,
+                        resourceUrl: e.target.value,
+                      })
+                    }
+                    placeholder="https://..."
+                    className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Access Passcode{" "}
+                    {(linkDuplicateReviewExam.workType === "TEST" ||
+                      linkDuplicateReviewExam.workType === "EXAMINATION") && (
+                      <span className="text-red-600">(Mandatory)</span>
+                    )}
+                  </label>
+                  <input
+                    type="text"
+                    value={linkDuplicateReviewExam.passcode || ""}
+                    onChange={(e) =>
+                      setLinkDuplicateReviewExam({
+                        ...linkDuplicateReviewExam,
+                        passcode: e.target.value.toUpperCase(),
+                      })
+                    }
+                    className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 bg-slate-50/70 dark:bg-slate-950/50 space-y-2.5">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Schedule Activation Date &amp; Time (Optional — leave empty to Activate Now)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={
+                    linkDuplicateReviewExam.availableFrom
+                      ? linkDuplicateReviewExam.availableFrom.slice(0, 16)
+                      : ""
+                  }
+                  onChange={(e) =>
+                    setLinkDuplicateReviewExam({
+                      ...linkDuplicateReviewExam,
+                      availableFrom: e.target.value ? new Date(e.target.value).toISOString() : null,
+                    })
+                  }
+                  className="w-full sm:w-72 h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                disabled={savingLinkDuplicate}
+                onClick={() => void handleSaveOrPublishDuplicatedLinkExam("draft")}
+                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
+              >
+                Keep in Drafts
+              </button>
+              <div className="flex items-center gap-2">
+                {linkDuplicateReviewExam.availableFrom && (
+                  <button
+                    type="button"
+                    disabled={savingLinkDuplicate}
+                    onClick={() => void handleSaveOrPublishDuplicatedLinkExam("scheduled")}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Schedule for Later
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={savingLinkDuplicate}
+                  onClick={() => void handleSaveOrPublishDuplicatedLinkExam("active")}
+                  className="px-5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-black cursor-pointer"
+                >
+                  {savingLinkDuplicate ? "Publishing..." : "Activate & Publish Now"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ============================================================== */}
       {/* MODAL 1: CREATE NEW ASSESSMENT TYPE & WORKFLOW CHOOSER         */}

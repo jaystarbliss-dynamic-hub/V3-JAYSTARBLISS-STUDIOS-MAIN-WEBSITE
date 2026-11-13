@@ -1852,7 +1852,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
             </div>
           )}
         </div>
-      ) : (
+      ) : role === 'student' ? (
         /* Independent Student View */
         <div className="space-y-6">
           {standardPlans.length > 0 && (
@@ -1928,7 +1928,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
             </div>
           )}
         </div>
-      )}
+      ) : null}
 
       {/* Staff Wallet View */}
       {role === 'staff' && (

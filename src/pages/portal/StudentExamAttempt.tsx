@@ -13,6 +13,7 @@ import {
   normalizeWorkType,
   getWorkTypeLabels,
   isAttemptResultReleased,
+  shouldAutoReleaseAttemptResult,
 } from "../../lib/classes";
 import {
   buildExamReportViewModel,
@@ -82,7 +83,7 @@ type D = {
     schoolId?: string;
     schoolName?: string;
     status: string;
-    deadlineAt: string;
+    deadlineAt?: string | null;
     score?: number;
     maxScore?: number;
     percentage?: number;
@@ -115,17 +116,28 @@ type D = {
     workType?: string;
     deliveryMode?: "EXTERNAL_LINK" | "NATIVE";
     externalUrl?: string;
+    resourceTitle?: string;
     resourceUrl?: string;
     videoUrl?: string;
     learningVideoUrl?: string;
+    deliverables?: string;
+    learningResources?: Array<{
+      id: string;
+      title: string;
+      instructions?: string;
+      url: string;
+      youtubeUrl?: string;
+    }>;
     submissionFormat?: string;
     isTaskOnlyAssignment?: boolean;
     schoolId?: string;
     schoolName?: string;
     maxScore?: number;
     instructions?: string;
-    durationMinutes?: number;
+    hasTimeLimit?: boolean;
+    durationMinutes?: number | null;
     gradingMode?: string;
+    releaseGradesPolicy?: string;
     questions?: Q[];
   };
   questions: Q[];
@@ -330,7 +342,7 @@ export default function StudentExamAttempt() {
 
         const rawQuestions: Q[] = resolveAttemptQuestions(examData, attemptData) as Q[];
         const isClosed = attemptData.status !== "in_progress";
-        const isReleased = isAttemptResultReleased(attemptData);
+        const isReleased = isAttemptResultReleased(attemptData, examData);
 
         const safeQuestions: Q[] = rawQuestions.map((q) => {
           if (!isClosed || !isReleased) {
@@ -342,7 +354,13 @@ export default function StudentExamAttempt() {
 
         const maxScore = computeExamMaxScore(examData, attemptData);
         const score = isReleased && typeof attemptData.score === "number" ? attemptData.score : undefined;
-        const configuredDurationMin = Math.max(1, Number(examData.durationMinutes) || 30);
+        const hasTimeLimit =
+          examData.hasTimeLimit !== undefined
+            ? Boolean(examData.hasTimeLimit)
+            : examData.durationMinutes != null && Number(examData.durationMinutes) > 0;
+        const configuredDurationMin = hasTimeLimit
+          ? Math.max(1, Number(examData.durationMinutes) || 30)
+          : null;
 
         loadedData = {
           attempt: {
@@ -368,9 +386,10 @@ export default function StudentExamAttempt() {
             schoolId: effectiveSchoolId,
             schoolName: resolvedSchoolName,
             maxScore,
-            deadlineAt:
-              attemptData.deadlineAt ||
-              new Date(Date.now() + configuredDurationMin * 60000).toISOString(),
+            deadlineAt: hasTimeLimit
+              ? attemptData.deadlineAt ||
+                new Date(Date.now() + (configuredDurationMin || 30) * 60000).toISOString()
+              : null,
           },
           exam: {
             id: attemptData.examId,
@@ -379,16 +398,21 @@ export default function StudentExamAttempt() {
             workType: normalizeWorkType(examData.workType, examData),
             deliveryMode: normalizeDeliveryMode(examData),
             externalUrl: String(examData.externalUrl || "").trim(),
+            resourceTitle: String(examData.resourceTitle || "").trim(),
             resourceUrl: String(examData.resourceUrl || examData.videoUrl || examData.learningVideoUrl || "").trim(),
             videoUrl: String(examData.videoUrl || examData.learningVideoUrl || "").trim(),
+            deliverables: String(examData.deliverables || "").trim(),
+            learningResources: Array.isArray(examData.learningResources) ? examData.learningResources : [],
             submissionFormat: examData.submissionFormat,
             isTaskOnlyAssignment: Boolean(examData.isTaskOnlyAssignment),
             schoolId: effectiveSchoolId,
             schoolName: resolvedSchoolName,
             maxScore,
             instructions: examData.instructions || examData.description || "",
+            hasTimeLimit,
             durationMinutes: configuredDurationMin,
             gradingMode: examData.gradingMode || "automatic",
+            releaseGradesPolicy: examData.releaseGradesPolicy,
             questions: isReleased ? rawQuestions : safeQuestions,
           },
           questions: safeQuestions,
@@ -418,14 +442,24 @@ export default function StudentExamAttempt() {
 
       setData(loadedData);
       setAnswers(loadedData.attempt.answers || {});
-      const remaining = Math.max(
-        0,
-        Math.ceil((new Date(loadedData.attempt.deadlineAt).getTime() - Date.now()) / 1000)
-      );
-      setSeconds(remaining);
-      setTimerInitialized(true);
-      if (remaining <= 0 && loadedData.attempt.status === "in_progress") {
-        setAutoExpiredBanner(true);
+      const hasActiveDeadline =
+        Boolean(loadedData.attempt.deadlineAt) &&
+        loadedData.exam.hasTimeLimit !== false &&
+        (loadedData.exam.hasTimeLimit === true ||
+          (loadedData.exam.durationMinutes != null && Number(loadedData.exam.durationMinutes) > 0));
+      if (hasActiveDeadline && loadedData.attempt.deadlineAt) {
+        const remaining = Math.max(
+          0,
+          Math.ceil((new Date(loadedData.attempt.deadlineAt).getTime() - Date.now()) / 1000)
+        );
+        setSeconds(remaining);
+        setTimerInitialized(true);
+        if (remaining <= 0 && loadedData.attempt.status === "in_progress") {
+          setAutoExpiredBanner(true);
+        }
+      } else {
+        setSeconds(0);
+        setTimerInitialized(false);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load assessment attempt.");
@@ -440,13 +474,19 @@ export default function StudentExamAttempt() {
     void loadAttemptData();
   }, [attemptId]);
 
-  // Countdown timer
+  // Countdown timer (only runs when a time limit / deadline is configured)
   useEffect(() => {
-    if (!data || data.attempt.status !== "in_progress") return;
+    const hasDeadline =
+      Boolean(data?.attempt.deadlineAt) &&
+      data?.exam.hasTimeLimit !== false &&
+      (data?.exam.hasTimeLimit === true ||
+        (data?.exam.durationMinutes != null && Number(data?.exam.durationMinutes) > 0));
+    if (!data || data.attempt.status !== "in_progress" || !hasDeadline || !data.attempt.deadlineAt) return;
+    const deadlineIso = data.attempt.deadlineAt;
     const interval = window.setInterval(() => {
       const remaining = Math.max(
         0,
-        Math.ceil((new Date(data.attempt.deadlineAt).getTime() - Date.now()) / 1000)
+        Math.ceil((new Date(deadlineIso).getTime() - Date.now()) / 1000)
       );
       setSeconds(remaining);
       if (remaining <= 0) {
@@ -454,7 +494,7 @@ export default function StudentExamAttempt() {
       }
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [data?.attempt.deadlineAt, data?.attempt.status]);
+  }, [data?.attempt.deadlineAt, data?.attempt.status, data?.exam.hasTimeLimit, data?.exam.durationMinutes]);
 
   // Autosave answers with 2000ms debounce after answer changes
   useEffect(() => {
@@ -772,24 +812,34 @@ export default function StudentExamAttempt() {
           }
           const attemptQuestions = resolveAttemptQuestions(fullExam, data.attempt);
           const grading = gradeAnswers({ ...fullExam, questions: attemptQuestions }, answers);
+          const autoRelease = shouldAutoReleaseAttemptResult(fullExam, grading);
+          const finalStatus = autoRelease
+            ? "graded"
+            : action === "expire"
+            ? "expired"
+            : "submitted";
+          const attemptPatch: Record<string, any> = {
+            answers,
+            status: finalStatus,
+            score: grading.score,
+            maxScore: grading.maxScore,
+            percentage: grading.percentage,
+            autoGraded: grading.autoGraded,
+            questionResults: grading.questionResults,
+            isOnline: false,
+            submittedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          };
+          if (autoRelease) {
+            attemptPatch.resultReleased = true;
+            attemptPatch.releasedAt = serverTimestamp();
+          }
 
-          const finalStatus = action === "expire" ? "expired" : "submitted";
           await Promise.all(
             allDbs.map((dbInst) =>
               setDoc(
                 doc(dbInst, "jdiExamAttempts", attemptId),
-                {
-                  answers,
-                  status: finalStatus,
-                  score: grading.score,
-                  maxScore: grading.maxScore,
-                  percentage: grading.percentage,
-                  autoGraded: grading.autoGraded,
-                  questionResults: grading.questionResults,
-                  isOnline: false,
-                  submittedAt: serverTimestamp(),
-                  updatedAt: serverTimestamp(),
-                },
+                attemptPatch,
                 { merge: true }
               ).catch(() => undefined)
             )
@@ -797,17 +847,29 @@ export default function StudentExamAttempt() {
 
           setData((prev) => {
             if (!prev) return null;
-            const released = isAttemptResultReleased(prev.attempt);
+            const released =
+              autoRelease || isAttemptResultReleased(prev.attempt, fullExam || prev.exam);
             return {
               ...prev,
               attempt: {
                 ...prev.attempt,
+                answers,
                 status: finalStatus,
+                autoGraded: grading.autoGraded,
+                resultReleased: released,
+                releasedAt: released
+                  ? prev.attempt.releasedAt || new Date().toISOString()
+                  : undefined,
                 score: released ? grading.score : undefined,
                 maxScore: grading.maxScore,
                 percentage: released ? grading.percentage : undefined,
                 questionResults: released ? (grading.questionResults as any) : undefined,
               },
+              exam: {
+                ...prev.exam,
+                questions: released ? (attemptQuestions as Q[]) : prev.exam.questions,
+              },
+              questions: released ? (attemptQuestions as Q[]) : prev.questions,
             };
           });
 
@@ -818,6 +880,8 @@ export default function StudentExamAttempt() {
           setNotice(
             action === "expire"
               ? `Time expired! Your ${currentTypeLabels.lowerSingular} was automatically submitted.`
+              : autoRelease
+              ? `Your ${currentTypeLabels.lowerSingular} was submitted and automatically graded!`
               : `Your ${currentTypeLabels.lowerSingular} was submitted successfully!`
           );
         }
@@ -829,24 +893,43 @@ export default function StudentExamAttempt() {
           setData((prev) => {
             if (!prev) return null;
             const released = Boolean(
-              resultData?.resultReleased || isAttemptResultReleased(prev.attempt)
+              resultData?.resultReleased || isAttemptResultReleased(prev.attempt, prev.exam)
             );
+            const resolvedQuestions =
+              released && Array.isArray(resultData?.questions) && resultData.questions.length > 0
+                ? (resultData.questions as Q[])
+                : prev.exam.questions;
             return {
               ...prev,
               attempt: {
                 ...prev.attempt,
-                status: action === "expire" ? "expired" : "submitted",
+                answers,
+                status: released ? "graded" : action === "expire" ? "expired" : "submitted",
+                resultReleased: released,
+                releasedAt:
+                  resultData?.releasedAt ||
+                  (released ? prev.attempt.releasedAt || new Date().toISOString() : undefined),
                 score: released ? (resultData?.score ?? prev.attempt.score) : undefined,
                 maxScore: resultData?.maxScore ?? prev.attempt.maxScore,
                 percentage: released
                   ? (resultData?.percentage ?? prev.attempt.percentage)
                   : undefined,
+                questionResults: released
+                  ? (resultData?.questionResults ?? prev.attempt.questionResults)
+                  : undefined,
               },
+              exam: {
+                ...prev.exam,
+                questions: resolvedQuestions,
+              },
+              questions: resolvedQuestions || prev.questions,
             };
           });
           setNotice(
             action === "expire"
               ? `Time expired. ${currentTypeLabels.singular} attempt closed.`
+              : resultData?.resultReleased
+              ? `Your ${currentTypeLabels.lowerSingular} was submitted and automatically graded!`
               : `Your ${currentTypeLabels.lowerSingular} was submitted.`
           );
         }
@@ -858,18 +941,37 @@ export default function StudentExamAttempt() {
     }
   };
 
-  // Auto-expire when timer hits 00:00 (or is already 00:00 on load)
+  // Auto-expire when timer hits 00:00 (only when a time limit / deadline is configured)
   useEffect(() => {
-    if (timerInitialized && seconds <= 0 && data?.attempt.status === "in_progress" && !busy) {
+    const hasDeadline =
+      Boolean(data?.attempt.deadlineAt) &&
+      data?.exam.hasTimeLimit !== false &&
+      (data?.exam.hasTimeLimit === true ||
+        (data?.exam.durationMinutes != null && Number(data?.exam.durationMinutes) > 0));
+    if (
+      hasDeadline &&
+      timerInitialized &&
+      seconds <= 0 &&
+      data?.attempt.status === "in_progress" &&
+      !busy
+    ) {
       setAutoExpiredBanner(true);
       void send("expire");
     }
-  }, [seconds, timerInitialized, data?.attempt.status, busy]);
+  }, [
+    seconds,
+    timerInitialized,
+    data?.attempt.status,
+    data?.attempt.deadlineAt,
+    data?.exam.hasTimeLimit,
+    data?.exam.durationMinutes,
+    busy,
+  ]);
 
   // Download PDF Report
   const handleDownloadReport = async () => {
     if (!data) return;
-    if (!isAttemptResultReleased(data.attempt)) {
+    if (!isAttemptResultReleased(data.attempt, data.exam)) {
       setError(
         "Assessment results have not been released by your tutor yet. Printing is disabled until results are released."
       );
@@ -943,7 +1045,8 @@ export default function StudentExamAttempt() {
             <div className="text-left pt-2">
               <EmbeddedLearningMedia
                 url={data.exam.resourceUrl}
-                title="Reference Learning Resource"
+                title={data.exam.resourceTitle || "Reference Learning Resource"}
+                hideExternalLink={true}
               />
             </div>
           )}
@@ -971,11 +1074,19 @@ export default function StudentExamAttempt() {
     );
   }
 
-  const isTimeUp = timerInitialized && seconds <= 0;
+  const hasTimeLimit =
+    Boolean(data.attempt.deadlineAt) &&
+    data.exam.hasTimeLimit !== false &&
+    (data.exam.hasTimeLimit === true ||
+      (data.exam.durationMinutes != null && Number(data.exam.durationMinutes) > 0));
+  const isTimeUp = hasTimeLimit && timerInitialized && seconds <= 0;
   const isExpiredAttempt =
-    data.attempt.status === "expired" || autoExpiredBanner || (data.attempt.status === "in_progress" && isTimeUp);
+    hasTimeLimit &&
+    (data.attempt.status === "expired" ||
+      autoExpiredBanner ||
+      (data.attempt.status === "in_progress" && isTimeUp));
   const closed = data.attempt.status !== "in_progress" || isTimeUp;
-  const isReleased = isAttemptResultReleased(data.attempt);
+  const isReleased = isAttemptResultReleased(data.attempt, data.exam);
   const answerableQuestions = data.questions.filter((q) => q.type !== "learning_resource");
   const answeredCount = answerableQuestions.filter((q) => {
     const val = answers[q.id];
@@ -997,7 +1108,7 @@ export default function StudentExamAttempt() {
         data.questions[0]?.type
       ));
 
-  const isLowTime = !closed && seconds > 0 && seconds <= 300;
+  const isLowTime = hasTimeLimit && !closed && seconds > 0 && seconds <= 300;
   const safeSeconds = isExpiredAttempt || closed ? 0 : Math.max(0, seconds);
   const formattedTime = `${Math.floor(safeSeconds / 60).toString().padStart(2, "0")}:${String(
     safeSeconds % 60
@@ -1092,57 +1203,59 @@ export default function StudentExamAttempt() {
               </div>
             )}
 
-            <div
-              role="timer"
-              aria-live="off"
-              aria-label={closed ? "Assessment status" : `Time remaining ${formattedTime}`}
-              className={`rounded-xl border px-3.5 py-2 sm:px-5 sm:py-2.5 text-center shrink-0 transition-colors ${
-                isExpiredAttempt
-                  ? "border-red-500/40 bg-red-950/60"
-                  : closed
-                  ? "border-white/10 bg-white/5"
-                  : isLowTime
-                  ? "border-red-400/50 bg-red-500/20 animate-pulse"
-                  : "border-amber-400/30 bg-white/10"
-              }`}
-            >
-              {isExpiredAttempt ? (
-                <div className="flex items-center gap-2">
-                  <Clock className="text-red-400 shrink-0" size={18} />
-                  <div className="text-left">
-                    <span className="block text-[9px] uppercase tracking-wider font-bold text-red-300 leading-none mb-0.5">
-                      Time Expired
-                    </span>
-                    <span className="font-mono text-base sm:text-xl font-black leading-none text-red-200">
-                      00:00 · Closed
-                    </span>
+            {(hasTimeLimit || closed) && (
+              <div
+                role={hasTimeLimit ? "timer" : "status"}
+                aria-live="off"
+                aria-label={closed ? "Assessment status" : `Time remaining ${formattedTime}`}
+                className={`rounded-xl border px-3.5 py-2 sm:px-5 sm:py-2.5 text-center shrink-0 transition-colors ${
+                  isExpiredAttempt
+                    ? "border-red-500/40 bg-red-950/60"
+                    : closed
+                    ? "border-white/10 bg-white/5"
+                    : isLowTime
+                    ? "border-red-400/50 bg-red-500/20 animate-pulse"
+                    : "border-amber-400/30 bg-white/10"
+                }`}
+              >
+                {isExpiredAttempt ? (
+                  <div className="flex items-center gap-2">
+                    <Clock className="text-red-400 shrink-0" size={18} />
+                    <div className="text-left">
+                      <span className="block text-[9px] uppercase tracking-wider font-bold text-red-300 leading-none mb-0.5">
+                        Time Expired
+                      </span>
+                      <span className="font-mono text-base sm:text-xl font-black leading-none text-red-200">
+                        00:00 · Closed
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ) : closed ? (
-                <span className="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider">
-                  {isReleased ? "Released" : data.attempt.status}
-                </span>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Clock
-                    className={isLowTime ? "text-red-300 shrink-0" : "text-amber-400 shrink-0"}
-                    size={18}
-                  />
-                  <div className="text-left">
-                    <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-300 leading-none mb-0.5">
-                      Time Left
-                    </span>
-                    <span
-                      className={`font-mono text-lg sm:text-2xl font-black leading-none ${
-                        isLowTime ? "text-red-200" : "text-amber-300"
-                      }`}
-                    >
-                      {formattedTime}
-                    </span>
+                ) : closed ? (
+                  <span className="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider">
+                    {isReleased ? "Released" : data.attempt.status}
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Clock
+                      className={isLowTime ? "text-red-300 shrink-0" : "text-amber-400 shrink-0"}
+                      size={18}
+                    />
+                    <div className="text-left">
+                      <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-300 leading-none mb-0.5">
+                        Time Left
+                      </span>
+                      <span
+                        className={`font-mono text-lg sm:text-2xl font-black leading-none ${
+                          isLowTime ? "text-red-200" : "text-amber-300"
+                        }`}
+                      >
+                        {formattedTime}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -1526,6 +1639,61 @@ export default function StudentExamAttempt() {
                     </p>
                   </div>
 
+                  {/* INSTRUCTIONS, DELIVERABLES & REFERENCE LEARNING MATERIALS IN QUIZ PLAYER */}
+                  {(data.exam.instructions ||
+                    data.exam.deliverables ||
+                    examResourceUrl ||
+                    (Array.isArray(data.exam.learningResources) &&
+                      data.exam.learningResources.length > 0)) && (
+                    <div className="rounded-2xl border border-white/10 bg-[#131418] p-4 sm:p-5 space-y-3">
+                      {data.exam.instructions && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold uppercase tracking-wider text-blue-400">
+                            {typeLabels.singular} Instructions &amp; Brief
+                          </p>
+                          <p className="text-xs sm:text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
+                            {data.exam.instructions}
+                          </p>
+                        </div>
+                      )}
+                      {data.exam.deliverables && (
+                        <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-1">
+                          <p className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                            Deliverables &amp; Expectations
+                          </p>
+                          <p className="text-xs sm:text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
+                            {data.exam.deliverables}
+                          </p>
+                        </div>
+                      )}
+                      {examResourceUrl && (
+                        <EmbeddedLearningMedia
+                          url={examResourceUrl}
+                          title={
+                            data.exam.resourceTitle ||
+                            `${typeLabels.singular} Learning Video / Reference Material`
+                          }
+                          hideExternalLink={true}
+                        />
+                      )}
+                      {Array.isArray(data.exam.learningResources) &&
+                        data.exam.learningResources
+                          .filter((r) => (r.url || r.youtubeUrl) && (r.url || r.youtubeUrl) !== examResourceUrl)
+                          .map((resItem, rIdx) => (
+                            <div key={resItem.id || rIdx} className="space-y-1.5">
+                              {resItem.instructions && (
+                                <p className="text-xs text-slate-300">{resItem.instructions}</p>
+                              )}
+                              <EmbeddedLearningMedia
+                                url={resItem.url || resItem.youtubeUrl || ""}
+                                title={resItem.title || `Learning Resource ${rIdx + 1}`}
+                                hideExternalLink={true}
+                              />
+                            </div>
+                          ))}
+                    </div>
+                  )}
+
                   {/* PROGRESS BAR & QUESTIONS COUNTERS */}
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between text-xs sm:text-sm font-semibold text-slate-400">
@@ -1578,6 +1746,7 @@ export default function StudentExamAttempt() {
                         <EmbeddedLearningMedia
                           url={currentQMediaUrl}
                           title={currentQ.prompt || "Question Media"}
+                          hideExternalLink={true}
                         />
                       </div>
                     )}
@@ -1941,14 +2110,28 @@ export default function StudentExamAttempt() {
           ) : (
             /* ALL QUESTIONS LIST VIEW (CLASSIC LIST) */
             <>
-              {data.exam.instructions && (
-                <section className="rounded-2xl border border-blue-200 dark:border-blue-800/70 bg-blue-50/60 dark:bg-blue-950/30 p-4 sm:p-5 text-xs sm:text-sm text-slate-800 dark:text-slate-200 space-y-2">
-                  <p className="font-bold text-blue-950 dark:text-blue-200">
-                    {typeLabels.singular} Instructions &amp; Brief
-                  </p>
-                  <p className="leading-relaxed whitespace-pre-wrap break-words">
-                    {data.exam.instructions}
-                  </p>
+              {(data.exam.instructions || data.exam.deliverables) && (
+                <section className="rounded-2xl border border-blue-200 dark:border-blue-800/70 bg-blue-50/60 dark:bg-blue-950/30 p-4 sm:p-5 text-xs sm:text-sm text-slate-800 dark:text-slate-200 space-y-3">
+                  {data.exam.instructions && (
+                    <div className="space-y-1">
+                      <p className="font-bold text-blue-950 dark:text-blue-200">
+                        {typeLabels.singular} Instructions &amp; Brief
+                      </p>
+                      <p className="leading-relaxed whitespace-pre-wrap break-words">
+                        {data.exam.instructions}
+                      </p>
+                    </div>
+                  )}
+                  {data.exam.deliverables && (
+                    <div className="pt-2 border-t border-blue-200/70 dark:border-blue-800/50 space-y-1">
+                      <p className="font-bold text-emerald-900 dark:text-emerald-300">
+                        Deliverables &amp; Expectations
+                      </p>
+                      <p className="leading-relaxed whitespace-pre-wrap break-words">
+                        {data.exam.deliverables}
+                      </p>
+                    </div>
+                  )}
                 </section>
               )}
 
@@ -1957,10 +2140,36 @@ export default function StudentExamAttempt() {
                 <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm">
                   <EmbeddedLearningMedia
                     url={examResourceUrl}
-                    title={`${typeLabels.singular} Learning Video / Reference Material`}
+                    title={
+                      data.exam.resourceTitle ||
+                      `${typeLabels.singular} Learning Video / Reference Material`
+                    }
+                    hideExternalLink={true}
                   />
                 </section>
               )}
+
+              {/* Additional Structured Learning Resources */}
+              {Array.isArray(data.exam.learningResources) &&
+                data.exam.learningResources
+                  .filter((r) => (r.url || r.youtubeUrl) && (r.url || r.youtubeUrl) !== examResourceUrl)
+                  .map((resItem, rIdx) => (
+                    <section
+                      key={resItem.id || rIdx}
+                      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm space-y-2"
+                    >
+                      {resItem.instructions && (
+                        <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">
+                          {resItem.instructions}
+                        </p>
+                      )}
+                      <EmbeddedLearningMedia
+                        url={resItem.url || resItem.youtubeUrl || ""}
+                        title={resItem.title || `Learning Resource ${rIdx + 1}`}
+                        hideExternalLink={true}
+                      />
+                    </section>
+                  ))}
 
               <section className="space-y-4 sm:space-y-5">
                 {data.questions.map((q, i) => {
@@ -2022,7 +2231,11 @@ export default function StudentExamAttempt() {
 
                   {/* Embedded Video / Learning Material inside Question Block */}
                   {qMediaUrl && qMediaUrl !== examResourceUrl && (
-                    <EmbeddedLearningMedia url={qMediaUrl} title={q.prompt || "Learning Media"} />
+                    <EmbeddedLearningMedia
+                      url={qMediaUrl}
+                      title={q.prompt || "Learning Media"}
+                      hideExternalLink={true}
+                    />
                   )}
 
                   {/* Content/Question Type Specific Inputs */}
@@ -2386,16 +2599,18 @@ export default function StudentExamAttempt() {
                   ? "Autosave delayed"
                   : "✓ All progress saved"}
               </span>
-              <span
-                className={`inline-flex items-center gap-1.5 font-mono text-xs font-bold px-2.5 py-1 rounded-lg border ${
-                  isLowTime
-                    ? "text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/50 border-red-200 dark:border-red-800"
-                    : "text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800"
-                }`}
-              >
-                <Clock size={13} className="shrink-0" />
-                {formattedTime}
-              </span>
+              {hasTimeLimit && (
+                <span
+                  className={`inline-flex items-center gap-1.5 font-mono text-xs font-bold px-2.5 py-1 rounded-lg border ${
+                    isLowTime
+                      ? "text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/50 border-red-200 dark:border-red-800"
+                      : "text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800"
+                  }`}
+                >
+                  <Clock size={13} className="shrink-0" />
+                  {formattedTime}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2.5">
               <button

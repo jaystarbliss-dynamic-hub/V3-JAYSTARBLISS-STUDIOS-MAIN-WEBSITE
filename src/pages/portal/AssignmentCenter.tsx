@@ -43,6 +43,12 @@ import {
   reviewUnifiedAssignment,
   submitUnifiedAssignment,
 } from '../../lib/academicSyncEngine';
+import {
+  fetchAllProgramsMap,
+  resolveProgramSubjectsAndModules,
+  resolveRecipientEnrolledPrograms,
+  type ProgramRecord,
+} from '../../lib/programHierarchy';
 import { EmbeddedLearningMedia } from '../../components/portal/EmbeddedLearningMedia';
 import SEO from '../../components/ui/SEO';
 import { ExamListSkeleton } from '../../components/ui/Skeleton';
@@ -59,7 +65,8 @@ type Draft = {
 type SchoolOption = {
   id: string;
   name: string;
-  programs: string[];
+  programs: any[];
+  [key: string]: any;
 };
 
 type TutorStudentOption = {
@@ -75,6 +82,7 @@ type TutorStudentOption = {
   parentId?: string;
   parentEmail?: string;
   isSchoolStudent: boolean;
+  [key: string]: any;
 };
 
 const formatDate = (value?: string | null) => {
@@ -163,6 +171,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
   const [linkedChildren, setLinkedChildren] = useState<LinkedLearnerProfile[]>([]);
   const [tutorStudents, setTutorStudents] = useState<TutorStudentOption[]>([]);
   const [schools, setSchools] = useState<SchoolOption[]>([]);
+  const [programsMap, setProgramsMap] = useState<Map<string, ProgramRecord>>(new Map());
   const [studentProfile, setStudentProfile] = useState<LinkedLearnerProfile | null>(null);
 
   // Filters
@@ -238,25 +247,25 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
           const currentUser = auth.currentUser;
           const uid = currentUser?.uid || '';
 
-          const [tutorAssList, schoolsSnap, indivSnap, studSnap, userDocSnap] = await Promise.all([
+          const [tutorAssList, schoolsSnap, indivSnap, studSnap, userDocSnap, loadedProgramsMap] = await Promise.all([
             fetchAssignmentsForTutor({}),
             getDocs(collection(db, 'schools')).catch(() => ({ docs: [] } as any)),
             getDocs(collection(db, 'individualStudents')).catch(() => ({ docs: [] } as any)),
             getDocs(collection(db, 'students')).catch(() => ({ docs: [] } as any)),
             uid ? getDoc(doc(db, 'users', uid)).catch(() => null) : Promise.resolve(null),
+            fetchAllProgramsMap().catch(() => new Map<string, ProgramRecord>()),
           ]);
 
           setAssignments(tutorAssList);
+          setProgramsMap(loadedProgramsMap);
 
           const schoolMap = new Map<string, SchoolOption>();
           schoolsSnap.docs?.forEach((d: any) => {
             const s = d.data() || {};
             const name = resolvePartnerSchoolName(s.name, s.schoolName, s.institutionName);
             if (!name) return;
-            const progs = Array.isArray(s.programs)
-              ? s.programs.map((p: any) => String(p?.name || p?.title || p || '').trim()).filter(Boolean)
-              : [];
-            schoolMap.set(d.id, { id: d.id, name, programs: progs });
+            const progs = Array.isArray(s.programs) ? s.programs : [];
+            schoolMap.set(d.id, { ...s, id: d.id, name, programs: progs });
           });
 
           const loadedSchools = Array.from(schoolMap.values()).sort((a, b) =>
@@ -282,6 +291,8 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
 
             const existing = studentMap.get(docId);
             studentMap.set(docId, {
+              ...existing,
+              ...d,
               id: docId,
               uid: String(d.firebaseUid || d.userId || d.uid || existing?.uid || '').trim(),
               fullName,
@@ -353,6 +364,78 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
       return true;
     });
   }, [tutorStudents, studentCategoryFilter]);
+
+  // Part 8: Dynamically resolve registered programs for the selected school or individual learner
+  const recipientEnrolledPrograms = useMemo(() => {
+    const selectedSchools =
+      targetMode === 'SCHOOL_GRADE' && form.schoolId
+        ? schools.filter((s) => s.id === form.schoolId)
+        : [];
+    const selectedStudents =
+      targetMode === 'INDIVIDUAL' && form.studentId
+        ? tutorStudents.filter((s) => s.id === form.studentId)
+        : [];
+    return resolveRecipientEnrolledPrograms(programsMap, {
+      schools: selectedSchools,
+      students: selectedStudents,
+    });
+  }, [targetMode, form.schoolId, form.studentId, schools, tutorStudents, programsMap]);
+
+  const selectedEnrolledProgram = useMemo(() => {
+    if (!recipientEnrolledPrograms.length) return null;
+    const match = recipientEnrolledPrograms.find(
+      (p) =>
+        p.id === form.programName ||
+        p.title.toLowerCase() === String(form.programName || '').trim().toLowerCase()
+    );
+    return match || recipientEnrolledPrograms[0];
+  }, [recipientEnrolledPrograms, form.programName]);
+
+  const programSubItems = useMemo(() => {
+    const items = resolveProgramSubjectsAndModules(
+      selectedEnrolledProgram?.id || selectedEnrolledProgram?.title || '',
+      programsMap
+    );
+    const hasSubprogram = items.some((i) => i.type === 'subprogram');
+    return {
+      fieldLabel: hasSubprogram ? 'Subject / Sub-Programme' : 'Subject / Module',
+      items,
+    };
+  }, [selectedEnrolledProgram, programsMap]);
+
+  // Keep form.programName and form.subject aligned with the selected recipient's enrolled programs
+  useEffect(() => {
+    if (!recipientEnrolledPrograms.length) return;
+    const activeProg =
+      recipientEnrolledPrograms.find(
+        (p) =>
+          p.id === form.programName ||
+          p.title.toLowerCase() === String(form.programName || '').trim().toLowerCase()
+      ) || recipientEnrolledPrograms[0];
+    const subItems = resolveProgramSubjectsAndModules(
+      activeProg.id || activeProg.title,
+      programsMap
+    );
+    const validSub =
+      subItems.find(
+        (item) =>
+          item.title.toLowerCase() === String(form.subject || '').trim().toLowerCase() ||
+          item.id === form.subject
+      ) || subItems[0];
+
+    setForm((prev) => {
+      const nextProgramName = activeProg.title;
+      const nextSubject = validSub ? validSub.title : activeProg.title;
+      if (prev.programName === nextProgramName && prev.subject === nextSubject) {
+        return prev;
+      }
+      return {
+        ...prev,
+        programName: nextProgramName,
+        subject: nextSubject,
+      };
+    });
+  }, [recipientEnrolledPrograms, programsMap, form.programName, form.subject]);
 
   // Filtered assignments for display
   const visibleAssignments = useMemo(() => {
@@ -451,19 +534,36 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
       }
     }
 
+    if (recipientEnrolledPrograms.length > 0) {
+      const isEnrolledProgram = recipientEnrolledPrograms.some(
+        (p) =>
+          p.id === form.programName ||
+          p.title.toLowerCase() === form.programName.trim().toLowerCase()
+      );
+      if (!isEnrolledProgram) {
+        setError('Please select a program that the chosen recipient is registered for.');
+        return;
+      }
+    }
+
     setPublishing(true);
     try {
       const selectedSchool = schools.find((s) => s.id === form.schoolId);
       const selectedStudent = tutorStudents.find((s) => s.id === form.studentId);
+      const fallbackSchoolProg =
+        typeof selectedSchool?.programs?.[0] === 'string'
+          ? selectedSchool.programs[0]
+          : selectedSchool?.programs?.[0]?.title || selectedSchool?.programs?.[0]?.name || '';
 
       await createUnifiedAssignmentOrActivity({
         title: form.title.trim(),
         instructions: form.instructions.trim(),
-        subject: form.subject.trim() || 'Computer Technology',
+        subject: form.subject.trim() || selectedEnrolledProgram?.title || 'Computer Technology',
         programName:
           form.programName.trim() ||
+          selectedEnrolledProgram?.title ||
           selectedStudent?.programName ||
-          selectedSchool?.programs?.[0] ||
+          fallbackSchoolProg ||
           'Technology Track',
         activityType: form.activityType,
         targetMode,
@@ -1132,7 +1232,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
               </div>
             )}
 
-            {/* Activity Metadata */}
+            {/* Activity Metadata (Part 8: Dynamic Recipient-Scoped Program & Subject/Sub-Program Selection) */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Field label="Activity Type">
                 <select
@@ -1149,23 +1249,73 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
                 </select>
               </Field>
 
-              <Field label="Subject">
-                <input
-                  required
-                  value={form.subject}
-                  onChange={(e) => setForm({ ...form, subject: e.target.value })}
-                  placeholder="e.g. Coding & Robotics"
-                  className="input"
-                />
+              <Field label="Registered Program">
+                {recipientEnrolledPrograms.length > 0 ? (
+                  <select
+                    required
+                    value={selectedEnrolledProgram?.title || form.programName}
+                    onChange={(e) => {
+                      const nextProgTitle = e.target.value;
+                      const foundProg =
+                        recipientEnrolledPrograms.find((p) => p.title === nextProgTitle) || null;
+                      const subResolved = resolveProgramSubjectsAndModules(
+                        foundProg?.id || foundProg?.title || nextProgTitle,
+                        programsMap
+                      );
+                      setForm({
+                        ...form,
+                        programName: nextProgTitle,
+                        subject: subResolved[0]?.title || nextProgTitle,
+                      });
+                    }}
+                    className="input"
+                  >
+                    {recipientEnrolledPrograms.map((prog) => (
+                      <option key={prog.id} value={prog.title}>
+                        {prog.title}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    disabled
+                    value=""
+                    className="input opacity-70 cursor-not-allowed"
+                  >
+                    <option value="">
+                      {targetMode === 'INDIVIDUAL' && !form.studentId
+                        ? 'Select a learner first…'
+                        : 'No registered programs found'}
+                    </option>
+                  </select>
+                )}
               </Field>
 
-              <Field label="Program / Track">
-                <input
-                  value={form.programName}
-                  onChange={(e) => setForm({ ...form, programName: e.target.value })}
-                  placeholder="e.g. Coding for Kids"
-                  className="input"
-                />
+              <Field label={programSubItems.fieldLabel || 'Subject / Module'}>
+                {programSubItems.items.length > 0 ? (
+                  <select
+                    required
+                    value={form.subject}
+                    onChange={(e) => setForm({ ...form, subject: e.target.value })}
+                    className="input"
+                  >
+                    {programSubItems.items.map((sub) => (
+                      <option key={sub.id} value={sub.title}>
+                        {sub.title}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    disabled
+                    value={selectedEnrolledProgram?.title || ''}
+                    className="input opacity-70 cursor-not-allowed"
+                  >
+                    <option value={selectedEnrolledProgram?.title || ''}>
+                      {selectedEnrolledProgram?.title || 'Select a program first…'}
+                    </option>
+                  </select>
+                )}
               </Field>
             </div>
 

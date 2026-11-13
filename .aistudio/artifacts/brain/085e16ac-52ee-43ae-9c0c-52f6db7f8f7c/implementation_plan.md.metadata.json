@@ -1,6 +1,0 @@
-{
-  "summary":  "Comprehensive implementation plan for the Tutor Portal overhaul covering the RecipientSelectorModal state-reset bug fix, inline Learner Assessments & Creation in StaffStudentWorkspace, Recharts analytics and modern school/private filter on StaffDashboard, Live Classes & Class Schedules header/filter/button cleanup, and embedding Subjects & Programmes configuration inside Tutor Profile Settings.",
-  "updatedAt":  "2026-11-09T19:00:23.892412039Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

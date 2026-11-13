@@ -30,6 +30,7 @@ import {
   AGREEMENT_STATUSES as SHARED_AGREEMENT_STATUSES,
   createAgreementVersionSnapshot as sharedCreateAgreementVersionSnapshot,
   canAccessAgreement as sharedCanAccessAgreement,
+  shouldAutoReleaseAttemptResult as sharedShouldAutoReleaseAttemptResult,
   isAttemptResultReleased as sharedIsAttemptResultReleased,
   canViewOrPrintAttemptResult as sharedCanViewOrPrintAttemptResult,
   getWorkTypeLabels as sharedGetWorkTypeLabels,
@@ -298,15 +299,26 @@ export function validateExamCreationPayload(
   return sharedValidateExamCreationPayload(body, existingDoc);
 }
 
-export function isAttemptResultReleased(attempt?: Record<string, any> | null): boolean {
-  return sharedIsAttemptResultReleased(attempt || {});
+export function shouldAutoReleaseAttemptResult(
+  exam?: Record<string, any> | null,
+  grading?: Record<string, any> | null
+): boolean {
+  return sharedShouldAutoReleaseAttemptResult(exam || {}, grading || {});
+}
+
+export function isAttemptResultReleased(
+  attempt?: Record<string, any> | null,
+  exam?: Record<string, any> | null
+): boolean {
+  return sharedIsAttemptResultReleased(attempt || {}, exam || {});
 }
 
 export function canViewOrPrintAttemptResult(
   attempt?: Record<string, any> | null,
-  callerRole?: unknown
+  callerRole?: unknown,
+  exam?: Record<string, any> | null
 ): boolean {
-  return sharedCanViewOrPrintAttemptResult(attempt || {}, callerRole);
+  return sharedCanViewOrPrintAttemptResult(attempt || {}, callerRole, exam || {});
 }
 
 

@@ -648,6 +648,36 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
     body.classIds || body.targetClass || body.className || existingDoc?.classIds || existingDoc?.targetClass || []
   );
 
+  const workType = normalizeWorkType(body.workType, body.workType ? existingDoc : body || existingDoc);
+  const requiresPasscode = workType === "TEST" || workType === "EXAMINATION";
+  const hasPasscode = requiresPasscode
+    ? true
+    : Boolean(body.hasPasscode ?? existingDoc?.hasPasscode ?? Boolean(body.passcode || existingDoc?.passcode));
+  const resolvedPasscode = String(body.passcode ?? existingDoc?.passcode ?? "").trim();
+  if (requiresPasscode && status !== "draft" && (body.hasPasscode === false || ("passcode" in body && !resolvedPasscode))) {
+    return { error: `A passcode is required for all ${workType === "TEST" ? "Tests" : "Examinations"}.` };
+  }
+  const releaseGradesPolicy =
+    String(body.releaseGradesPolicy ?? existingDoc?.releaseGradesPolicy ?? "immediate").toLowerCase() === "manual"
+      ? "manual"
+      : "immediate";
+  const deliverables = String(body.deliverables ?? existingDoc?.deliverables ?? "").trim().slice(0, 5000);
+  const resourceTitle = String(body.resourceTitle ?? existingDoc?.resourceTitle ?? "").trim().slice(0, 300);
+  const learningResources = Array.isArray(body.learningResources ?? existingDoc?.learningResources)
+    ? (body.learningResources ?? existingDoc?.learningResources)
+        .filter((r) => r && typeof r === "object" && (r.url || r.youtubeUrl || r.title))
+        .map((r, idx) => ({
+          id: String(r.id || `res_${idx + 1}`),
+          title: String(r.title || `Resource ${idx + 1}`).trim().slice(0, 300),
+          instructions: String(r.instructions || "").trim().slice(0, 2000),
+          url: String(r.url || r.youtubeUrl || "").trim().slice(0, 2000),
+          youtubeUrl: String(r.youtubeUrl || "").trim().slice(0, 2000),
+        }))
+    : [];
+  const programId = String(body.programId ?? existingDoc?.programId ?? "").trim();
+  const programName = String(body.programName ?? body.programTitle ?? existingDoc?.programName ?? existingDoc?.programTitle ?? "").trim();
+  const subProgramName = String(body.subProgramName ?? existingDoc?.subProgramName ?? "").trim();
+
   if (deliveryMode === "EXTERNAL_LINK") {
     const urlCandidate = body.externalUrl ?? body.url ?? existingDoc?.externalUrl ?? existingDoc?.url ?? "";
     const urlCheck = validateExternalExamUrl(urlCandidate);
@@ -663,10 +693,19 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
 
     return {
       deliveryMode: "EXTERNAL_LINK",
+      workType,
+      hasPasscode,
+      hasTimeLimit: durationMinutes > 0,
       title,
       subject,
       description,
+      ...(deliverables ? { deliverables } : {}),
+      ...(resourceTitle ? { resourceTitle } : {}),
       ...(resourceUrl ? { resourceUrl, videoUrl: resourceUrl } : {}),
+      ...(learningResources.length > 0 ? { learningResources } : {}),
+      ...(programId ? { programId } : {}),
+      ...(programName ? { programName, programTitle: programName } : {}),
+      ...(subProgramName ? { subProgramName } : {}),
       externalUrl: urlCheck.url,
       classIds,
       questions: [],
@@ -674,14 +713,34 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
       maxScore: 0,
       durationMinutes,
       gradingMode: "automatic",
+      releaseGradesPolicy,
       status,
     };
   }
 
-  // NATIVE examination validation (supports any positive whole-number duration up to 525,600 minutes / 1 year)
-  const durationMinutes = Number(body.durationMinutes ?? existingDoc?.durationMinutes ?? 30);
-  if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 525600) {
-    return { error: "Provide a whole-number duration of at least 1 minute." };
+  // NATIVE examination validation: time limit is genuinely optional when hasTimeLimit is false or durationMinutes is null/0
+  const explicitNoTimeLimit =
+    body.hasTimeLimit === false ||
+    body.durationMinutes === null ||
+    body.durationMinutes === 0 ||
+    body.durationMinutes === "";
+  const hasTimeLimit = explicitNoTimeLimit
+    ? false
+    : body.hasTimeLimit === true
+    ? true
+    : body.durationMinutes !== undefined
+    ? true
+    : existingDoc?.hasTimeLimit !== undefined
+    ? Boolean(existingDoc.hasTimeLimit)
+    : existingDoc?.durationMinutes !== undefined && existingDoc?.durationMinutes !== null && Number(existingDoc?.durationMinutes) > 0;
+
+  let durationMinutes = null;
+  if (hasTimeLimit) {
+    const rawDuration = Number(body.durationMinutes ?? existingDoc?.durationMinutes ?? 30);
+    if (!Number.isInteger(rawDuration) || rawDuration < 1 || rawDuration > 525600) {
+      return { error: "Provide a whole-number duration of at least 1 minute." };
+    }
+    durationMinutes = rawDuration;
   }
 
   let rawQuestions = Array.isArray(body.questions) ? body.questions : [];
@@ -717,10 +776,19 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
   if (rawQuestions.length === 0 && status === "draft") {
     return {
       deliveryMode: "NATIVE",
+      workType,
+      hasPasscode,
+      hasTimeLimit,
       title,
       subject,
       description,
+      ...(deliverables ? { deliverables } : {}),
+      ...(resourceTitle ? { resourceTitle } : {}),
       ...(resourceUrl ? { resourceUrl, videoUrl: resourceUrl } : {}),
+      ...(learningResources.length > 0 ? { learningResources } : {}),
+      ...(programId ? { programId } : {}),
+      ...(programName ? { programName, programTitle: programName } : {}),
+      ...(subProgramName ? { subProgramName } : {}),
       ...(submissionFormat ? { submissionFormat } : {}),
       ...(isTaskOnlyAssignment ? { isTaskOnlyAssignment: true } : {}),
       externalUrl: String(body.externalUrl ?? existingDoc?.externalUrl ?? "").trim(),
@@ -730,6 +798,7 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
       maxScore: 0,
       durationMinutes,
       gradingMode,
+      releaseGradesPolicy,
       status,
     };
   }
@@ -743,10 +812,19 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
 
   return {
     deliveryMode: "NATIVE",
+    workType,
+    hasPasscode,
+    hasTimeLimit,
     title,
     subject,
     description,
+    ...(deliverables ? { deliverables } : {}),
+    ...(resourceTitle ? { resourceTitle } : {}),
     ...(resourceUrl ? { resourceUrl, videoUrl: resourceUrl } : {}),
+    ...(learningResources.length > 0 ? { learningResources } : {}),
+    ...(programId ? { programId } : {}),
+    ...(programName ? { programName, programTitle: programName } : {}),
+    ...(subProgramName ? { subProgramName } : {}),
     ...(submissionFormat ? { submissionFormat } : {}),
     ...(isTaskOnlyAssignment ? { isTaskOnlyAssignment: true } : {}),
     externalUrl: String(body.externalUrl ?? existingDoc?.externalUrl ?? "").trim(),
@@ -756,6 +834,7 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
     maxScore: normalized.maxScore,
     durationMinutes,
     gradingMode,
+    releaseGradesPolicy,
     status,
   };
 }
@@ -1468,23 +1547,52 @@ export function canAccessAgreement(agreementOrOpts = {}, actorArg = {}) {
 // ASSESSMENT RESULT RELEASE & PRINTING AUTHORIZATION
 // ============================================================================
 
+export function shouldAutoReleaseAttemptResult(exam = {}, grading = {}) {
+  if (!exam || typeof exam !== "object") return false;
+  if (exam.isUngradedActivity === true) return false;
+  const gradingMode = String(exam.gradingMode || "automatic").trim().toLowerCase();
+  const releasePolicy = String(exam.releaseGradesPolicy || "immediate").trim().toLowerCase();
+  if (gradingMode === "manual" || releasePolicy === "manual") return false;
+  if (grading && grading.autoGraded === false) return false;
+  const questions = Array.isArray(exam.questions) ? exam.questions : [];
+  const hasManualQuestion = questions.some((q) =>
+    ["essay", "long_answer", "practical_task", "link_submission", "file_submission"].includes(
+      String(q?.type || "").toLowerCase()
+    )
+  );
+  if (hasManualQuestion) return false;
+  return true;
+}
+
 export function isAttemptResultReleased(attempt = {}, exam = {}) {
   if (!attempt || typeof attempt !== "object") return false;
   if (attempt.releasedAt || attempt.resultReleased === true) return true;
 
-  const autoReleaseAt = attempt.autoReleaseAt || exam.autoReleaseAt || exam.autoReleaseDate;
+  const status = String(attempt.status || "").toLowerCase();
+  if (!["submitted", "expired", "graded"].includes(status)) return false;
+
+  const autoReleaseAt = attempt.autoReleaseAt || exam?.autoReleaseAt || exam?.autoReleaseDate;
   if (autoReleaseAt) {
     const relTime = new Date(autoReleaseAt).getTime();
     if (!isNaN(relTime) && Date.now() >= relTime) return true;
   }
-  if (attempt.autoRelease === true || exam.autoRelease === true) {
-    const status = String(attempt.status || "").toLowerCase();
-    if (["submitted", "expired", "graded"].includes(status)) return true;
+  if (attempt.autoRelease === true || exam?.autoRelease === true) {
+    return true;
+  }
+  // If exam context is provided and configured for automatic grading + immediate release,
+  // auto-graded attempts are immediately released to the student without waiting for manual release.
+  if (
+    exam &&
+    typeof exam === "object" &&
+    Object.keys(exam).length > 0 &&
+    shouldAutoReleaseAttemptResult(exam, { autoGraded: attempt.autoGraded })
+  ) {
+    return true;
   }
   return false;
 }
 
-export function canViewOrPrintAttemptResult(attempt = {}, callerRole = "") {
+export function canViewOrPrintAttemptResult(attempt = {}, callerRole = "", exam = {}) {
   if (!attempt || typeof attempt !== "object") return false;
   const status = String(attempt.status || "").trim().toLowerCase();
   if (!["submitted", "expired", "graded"].includes(status)) {
@@ -1494,7 +1602,7 @@ export function canViewOrPrintAttemptResult(attempt = {}, callerRole = "") {
   if (canAuthorOrMutateExam(role)) {
     return true;
   }
-  return isAttemptResultReleased(attempt);
+  return isAttemptResultReleased(attempt, exam);
 }
 
 // ============================================================================

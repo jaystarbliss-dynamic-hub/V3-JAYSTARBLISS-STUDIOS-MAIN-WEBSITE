@@ -37,6 +37,7 @@ import {
   getWorkTypeLabels,
   isStudentEligibleForWork,
   isAttemptResultReleased,
+  shouldAutoReleaseAttemptResult,
   isAttemptOverdueForExpiry,
   gradeAnswers,
   resolveAttemptQuestions,
@@ -414,10 +415,9 @@ export default function StudentExaminations() {
             ) {
               effectiveStatus = "expired";
               const attemptQuestions = resolveAttemptQuestions(parentExam || {}, a);
-              const grading = gradeAnswers(
-                { ...(parentExam || {}), questions: attemptQuestions },
-                a.answers || {}
-              );
+              const effectiveParentExam = { ...(parentExam || {}), questions: attemptQuestions };
+              const grading = gradeAnswers(effectiveParentExam, a.answers || {});
+              const autoReleaseExpired = shouldAutoReleaseAttemptResult(effectiveParentExam, grading);
               allDbs.forEach((dbInst) => {
                 setDoc(
                   doc(dbInst, "jdiExamAttempts", ad.id),
@@ -428,6 +428,9 @@ export default function StudentExaminations() {
                     percentage: grading.percentage,
                     autoGraded: grading.autoGraded,
                     questionResults: grading.questionResults,
+                    ...(autoReleaseExpired
+                      ? { resultReleased: true, releasedAt: serverTimestamp() }
+                      : {}),
                     isOnline: false,
                     submittedAt: a.submittedAt || serverTimestamp(),
                     updatedAt: serverTimestamp(),
@@ -437,7 +440,10 @@ export default function StudentExaminations() {
               });
             }
 
-            const isReleased = isAttemptResultReleased(a);
+            const isReleased = isAttemptResultReleased(
+              { ...a, status: effectiveStatus },
+              parentExam || {}
+            );
             const prev = attemptsByExam[examKey];
             const isCurrentDone = ["submitted", "completed", "graded", "expired"].includes(
               effectiveStatus.toLowerCase()
@@ -504,19 +510,75 @@ export default function StudentExaminations() {
 
         const isPastDeadline = now >= until || now > dueDateDeadline;
 
+        // Automatic scheduled activation: when a scheduled assessment's availableFrom time arrives, promote it to active
+        let effectiveExamStatus = String(exam.status || "active").toLowerCase();
+        if (effectiveExamStatus === "scheduled" && from > 0 && now >= from && !isPastDeadline) {
+          effectiveExamStatus = "active";
+          const currentUid = auth.currentUser?.uid || ctx.uid;
+          allDbs.forEach((dbInst) => {
+            setDoc(doc(dbInst, "jdiExams", String(exam.id)), { status: "active", updatedAt: serverTimestamp() }, { merge: true }).catch(() => undefined);
+            setDoc(doc(dbInst, "schoolExams", String(exam.id)), { status: "active", updatedAt: serverTimestamp() }, { merge: true }).catch(() => undefined);
+            if (currentUid) {
+              const notifDocId = `exam_active_${exam.id}_${currentUid}`;
+              const workLabel = getWorkTypeLabels(exam.workType, exam).singular;
+              const requiresCode = ["TEST", "EXAMINATION"].includes(normalizeWorkType(exam.workType, exam));
+              const codeInfo = requiresCode && exam.passcode ? ` • Passcode: ${String(exam.passcode).toUpperCase()}` : "";
+              setDoc(
+                doc(dbInst, "notifications", notifDocId),
+                {
+                  recipientId: currentUid,
+                  recipientUid: currentUid,
+                  title: `${workLabel} Now Active: ${exam.title || "Assessment"}`,
+                  message: `Your scheduled ${workLabel.toLowerCase()} "${exam.title || "Assessment"}" (${exam.subject || "General"}) is now active${codeInfo}.`,
+                  type: "broadcast",
+                  read: false,
+                  priority: "normal",
+                  examId: exam.id,
+                  link: "/portal/student/exams",
+                  timestamp: serverTimestamp(),
+                  createdAt: serverTimestamp(),
+                },
+                { merge: true }
+              ).catch(() => undefined);
+            }
+          });
+        }
+
         const computedStatus: "active" | "upcoming" | "completed" =
-          isAttemptSubmittedOrDone || exam.status === "completed" || isPastDeadline
+          isAttemptSubmittedOrDone || effectiveExamStatus === "completed" || isPastDeadline
             ? "completed"
-            : now < from || exam.status === "scheduled"
+            : (from > 0 && now < from) || effectiveExamStatus === "scheduled"
             ? "upcoming"
             : "active";
 
         const deliveryMode = normalizeDeliveryMode(exam);
         const maxScore = computeExamMaxScore(exam, att);
-        const percentage =
-          isAttemptResultReleased(att) && typeof att.score === "number"
-            ? calculateScorePercentage(att.score, maxScore)
+        const releasedFlag = Boolean(
+          att.resultReleased ||
+            existingServerItem?.resultReleased ||
+            existingServerItem?.releasedAt ||
+            isAttemptResultReleased(att, exam)
+        );
+        const resolvedScore =
+          releasedFlag
+            ? att.score !== undefined
+              ? att.score
+              : existingServerItem?.score
             : undefined;
+        const percentage =
+          releasedFlag && typeof resolvedScore === "number"
+            ? calculateScorePercentage(resolvedScore, maxScore)
+            : undefined;
+
+        const hasTimeLimit =
+          exam.hasTimeLimit !== undefined
+            ? Boolean(exam.hasTimeLimit)
+            : exam.durationMinutes !== null &&
+              exam.durationMinutes !== undefined &&
+              Number(exam.durationMinutes) > 0;
+        const resolvedDurationMinutes = hasTimeLimit
+          ? Math.max(1, Number(exam.durationMinutes) || 30)
+          : 0;
 
         examMap.set(String(exam.id), {
           id: exam.id,
@@ -531,10 +593,7 @@ export default function StudentExaminations() {
           resourceUrl: String(exam.resourceUrl || exam.videoUrl || exam.learningVideoUrl || "").trim(),
           videoUrl: String(exam.videoUrl || exam.learningVideoUrl || "").trim(),
           status: computedStatus,
-          durationMinutes:
-            deliveryMode === "EXTERNAL_LINK"
-              ? Math.max(0, Number(exam.durationMinutes) || 0)
-              : Math.max(1, Number(exam.durationMinutes) || 30),
+          durationMinutes: resolvedDurationMinutes,
           maxScore,
           questionCount: Array.isArray(exam.questions) ? exam.questions.length : 0,
           seriesName: exam.seriesName,
@@ -545,16 +604,20 @@ export default function StudentExaminations() {
           schoolId: exam.schoolId,
           schoolName: resolvePartnerSchoolName(exam.schoolName, ctx.schoolName),
           targetClass: normalizeClassName(exam.targetClass || exam.className || ""),
-          passcode: exam.passcode,
+          // Hide passcode while assessment is scheduled/upcoming; reveal once active
+          passcode: computedStatus === "active" ? exam.passcode : undefined,
           passcodeHash: exam.passcodeHash,
           questions: exam.questions,
           ...att,
+          resultReleased: releasedFlag,
+          score: resolvedScore,
           ...(existingServerItem?.attemptId && !att.attemptId
             ? {
                 attemptId: existingServerItem.attemptId,
                 attemptStatus: existingServerItem.attemptStatus,
-                score: existingServerItem.score,
-                releasedAt: existingServerItem.releasedAt,
+                score: resolvedScore,
+                releasedAt: existingServerItem.releasedAt || att.releasedAt,
+                resultReleased: releasedFlag,
                 percentage: existingServerItem.percentage ?? percentage,
               }
             : { percentage }),
@@ -565,12 +628,23 @@ export default function StudentExaminations() {
 
       // Load student's examination notifications
       if (auth.currentUser) {
-        const notifSnap = await getDocs(
-          query(collection(db, "jdiNotifications"), where("userId", "==", auth.currentUser.uid))
-        ).catch(() => ({ docs: [] } as any));
-        const notifs = (notifSnap.docs || [])
-          .map((d: any) => ({ id: d.id, ...d.data() }))
-          .filter((n: any) => n.type === "examination_published")
+        const uid = auth.currentUser.uid;
+        const [notifByUidSnap, notifByUserSnap] = await Promise.all([
+          getDocs(query(collection(db, "jdiNotifications"), where("recipientUid", "==", uid))).catch(
+            () => ({ docs: [] } as any)
+          ),
+          getDocs(query(collection(db, "jdiNotifications"), where("userId", "==", uid))).catch(
+            () => ({ docs: [] } as any)
+          ),
+        ]);
+        const notifMap = new Map<string, any>();
+        [...(notifByUidSnap.docs || []), ...(notifByUserSnap.docs || [])].forEach((d: any) => {
+          notifMap.set(d.id, { id: d.id, ...d.data() });
+        });
+        const notifs = Array.from(notifMap.values())
+          .filter((n: any) =>
+            ["examination_published", "exam_active", "exam_scheduled"].includes(String(n.type || ""))
+          )
           .slice(0, 5);
         setNotifications(notifs);
       }
@@ -704,8 +778,17 @@ export default function StudentExaminations() {
           const newAttemptId = `att_${Date.now().toString(36)}_${Math.random()
             .toString(36)
             .slice(2, 6)}`;
-          const durationMin = Number(targetExam.durationMinutes) || 30;
-          const deadlineAt = new Date(Date.now() + durationMin * 60 * 1000).toISOString();
+          const hasTimeLimit =
+            (targetExam as any).hasTimeLimit !== undefined
+              ? Boolean((targetExam as any).hasTimeLimit)
+              : Number(targetExam.durationMinutes) > 0;
+          const durationMin = hasTimeLimit
+            ? Math.max(1, Number(targetExam.durationMinutes) || 30)
+            : 0;
+          const deadlineAt =
+            durationMin > 0
+              ? new Date(Date.now() + durationMin * 60 * 1000).toISOString()
+              : null;
           const maxScore = computeExamMaxScore(targetExam);
           const schoolName = resolvePartnerSchoolName(
             targetExam.schoolName,
@@ -994,6 +1077,7 @@ export default function StudentExaminations() {
                           <EmbeddedLearningMedia
                             url={mediaUrl}
                             title={`${exam.title} — Learning Resource`}
+                            hideExternalLink={true}
                           />
                         </div>
                       )}
@@ -1028,7 +1112,7 @@ export default function StudentExaminations() {
                       )}
 
                       <div className="mt-3 flex flex-wrap gap-3 sm:gap-4 text-xs font-semibold text-slate-600 dark:text-slate-400">
-                        {(!isExternal || exam.durationMinutes > 0) && (
+                        {exam.durationMinutes > 0 && (
                           <span className="inline-flex items-center gap-1.5">
                             <Clock3 size={15} className="text-slate-400 shrink-0" />
                             Duration: {exam.durationMinutes} minutes
@@ -1194,15 +1278,22 @@ export default function StudentExaminations() {
 
                           return (
                             <>
-                              <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                                <LockKeyhole
-                                  size={18}
-                                  className="text-blue-700 dark:text-blue-400 shrink-0"
-                                />
-                                Enter {typeLabels.singular} Passcode
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                                  <LockKeyhole
+                                    size={18}
+                                    className="text-blue-700 dark:text-blue-400 shrink-0"
+                                  />
+                                  Enter {typeLabels.singular} Passcode
+                                </div>
+                                {exam.status === "active" && exam.passcode && (
+                                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 px-2.5 py-1 text-xs font-black text-blue-700 dark:text-blue-300 font-mono">
+                                    Active Passcode: {exam.passcode}
+                                  </span>
+                                )}
                               </div>
                               <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                                Enter the passcode provided by your tutor or school coordinator to{" "}
+                                Enter the passcode provided by your tutor or shown above to{" "}
                                 {isExternal
                                   ? `unlock the external ${typeLabels.lowerSingular} link.`
                                   : `unlock and start this ${typeLabels.lowerSingular}.`}

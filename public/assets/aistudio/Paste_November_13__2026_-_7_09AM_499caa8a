@@ -1,0 +1,655 @@
+# TASK: FIX AND ENHANCE THE TUTOR ASSESSMENT SYSTEM — JAYSTARBLISS STUDIOS PORTAL
+
+Act as a senior full-stack developer working on the **existing Jaystarbliss Studios School Management and Learning Platform**.
+
+I need you to conduct a focused audit and implement the fixes and improvements described below in the existing Tutor Assessment System.
+
+**IMPORTANT:** This is an enhancement to an existing platform, not a request to build a new assessment module. Before making changes, inspect the existing codebase, database structure, assessment workflows, tutor interfaces, student interfaces, notification system, assignment system, and relevant permissions. Understand how everything currently connects before implementing anything.
+
+Preserve the existing architecture, naming conventions, authentication, database structure, UI patterns, and working features wherever possible. Do not introduce duplicate functionality or create a parallel assessment system.
+
+The goal is to make the assessment workflow reliable, properly connected, and consistent across the tutor and student portals.
+
+---
+
+# PART 1: FIX AUTOMATIC GRADING AND IMMEDIATE RESULT RELEASE
+
+## 1.1 Existing problem
+
+When a tutor creates a native assessment, the assessment workspace provides different sections, including:
+
+- Questions
+- Responses
+- Settings
+
+Within the Settings section, tutors can enable the checkbox for **Automatic Grading**, which is intended to:
+
+- Automatically grade the student's submitted responses.
+- Calculate the student's score.
+- Display the score immediately after the student completes and submits the assessment.
+
+However, this setting does not currently work as intended.
+
+Even when the tutor enables Automatic Grading, the student submits the assessment and receives a message telling them to wait for the release of results.
+
+This is incorrect.
+
+## 1.2 Required behaviour
+
+When the tutor enables Automatic Grading:
+
+1. The system must automatically evaluate all responses that can be graded using the configured answer keys and marking rules.
+2. The system must calculate the student's score immediately after submission.
+3. The result must be released automatically.
+4. The student must immediately see their score and the available result information.
+5. The student must not see a message asking them to wait for the release of results.
+
+The system should only require manual result release when the tutor has configured the assessment for manual grading or deferred result publication.
+
+**Important distinction:** Automatic grading and result release must work together. Enabling automatic grading must not leave the result in a pending-release state.
+
+For assessments containing questions that require manual marking, preserve the existing manual marking workflow. Do not falsely present an incomplete assessment as fully graded.
+
+## 1.3 Acceptance criteria
+
+- Automatic Grading enabled → grade automatically and release available results immediately.
+- Automatic Grading disabled → preserve the configured manual grading and result-release workflow.
+- The student-facing result status must accurately reflect the actual grading and release status.
+- The setting must persist correctly and be respected by the backend, not just the frontend.
+
+---
+
+# PART 2: FIX THE OPTIONAL ASSESSMENT TIME LIMIT
+
+## 2.1 Existing problem
+
+In the assessment settings, tutors can decide whether an assessment should have a time limit.
+
+There is a checkbox for setting a time limit, alongside the field where the tutor specifies the duration.
+
+However, even when the tutor leaves the time-limit checkbox unchecked, students still see a default 30-minute countdown when attempting the assessment.
+
+This should not happen.
+
+## 2.2 Required behaviour
+
+The time limit must be genuinely optional.
+
+**When the tutor does not enable the time limit:**
+
+- Do not display a countdown timer to the student.
+- Do not display the default 30-minute timer.
+- Do not silently apply a default duration.
+- The assessment must not automatically close because of a time limit that the tutor never configured.
+- Students should be able to complete and submit the assessment according to its other configured rules.
+
+**When the tutor enables the time limit:**
+
+- Display the configured countdown timer to the student.
+- Use the exact duration specified by the tutor.
+- Enforce the configured duration correctly.
+- Automatically handle assessment expiry according to the existing assessment submission rules.
+
+The timer should only become visible when a valid time limit has explicitly been enabled and saved by the tutor.
+
+## 2.3 Acceptance criteria
+
+| Tutor configuration | Student experience |
+|---|---|
+| Time limit disabled | No countdown timer |
+| Time limit enabled: 30 minutes | 30-minute countdown |
+| Time limit enabled: 60 minutes | 60-minute countdown |
+| Time limit enabled: any other valid duration | Display and enforce that duration |
+
+Do not let frontend defaults override the tutor's saved configuration.
+
+---
+
+# PART 3: MAKE PASSCODES MANDATORY FOR TESTS AND EXAMINATIONS
+
+## 3.1 Required behaviour
+
+The assessment system supports different types of work, including activities, assignments, tests, and examinations.
+
+Passcodes should not be mandatory for ordinary activities and assignments.
+
+However, **tests and examinations must always require a passcode**.
+
+Implement the following rules:
+
+| Assessment type | Passcode requirement |
+|---|---|
+| Activity | Optional / not required by default |
+| Assignment | Optional / not required by default |
+| Test | Mandatory |
+| Examination | Mandatory |
+
+When a tutor selects Test or Examination as the assessment type:
+
+1. Automatically enable the passcode requirement.
+2. Keep the passcode checkbox checked.
+3. Disable the checkbox so the tutor cannot turn the requirement off.
+4. Ensure the system enforces the requirement on the backend as well.
+
+The tutor should not be able to publish a test or examination without a valid passcode configuration.
+
+For activities and assignments, preserve the existing flexibility.
+
+---
+
+# PART 4: ADD ASSESSMENT ACTIVATION AND SCHEDULING
+
+Currently, tutors need a way to determine when a test or examination becomes available to students.
+
+Introduce a clear availability setting in the assessment publishing workflow.
+
+## 4.1 Availability options
+
+When preparing an assessment, the tutor should be able to select between:
+
+**Option A: Activate Now**
+
+The assessment becomes available to its selected recipients as soon as the tutor publishes and activates it.
+
+**Option B: Schedule for Later**
+
+The tutor selects a future date and time when the assessment should automatically become active.
+
+The system must store and respect the scheduled activation date and time.
+
+A scheduled assessment must remain unavailable to students until its activation time.
+
+## 4.2 Scheduled activation workflow
+
+When the scheduled activation time arrives:
+
+1. The system automatically changes the assessment status to Active.
+2. The assessment becomes available to its intended student recipients.
+3. The configured passcode becomes visible to those recipients in the student portal.
+4. The system sends an in-app notification to the affected students.
+5. The notification informs them that the test or examination is now active and available.
+
+Example notification:
+
+**New Examination Available**
+
+Your tutor has activated a new examination: Mathematics — Mid-Term Examination.
+
+The examination is now available. Your access passcode is ready in your assessment section.
+
+Open your assessment dashboard to begin.
+
+The notification should direct students to the relevant assessment inside the portal, not to an external website.
+
+## 4.3 Scheduling requirements
+
+- Scheduled activation must work even when the tutor is not logged in.
+- Use a reliable backend scheduling mechanism rather than relying on an open browser session.
+- Handle the platform's configured timezone consistently.
+- Avoid duplicate notifications when an activation process is retried.
+- Ensure only the intended recipients receive the notification.
+- Ensure the passcode is not revealed before the assessment becomes active.
+- Prevent students from starting assessments before the activation time.
+
+Use the existing backend infrastructure and notification architecture wherever possible.
+
+---
+
+# PART 5: INTRODUCE STUDENT NOTIFICATIONS FOR NEW ASSIGNMENTS AND ACTIVITIES
+
+I also noticed that newly published assignments and activities should be more visible to students.
+
+Whenever a tutor publishes a new assignment or activity for a student or group of students, the affected students should receive an in-app notification.
+
+Examples:
+
+**New Assignment**
+
+You have received a new assignment from your tutor.
+
+Assignment: Introduction to Computer Programming.
+
+Open your assignments section to view the instructions and submission requirements.
+
+**New Activity**
+
+A new learning activity has been assigned to you.
+
+Activity: Understanding Computer Networks.
+
+Open your activities section to get started.
+
+Requirements:
+
+- Send notifications to the actual intended recipients.
+- Do not notify unrelated students.
+- Include the assignment or activity title.
+- Include the tutor's identity where appropriate.
+- Link the notification to the relevant item within the student portal.
+- Track notification read/unread status using the existing notification architecture.
+- Avoid sending duplicate notifications for the same publishing event.
+
+The notification functionality should cover newly published assignments and activities, as well as newly activated scheduled tests and examinations.
+
+---
+
+# PART 6: FIX THE DUPLICATE ASSESSMENT WORKFLOW
+
+## 6.1 Existing problem
+
+When a tutor tries to duplicate a previously created assessment, the system displays a confirmation message indicating that the assessment has been duplicated in Drafts.
+
+However, the duplicated assessment cannot subsequently be found in the Drafts section.
+
+There is also a workflow problem: duplicating an assessment should take the tutor directly into the appropriate preparation process instead of leaving them to search for it.
+
+## 6.2 Required behaviour
+
+When the tutor clicks **Duplicate** on an existing assessment:
+
+1. Create a new independent assessment record.
+2. Preserve the original assessment.
+3. Copy the relevant assessment content and configuration into the new record.
+4. Do not copy historical student submissions, grades, result records, or previous recipient assignment records.
+5. Save the duplicated assessment as a new draft.
+6. Immediately launch the appropriate next step in the duplication workflow.
+
+The new duplicate must be properly persisted and visible in the Drafts section.
+
+## 6.3 Duplicate workflow for Native Assessments
+
+For a native assessment:
+
+**Step 1: Duplicate**
+
+The system creates a new draft using the source assessment's reusable content and settings.
+
+**Step 2: Select Recipients**
+
+Open the recipient-selection interface so the tutor can choose the school, grade, class, group, or individual learner the duplicated assessment should be assigned to, using the existing supported recipient options.
+
+**Step 3: Open Assessment Workspace**
+
+After recipient selection, automatically open the native assessment workspace for the new duplicated assessment.
+
+The tutor should be able to:
+
+- Review the duplicated questions.
+- Edit question content.
+- Change answers and marking rules.
+- Change assessment settings.
+- Update instructions and resources.
+- Change the time limit.
+- Configure availability and scheduling.
+- Review all other relevant assessment details.
+
+The tutor must be editing the new duplicate, never the original assessment.
+
+**Step 4: Publish**
+
+The tutor can then publish the new assessment using the normal publishing workflow.
+
+## 6.4 Duplicate workflow for Link Assessments
+
+Link assessments are different because their actual assessment content is hosted externally.
+
+When duplicating a link assessment:
+
+1. Create a new independent draft containing the relevant original link assessment information and configuration.
+2. Open recipient selection.
+3. Allow the tutor to choose the new recipients.
+4. Do not launch the native assessment question workspace.
+5. Take the tutor directly to the final publishing/activation workflow after recipient selection.
+
+The tutor should be able to review the link, instructions, resources, and settings before publishing.
+
+## 6.5 Important implementation requirements
+
+- Ensure duplicates are actually written to the database.
+- Ensure they appear in the correct Drafts list.
+- Generate a new assessment ID.
+- Preserve the original assessment unchanged.
+- Do not copy existing submissions or grades.
+- Do not create duplicate records when a tutor accidentally clicks twice or a request is retried.
+- Maintain the correct assessment type: Native or Link.
+- Maintain the correct relationships between the new assessment and its selected recipients.
+
+---
+
+# PART 7: IMPROVE THE NATIVE ASSESSMENT STUDIO WITH INSTRUCTIONS AND LEARNING RESOURCES
+
+This is a major improvement I want introduced to the Native Assessment Studio.
+
+The existing **Assign Work to School and Individual** workflow already contains several useful fields that tutors can configure when assigning an activity or assignment.
+
+However, the native assessment workspace is not as comprehensive.
+
+I want the relevant functionality from the existing assignment workflow incorporated into the native assessment creation process.
+
+**Do not build a completely separate resource-management system. Reuse the existing assignment/resource functionality and integrate it properly into the native assessment workspace.**
+
+## 7.1 Existing assignment configuration
+
+In the Tutor section, under Assessment Assignments and Review, selecting the option to assign work to a school or individual opens a configuration modal.
+
+The existing workflow includes:
+
+- School or individual learner selection.
+- Recipient category, such as partner school or individual learner.
+- Activity type.
+- Program selection.
+- Subject or sub-program selection.
+- Assignment/activity title.
+- Detailed instructions and deliverables.
+- Due date.
+- Submission requirements.
+- Maximum marks.
+- Reference resource/video title.
+- Resource URL or YouTube URL.
+
+These fields provide useful context to students and should not be limited to the standard assignment workflow.
+
+## 7.2 Integrate these fields into Native Assessment Studio
+
+The native assessment workspace should provide suitable fields for the tutor to configure:
+
+### A. Assessment Information
+
+- Assessment title.
+- Assessment type.
+- Program.
+- Subject or sub-program.
+- Assessment instructions.
+- Detailed description.
+- Deliverables or expectations.
+- Relevant due date, where applicable.
+- Maximum marks.
+
+### B. Learning Resources
+
+Add a dedicated **Learning Resources / Reference Materials** section to the native assessment workspace.
+
+The tutor should be able to provide:
+
+- Reference resource title.
+- Resource description or viewing instructions.
+- Resource URL.
+- YouTube URL.
+- Other supported educational resource links, where appropriate.
+
+Example:
+
+**Reference Resource Title:** Introduction to Computer Networks
+
+**Instructions:** Watch the video below carefully before answering the questions. Pay attention to the different types of computer networks and their uses.
+
+**Resource URL:** [Tutor-provided resource URL]
+
+The student should be able to access the resource within the assessment experience.
+
+### C. Resource presentation to students
+
+When a student opens the native assessment, display the relevant instructions and learning resources in a clear, organised section.
+
+Where a resource can be embedded, embed it within the assessment interface so the student can view it without unnecessarily leaving the assessment.
+
+For YouTube resources, use an appropriate embedded player where supported.
+
+**Important:** Do not display a distracting external navigation button that takes the student away from the assessment. The learning resource should support the assessment experience, not interrupt it.
+
+The tutor should also be able to edit or remove resources before publishing.
+
+## 7.3 Multiple resources
+
+Where the existing assignment resource functionality supports multiple resources, preserve and reuse that capability.
+
+Do not arbitrarily restrict tutors to one resource if the existing system already supports several.
+
+Every resource should have the correct title, URL, and optional instructions.
+
+---
+
+# PART 8: DYNAMIC PROGRAM AND SUBJECT SELECTION BASED ON RECIPIENT ENROLMENT
+
+The existing Assign Work to School and Individual modal needs to follow the learner's actual registration information.
+
+The tutor should not be able to assign work under a program that the selected school or learner is not enrolled in.
+
+This same logic must also apply to the Native Assessment Studio.
+
+## 8.1 School selection
+
+When the tutor selects a partner school:
+
+1. Retrieve the school's actual registered programs from the existing school registration/enrolment records.
+2. Populate the Program dropdown with only the programs that the school is currently registered for.
+3. Do not display unrelated programs.
+4. Do not allow the tutor to select a program the school is not registered for.
+
+If a school has registered for three programs, the tutor should only see those three programs.
+
+## 8.2 Individual learner selection
+
+When the tutor selects an individual learner:
+
+1. Retrieve that learner's current program enrolments.
+2. Display only the programs that learner is registered for.
+3. Do not allow assignment under a program the learner has not registered for.
+
+## 8.3 Subject and sub-program selection
+
+After a program has been selected:
+
+- Populate the next selection field with the subjects, courses, modules, or sub-programs belonging to that selected program.
+- Do not populate this field from an unrestricted global subject list.
+- Ensure the available choices are based on the selected program's actual configuration.
+- Respect the platform's existing program/sub-program relationships.
+
+**Important:** The second selection field does not have to be called Subject in every case. Some programs may contain sub-programs or modules instead of traditional subjects.
+
+The interface should use the correct terminology where the existing program structure supports it.
+
+## 8.4 Validation requirements
+
+This must be enforced both in the frontend and backend.
+
+A tutor must not be able to bypass the restriction by modifying a request or submitting an unregistered program ID manually.
+
+For assignments involving multiple selected recipients, validate the program against every intended recipient. Do not silently assign a program to a recipient who is not enrolled in it.
+
+---
+
+# PART 9: REMOVE THE EXTERNAL REVIEW WEBSITE LINK FROM THE STUDENT EXAMINATION INTERFACE
+
+I noticed that the student-facing native assessment interface currently includes an option similar to:
+
+**Open the review website link here.**
+
+Remove this option.
+
+Students should not see a prominent website link or button that takes them out of the examination environment.
+
+The assessment should remain within the portal.
+
+For tutor-provided educational resources, use the embedded resource presentation described in Part 7 wherever possible.
+
+Do not remove legitimate assessment content or resource functionality. Only remove the unwanted external navigation link from the student examination interface.
+
+The student experience should remain focused on answering and submitting the examination.
+
+---
+
+# PART 10: TECHNICAL IMPLEMENTATION AND SYSTEM-WIDE CONSISTENCY
+
+Before implementation, trace the complete lifecycle of each relevant feature.
+
+Do not fix only the visible interface while leaving the underlying database or backend behaviour unchanged.
+
+For every feature, verify the relationship between:
+
+- Tutor assessment creation.
+- Assessment settings and persistence.
+- Draft management.
+- Recipient selection.
+- Assessment publishing.
+- Immediate and scheduled activation.
+- Student assessment availability.
+- Student notifications.
+- Passcode access and validation.
+- Assessment timer behaviour.
+- Student submission.
+- Automatic and manual grading.
+- Result release.
+- Assignment and learning resource presentation.
+
+## 10.1 Database and backend requirements
+
+Inspect the existing database schema and backend functions before modifying them.
+
+Use the current data model wherever possible.
+
+Where schema changes are necessary:
+
+- Make them compatible with existing records.
+- Preserve historical assessment data.
+- Avoid breaking existing assessment references.
+- Ensure existing drafts and published assessments continue working.
+- Apply appropriate validation and security rules.
+- Ensure tutors can only manage assessments they are authorised to manage.
+- Ensure students can only access assessments assigned to them.
+
+Do not introduce unnecessary new collections or fields when an existing field or relationship already serves the purpose.
+
+## 10.2 Notifications and scheduled jobs
+
+Use the existing notification system.
+
+Use a reliable backend process for scheduled activation. Do not depend on the tutor keeping a page open.
+
+Implement idempotency so retries do not create duplicate activations or notifications.
+
+## 10.3 User interface requirements
+
+Maintain the existing Jaystarbliss Studios portal design system.
+
+Keep the interface professional, responsive, consistent, and easy to understand.
+
+Avoid unnecessary new cards, tabs, icons, modals, and duplicated settings.
+
+Present configuration fields in logical sections.
+
+Ensure the tutor can understand the publishing status of an assessment at a glance, including:
+
+- Draft.
+- Scheduled.
+- Active.
+- Closed.
+- Submitted.
+- Awaiting grading.
+- Graded.
+- Results released.
+
+Use only the statuses that are relevant to the existing workflow, and do not introduce conflicting status definitions.
+
+The student interface should clearly communicate whether an assessment is upcoming, active, submitted, awaiting results, or graded.
+
+Do not redesign unrelated sections of the portal.
+
+---
+
+# PART 11: REQUIRED TESTING AND ACCEPTANCE CHECKLIST
+
+After implementation, test the complete workflow using the existing application and appropriate test records.
+
+Do not report a feature as fixed simply because its interface has changed.
+
+### A. Automatic grading
+
+- [ ] Tutor enables Automatic Grading.
+- [ ] Student completes and submits the assessment.
+- [ ] System calculates the score.
+- [ ] Student sees the score immediately.
+- [ ] Student is not incorrectly told to wait for result release.
+
+### B. Time limit
+
+- [ ] Tutor leaves the time-limit checkbox unchecked.
+- [ ] Student sees no countdown timer.
+- [ ] Assessment does not automatically expire because of a default timer.
+- [ ] Tutor enables a time limit.
+- [ ] Student sees the exact configured countdown.
+- [ ] Assessment expiry follows the configured duration.
+
+### C. Passcode
+
+- [ ] Activities and assignments preserve their existing optional passcode behaviour.
+- [ ] Tests automatically require a passcode.
+- [ ] Examinations automatically require a passcode.
+- [ ] Tutor cannot disable the passcode requirement for tests or examinations.
+- [ ] Backend validation enforces the requirement.
+
+### D. Activation and scheduling
+
+- [ ] Tutor can activate an assessment immediately.
+- [ ] Tutor can schedule an assessment for a future date and time.
+- [ ] Scheduled assessment is inaccessible before activation.
+- [ ] Assessment automatically activates at the scheduled time.
+- [ ] Passcode becomes available at the correct time.
+- [ ] Correct students receive the activation notification.
+- [ ] No duplicate notifications are sent.
+
+### E. Assignments and activities
+
+- [ ] Newly published assignments generate student notifications.
+- [ ] Newly published activities generate student notifications.
+- [ ] Notifications go only to intended recipients.
+- [ ] Notification links open the correct item in the student portal.
+
+### F. Duplicate assessment
+
+- [ ] Duplicating creates a new independent assessment.
+- [ ] Original assessment remains unchanged.
+- [ ] Duplicate appears in Drafts.
+- [ ] Duplicate workflow opens recipient selection.
+- [ ] Native assessment duplicate opens the native workspace.
+- [ ] Link assessment duplicate skips the native workspace.
+- [ ] Historical submissions and grades are not copied.
+
+### G. Native assessment resources
+
+- [ ] Tutor can configure detailed instructions.
+- [ ] Tutor can add deliverables or expectations.
+- [ ] Tutor can add reference resource titles.
+- [ ] Tutor can add resource URLs and YouTube URLs.
+- [ ] Student can view the supplied resources within the assessment experience where supported.
+- [ ] Student does not see the unwanted external review website button.
+
+### H. Program restrictions
+
+- [ ] School selection retrieves its actual registered programs.
+- [ ] Individual learner selection retrieves their registered programs.
+- [ ] Only registered programs appear.
+- [ ] Only subjects or sub-programs belonging to the selected program appear.
+- [ ] Backend prevents unauthorised or invalid program assignments.
+
+---
+
+# FINAL INSTRUCTIONS
+
+This implementation should address the actual problems in the existing assessment system, not introduce superficial UI changes.
+
+**Prioritise correctness, data consistency, and the complete tutor-to-student workflow.**
+
+Please follow this implementation sequence:
+
+1. Audit the existing assessment architecture and identify the exact causes of the reported issues.
+2. Map each issue to its relevant frontend components, database records, backend functions, and student-facing workflows.
+3. Identify any dependencies or existing functionality that must be reused.
+4. Implement the fixes and enhancements in logically related stages.
+5. Test each workflow end to end.
+6. Check for regressions in existing assignments, activities, assessments, submissions, grading, and notifications.
+7. Provide a clear implementation report listing the files and database/backend components modified, the issues resolved, any schema changes, and the tests performed.
+
+**Do not remove working functionality, overwrite historical records, or redesign unrelated parts of the platform.**
+
+The final result should be a fully connected assessment workflow in which tutors can configure, duplicate, assign, schedule, publish, and manage assessments reliably, while students receive the correct notifications, access instructions and resources, complete their assessments, and see their results according to the tutor's actual settings.

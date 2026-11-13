@@ -121,6 +121,7 @@ interface EmbeddedLearningMediaProps {
   title?: string;
   description?: string;
   compact?: boolean;
+  hideExternalLink?: boolean;
 }
 
 export const EmbeddedLearningMedia: React.FC<EmbeddedLearningMediaProps> = ({
@@ -128,6 +129,7 @@ export const EmbeddedLearningMedia: React.FC<EmbeddedLearningMediaProps> = ({
   title,
   description,
   compact = false,
+  hideExternalLink = false,
 }) => {
   const parsed = parseLearningResourceUrl(url);
   if (!parsed) return null;
@@ -149,14 +151,16 @@ export const EmbeddedLearningMedia: React.FC<EmbeddedLearningMediaProps> = ({
           </span>
         </div>
 
-        <a
-          href={parsed.originalUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 hover:underline shrink-0"
-        >
-          Open Original Link <ExternalLink size={12} />
-        </a>
+        {!hideExternalLink && (
+          <a
+            href={parsed.originalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 hover:underline shrink-0"
+          >
+            Open Original Link <ExternalLink size={12} />
+          </a>
+        )}
       </div>
 
       {description && (
@@ -202,14 +206,16 @@ export const EmbeddedLearningMedia: React.FC<EmbeddedLearningMediaProps> = ({
             </div>
           </div>
 
-          <a
-            href={parsed.originalUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors shrink-0"
-          >
-            Open Resource <ExternalLink size={13} />
-          </a>
+          {!hideExternalLink && (
+            <a
+              href={parsed.originalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors shrink-0"
+            >
+              Open Resource <ExternalLink size={13} />
+            </a>
+          )}
         </div>
       )}
     </div>

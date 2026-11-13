@@ -1878,3 +1878,364 @@ export async function reviewTutorProgramProposal(input: {
 
   return { createdProgramId: newProgRef.id };
 }
+
+/**
+ * Resolves the registered programmes for selected Partner School(s) or Individual Learner(s).
+ * Matches by program ID, title, slug, or primary root alias.
+ * Falls back to top-level / enrollable programmes if the recipient record has no explicit programme list.
+ */
+export function resolveRecipientEnrolledPrograms(
+  programsMap: Map<string, ProgramRecord>,
+  options: {
+    schools?: Array<Record<string, any>>;
+    students?: Array<Record<string, any>>;
+  }
+): Array<{ id: string; title: string; categoryId?: string; isMatchedEnrolment: boolean }> {
+  const allPrograms = Array.from(programsMap.values()).filter((p) => !p.isArchived);
+
+  // Ensure the 4 primary roots are always available in lookup
+  const fallbackRoots = PRIMARY_PROGRAM_ROOTS.map((r) => {
+    const existing = allPrograms.find(
+      (p) =>
+        p.id === r.canonicalId ||
+        p.primaryRootKey === r.key ||
+        normalizeText(p.title) === normalizeText(r.title)
+    );
+    return (
+      existing || {
+        id: r.canonicalId,
+        title: r.title,
+        categoryId: r.categoryId,
+      }
+    );
+  });
+
+  const rawTokens = new Set<string>();
+  const addToken = (val: unknown) => {
+    if (!val) return;
+    if (Array.isArray(val)) {
+      val.forEach(addToken);
+      return;
+    }
+    if (typeof val === 'object') {
+      const obj = val as Record<string, any>;
+      addToken(obj.id || obj.programId || obj.title || obj.name || obj.programName);
+      return;
+    }
+    const str = String(val).trim();
+    if (!str) return;
+    // Split comma-separated lists if present
+    str.split(/[,;|]/).forEach((part) => {
+      const cleaned = normalizeText(part);
+      if (cleaned && cleaned !== 'general' && cleaned !== 'n/a' && cleaned !== 'none') {
+        rawTokens.add(cleaned);
+      }
+    });
+  };
+
+  for (const s of options.schools || []) {
+    if (!s) continue;
+    addToken(s.programs);
+    addToken(s.enrolledPrograms);
+    addToken(s.programIds);
+    addToken(s.selectedProgramIds);
+    addToken(s.assignedProgramIds);
+    addToken(s.programName);
+    addToken(s.programTitle);
+    addToken(s.programId);
+    addToken(s.tracks);
+    addToken(s.track);
+    addToken(s.subjects);
+  }
+
+  for (const st of options.students || []) {
+    if (!st) continue;
+    addToken(st.programs);
+    addToken(st.enrolledPrograms);
+    addToken(st.programIds);
+    addToken(st.selectedProgramIds);
+    addToken(st.assignedProgramIds);
+    addToken(st.programName);
+    addToken(st.programTitle);
+    addToken(st.programId);
+    addToken(st.plan);
+    addToken(st.track);
+    addToken(st.subjects);
+    addToken(st.subject);
+    addToken(st.enrolledCategories);
+  }
+
+  const matchedMap = new Map<
+    string,
+    { id: string; title: string; categoryId?: string; isMatchedEnrolment: boolean }
+  >();
+
+  if (rawTokens.size > 0) {
+    for (const token of rawTokens) {
+      // 1. Check direct match in allPrograms
+      for (const prog of allPrograms) {
+        const normId = normalizeText(prog.id);
+        const normTitle = normalizeText(prog.title);
+        const normSlug = normalizeText(prog.slug);
+        if (
+          token === normId ||
+          token === normTitle ||
+          token === normSlug ||
+          normTitle.includes(token) ||
+          token.includes(normTitle)
+        ) {
+          // Include the matched program (and its root or direct parent if it's a deep child)
+          matchedMap.set(prog.id, {
+            id: prog.id,
+            title: prog.title,
+            categoryId: prog.categoryId,
+            isMatchedEnrolment: true,
+          });
+          if (prog.parentProgramId && programsMap.has(prog.parentProgramId)) {
+            const parent = programsMap.get(prog.parentProgramId)!;
+            matchedMap.set(parent.id, {
+              id: parent.id,
+              title: parent.title,
+              categoryId: parent.categoryId,
+              isMatchedEnrolment: true,
+            });
+          }
+        }
+      }
+
+      // 2. Check PRIMARY_PROGRAM_ROOTS aliases
+      for (const rootDef of PRIMARY_PROGRAM_ROOTS) {
+        if (
+          token === normalizeText(rootDef.canonicalId) ||
+          token === normalizeText(rootDef.title) ||
+          rootDef.matchAliases.some((a) => token.includes(a) || a.includes(token))
+        ) {
+          const existing = allPrograms.find(
+            (p) =>
+              p.id === rootDef.canonicalId ||
+              p.primaryRootKey === rootDef.key ||
+              normalizeText(p.title) === normalizeText(rootDef.title)
+          );
+          const id = existing ? existing.id : rootDef.canonicalId;
+          const title = existing ? existing.title : rootDef.title;
+          matchedMap.set(id, {
+            id,
+            title,
+            categoryId: rootDef.categoryId,
+            isMatchedEnrolment: true,
+          });
+        }
+      }
+
+      // 3. Check KNOWN_SUB_PROGRAMMES aliases
+      for (const subDef of KNOWN_SUB_PROGRAMMES) {
+        if (
+          token === normalizeText(subDef.title) ||
+          subDef.matchAliases.some((a) => token.includes(a) || a.includes(token))
+        ) {
+          const existing = allPrograms.find(
+            (p) =>
+              normalizeText(p.title) === normalizeText(subDef.title) ||
+              normalizeText(p.slug) === normalizeText(subDef.slug)
+          );
+          const id = existing ? existing.id : subDef.slug;
+          const title = existing ? existing.title : subDef.title;
+          matchedMap.set(id, {
+            id,
+            title,
+            isMatchedEnrolment: true,
+          });
+        }
+      }
+    }
+  }
+
+  if (matchedMap.size > 0) {
+    return Array.from(matchedMap.values());
+  }
+
+  // Fallback when recipient has no explicit program restrictions recorded: return primary roots + top-level programs
+  const defaultList = new Map<
+    string,
+    { id: string; title: string; categoryId?: string; isMatchedEnrolment: boolean }
+  >();
+  for (const r of fallbackRoots) {
+    defaultList.set(r.id, {
+      id: r.id,
+      title: r.title,
+      categoryId: r.categoryId,
+      isMatchedEnrolment: false,
+    });
+  }
+  for (const p of allPrograms) {
+    if (!p.parentProgramId || p.isPrimaryRoot || p.nodeType !== 'CONTAINER') {
+      defaultList.set(p.id, {
+        id: p.id,
+        title: p.title,
+        categoryId: p.categoryId,
+        isMatchedEnrolment: false,
+      });
+    }
+  }
+  return Array.from(defaultList.values());
+}
+
+/**
+ * Resolves the child Subjects / Sub-Programmes / Modules belonging to a selected Programme.
+ */
+export function resolveProgramSubjectsAndModules(
+  selectedProgramIdOrTitle: string,
+  programsMap: Map<string, ProgramRecord>
+): Array<{ id: string; title: string; type: 'subprogram' | 'module' }> {
+  const normTarget = normalizeText(selectedProgramIdOrTitle);
+  if (!normTarget) return [];
+
+  const allPrograms = Array.from(programsMap.values()).filter((p) => !p.isArchived);
+  let targetProg =
+    programsMap.get(selectedProgramIdOrTitle) ||
+    allPrograms.find(
+      (p) =>
+        normalizeText(p.id) === normTarget ||
+        normalizeText(p.title) === normTarget ||
+        normalizeText(p.slug) === normTarget
+    );
+
+  // Also check if selectedProgramIdOrTitle matches one of the 4 primary roots
+  const matchedRootDef = PRIMARY_PROGRAM_ROOTS.find(
+    (r) =>
+      normalizeText(r.canonicalId) === normTarget ||
+      normalizeText(r.title) === normTarget ||
+      r.matchAliases.includes(normTarget) ||
+      (targetProg && targetProg.primaryRootKey === r.key)
+  );
+
+  const results = new Map<string, { id: string; title: string; type: 'subprogram' | 'module' }>();
+
+  if (targetProg) {
+    // 1. Direct children and all descendants in programsMap
+    const descendants = getAllDescendants(targetProg.id, allPrograms);
+    for (const desc of descendants) {
+      results.set(normalizeText(desc.title), {
+        id: desc.id,
+        title: desc.title,
+        type: 'subprogram',
+      });
+    }
+
+    // 2. Also check any program whose seriesName or programPack matches targetProg.title
+    for (const p of allPrograms) {
+      if (
+        p.id !== targetProg.id &&
+        (normalizeText(p.seriesName) === normalizeText(targetProg.title) ||
+          normalizeText(p.programPack) === normalizeText(targetProg.title))
+      ) {
+        results.set(normalizeText(p.title), {
+          id: p.id,
+          title: p.title,
+          type: 'subprogram',
+        });
+      }
+    }
+
+    // 3. Curriculum modules/topics defined on targetProg itself
+    for (const topic of targetProg.curriculum || []) {
+      const cleaned = String(topic).trim();
+      if (cleaned) {
+        results.set(normalizeText(cleaned), {
+          id: `mod-${slugifyTitle(cleaned)}`,
+          title: cleaned,
+          type: 'module',
+        });
+      }
+    }
+  }
+
+  // 4. If it belongs to or is a Primary Root, include matching sub-programmes & canonical subjects
+  if (matchedRootDef) {
+    for (const p of allPrograms) {
+      if (
+        p.id !== targetProg?.id &&
+        (p.rootProgramId === matchedRootDef.canonicalId ||
+          p.primaryRootKey === matchedRootDef.key ||
+          p.categoryId === matchedRootDef.categoryId)
+      ) {
+        results.set(normalizeText(p.title), {
+          id: p.id,
+          title: p.title,
+          type: 'subprogram',
+        });
+      }
+    }
+
+    for (const sub of KNOWN_SUB_PROGRAMMES) {
+      if (sub.parentRootKey === matchedRootDef.key) {
+        results.set(normalizeText(sub.title), {
+          id: sub.slug,
+          title: sub.title,
+          type: 'subprogram',
+        });
+      }
+    }
+
+    const canonicalRootSubjects: Record<string, string[]> = {
+      technology: [
+        'Smart Techies Programme',
+        'Digital Literacy Programme',
+        'Web Development (HTML, CSS & JavaScript)',
+        'Python Programming & Software Engineering',
+        'Scratch & Game Development',
+        'Robotics & Embedded Systems',
+        'Artificial Intelligence & Machine Learning',
+        'Cybersecurity & Digital Safety',
+      ],
+      'design-graphics': [
+        'Graphic Design Programme',
+        'Visual Branding & Identity Design',
+        'UI/UX Product Design (Figma)',
+        'Digital Illustration & Print Media',
+        'Motion Graphics & Video Editing',
+        'Canva & Creative Layout Design',
+      ],
+      music: [
+        'Piano & Keyboard Mastery',
+        'Guitar & String Instruments',
+        'Drums & Percussion',
+        'Violin & Orchestral Strings',
+        'Vocal Coaching & Ear Training',
+        'Music Theory & Sight Reading',
+        'Digital Audio Production',
+      ],
+      academics: [
+        'Mathematics & Further Mathematics',
+        'English Language & Literature',
+        'Physics, Chemistry & Biology (Sciences)',
+        'Basic Science & Technology',
+        'Quantitative & Verbal Reasoning',
+        'WAEC Preparation Track',
+        'JAMB Preparation Track',
+      ],
+    };
+
+    for (const subj of canonicalRootSubjects[matchedRootDef.key] || []) {
+      if (!results.has(normalizeText(subj))) {
+        results.set(normalizeText(subj), {
+          id: `subj-${slugifyTitle(subj)}`,
+          title: subj,
+          type: 'module',
+        });
+      }
+    }
+  }
+
+  // If still empty (e.g., leaf program with no curriculum array), include the program's own title as subject option
+  if (results.size === 0 && targetProg) {
+    results.set(normalizeText(targetProg.title), {
+      id: targetProg.id,
+      title: targetProg.title,
+      type: 'subprogram',
+    });
+  }
+
+  return Array.from(results.values());
+}
+

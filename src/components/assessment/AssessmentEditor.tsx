@@ -49,6 +49,12 @@ import {
 import { NativeQuestionCard, type NativeQuestionData, type QuestionTypeChoice } from './NativeQuestionCard';
 import { ImportQuestionsModal, type QuestionBankItem } from './ImportQuestionsModal';
 import { AssessmentProgramPicker, type SelectedProgramPathway } from './AssessmentProgramPicker';
+import {
+  type ProgramRecord,
+  fetchAllProgramsMap,
+  resolveRecipientEnrolledPrograms,
+  resolveProgramSubjectsAndModules,
+} from '../../lib/programHierarchy';
 
 const generateAccessCode = () =>
   Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -69,7 +75,7 @@ const TUTOR_REMARK_PRESETS = [
 export interface AssessmentEditorProps {
   initialExam?: any;
   isCreatingNew?: boolean;
-  assignedSchools: Array<{ id: string; name: string }>;
+  assignedSchools: Array<{ id: string; name: string; [key: string]: any }>;
   assignedPrivateStudents: RecipientPrivateStudent[];
   assignedSchoolStudents?: RecipientPrivateStudent[];
   questionBankItems: QuestionBankItem[];
@@ -223,7 +229,8 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
     initialExam?.gradingMode || 'automatic'
   );
   const [releaseGradesPolicy, setReleaseGradesPolicy] = useState<'immediate' | 'manual'>(
-    initialExam?.releaseGradesPolicy || 'immediate'
+    initialExam?.releaseGradesPolicy ||
+      (initialExam?.gradingMode === 'manual' ? 'manual' : 'immediate')
   );
   const [showMissedQuestions, setShowMissedQuestions] = useState<boolean>(
     initialExam?.showMissedQuestions !== false
@@ -237,19 +244,71 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   const [defaultPointValue, setDefaultPointValue] = useState<number>(
     Number(initialExam?.defaultPointValue || 2)
   );
-  const [hasPasscode, setHasPasscode] = useState<boolean>(Boolean(initialExam?.passcode));
+  const isPasscodeMandatory = workType === 'TEST' || workType === 'EXAMINATION';
+  const [hasPasscode, setHasPasscode] = useState<boolean>(
+    workType === 'TEST' || workType === 'EXAMINATION'
+      ? true
+      : Boolean(initialExam?.hasPasscode ?? initialExam?.passcode)
+  );
   const [passcode, setPasscode] = useState<string>(
     initialExam?.passcode || generateAccessCode()
   );
   const [hasTimeLimit, setHasTimeLimit] = useState<boolean>(
-    initialExam?.durationMinutes !== null && initialExam?.durationMinutes !== undefined
+    initialExam?.hasTimeLimit !== undefined
+      ? Boolean(initialExam.hasTimeLimit)
+      : initialExam?.durationMinutes !== null &&
+          initialExam?.durationMinutes !== undefined &&
+          Number(initialExam?.durationMinutes) > 0
   );
   const [durationMinutes, setDurationMinutes] = useState<number>(
-    initialExam?.durationMinutes || (workType === 'TEST' ? 20 : workType === 'ACTIVITY' ? 15 : 30)
+    Number(initialExam?.durationMinutes) > 0
+      ? Number(initialExam.durationMinutes)
+      : workType === 'TEST'
+      ? 20
+      : workType === 'ACTIVITY'
+      ? 15
+      : 30
+  );
+  const [activationMode, setActivationMode] = useState<'now' | 'scheduled'>(
+    initialExam?.status === 'scheduled' ||
+      (initialExam?.availableFrom && new Date(initialExam.availableFrom).getTime() > Date.now())
+      ? 'scheduled'
+      : 'now'
   );
   const [availableFrom, setAvailableFrom] = useState<string>(initialExam?.availableFrom || '');
   const [availableUntil, setAvailableUntil] = useState<string>(initialExam?.availableUntil || '');
   const [dueDate, setDueDate] = useState<string>(initialExam?.dueDate || '');
+  const [deliverables, setDeliverables] = useState<string>(initialExam?.deliverables || '');
+  const [learningResources, setLearningResources] = useState<
+    Array<{ id: string; title: string; instructions: string; url: string; youtubeUrl: string }>
+  >(() => {
+    if (Array.isArray(initialExam?.learningResources) && initialExam.learningResources.length > 0) {
+      return initialExam.learningResources.map((r: any) => ({
+        id: r.id || makeId(),
+        title: String(r.title || ''),
+        instructions: String(r.instructions || ''),
+        url: String(r.url || ''),
+        youtubeUrl: String(r.youtubeUrl || ''),
+      }));
+    }
+    const legacyUrl = String(initialExam?.resourceUrl || '').trim();
+    const legacyVideo = String(
+      initialExam?.videoUrl || initialExam?.learningVideoUrl || ''
+    ).trim();
+    const legacyTitle = String(initialExam?.resourceTitle || '').trim();
+    if (legacyUrl || legacyVideo || legacyTitle) {
+      return [
+        {
+          id: makeId(),
+          title: legacyTitle || 'Reference Learning Material',
+          instructions: '',
+          url: legacyUrl,
+          youtubeUrl: legacyVideo,
+        },
+      ];
+    }
+    return [];
+  });
   const [limitOneAttempt, setLimitOneAttempt] = useState<boolean>(
     initialExam?.limitOneAttempt !== false
   );
@@ -262,6 +321,80 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   const [confirmationMessage, setConfirmationMessage] = useState<string>(
     initialExam?.confirmationMessage || 'Your response has been recorded. Good job!'
   );
+
+  // Enforce mandatory passcode whenever workType is TEST or EXAMINATION
+  useEffect(() => {
+    if (workType === 'TEST' || workType === 'EXAMINATION') {
+      setHasPasscode(true);
+      setPasscode((prev) => (prev && prev.trim() ? prev.trim().toUpperCase() : generateAccessCode()));
+    }
+  }, [workType]);
+
+  // Load canonical programme hierarchy for dynamic recipient-based Program & Subject selection
+  const [programsMap, setProgramsMap] = useState<Map<string, ProgramRecord>>(new Map());
+  useEffect(() => {
+    let active = true;
+    fetchAllProgramsMap()
+      .then((map) => {
+        if (active) setProgramsMap(map);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Dynamically resolve enrolled programs for currently selected recipients
+  const recipientEnrolledPrograms = useMemo(() => {
+    const selectedSchools = assignedSchools.filter((s) => targetSchoolIds.includes(s.id));
+    const allStudents = [...assignedPrivateStudents, ...assignedSchoolStudents];
+    const selectedStudents = allStudents.filter((st) => targetStudentIds.includes(st.id));
+    return resolveRecipientEnrolledPrograms(programsMap, {
+      schools: selectedSchools,
+      students: selectedStudents,
+    });
+  }, [
+    programsMap,
+    assignedSchools,
+    assignedPrivateStudents,
+    assignedSchoolStudents,
+    targetSchoolIds,
+    targetStudentIds,
+  ]);
+
+  // Dynamically resolve child Subjects / Sub-Programmes / Modules for the selected Program
+  const availableProgramSubjects = useMemo(() => {
+    return resolveProgramSubjectsAndModules(programId || programTitle, programsMap);
+  }, [programId, programTitle, programsMap]);
+
+  // Ensure selected Program stays aligned with recipient's enrolled programs when recipients change
+  useEffect(() => {
+    if (recipientEnrolledPrograms.length === 0) return;
+    const normId = programId.trim().toLowerCase();
+    const normTitle = programTitle.trim().toLowerCase();
+    const matchesCurrent = recipientEnrolledPrograms.some(
+      (p) => p.id.toLowerCase() === normId || p.title.toLowerCase() === normTitle
+    );
+    if (!matchesCurrent) {
+      const first = recipientEnrolledPrograms[0];
+      setProgramId(first.id);
+      setProgramTitle(first.title);
+      setProgramBreadcrumbs(first.title);
+      setPrimaryCategory(first.title);
+    }
+  }, [recipientEnrolledPrograms]);
+
+  // Ensure Subject defaults to a valid subject belonging to the selected Program if empty
+  useEffect(() => {
+    if (availableProgramSubjects.length === 0) return;
+    const normSub = subject.trim().toLowerCase();
+    const matchesSub = availableProgramSubjects.some(
+      (s) => s.title.toLowerCase() === normSub
+    );
+    if (!normSub || (!matchesSub && isCreatingNew)) {
+      setSubject(availableProgramSubjects[0].title);
+    }
+  }, [availableProgramSubjects, isCreatingNew]);
 
   // -------------------------------------------------------------
   // Responses Tab State
@@ -524,7 +657,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   };
 
   // Save / Publish Pipeline
-  const handleSaveWorkspace = async (targetStatus?: 'draft' | 'active') => {
+  const handleSaveWorkspace = async (targetStatus?: 'draft' | 'active' | 'scheduled') => {
     setSaveErrorMessage('');
     if (!title.trim()) {
       setSaveErrorMessage('Please enter an assessment title before saving.');
@@ -547,14 +680,59 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
       return;
     }
 
+    // Determine effective status based on targetStatus and activationMode
+    let resolvedStatus: 'draft' | 'active' | 'scheduled' = targetStatus || status;
+    if (targetStatus === 'active' && activationMode === 'scheduled') {
+      resolvedStatus = 'scheduled';
+    }
+    if (resolvedStatus === 'scheduled') {
+      if (!availableFrom) {
+        setSaveErrorMessage(
+          'Please select a future activation date & time ("Available From") to schedule this assessment.'
+        );
+        setActiveTab('settings');
+        return;
+      }
+      const scheduledTime = new Date(availableFrom).getTime();
+      if (!Number.isFinite(scheduledTime) || scheduledTime <= Date.now()) {
+        setSaveErrorMessage(
+          'Scheduled activation date & time must be in the future, or switch Activation Mode to "Activate Now".'
+        );
+        setActiveTab('settings');
+        return;
+      }
+    }
+
+    const effectiveHasPasscode = isPasscodeMandatory || hasPasscode;
+    const effectivePasscode = effectiveHasPasscode
+      ? passcode.trim().toUpperCase() || generateAccessCode()
+      : '';
+    if (effectiveHasPasscode && effectivePasscode !== passcode) {
+      setPasscode(effectivePasscode);
+    }
+
+    const cleanedResources = learningResources
+      .map((r) => ({
+        id: r.id || makeId(),
+        title: r.title.trim() || 'Learning Resource',
+        instructions: r.instructions.trim(),
+        url: r.url.trim(),
+        youtubeUrl: r.youtubeUrl.trim(),
+      }))
+      .filter((r) => r.url || r.youtubeUrl || r.instructions);
+    const primaryResource = cleanedResources[0];
+
     setIsSaving(true);
     try {
-      const resolvedStatus = targetStatus || status;
       const payload = {
         title: title.trim(),
         description: description.trim(),
+        instructions: description.trim(),
+        deliverables: deliverables.trim(),
         subject: subject.trim(),
+        subProgramName: subject.trim(),
         programTitle: programTitle.trim(),
+        programName: programTitle.trim(),
         programId: programId.trim(),
         programPath: programBreadcrumbs.trim(),
         programBreadcrumbs: programBreadcrumbs.trim(),
@@ -562,6 +740,11 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         workType,
         deliveryMode,
         externalUrl: deliveryMode === 'EXTERNAL_LINK' ? externalUrl.trim() : '',
+        resourceTitle: primaryResource?.title || '',
+        resourceUrl: primaryResource?.url || primaryResource?.youtubeUrl || '',
+        videoUrl: primaryResource?.youtubeUrl || '',
+        learningVideoUrl: primaryResource?.youtubeUrl || '',
+        learningResources: cleanedResources,
         status: resolvedStatus,
         targetClass,
         recipientMode,
@@ -571,14 +754,21 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         // Settings
         makeQuiz,
         gradingMode,
-        releaseGradesPolicy,
+        releaseGradesPolicy: gradingMode === 'automatic' ? releaseGradesPolicy : 'manual',
         showMissedQuestions,
         showCorrectAnswers,
         showPointValues,
         defaultPointValue,
-        passcode: hasPasscode ? passcode.trim().toUpperCase() : '',
-        durationMinutes: hasTimeLimit ? durationMinutes : null,
-        availableFrom: availableFrom || null,
+        hasPasscode: effectiveHasPasscode,
+        passcode: effectivePasscode,
+        hasTimeLimit,
+        durationMinutes: hasTimeLimit ? Math.max(1, Number(durationMinutes) || 30) : null,
+        availableFrom:
+          resolvedStatus === 'scheduled'
+            ? availableFrom || null
+            : activationMode === 'now'
+            ? null
+            : availableFrom || null,
         availableUntil: availableUntil || null,
         dueDate: dueDate || null,
         limitOneAttempt,
@@ -594,6 +784,10 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
       setSaveBannerMessage(
         resolvedStatus === 'active'
           ? 'Assessment published and active for students!'
+          : resolvedStatus === 'scheduled'
+          ? `Assessment scheduled! It will automatically activate on ${new Date(
+              availableFrom
+            ).toLocaleString()}.`
           : 'Assessment draft saved successfully.'
       );
       setTimeout(() => setSaveBannerMessage(''), 5000);
@@ -1012,12 +1206,34 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               <button
                 type="button"
                 disabled={isSaving}
-                onClick={() => void handleSaveWorkspace('active')}
+                onClick={() =>
+                  void handleSaveWorkspace(
+                    activationMode === 'scheduled' ? 'scheduled' : 'active'
+                  )
+                }
                 className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 shadow-xs disabled:opacity-50 whitespace-nowrap shrink-0"
-                title={status === 'active' ? 'Update Assessment' : 'Publish Assessment'}
+                title={
+                  activationMode === 'scheduled'
+                    ? 'Schedule Assessment for Later'
+                    : status === 'active'
+                    ? 'Update Active Assessment'
+                    : 'Publish & Activate Assessment Now'
+                }
               >
-                <CheckCircle2 size={12} className="shrink-0" />
-                <span className="whitespace-nowrap">{status === 'active' ? 'Update' : 'Publish'}</span>
+                {activationMode === 'scheduled' ? (
+                  <Calendar size={12} className="shrink-0" />
+                ) : (
+                  <CheckCircle2 size={12} className="shrink-0" />
+                )}
+                <span className="whitespace-nowrap">
+                  {activationMode === 'scheduled'
+                    ? status === 'scheduled'
+                      ? 'Update Schedule'
+                      : 'Schedule'
+                    : status === 'active'
+                    ? 'Update'
+                    : 'Publish Now'}
+                </span>
               </button>
             </div>
           </div>
@@ -1065,46 +1281,113 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     setDescription(e.target.value);
                     markDirty();
                   }}
-                  placeholder="Form description / General instructions for students..."
+                  placeholder="Detailed instructions / assessment brief for students..."
                   className="w-full text-xs text-slate-600 dark:text-slate-400 bg-transparent border-b border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-blue-600 focus:outline-none resize-none py-1"
                 />
               </div>
 
-              {/* Subject, Programme, Target Class Metadata Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+              {/* Assessment Type, Enrolled Programme, Dynamic Subject/Module & Target Class Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <label className="block">
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                    Subject / Topic
+                    Assessment Type
                   </span>
-                  <input
-                    type="text"
-                    value={subject}
+                  <select
+                    value={workType}
                     onChange={(e) => {
-                      setSubject(e.target.value);
+                      const nextType = e.target.value as AcademicWorkType;
+                      setWorkType(nextType);
+                      if (nextType === 'TEST' || nextType === 'EXAMINATION') {
+                        setHasPasscode(true);
+                        if (!passcode.trim()) setPasscode(generateAccessCode());
+                      }
                       markDirty();
                     }}
-                    placeholder="e.g. Robotics, Python, Web Dev"
-                    className="w-full mt-1 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900 px-3 text-xs font-semibold"
-                  />
+                    className="w-full mt-1 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900 px-3 text-xs font-bold"
+                  >
+                    <option value="ASSIGNMENT">Assignment</option>
+                    <option value="ACTIVITY">Activity</option>
+                    <option value="TEST">Test (Passcode Required)</option>
+                    <option value="EXAMINATION">Examination (Passcode Required)</option>
+                  </select>
                 </label>
 
-                <div className="block">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                    Learning Pathway / Programme (4 Primary Roots &amp; Deep Nested Tracks)
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Registered Programme ({recipientEnrolledPrograms.length})
                   </span>
-                  <AssessmentProgramPicker
-                    selectedProgramId={programId}
-                    selectedProgramTitle={programTitle}
-                    selectedBreadcrumbPath={programBreadcrumbs}
-                    onSelectProgram={(pathway) => {
-                      setProgramId(pathway.programId);
-                      setProgramTitle(pathway.programTitle);
-                      setProgramBreadcrumbs(pathway.breadcrumbPath);
-                      setPrimaryCategory(pathway.primaryCategory);
+                  <select
+                    value={programId || programTitle}
+                    onChange={(e) => {
+                      const chosenVal = e.target.value;
+                      const found = recipientEnrolledPrograms.find(
+                        (p) => p.id === chosenVal || p.title === chosenVal
+                      );
+                      if (found) {
+                        setProgramId(found.id);
+                        setProgramTitle(found.title);
+                        setProgramBreadcrumbs(found.title);
+                        setPrimaryCategory(found.title);
+                      } else {
+                        setProgramId(chosenVal);
+                        setProgramTitle(chosenVal);
+                      }
                       markDirty();
                     }}
-                  />
-                </div>
+                    className="w-full mt-1 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900 px-3 text-xs font-semibold"
+                  >
+                    {recipientEnrolledPrograms.map((prog) => (
+                      <option key={prog.id} value={prog.id}>
+                        {prog.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Subject / Sub-Programme / Module
+                  </span>
+                  {availableProgramSubjects.length > 0 ? (
+                    <select
+                      value={
+                        availableProgramSubjects.some(
+                          (s) => s.title.toLowerCase() === subject.trim().toLowerCase()
+                        )
+                          ? availableProgramSubjects.find(
+                              (s) => s.title.toLowerCase() === subject.trim().toLowerCase()
+                            )!.title
+                          : subject
+                      }
+                      onChange={(e) => {
+                        setSubject(e.target.value);
+                        markDirty();
+                      }}
+                      className="w-full mt-1 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900 px-3 text-xs font-semibold"
+                    >
+                      {!availableProgramSubjects.some(
+                        (s) => s.title.toLowerCase() === subject.trim().toLowerCase()
+                      ) &&
+                        subject.trim() && <option value={subject}>{subject}</option>}
+                      {availableProgramSubjects.map((sub) => (
+                        <option key={sub.id} value={sub.title}>
+                          {sub.title}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={subject}
+                      onChange={(e) => {
+                        setSubject(e.target.value);
+                        markDirty();
+                      }}
+                      placeholder="Select or enter subject..."
+                      className="w-full mt-1 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900 px-3 text-xs font-semibold"
+                    />
+                  )}
+                </label>
 
                 <label className="block">
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
@@ -1125,6 +1408,222 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     ))}
                   </select>
                 </label>
+              </div>
+
+              {/* Deliverables, Due Date & Quick Activation / Schedule Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <label className="block sm:col-span-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Deliverables / Submission Expectations
+                  </span>
+                  <input
+                    type="text"
+                    value={deliverables}
+                    onChange={(e) => {
+                      setDeliverables(e.target.value);
+                      markDirty();
+                    }}
+                    placeholder="e.g. Complete all questions or attach project link"
+                    className="w-full mt-1 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900 px-3 text-xs font-semibold"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Due Date (Optional)
+                  </span>
+                  <input
+                    type="date"
+                    value={dueDate ? dueDate.slice(0, 10) : ''}
+                    onChange={(e) => {
+                      setDueDate(e.target.value);
+                      markDirty();
+                    }}
+                    className="w-full mt-1 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900 px-3 text-xs font-semibold"
+                  />
+                </label>
+
+                <div className="block">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                    Activation Mode
+                  </span>
+                  <div className="mt-1 grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActivationMode('now');
+                        markDirty();
+                      }}
+                      className={`h-9 rounded-xl text-[11px] font-bold border transition-all ${
+                        activationMode === 'now'
+                          ? 'border-blue-600 bg-blue-600 text-white'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      Activate Now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActivationMode('scheduled');
+                        markDirty();
+                      }}
+                      className={`h-9 rounded-xl text-[11px] font-bold border transition-all ${
+                        activationMode === 'scheduled'
+                          ? 'border-blue-600 bg-blue-600 text-white'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      Schedule Later
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {activationMode === 'scheduled' && (
+                <div className="p-3.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                      <Calendar size={14} className="text-blue-600" /> Scheduled Activation Date &amp; Time
+                    </p>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                      Students will not be able to unlock or view the passcode until this scheduled time arrives.
+                    </p>
+                  </div>
+                  <input
+                    type="datetime-local"
+                    value={availableFrom}
+                    onChange={(e) => {
+                      setAvailableFrom(e.target.value);
+                      markDirty();
+                    }}
+                    className="h-9 rounded-xl border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold shrink-0"
+                  />
+                </div>
+              )}
+
+              {/* Dedicated Learning Resources / Reference Materials Studio Section */}
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      <BookOpen size={13} className="text-blue-600" /> Learning Resources &amp; Reference Materials ({learningResources.length})
+                    </span>
+                    <p className="text-[11px] text-slate-500">
+                      Attach lesson documents, Google Drive PDFs, slides, or YouTube tutorial videos for students to review inside the assessment.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLearningResources((prev) => [
+                        ...prev,
+                        {
+                          id: makeId(),
+                          title: '',
+                          instructions: '',
+                          url: '',
+                          youtubeUrl: '',
+                        },
+                      ]);
+                      markDirty();
+                    }}
+                    className="px-3 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 text-xs font-bold hover:bg-blue-100 inline-flex items-center gap-1 shrink-0"
+                  >
+                    <Plus size={13} /> Add Resource
+                  </button>
+                </div>
+
+                {learningResources.length > 0 && (
+                  <div className="space-y-3">
+                    {learningResources.map((resItem, rIdx) => (
+                      <div
+                        key={resItem.id}
+                        className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/50 space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                            Resource #{rIdx + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLearningResources((prev) =>
+                                prev.filter((_, i) => i !== rIdx)
+                              );
+                              markDirty();
+                            }}
+                            className="text-red-600 hover:text-red-700 text-[11px] font-bold inline-flex items-center gap-1"
+                          >
+                            <Trash2 size={12} /> Remove
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <input
+                            type="text"
+                            value={resItem.title}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setLearningResources((prev) =>
+                                prev.map((item, i) =>
+                                  i === rIdx ? { ...item, title: val } : item
+                                )
+                              );
+                              markDirty();
+                            }}
+                            placeholder="Resource Title (e.g. Module 2 Lecture Notes)"
+                            className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
+                          />
+                          <input
+                            type="text"
+                            value={resItem.instructions}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setLearningResources((prev) =>
+                                prev.map((item, i) =>
+                                  i === rIdx ? { ...item, instructions: val } : item
+                                )
+                              );
+                              markDirty();
+                            }}
+                            placeholder="Study instructions / notes for this resource..."
+                            className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs"
+                          />
+                          <input
+                            type="url"
+                            value={resItem.url}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setLearningResources((prev) =>
+                                prev.map((item, i) =>
+                                  i === rIdx ? { ...item, url: val } : item
+                                )
+                              );
+                              markDirty();
+                            }}
+                            placeholder="Document / Google Drive / Slide Link (https://...)"
+                            className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs"
+                          />
+                          <input
+                            type="url"
+                            value={resItem.youtubeUrl}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setLearningResources((prev) =>
+                                prev.map((item, i) =>
+                                  i === rIdx ? { ...item, youtubeUrl: val } : item
+                                )
+                              );
+                              markDirty();
+                            }}
+                            placeholder="YouTube Video URL (optional, https://youtube.com/...)"
+                            className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* External Link Setup Banner (If External Link delivery mode) */}
@@ -1970,6 +2469,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   <label
                     onClick={() => {
                       setGradingMode('automatic');
+                      setReleaseGradesPolicy('immediate');
                       markDirty();
                     }}
                     className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
@@ -1982,15 +2482,18 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       type="radio"
                       name="settingsGradingMode"
                       checked={gradingMode === 'automatic'}
-                      onChange={() => setGradingMode('automatic')}
+                      onChange={() => {
+                        setGradingMode('automatic');
+                        setReleaseGradesPolicy('immediate');
+                      }}
                       className="mt-1 text-blue-600"
                     />
                     <div>
                       <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
-                        Automatic Objective Grading
+                        Automatic Objective Grading (Show Score Immediately)
                       </p>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Immediately score multiple-choice and short-answer questions using the answer key.
+                        Automatically evaluate responses on submission and show students their score immediately after finishing.
                       </p>
                     </div>
                   </label>
@@ -1998,6 +2501,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   <label
                     onClick={() => {
                       setGradingMode('manual');
+                      setReleaseGradesPolicy('manual');
                       markDirty();
                     }}
                     className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
@@ -2010,7 +2514,10 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       type="radio"
                       name="settingsGradingMode"
                       checked={gradingMode === 'manual'}
-                      onChange={() => setGradingMode('manual')}
+                      onChange={() => {
+                        setGradingMode('manual');
+                        setReleaseGradesPolicy('manual');
+                      }}
                       className="mt-1 text-blue-600"
                     />
                     <div>
@@ -2038,11 +2545,12 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       checked={releaseGradesPolicy === 'immediate'}
                       onChange={() => {
                         setReleaseGradesPolicy('immediate');
+                        setGradingMode('automatic');
                         markDirty();
                       }}
                       className="text-blue-600"
                     />
-                    <span>Immediately after each student submission</span>
+                    <span>Immediately after each student submission (Automatic Grading)</span>
                   </label>
                   <label className="flex items-center gap-2.5 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
                     <input
@@ -2155,27 +2663,42 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
 
               {/* Passcode Protection */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <div>
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                      Passcode Protection
-                    </span>
-                    <p className="text-[11px] text-slate-500">
-                      Require students to enter an access code before beginning the assessment.
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                        Passcode Protection
+                      </span>
+                      {isPasscodeMandatory && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 px-2.5 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-300">
+                          <Lock size={10} /> Mandatory for {workType === 'TEST' ? 'Tests' : 'Examinations'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {isPasscodeMandatory
+                        ? `Passcode protection is required for all ${
+                            workType === 'TEST' ? 'Tests' : 'Examinations'
+                          } and cannot be unchecked. Students will receive this passcode when the assessment becomes active.`
+                        : 'Optional for Assignments and Activities. Require students to enter an access code before beginning.'}
                     </p>
                   </div>
                   <input
                     type="checkbox"
-                    checked={hasPasscode}
+                    checked={isPasscodeMandatory ? true : hasPasscode}
+                    disabled={isPasscodeMandatory}
                     onChange={(e) => {
+                      if (isPasscodeMandatory) return;
                       setHasPasscode(e.target.checked);
                       markDirty();
                     }}
-                    className="w-4 h-4 text-blue-600 rounded"
+                    className={`w-4 h-4 text-blue-600 rounded ${
+                      isPasscodeMandatory ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
                   />
                 </div>
 
-                {hasPasscode && (
+                {(isPasscodeMandatory || hasPasscode) && (
                   <div className="flex items-center gap-2 pt-1">
                     <input
                       type="text"
@@ -2211,15 +2734,17 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 )}
               </div>
 
-              {/* Time Limit */}
+              {/* Optional Time Limit */}
               <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                      Time Limit
+                      Set a Time Limit (Optional)
                     </span>
                     <p className="text-[11px] text-slate-500">
-                      Enforce automatic countdown and submission after duration expires.
+                      {hasTimeLimit
+                        ? `Students will see a ${durationMinutes}-minute countdown timer and the assessment will auto-submit when time expires.`
+                        : 'No time limit is set. No countdown timer will be shown to students.'}
                     </p>
                   </div>
                   <input
@@ -2229,7 +2754,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       setHasTimeLimit(e.target.checked);
                       markDirty();
                     }}
-                    className="w-4 h-4 text-blue-600 rounded"
+                    className="w-4 h-4 text-blue-600 rounded cursor-pointer"
                   />
                 </div>
 
@@ -2251,37 +2776,102 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 )}
               </div>
 
-              {/* Schedule Dates */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <label className="block">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                    Available From (Optional)
-                  </span>
-                  <input
-                    type="datetime-local"
-                    value={availableFrom}
-                    onChange={(e) => {
-                      setAvailableFrom(e.target.value);
+              {/* Activation & Scheduling Options (Activate Now vs Schedule for Later) */}
+              <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                  Assessment Availability &amp; Scheduling
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label
+                    onClick={() => {
+                      setActivationMode('now');
                       markDirty();
                     }}
-                    className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs"
-                  />
-                </label>
+                    className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
+                      activationMode === 'now'
+                        ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30 ring-1 ring-blue-600/30'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="settingsActivationMode"
+                      checked={activationMode === 'now'}
+                      onChange={() => setActivationMode('now')}
+                      className="mt-1 text-blue-600"
+                    />
+                    <div>
+                      <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                        Option A: Activate Now
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Make this assessment active immediately upon publishing and notify eligible students right away.
+                      </p>
+                    </div>
+                  </label>
 
-                <label className="block">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                    Available Until / Deadline (Optional)
-                  </span>
-                  <input
-                    type="datetime-local"
-                    value={availableUntil}
-                    onChange={(e) => {
-                      setAvailableUntil(e.target.value);
+                  <label
+                    onClick={() => {
+                      setActivationMode('scheduled');
                       markDirty();
                     }}
-                    className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs"
-                  />
-                </label>
+                    className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
+                      activationMode === 'scheduled'
+                        ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30 ring-1 ring-blue-600/30'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="settingsActivationMode"
+                      checked={activationMode === 'scheduled'}
+                      onChange={() => setActivationMode('scheduled')}
+                      className="mt-1 text-blue-600"
+                    />
+                    <div>
+                      <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                        Option B: Schedule for Later
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Keep the assessment locked until the scheduled date &amp; time, then automatically activate and send the passcode to students.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                  {activationMode === 'scheduled' && (
+                    <label className="block">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                        Scheduled Activation Date &amp; Time *
+                      </span>
+                      <input
+                        type="datetime-local"
+                        value={availableFrom}
+                        onChange={(e) => {
+                          setAvailableFrom(e.target.value);
+                          markDirty();
+                        }}
+                        className="w-full mt-1 h-10 rounded-xl border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold"
+                      />
+                    </label>
+                  )}
+
+                  <label className="block">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                      Available Until / Closing Deadline (Optional)
+                    </span>
+                    <input
+                      type="datetime-local"
+                      value={availableUntil}
+                      onChange={(e) => {
+                        setAvailableUntil(e.target.value);
+                        markDirty();
+                      }}
+                      className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs"
+                    />
+                  </label>
+                </div>
               </div>
 
               {/* Attempt Limits & Shuffle */}

@@ -358,6 +358,7 @@ test("validates external examination URLs and allows External Link exam creation
   assert.equal(validExternal.error, undefined);
   assert.equal(validExternal.deliveryMode, "EXTERNAL_LINK");
   assert.equal(validExternal.durationMinutes, 0);
+  assert.equal(validExternal.hasTimeLimit, false);
   assert.equal(validExternal.maxScore, 0);
   assert.deepEqual(validExternal.questions, []);
   assert.deepEqual(validExternal.classIds, ["Grade 8"]);
@@ -649,7 +650,7 @@ test("isStudentEligibleForWork handles both (student, exam) and (exam, student) 
   );
 });
 
-test("enforces tutor-controlled result release before students, parents, or school admins can view or print results", () => {
+test("enforces tutor-controlled result release before students, parents, or school admins can view or print results, while auto-releasing immediate automatic grading", () => {
   const inProgressAttempt = {
     id: "att-1",
     status: "in_progress",
@@ -687,13 +688,24 @@ test("enforces tutor-controlled result release before students, parents, or scho
   assert.equal(isAttemptResultReleased(releasedViaTimestampAttempt), true);
   assert.equal(isAttemptResultReleased(releasedViaBooleanAttempt), true);
 
+  // Part 1: When exam is configured for automatic grading + immediate release, auto-graded submitted attempts are immediately released
+  const autoGradeImmediateExam = {
+    gradingMode: "automatic",
+    releaseGradesPolicy: "immediate",
+  };
+  assert.equal(isAttemptResultReleased(submittedUnreleasedAttempt, autoGradeImmediateExam), true);
+  assert.equal(
+    canViewOrPrintAttemptResult(submittedUnreleasedAttempt, "STUDENT", autoGradeImmediateExam),
+    true
+  );
+
   // In-progress attempts cannot be printed even by tutors/admins
   assert.equal(canViewOrPrintAttemptResult(inProgressAttempt, "TUTOR"), false);
   assert.equal(canViewOrPrintAttemptResult(inProgressAttempt, "ADMIN"), false);
   assert.equal(canViewOrPrintAttemptResult(inProgressAttempt, "STUDENT"), false);
   assert.equal(canViewOrPrintAttemptResult(inProgressAttempt, "SCHOOL"), false);
 
-  // Submitted but UNRELEASED attempts:
+  // Submitted but UNRELEASED attempts (without automatic immediate exam config):
   // Students, Individual Students, School Admins, and Parents are strictly blocked from viewing/printing scores
   for (const restrictedRole of ["STUDENT", "INDIVIDUAL_STUDENT", "SCHOOL", "SCHOOL_ADMIN", "PARENT"]) {
     assert.equal(
@@ -717,6 +729,76 @@ test("enforces tutor-controlled result release before students, parents, or scho
     assert.equal(canViewOrPrintAttemptResult(releasedViaTimestampAttempt, role), true);
     assert.equal(canViewOrPrintAttemptResult(releasedViaBooleanAttempt, role), true);
   }
+});
+
+test("enforces optional time limits, mandatory passcodes for tests/examinations, scheduled activation, and learningResources", () => {
+  // Part 2: Untimed assessment should have hasTimeLimit: false and durationMinutes: null
+  const untimedAssignment = validateExamCreationPayload({
+    deliveryMode: "NATIVE",
+    workType: "ASSIGNMENT",
+    title: "Untimed Python Assignment",
+    subject: "Python",
+    hasTimeLimit: false,
+    durationMinutes: null,
+    hasPasscode: false,
+    passcode: "",
+    schoolId: "sch-1",
+    classIds: ["Grade 6"],
+    questions: [objective()],
+    status: "active",
+  });
+  assert.equal(untimedAssignment.error, undefined);
+  assert.equal(untimedAssignment.hasTimeLimit, false);
+  assert.equal(untimedAssignment.durationMinutes, null);
+  assert.equal(untimedAssignment.hasPasscode, false);
+
+  // Part 3: TEST and EXAMINATION must require a passcode when publishing
+  const testWithoutPasscode = validateExamCreationPayload({
+    deliveryMode: "NATIVE",
+    workType: "TEST",
+    title: "Mid-Term Test Without Passcode",
+    subject: "Robotics",
+    hasPasscode: false,
+    passcode: "",
+    schoolId: "sch-1",
+    classIds: ["Grade 6"],
+    questions: [objective()],
+    status: "active",
+  });
+  assert.match(testWithoutPasscode.error, /passcode is required/i);
+
+  // Part 4 & 7: Scheduled examination with future availableFrom and structured learningResources
+  const futureIso = new Date(Date.now() + 86400_000).toISOString();
+  const scheduledExam = validateExamCreationPayload({
+    deliveryMode: "NATIVE",
+    workType: "EXAMINATION",
+    title: "Scheduled Final Exam",
+    subject: "Computer Science",
+    passcode: "EXAM-2026",
+    hasTimeLimit: true,
+    durationMinutes: 60,
+    activationMode: "SCHEDULE_LATER",
+    availableFrom: futureIso,
+    schoolId: "sch-1",
+    classIds: ["Grade 10"],
+    deliverables: "Answer all 20 questions carefully.",
+    learningResources: [
+      {
+        title: "Introduction to Computer Networks",
+        instructions: "Watch carefully before starting.",
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      },
+    ],
+    questions: [objective()],
+    status: "scheduled",
+  });
+  assert.equal(scheduledExam.error, undefined);
+  assert.equal(scheduledExam.status, "scheduled");
+  assert.equal(scheduledExam.hasPasscode, true);
+  assert.equal(scheduledExam.hasTimeLimit, true);
+  assert.equal(scheduledExam.durationMinutes, 60);
+  assert.equal(scheduledExam.learningResources.length, 1);
+  assert.equal(scheduledExam.learningResources[0].title, "Introduction to Computer Networks");
 });
 
 test("preserves exact workType labels (Test, Activity, Assignment, Examination) throughout student and tutor workflows", () => {

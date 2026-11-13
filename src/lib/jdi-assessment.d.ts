@@ -103,7 +103,26 @@ export function validateExamCreationPayload(
       questions: NormalizedQuestion[];
       questionCount: number;
       maxScore: number;
-      durationMinutes: number;
+      durationMinutes: number | null;
+      hasTimeLimit?: boolean;
+      hasPasscode?: boolean;
+      workType?: AcademicWorkType;
+      releaseGradesPolicy?: "immediate" | "manual";
+      deliverables?: string;
+      resourceTitle?: string;
+      resourceUrl?: string;
+      videoUrl?: string;
+      learningResources?: Array<{
+        id: string;
+        title: string;
+        instructions?: string;
+        url: string;
+        youtubeUrl?: string;
+      }>;
+      programId?: string;
+      programName?: string;
+      programTitle?: string;
+      subProgramName?: string;
       gradingMode: "automatic" | "manual";
       status: string;
       error?: never;
@@ -271,13 +290,20 @@ export function canAccessAgreement(
   actor?: { uid?: string; role?: string; schoolId?: string }
 ): boolean;
 
+export function shouldAutoReleaseAttemptResult(
+  exam?: Record<string, any> | null,
+  grading?: Record<string, any> | null
+): boolean;
+
 export function isAttemptResultReleased(
-  attempt?: Record<string, any> | null
+  attempt?: Record<string, any> | null,
+  exam?: Record<string, any> | null
 ): boolean;
 
 export function canViewOrPrintAttemptResult(
   attempt?: Record<string, any> | null,
-  callerRole?: unknown
+  callerRole?: unknown,
+  exam?: Record<string, any> | null
 ): boolean;
 
 export interface WorkTypeLabels {
