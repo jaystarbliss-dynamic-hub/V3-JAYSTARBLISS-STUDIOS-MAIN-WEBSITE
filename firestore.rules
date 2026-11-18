@@ -511,10 +511,6 @@ service cloud.firestore {
       allow read: if true; 
       allow write: if isAnyAdmin() || (isAuth() && isSameSchool(schoolId)); 
     }
-    match /documentHeaderConfigs/{configId} {
-      allow read: if isAuth();
-      allow write: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || (isAuth() && configId == request.auth.uid);
-    }
     match /schoolPrograms/{document=**} { allow read: if true; allow write: if isAnyAdmin() || isSchoolUser(); }
     match /classSchedules/{scheduleId} { 
       allow read: if isAnyAdmin() || isStaffOrTutor() || isSchoolUser() || isAuth(); 
@@ -581,6 +577,33 @@ service cloud.firestore {
     }
     match /programHierarchyMigrations/{migrationId} {
       allow read, write: if isAnyAdmin();
+    }
+    match /academicPeriods/{periodId} {
+      allow read: if isAnyAdmin() || isStaffOrTutor() || isAuth();
+      allow create, update: if isAnyAdmin() || isStaffOrTutor();
+      allow delete: if isAnyAdmin();
+    }
+    match /academicGradingProfiles/{profileId} {
+      allow read: if isAnyAdmin() || isStaffOrTutor();
+      allow create, update: if isAnyAdmin() || isStaffOrTutor();
+      allow delete: if isAnyAdmin();
+    }
+    match /academicPerformanceReports/{reportId} {
+      allow read: if isAnyAdmin() || isStaffOrTutor() || (
+        isAuth() && resource.data.get('status', '') == 'ISSUED'
+      );
+      allow create, update: if isAnyAdmin() || isStaffOrTutor();
+      allow delete: if isAnyAdmin();
+    }
+    match /academicReferenceIndex/{refId} {
+      allow read: if isAnyAdmin() || isStaffOrTutor();
+      allow create, update: if isAnyAdmin() || isStaffOrTutor();
+      allow delete: if isAnyAdmin();
+    }
+    match /academicAuditLogs/{logId} {
+      allow read: if isAnyAdmin() || isStaffOrTutor();
+      allow create: if isAnyAdmin() || isStaffOrTutor();
+      allow update, delete: if isAnyAdmin();
     }
     match /{document=**} { allow read, write: if false; }
   }

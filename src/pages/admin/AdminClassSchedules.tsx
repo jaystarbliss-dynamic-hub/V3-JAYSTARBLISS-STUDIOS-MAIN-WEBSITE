@@ -146,7 +146,7 @@ interface ScheduleGroup {
   occurrences: ScheduleOccurrence[];
 }
 
-const inputClass = 'w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c1220] text-slate-900 dark:text-white px-3 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-sky-500';
+const inputClass = 'w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c1220] text-slate-900 dark:text-white px-3 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#1E293B]';
 
 // Helper: parse "HH:MM" into minutes
 const timeToMinutes = (timeStr: string): number => {
@@ -1351,7 +1351,7 @@ const AdminClassSchedules: React.FC = () => {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search schedules by topic, school, parent, tutor..."
-            className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1E293B]"
           />
         </div>
 
@@ -1430,9 +1430,9 @@ const AdminClassSchedules: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setForm(f => ({ ...f, targetType: 'parent' }))}
-                className={`py-3 px-4 rounded-2xl text-xs font-bold border transition-all flex items-center justify-center gap-2 ${
+                className={`py-3 px-4 rounded-2xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
                   form.targetType === 'parent'
-                    ? 'border-sky-500 bg-sky-50/50 text-sky-600 dark:bg-sky-950/30 ring-2 ring-sky-500/20'
+                    ? 'border-[#1E293B] bg-slate-100 text-[#1E293B] dark:bg-slate-800 dark:text-white dark:border-slate-500 ring-2 ring-[#1E293B]/15'
                     : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`}
               >
@@ -1443,9 +1443,9 @@ const AdminClassSchedules: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setForm(f => ({ ...f, targetType: 'individual' }))}
-                className={`py-3 px-4 rounded-2xl text-xs font-bold border transition-all flex items-center justify-center gap-2 ${
+                className={`py-3 px-4 rounded-2xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
                   form.targetType === 'individual'
-                    ? 'border-emerald-500 bg-emerald-50/50 text-emerald-600 dark:bg-emerald-950/30 ring-2 ring-emerald-500/20'
+                    ? 'border-[#1E293B] bg-slate-100 text-[#1E293B] dark:bg-slate-800 dark:text-white dark:border-slate-500 ring-2 ring-[#1E293B]/15'
                     : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`}
               >
@@ -1780,11 +1780,11 @@ const AdminClassSchedules: React.FC = () => {
               />
               {form.meetingLink.trim() && (
                 validateMeetingLink(form.meetingLink).valid ? (
-                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 mt-1">
-                    <CheckCircle2 size={12} /> Valid {validateMeetingLink(form.meetingLink).platform} link — Join Class button active
+                  <span className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200 flex items-center gap-1 mt-1">
+                    <CheckCircle2 size={12} className="text-[#1E293B] dark:text-slate-200" /> Valid {validateMeetingLink(form.meetingLink).platform} link — Join Class button active
                   </span>
                 ) : (
-                  <span className="text-[11px] font-bold text-rose-600 flex items-center gap-1 mt-1">
+                  <span className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400 flex items-center gap-1 mt-1">
                     <AlertTriangle size={12} /> {validateMeetingLink(form.meetingLink).error}
                   </span>
                 )
@@ -1805,7 +1805,7 @@ const AdminClassSchedules: React.FC = () => {
                 </p>
               </div>
 
-              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-brand-red/10 text-brand-red self-start sm:self-auto">
+              <span className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400 self-start sm:self-auto tabular-nums">
                 {activeDays.length} day{activeDays.length > 1 ? 's' : ''} configured
               </span>
             </div>
@@ -1852,7 +1852,7 @@ const AdminClassSchedules: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => copyTimeToAllDays(dayEntry)}
-                        className="text-[10px] font-bold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-0.5"
+                        className="text-[10px] font-bold text-[#1E293B] dark:text-slate-200 hover:text-[#B91C1C] hover:underline flex items-center gap-0.5 cursor-pointer"
                         title="Copy this time range to all active days"
                       >
                         <Copy size={10} />
@@ -1903,8 +1903,8 @@ const AdminClassSchedules: React.FC = () => {
                   required
                 />
                 {startDateWeekday && (
-                  <span className="text-[11px] font-bold text-sky-600 dark:text-sky-400 block mt-1">
-                    📅 {startDateWeekday}
+                  <span className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200 flex items-center gap-1 mt-1">
+                    <Calendar size={11} className="text-[#B91C1C]" /> {startDateWeekday}
                   </span>
                 )}
               </div>
@@ -2006,7 +2006,7 @@ const AdminClassSchedules: React.FC = () => {
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-brand-red text-white flex items-center justify-center text-xs font-black shrink-0">
+                          <span className="w-6 h-6 rounded-lg bg-brand-red text-white flex items-center justify-center text-xs font-black shrink-0 tabular-nums">
                             {sIdx + 1}
                           </span>
                           <input
@@ -2149,28 +2149,32 @@ const AdminClassSchedules: React.FC = () => {
                 {/* Collapsed Card Header Bar */}
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                   <div className="space-y-1.5 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold">
                       {isSchool && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-red-50 dark:bg-red-950/40 text-brand-red">
+                        <span className="inline-flex items-center gap-1 uppercase text-[#B91C1C] dark:text-red-400 font-black">
                           <School size={11} /> {g.schoolName || 'Partner School'}
                         </span>
                       )}
                       {isParent && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400">
+                        <span className="inline-flex items-center gap-1 uppercase text-[#1E293B] dark:text-slate-200 font-black">
                           <Users size={11} /> Parent: {g.parentName || 'Parent Account'} {g.studentName ? `• Child: ${g.studentName}` : ''}
                         </span>
                       )}
                       {!isSchool && !isParent && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
+                        <span className="inline-flex items-center gap-1 uppercase text-[#1E293B] dark:text-slate-200 font-black">
                           <User size={11} /> Scholar: {g.studentName || 'Independent Cadet'}
                         </span>
                       )}
 
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                      <span className="text-slate-300 dark:text-slate-700">·</span>
+
+                      <span className="uppercase text-slate-600 dark:text-slate-300 font-bold">
                         {daysList.join(' & ')}
                       </span>
 
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
+                      <span className="text-slate-300 dark:text-slate-700">·</span>
+
+                      <span className="text-slate-500 dark:text-slate-400 font-semibold tabular-nums">
                         {distinctDates.length} Session Dates ({g.occurrences.length} Total Rows)
                       </span>
                     </div>
@@ -2187,12 +2191,12 @@ const AdminClassSchedules: React.FC = () => {
                           href={validateMeetingLink(firstOcc?.meetingLink).normalizedUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline inline-flex items-center gap-1"
+                          className="text-[#1E293B] dark:text-slate-200 font-bold hover:text-[#B91C1C] hover:underline inline-flex items-center gap-1"
                         >
-                          <Video size={12} /> {validateMeetingLink(firstOcc?.meetingLink).platform} Active <ExternalLink size={11} />
+                          <Video size={12} className="text-[#B91C1C]" /> {validateMeetingLink(firstOcc?.meetingLink).platform} Active <ExternalLink size={11} />
                         </a>
                       ) : (
-                        <span className="text-amber-600 dark:text-amber-400 font-semibold inline-flex items-center gap-1">
+                        <span className="text-slate-500 dark:text-slate-400 font-medium inline-flex items-center gap-1">
                           <Link2 size={12} /> Meeting link not configured
                         </span>
                       )}
@@ -2209,7 +2213,7 @@ const AdminClassSchedules: React.FC = () => {
                         href={validateMeetingLink(firstOcc?.meetingLink).normalizedUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="min-h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black inline-flex items-center gap-1.5 shadow-xs"
+                        className="min-h-9 px-3.5 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white text-xs font-black inline-flex items-center gap-1.5 shadow-xs"
                       >
                         <Video size={13} />
                         <span>Join Class</span>
@@ -2223,7 +2227,7 @@ const AdminClassSchedules: React.FC = () => {
                         setLinkModalGroup(g);
                         setLinkModalUrl(firstOcc?.meetingLink || '');
                       }}
-                      className="min-h-9 px-3 rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/70 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-xs font-black inline-flex items-center gap-1.5 hover:bg-sky-100 cursor-pointer"
+                      className="min-h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
                     >
                       <Link2 size={13} />
                       <span>{validateMeetingLink(firstOcc?.meetingLink).valid ? 'Update Link' : 'Set Class Link'}</span>
@@ -2335,26 +2339,29 @@ const AdminClassSchedules: React.FC = () => {
                                   </div>
 
                                   <div className="min-w-0 space-y-1.5">
-                                    {/* Top Badges: Class Range Badge, Program Track, Status */}
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase bg-red-50 dark:bg-red-950/40 text-brand-red border border-red-100 dark:border-red-900/30">
+                                    {/* Top Metadata: Class Range, Program Track, Status */}
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                                      <span className="font-black uppercase text-[#B91C1C] dark:text-red-400">
                                         {classRangeBadgeText}
                                       </span>
 
                                       {programTrackName && (
-                                        <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                          {programTrackName}
-                                        </span>
+                                        <>
+                                          <span className="text-slate-300 dark:text-slate-700">·</span>
+                                          <span className="font-bold uppercase text-slate-600 dark:text-slate-300">
+                                            {programTrackName}
+                                          </span>
+                                        </>
                                       )}
 
-                                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                      <span className="text-slate-300 dark:text-slate-700">·</span>
+
+                                      <span className={`inline-flex items-center gap-1 font-black uppercase ${
                                         overallStatus === 'COMPLETED' || overallStatus === 'ATTENDED'
-                                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                                          : overallStatus === 'ONGOING'
-                                          ? 'bg-emerald-500 text-white animate-pulse'
-                                          : overallStatus === 'CANCELLED' || overallStatus === 'ABSENT'
-                                          ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 border border-red-200 dark:border-red-800'
-                                          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                                          ? 'text-[#1E293B] dark:text-slate-200'
+                                          : overallStatus === 'ONGOING' || overallStatus === 'CANCELLED' || overallStatus === 'ABSENT'
+                                          ? 'text-[#B91C1C] dark:text-red-400'
+                                          : 'text-slate-500 dark:text-slate-400'
                                       }`}>
                                         <Clock3 size={10} />
                                         <span>{overallStatus}</span>
@@ -2369,9 +2376,9 @@ const AdminClassSchedules: React.FC = () => {
                                     {/* Tutor Assignment */}
                                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                                       <div className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-300">
-                                        <User size={13} className="text-emerald-500 shrink-0" />
+                                        <User size={13} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
                                         <span>Assigned Tutor:</span>
-                                        <span className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[11px] font-mono font-bold">
+                                        <span className="text-[11px] font-mono font-bold text-[#1E293B] dark:text-slate-200">
                                           {tutorDisplay}
                                         </span>
                                       </div>
@@ -2381,7 +2388,7 @@ const AdminClassSchedules: React.FC = () => {
                                           href={primaryOcc.meetingLink}
                                           target="_blank"
                                           rel="noreferrer"
-                                          className="text-sky-600 font-bold hover:underline text-[11px]"
+                                          className="text-[#1E293B] dark:text-slate-200 hover:text-[#B91C1C] font-bold hover:underline text-[11px]"
                                         >
                                           Virtual Classroom
                                         </a>
@@ -2529,8 +2536,8 @@ const AdminClassSchedules: React.FC = () => {
                   required
                 />
                 {occEditForm.date && (
-                  <span className="text-[11px] font-bold text-sky-600 dark:text-sky-400 block mt-1">
-                    📅 {formatFullDateWithDay(occEditForm.date)}
+                  <span className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200 flex items-center gap-1 mt-1">
+                    <Calendar size={11} className="text-[#B91C1C]" /> {formatFullDateWithDay(occEditForm.date)}
                   </span>
                 )}
               </div>
@@ -2752,7 +2759,7 @@ const AdminClassSchedules: React.FC = () => {
           >
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
-                <p className="text-[10px] uppercase tracking-wider font-black text-sky-600">
+                <p className="text-[10px] uppercase tracking-wider font-black text-[#B91C1C]">
                   Online Classroom Configuration
                 </p>
                 <h3 className="font-black text-base text-slate-900 dark:text-white">
@@ -2784,11 +2791,11 @@ const AdminClassSchedules: React.FC = () => {
               />
               {linkModalUrl.trim() && (
                 validateMeetingLink(linkModalUrl).valid ? (
-                  <p className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                  <p className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200 flex items-center gap-1">
                     <CheckCircle2 size={12} /> Valid {validateMeetingLink(linkModalUrl).platform} URL — Join Class button will be active for all enrolled students.
                   </p>
                 ) : (
-                  <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1">
+                  <p className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400 flex items-center gap-1">
                     <AlertTriangle size={12} /> {validateMeetingLink(linkModalUrl).error}
                   </p>
                 )

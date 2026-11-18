@@ -621,7 +621,7 @@ export const PortalSettings: React.FC = () => {
             <section className="bg-white dark:bg-[#161B26] rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-6 shadow-xs space-y-6">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 gap-4">
                 <div><h2 className="text-base font-bold text-slate-900 dark:text-white">Profile Details</h2><p className="text-xs text-slate-500">Your contact information used across the portal.</p></div>
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 capitalize">{role === 'staff' ? 'Tutor' : role}</span>
+                <span className="text-xs font-bold text-[#1E293B] dark:text-slate-300 capitalize">{role === 'staff' ? 'Tutor' : role}</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -633,13 +633,13 @@ export const PortalSettings: React.FC = () => {
               </div>
 
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-3"><div className={`mt-0.5 ${emailVerified ? 'text-blue-600' : 'text-amber-500'}`}>{emailVerified ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}</div><div><p className="text-xs font-black text-slate-900 dark:text-white">Email verification</p><p className="text-[11px] text-slate-500">{emailVerified ? 'Your authentication email is verified.' : 'Verify your email to keep account recovery available.'}</p></div></div>
-                {!emailVerified && <button type="button" disabled={sendingVerification} onClick={() => void sendVerification()} className="min-h-10 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black disabled:opacity-50 cursor-pointer">{sendingVerification ? 'Sending...' : 'Send Verification'}</button>}
+                <div className="flex items-start gap-3"><div className={`mt-0.5 ${emailVerified ? 'text-[#1E293B] dark:text-slate-200' : 'text-[#B91C1C] dark:text-red-400'}`}>{emailVerified ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}</div><div><p className="text-xs font-black text-slate-900 dark:text-white">Email verification</p><p className="text-[11px] text-slate-500">{emailVerified ? 'Your authentication email is verified.' : 'Verify your email to keep account recovery available.'}</p></div></div>
+                {!emailVerified && <button type="button" disabled={sendingVerification} onClick={() => void sendVerification()} className="min-h-10 px-4 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white text-xs font-black disabled:opacity-50 cursor-pointer">{sendingVerification ? 'Sending...' : 'Send Verification'}</button>}
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button type="button" onClick={() => setShowPasswordModal(true)} className="px-4 py-2.5 bg-brand-red hover:bg-red-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer transition-colors"><KeyRound size={13} /> Change Password</button>
-                <button type="submit" disabled={savingProfile} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-xs flex items-center gap-2 disabled:opacity-50 transition-colors cursor-pointer">{savingProfile ? <><RefreshCw size={13} className="animate-spin" /> Saving...</> : <><Save size={13} /> Save Profile Details</>}</button>
+                <button type="button" onClick={() => setShowPasswordModal(true)} className="px-4 py-2.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-[#1E293B] dark:text-slate-200 font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer transition-colors"><KeyRound size={13} /> Change Password</button>
+                <button type="submit" disabled={savingProfile} className="px-5 py-2.5 bg-[#B91C1C] hover:bg-red-700 text-white font-semibold text-xs rounded-xl shadow-xs flex items-center gap-2 disabled:opacity-50 transition-colors cursor-pointer">{savingProfile ? <><RefreshCw size={13} className="animate-spin" /> Saving...</> : <><Save size={13} /> Save Profile Details</>}</button>
               </div>
             </section>
           </form>
@@ -681,7 +681,7 @@ export const PortalSettings: React.FC = () => {
                     type="button"
                     disabled={savingTeachingConfig}
                     onClick={() => void handleSaveTeachingConfiguration()}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
                   >
                     {savingTeachingConfig ? (
                       <>
@@ -708,7 +708,7 @@ export const PortalSettings: React.FC = () => {
                   <div className="space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
-                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 tabular-nums">
                           1. Select Programmes You Teach Under ({selectedProgramIds.length} Selected)
                         </h3>
                         <p className="text-[11px] text-slate-500">
@@ -746,8 +746,8 @@ export const PortalSettings: React.FC = () => {
                             onClick={() => toggleProgrammeSelection(prog.id)}
                             className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex items-start justify-between gap-3 ${
                               isSelected
-                                ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30 ring-2 ring-blue-500/15'
-                                : 'border-slate-200 dark:border-slate-800 hover:border-blue-400 bg-white dark:bg-slate-900'
+                                ? 'border-[#1E293B] dark:border-slate-400 bg-slate-50 dark:bg-slate-900 ring-1 ring-[#1E293B]/20'
+                                : 'border-slate-200 dark:border-slate-800 hover:border-slate-400 bg-white dark:bg-slate-900'
                             }`}
                           >
                             <div className="space-y-1 min-w-0">
@@ -755,7 +755,7 @@ export const PortalSettings: React.FC = () => {
                                 <span
                                   className={`w-5 h-5 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${
                                     isSelected
-                                      ? 'bg-blue-600 text-white'
+                                      ? 'bg-[#1E293B] text-white dark:bg-white dark:text-[#1E293B]'
                                       : 'border border-slate-300 dark:border-slate-700 text-transparent'
                                   }`}
                                 >
@@ -770,10 +770,10 @@ export const PortalSettings: React.FC = () => {
                               </p>
                             </div>
                             <span
-                              className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black ${
+                              className={`shrink-0 text-[11px] font-bold tabular-nums ${
                                 activeFieldsInProg > 0
-                                  ? 'bg-blue-600 text-white'
-                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                  ? 'text-[#B91C1C] dark:text-red-400'
+                                  : 'text-slate-500 dark:text-slate-400'
                               }`}
                             >
                               {activeFieldsInProg}/{prog.fields.length} fields
@@ -787,7 +787,7 @@ export const PortalSettings: React.FC = () => {
                   {/* Step 2: Configure Specific Teaching Fields Under Selected Programmes */}
                   <div className="space-y-4 pt-3 border-t border-slate-100 dark:border-slate-800">
                     <div>
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 tabular-nums">
                         2. Configure Specific Teaching Fields &amp; Subjects ({selectedFieldNames.length} Active)
                       </h3>
                       <p className="text-[11px] text-slate-500">
@@ -807,7 +807,7 @@ export const PortalSettings: React.FC = () => {
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
-                              <Award size={14} className="text-blue-600" />
+                              <Award size={14} className="text-[#B91C1C]" />
                               {prog.title}
                             </span>
                             <button
@@ -830,7 +830,7 @@ export const PortalSettings: React.FC = () => {
                                   }
                                 }
                               }}
-                              className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
+                              className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400 hover:underline cursor-pointer"
                             >
                               Toggle All in Programme
                             </button>
@@ -846,8 +846,8 @@ export const PortalSettings: React.FC = () => {
                                   onClick={() => toggleFieldSelection(field.title, prog.id)}
                                   className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer inline-flex items-center gap-1.5 ${
                                     active
-                                      ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-400'
+                                      ? 'bg-[#1E293B] text-white border-[#1E293B] dark:bg-white dark:text-[#1E293B] dark:border-white shadow-2xs'
+                                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400'
                                   }`}
                                 >
                                   {active && <Check size={12} />}
@@ -872,12 +872,12 @@ export const PortalSettings: React.FC = () => {
                           }
                         }}
                         placeholder="Add another teaching field or specialization (e.g. Data Analysis with PowerBI)..."
-                        className="flex-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 text-xs text-slate-900 dark:text-white outline-none focus:border-blue-600"
+                        className="flex-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 text-xs text-slate-900 dark:text-white outline-none focus:border-[#1E293B]"
                       />
                       <button
                         type="button"
                         onClick={handleAddCustomField}
-                        className="h-10 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                        className="h-10 px-4 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors"
                       >
                         <Plus size={14} /> Add Teaching Field
                       </button>
@@ -885,9 +885,9 @@ export const PortalSettings: React.FC = () => {
 
                     {/* Active Configured Fields Summary */}
                     {selectedFieldNames.length > 0 && (
-                      <div className="rounded-2xl border border-blue-200/70 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 p-4 space-y-2">
+                      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 p-4 space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-black uppercase tracking-wider text-blue-800 dark:text-blue-300">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-[#1E293B] dark:text-slate-200 tabular-nums">
                             Active Teaching Fields on Your Profile ({selectedFieldNames.length})
                           </span>
                           <span className="text-[11px] font-bold text-slate-500">
@@ -898,7 +898,7 @@ export const PortalSettings: React.FC = () => {
                           {selectedFieldNames.map((fieldName) => (
                             <span
                               key={fieldName}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-800 text-xs font-bold text-slate-800 dark:text-slate-200"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200"
                             >
                               <span>{fieldName}</span>
                               <button
@@ -919,7 +919,7 @@ export const PortalSettings: React.FC = () => {
                   {/* Step 3: My Proposed Nested Sub-Programmes */}
                   {myProposals.length > 0 && (
                     <div className="space-y-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5 tabular-nums">
                         <FolderTree size={14} className="text-brand-red" />
                         <span>Submitted Sub-Programme Proposals ({myProposals.length})</span>
                       </h3>
@@ -935,15 +935,15 @@ export const PortalSettings: React.FC = () => {
                                   {prop.title}
                                 </span>
                                 <span
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                  className={`text-[11px] font-bold uppercase ${
                                     prop.status === 'APPROVED'
-                                      ? 'bg-blue-100 text-blue-800'
+                                      ? 'text-[#1E293B] dark:text-slate-200'
                                       : prop.status === 'REJECTED'
-                                      ? 'bg-red-100 text-red-800'
-                                      : 'bg-amber-100 text-amber-800'
+                                      ? 'text-[#B91C1C] dark:text-red-400'
+                                      : 'text-slate-500 dark:text-slate-400'
                                   }`}
                                 >
-                                  {prop.status}
+                                  · {prop.status}
                                 </span>
                               </div>
                               <p className="text-[11px] text-slate-500 mt-0.5">

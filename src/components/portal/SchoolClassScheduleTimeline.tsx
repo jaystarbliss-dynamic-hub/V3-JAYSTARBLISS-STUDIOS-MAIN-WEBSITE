@@ -397,40 +397,39 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
     switch (status) {
       case 'ONGOING':
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-500 text-white shadow-xs animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-            Live Now / In Session
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase text-[#B91C1C] dark:text-red-400">
+            <Radio size={12} /> Live Now / In Session
           </span>
         );
       case 'COMPLETED':
       case 'ATTENDED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
-            <CheckCircle2 size={11} /> {isAutoCompleted ? 'Completed (Ended)' : 'Completed'}
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase text-[#1E293B] dark:text-slate-200">
+            <CheckCircle2 size={12} /> {isAutoCompleted ? 'Completed (Ended)' : 'Completed'}
           </span>
         );
       case 'ABSENT':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-            <XCircle size={11} /> Absent
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase text-[#B91C1C] dark:text-red-400">
+            <XCircle size={12} /> Absent
           </span>
         );
       case 'RESCHEDULED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-            <RotateCcw size={11} /> Rescheduled
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase text-[#1E293B] dark:text-slate-300">
+            <RotateCcw size={12} /> Rescheduled
           </span>
         );
       case 'CANCELLED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-            <AlertCircle size={11} /> Cancelled
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">
+            <AlertCircle size={12} /> Cancelled
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
-            <Clock size={11} /> Scheduled
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase text-slate-600 dark:text-slate-300">
+            <Clock size={12} /> Scheduled
           </span>
         );
     }
@@ -438,34 +437,35 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
 
   return (
     <div className="space-y-6">
-      {/* 🔴 SECTION 1: PROMINENT LIVE / ONGOING CLASS BANNER (If Active) */}
+      {/* LIVE / ONGOING CLASS BANNER */}
       {liveSession && (
-        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white p-6 border-2 border-emerald-500/50 shadow-lg shadow-emerald-950/30">
+        <section className="relative overflow-hidden rounded-xl bg-[#1E293B] text-white p-5 sm:p-6 border-l-4 border-[#B91C1C]">
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500 text-white text-[11px] font-black uppercase tracking-wider animate-pulse">
-                  <Radio size={13} className="animate-spin" /> LIVE CLASS IN SESSION
+              <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-red-300">
+                  <Radio size={13} /> LIVE CLASS IN SESSION
                 </span>
-                <span className="text-xs text-emerald-300 font-bold">
+                <span className="text-slate-500">·</span>
+                <span className="text-slate-300 font-medium">
                   {liveSession.formattedDate}
                 </span>
               </div>
 
-              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
                 {liveSession.title}
               </h2>
 
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-300">
-                <span className="font-bold text-white bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-300">
+                <span className="font-semibold text-white">
                   Cohort: {liveSession.classRangeBadge}
                 </span>
-                <span className="font-mono text-emerald-400 font-bold">
-                  ⏰ {liveSession.startTime} – {liveSession.endTime}
+                <span className="font-mono text-red-300 font-semibold tabular-nums">
+                  {liveSession.startTime} – {liveSession.endTime}
                 </span>
                 {liveSession.tutorName && (
-                  <span className="inline-flex items-center gap-1.5 font-bold text-emerald-300">
-                    <UserCheck size={14} /> Assigned Faculty: {liveSession.tutorName}
+                  <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
+                    <UserCheck size={14} className="text-red-300" /> Assigned Faculty: {liveSession.tutorName}
                   </span>
                 )}
               </div>
@@ -477,9 +477,9 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
                   href={liveSession.meetingLink}
                   target="_blank"
                   rel="noreferrer"
-                  className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black inline-flex items-center gap-2 shadow-md transition-all active:scale-95"
+                  className="px-4 py-2.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center gap-2 transition-colors"
                 >
-                  <Video size={16} />
+                  <Video size={15} />
                   <span>Join Live Classroom</span>
                 </a>
               )}
@@ -488,33 +488,31 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
         </section>
       )}
 
-      {/* SECTION 2: PROGRAMME SELECTION & TIMETABLE HEADER */}
-      <div className="bg-white dark:bg-[#161B26] rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+      {/* PROGRAMME SELECTION & TIMETABLE HEADER */}
+      <div className="bg-white dark:bg-[#111827] rounded-xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="p-2 rounded-xl bg-brand-red/10 text-brand-red">
-                <Calendar size={18} />
-              </span>
+            <div className="flex items-center gap-2.5">
+              <Calendar size={18} className="text-[#B91C1C] shrink-0" />
               <div>
-                <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                <h2 className="text-base sm:text-lg font-bold text-[#1E293B] dark:text-white tracking-tight">
                   Institutional Class Timetable &amp; Schedule
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Select a programme below to view its single-list daily schedule, cohort ranges, assigned faculty, and session statuses for {schoolName}.
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Daily schedule, cohort ranges, assigned faculty, and session statuses for {schoolName}.
                 </p>
               </div>
             </div>
           </div>
 
           {/* View Tab Switcher: Upcoming vs History */}
-          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shrink-0">
+          <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shrink-0">
             <button
               type="button"
               onClick={() => setViewTab('UPCOMING')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                 viewTab === 'UPCOMING'
-                  ? 'bg-white dark:bg-slate-800 text-brand-red shadow-xs'
+                  ? 'bg-white dark:bg-slate-800 text-[#B91C1C] shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -524,9 +522,9 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
             <button
               type="button"
               onClick={() => setViewTab('HISTORY')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                 viewTab === 'HISTORY'
-                  ? 'bg-white dark:bg-slate-800 text-brand-red shadow-xs'
+                  ? 'bg-white dark:bg-slate-800 text-[#B91C1C] shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -536,45 +534,33 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
           </div>
         </div>
 
-        {/* Assigned Programmes Selector Cards */}
+        {/* Assigned Programmes Filter Selector Strip */}
         <div>
-          <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-2.5">
-            1. Select Assigned Programme Track:
-          </label>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2.5">
+            Filter by Assigned Programme Track
+          </span>
 
           {activePrograms.length === 0 ? (
-            <div className="p-4 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 bg-slate-50/50 dark:bg-slate-900/40">
+            <div className="p-4 rounded-lg border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 bg-slate-50/50 dark:bg-slate-900/40">
               No active programmes currently configured for {schoolName}.
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {/* All Programmes Card */}
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => setSelectedProgramId('ALL')}
-                className={`p-3.5 rounded-2xl border text-left transition-all ${
+                className={`px-3.5 py-2 rounded-lg border text-xs font-semibold transition-colors inline-flex items-center gap-2 cursor-pointer ${
                   selectedProgramId === 'ALL'
-                    ? 'border-brand-red bg-red-50/40 dark:bg-red-950/30 ring-2 ring-brand-red/30'
-                    : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
+                    ? 'border-[#1E293B] bg-[#1E293B] text-white'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-slate-300'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                    All Tracks
-                  </span>
-                  <span className="text-[11px] font-bold text-brand-red">
-                    {schedules.length} Sessions
-                  </span>
-                </div>
-                <h4 className="font-black text-xs text-slate-900 dark:text-white mt-2">
-                  All School Programmes
-                </h4>
-                <p className="text-[10px] text-slate-500 mt-0.5">
-                  Complete timetable across all curriculum cohorts
-                </p>
+                <span>All School Programmes</span>
+                <span className={`font-mono text-[11px] tabular-nums ${selectedProgramId === 'ALL' ? 'text-slate-300' : 'text-slate-400'}`}>
+                  ({schedules.length})
+                </span>
               </button>
 
-              {/* Individual Programme Cards */}
               {activePrograms.map(prog => {
                 const isSelected = selectedProgramId === prog.id;
                 const progSchedules = schedules.filter(s => 
@@ -582,7 +568,6 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
                   (prog.name && s.programName && s.programName.toLowerCase() === prog.name.toLowerCase()) ||
                   (prog.name && s.title && s.title.toLowerCase().includes(prog.name.toLowerCase()))
                 );
-
                 const leadTutor = prog.assignedTutors?.[0]?.tutorName;
 
                 return (
@@ -590,35 +575,21 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
                     key={prog.id}
                     type="button"
                     onClick={() => setSelectedProgramId(prog.id)}
-                    className={`p-3.5 rounded-2xl border text-left transition-all relative ${
+                    className={`px-3.5 py-2 rounded-lg border text-xs font-semibold transition-colors inline-flex items-center gap-2 cursor-pointer ${
                       isSelected
-                        ? 'border-brand-red bg-red-50/40 dark:bg-red-950/30 ring-2 ring-brand-red/30'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
+                        ? 'border-[#B91C1C] bg-[#B91C1C] text-white'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-slate-300'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                        {prog.status || 'Active'}
-                      </span>
-                      <span className="text-[11px] font-bold text-slate-500">
-                        {progSchedules.length} Classes
-                      </span>
-                    </div>
-
-                    <h4 className="font-black text-xs text-slate-900 dark:text-white mt-2 line-clamp-1">
-                      {prog.name}
-                    </h4>
-
-                    <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">
-                      {prog.level || 'Year 1 - Year 5'}
-                    </p>
-
+                    <span>{prog.name}</span>
                     {leadTutor && (
-                      <div className="mt-2 text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                        <UserCheck size={11} className="text-brand-red" />
-                        <span className="truncate">Tutor: {leadTutor}</span>
-                      </div>
+                      <span className={`hidden sm:inline text-[10px] ${isSelected ? 'text-red-100' : 'text-slate-400'}`}>
+                        · {leadTutor}
+                      </span>
                     )}
+                    <span className={`font-mono text-[11px] tabular-nums ${isSelected ? 'text-red-100' : 'text-slate-400'}`}>
+                      ({progSchedules.length})
+                    </span>
                   </button>
                 );
               })}
@@ -627,45 +598,42 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
         </div>
       </div>
 
-      {/* SECTION 3: UNIFIED CHRONOLOGICAL SCHEDULE LIST */}
-      <div className="bg-white dark:bg-[#161B26] rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-4">
-        {/* Filter Controls Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+      {/* UNIFIED CHRONOLOGICAL SCHEDULE LIST */}
+      <div className="bg-white dark:bg-[#111827] rounded-xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
           <div>
-            <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <GraduationCap size={16} className="text-brand-red" />
+            <h3 className="text-sm font-bold text-[#1E293B] dark:text-white flex items-center gap-2">
+              <GraduationCap size={16} className="text-[#B91C1C]" />
               <span>
                 {selectedProgramId === 'ALL'
                   ? 'All Class Schedules'
                   : `Class Schedule for ${programs.find(p => p.id === selectedProgramId)?.name || 'Selected Programme'}`}
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                {groupedDaySessions.reduce((acc, g) => acc + g.sessions.length, 0)} {viewTab === 'UPCOMING' ? 'upcoming' : 'historical'} sessions
+              <span className="text-xs font-normal text-slate-500 dark:text-slate-400 tabular-nums">
+                · {groupedDaySessions.reduce((acc, g) => acc + g.sessions.length, 0)} {viewTab === 'UPCOMING' ? 'upcoming' : 'historical'} sessions
               </span>
             </h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Daily combined list: all classes for that timetable slot are consolidated into one row with expandable cohort breakdown.
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+              Consolidated daily schedule: expand a session row to inspect individual class cohorts.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="relative w-full sm:w-60">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Filter by topic, tutor..."
-                className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-red"
-              />
-            </div>
+          <div className="relative w-full sm:w-60">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Filter by topic, tutor..."
+              className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
+            />
           </div>
         </div>
 
         {/* Chronological List of Date Groups */}
         {groupedDaySessions.length === 0 ? (
-          <div className="text-center py-16 px-4 bg-slate-50/50 dark:bg-slate-900/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 space-y-2">
-            <Calendar size={32} className="mx-auto text-slate-300 dark:text-slate-600" />
+          <div className="text-center py-14 px-4 bg-slate-50/50 dark:bg-slate-900/40 rounded-lg border border-dashed border-slate-200 dark:border-slate-800 space-y-2">
+            <Calendar size={28} className="mx-auto text-slate-300 dark:text-slate-600" />
             <h4 className="font-bold text-sm text-slate-700 dark:text-slate-300">
               {viewTab === 'UPCOMING' ? 'No upcoming class schedules found' : 'No past schedule history found'}
             </h4>
@@ -678,18 +646,18 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
         ) : (
           <div className="space-y-6">
             {groupedDaySessions.map(group => (
-              <div key={group.date} className="space-y-3">
-                {/* Date Header Badge */}
+              <div key={group.date} className="space-y-2.5">
+                {/* Date Section Header */}
                 <div className="flex items-center gap-3">
-                  <div className="px-3.5 py-1.5 rounded-xl bg-slate-900 text-white dark:bg-slate-800 text-xs font-black tracking-tight inline-flex items-center gap-2 shadow-xs">
-                    <Calendar size={14} className="text-brand-red" />
+                  <div className="text-xs font-bold text-[#1E293B] dark:text-white inline-flex items-center gap-2">
+                    <Calendar size={14} className="text-[#B91C1C]" />
                     <span>{group.formattedDate}</span>
                   </div>
-                  <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800" />
+                  <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
                 </div>
 
                 {/* Day's Consolidated Sessions List */}
-                <div className="divide-y divide-slate-100 dark:divide-slate-800/80 border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900/40">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900/40">
                   {group.sessions.map(session => {
                     const isExpanded = Boolean(expandedSessionKeys[session.sessionKey]);
                     const hasMultipleClasses = session.classLevels.length > 1;
@@ -699,48 +667,46 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
                         key={session.sessionKey} 
                         className={`p-4 transition-colors ${
                           session.overallStatus === 'ONGOING' 
-                            ? 'bg-emerald-50/30 dark:bg-emerald-950/20' 
+                            ? 'bg-red-50/40 dark:bg-red-950/15 border-l-2 border-[#B91C1C]' 
                             : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/30'
                         }`}
                       >
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                           {/* Time & Class Range & Programme Details */}
-                          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-                            {/* Time Block */}
-                            <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-xs font-bold shrink-0 text-center min-w-[110px]">
-                              <span className="block text-[10px] uppercase text-slate-400 font-sans">TIME</span>
+                          <div className="flex items-start sm:items-center gap-4 min-w-0">
+                            <div className="text-slate-700 dark:text-slate-300 font-mono text-xs font-semibold shrink-0 min-w-[100px] tabular-nums">
+                              <span className="block text-[10px] uppercase text-slate-400 font-sans">Time Slot</span>
                               {session.startTime} – {session.endTime}
                             </div>
 
                             <div className="min-w-0">
-                              {/* Range Badge, Programme Badge, Status Badge */}
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase bg-red-50 dark:bg-red-950/40 text-brand-red border border-red-100 dark:border-red-900/30">
+                              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs">
+                                <span className="font-bold text-[#B91C1C] dark:text-red-400">
                                   {session.classRangeBadge}
                                 </span>
-                                
                                 {session.programName && (
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                                    {session.programName}
-                                  </span>
+                                  <>
+                                    <span className="text-slate-300 dark:text-slate-700">·</span>
+                                    <span className="font-medium text-slate-600 dark:text-slate-300">
+                                      {session.programName}
+                                    </span>
+                                  </>
                                 )}
-
+                                <span className="text-slate-300 dark:text-slate-700">·</span>
                                 {renderStatusBadge(session.overallStatus, session.isAutoCompleted)}
                               </div>
 
-                              {/* Title / Programme Name */}
-                              <h4 className="text-sm font-black text-slate-900 dark:text-white mt-1.5 tracking-tight">
+                              <h4 className="text-sm font-bold text-[#1E293B] dark:text-white mt-1 tracking-tight">
                                 {session.title}
                               </h4>
 
-                              {/* Tutor Assignment Row */}
                               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-slate-600 dark:text-slate-300">
-                                <span className="inline-flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
-                                  <UserCheck size={13} className="text-emerald-500 shrink-0" />
-                                  <span>Assigned Tutor:</span>
-                                  <span className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[11px] font-black">
+                                <span className="inline-flex items-center gap-1.5 font-medium">
+                                  <UserCheck size={13} className="text-[#1E293B] dark:text-slate-400 shrink-0" />
+                                  <span>Faculty:</span>
+                                  <strong className="font-semibold text-[#1E293B] dark:text-white">
                                     {session.tutorName || 'Faculty Instructor Assigned'}
-                                  </span>
+                                  </strong>
                                 </span>
 
                                 {session.meetingLink && (
@@ -748,7 +714,7 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
                                     href={session.meetingLink}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="text-sky-600 font-bold hover:underline inline-flex items-center gap-1 text-[11px]"
+                                    className="text-[#B91C1C] dark:text-red-400 font-semibold hover:underline inline-flex items-center gap-1 text-[11px]"
                                   >
                                     <ExternalLink size={12} /> Virtual Room
                                   </a>
@@ -757,26 +723,26 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
                             </div>
                           </div>
 
-                          {/* Actions: Expand Range Button & Status Controller (if Tutor/Admin) */}
+                          {/* Actions: Expand Range Button & Status Controller */}
                           <div className="flex items-center gap-2.5 self-end lg:self-center shrink-0">
                             {hasMultipleClasses && (
                               <button
                                 type="button"
+                                aria-expanded={isExpanded}
                                 onClick={() => toggleExpand(session.sessionKey)}
-                                className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300 inline-flex items-center gap-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-xs"
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-300 inline-flex items-center gap-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                               >
-                                <span>{isExpanded ? 'Hide Cohort Breakdown' : `Expand Range (${session.classLevels.length})`}</span>
+                                <span>{isExpanded ? 'Hide Cohort Breakdown' : `Cohorts (${session.classLevels.length})`}</span>
                                 {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                               </button>
                             )}
 
-                            {/* Tutors & Admins can update status; School Admin and Students see Display Badge */}
                             {canManageStatus ? (
                               <select
                                 disabled={Boolean(updatingId)}
                                 value={session.overallStatus}
                                 onChange={e => handleUpdateStatus(session.occurrences.map(o => o.id), e.target.value)}
-                                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
                               >
                                 <option value="SCHEDULED">Scheduled</option>
                                 <option value="ONGOING">Live Now</option>
@@ -789,39 +755,43 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
                           </div>
                         </div>
 
-                        {/* Expandable Breakdown: View each individual class level (Year 1, Year 2, etc.) */}
+                        {/* Expandable Breakdown: Concise divider-separated cohort rows (not a card grid) */}
                         {hasMultipleClasses && isExpanded && (
-                          <div className="mt-3.5 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2 bg-slate-50/60 dark:bg-slate-950/40 p-3.5 rounded-2xl">
-                            <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                              <span>Individual Class Cohort Breakdown ({session.classLevels.length} Classes):</span>
+                          <div className="mt-3 pt-3 border-t border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 rounded-lg px-3.5 py-2.5">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 uppercase tracking-wider pb-2">
+                              <span>Class Cohort Breakdown ({session.classLevels.length} Classes)</span>
                               {canManageStatus && <span className="text-[10px] text-slate-400">Tutor Status Control Active</span>}
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                            <div className="divide-y divide-slate-200/70 dark:divide-slate-800">
                               {session.classLevels.map((lvl) => {
                                 const matchingOcc = session.occurrences.find(o => o.classLevel === lvl);
                                 const occStatus = matchingOcc?.status || session.overallStatus;
+                                const occTime = matchingOcc?.startTime && matchingOcc?.endTime ? `${matchingOcc.startTime} – ${matchingOcc.endTime}` : `${session.startTime} – ${session.endTime}`;
 
                                 return (
                                   <div
                                     key={lvl}
-                                    className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center justify-between gap-2"
+                                    className="py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
                                   >
-                                    <div className="flex items-center gap-2">
-                                      <span className="px-2 py-0.5 rounded text-[11px] font-black bg-red-50 dark:bg-red-950/40 text-brand-red">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <span className="font-bold text-[#B91C1C] dark:text-red-400 w-20 shrink-0">
                                         {lvl}
                                       </span>
-                                      <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                                      <span className="font-mono text-[11px] text-slate-500 tabular-nums shrink-0">
+                                        {occTime}
+                                      </span>
+                                      <span className="text-slate-700 dark:text-slate-300 truncate">
                                         {session.title}
                                       </span>
                                     </div>
 
-                                    <div className="shrink-0 flex items-center gap-1.5">
+                                    <div className="shrink-0 flex items-center gap-2">
                                       {canManageStatus && matchingOcc ? (
                                         <select
                                           value={occStatus}
                                           onChange={e => handleUpdateStatus([matchingOcc.id], e.target.value)}
-                                          className="text-[10px] font-bold py-1 px-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950"
+                                          className="text-[11px] font-semibold py-1 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
                                         >
                                           <option value="SCHEDULED">Scheduled</option>
                                           <option value="ONGOING">Live</option>

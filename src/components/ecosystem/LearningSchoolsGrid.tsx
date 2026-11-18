@@ -16,11 +16,19 @@ export interface Pathway {
   outcomes: string[];
 }
 
+export type CoreCategoryFilterId =
+  | 'all'
+  | 'technology'
+  | 'creative'
+  | 'music'
+  | 'academics'
+  | 'design-graphics';
+
 export interface LearningSchool {
   id: string;
   aliases?: string[];
   categoryLabel: string;
-  filterGroup: 'technology' | 'creative' | 'future' | 'academics';
+  filterGroup: 'technology' | 'creative' | 'academics';
   name: string;
   shortName: string;
   tagline: string;
@@ -36,20 +44,39 @@ export interface LearningSchool {
 
 export const LEARNING_SCHOOLS: LearningSchool[] = [
   {
-    id: 'tech',
-    aliases: ['tech-programming', 'technology-programming', 'coding', 'digital_and_technology', 'digital-technology'],
+    id: 'technology',
+    aliases: [
+      'tech',
+      'tech-programming',
+      'technology-programming',
+      'technology-programme',
+      'coding',
+      'digital_and_technology',
+      'digital-technology',
+      'digital-literacy',
+      'literacy',
+      'robotics-future',
+      'ai-robotics',
+      'robotics',
+      'future-skills',
+      'game-3d',
+      'young-creators',
+      'strategy-games',
+    ],
     categoryLabel: 'TECHNOLOGY',
     filterGroup: 'technology',
-    name: 'School of Technology & Programming',
-    shortName: 'Technology & Programming',
-    tagline: 'Software Engineering, Web, Python & AI Systems',
-    cardSummary: 'Build real-world skills in software development, cybersecurity and next-gen tech.',
-    image: 'https://images.pexels.com/photos/5473298/pexels-photo-5473298.jpeg?auto=compress&cs=tinysrgb&w=1400',
+    name: 'Technology',
+    shortName: 'Technology',
+    tagline: 'Software Engineering, Web, Python, AI, Robotics & Digital Literacy',
+    cardSummary:
+      'Build real-world skills in software development, Python, AI, robotics, and modern digital fluency.',
+    image:
+      'https://images.pexels.com/photos/5473298/pexels-photo-5473298.jpeg?auto=compress&cs=tinysrgb&w=1400',
     accentText: 'text-red-500',
     accentBorder: 'border-red-500/40',
     accentGradient: 'from-slate-900 via-slate-900 to-slate-950',
     description:
-      'From visual block logic for young beginners to full-stack web engineering, Python automation, and AI systems for future software architects.',
+      'From visual block logic and foundational computer literacy for beginners to full-stack web engineering, Python automation, AI systems, and robotics.',
     whoItIsFor: 'Kids (6+), Teens, University Students & Adult Career Switchers',
     pathways: [
       {
@@ -69,282 +96,219 @@ export const LEARNING_SCHOOLS: LearningSchool[] = [
       },
       {
         id: 'python-ai',
-        title: 'Python, Data Science & AI Pathway',
-        ageGroup: 'Ages 12–18+ & Adults',
+        title: 'Python, Data Science, AI & Robotics Pathway',
+        ageGroup: 'Ages 10–18+ & Adults',
         overview:
-          'Learn the world’s fastest-growing language for automation, data analysis, machine learning, and generative AI applications.',
+          'Learn Python for automation, data analysis, machine learning, generative AI applications, and intelligent robotics.',
         levels: [
           { level: 1, name: 'Discover', focus: 'Python Syntax, Logic & Algorithms', project: 'Automated CLI Quiz & Logic Engine' },
           { level: 2, name: 'Learn', focus: 'Data Structures, OOP & File Automation', project: 'Smart Expense & Report Automation Bot' },
           { level: 3, name: 'Build', focus: 'Data Analysis with Pandas & Visualization', project: 'Real-World Dataset Insights Dashboard' },
-          { level: 4, name: 'Launch', focus: 'Machine Learning & End-to-End AI Engineering', project: 'Deployed AI Web Service & Portfolio Defense' },
+          { level: 4, name: 'Launch', focus: 'Machine Learning, AI Agents & Robotics', project: 'Deployed AI Web Service & Portfolio Defense' },
         ],
         tools: ['Python 3', 'Jupyter', 'Pandas', 'Scikit-Learn', 'FastAPI', 'Modern LLM APIs'],
         outcomes: ['Automate complex data workflows', 'Build custom AI-powered applications', 'Prepare for advanced university computing'],
       },
       {
-        id: 'junior-coders',
-        title: 'Junior Coders & Computational Logic',
-        ageGroup: 'Ages 6–11',
-        overview:
-          'A high-visual introduction to coding logic, loops, variables, and interactive storytelling before transitioning to text code.',
-        levels: [
-          { level: 1, name: 'Discover', focus: 'Sequencing, Patterns & Visual Blocks', project: 'Animated Interactive Storybook' },
-          { level: 2, name: 'Learn', focus: 'Loops, Events & Conditional Logic', project: 'Multi-Level Maze & Arcade Game' },
-          { level: 3, name: 'Build', focus: 'Variables, Physics & Game Mechanics', project: 'Custom Platformer with Score Engine' },
-          { level: 4, name: 'Launch', focus: 'Bridge to Python & Junior Showcase', project: 'Original Game Published for Peers' },
-        ],
-        tools: ['Scratch 3.0', 'Blockly', 'Code.org', 'Python Turtle'],
-        outcomes: ['Strong algorithmic thinking', 'Smooth transition to text programming', 'High creative confidence with technology'],
-      },
-    ],
-  },
-  {
-    id: 'creative-design',
-    aliases: ['creative', 'design'],
-    categoryLabel: 'CREATIVE',
-    filterGroup: 'creative',
-    name: 'Creative Digital Media',
-    shortName: 'Creative Digital Media',
-    tagline: 'Graphic Design, Brand Identity & UI/UX Product Design',
-    cardSummary: 'Turn your ideas into powerful visual stories, interfaces and brand systems.',
-    image: 'https://images.pexels.com/photos/7988079/pexels-photo-7988079.jpeg?auto=compress&cs=tinysrgb&w=1400',
-    accentText: 'text-red-500',
-    accentBorder: 'border-red-500/40',
-    accentGradient: 'from-slate-900 via-slate-900 to-slate-950',
-    description:
-      'Transform visual imagination into studio-grade brand identities, digital illustrations, and interactive mobile and web UI/UX prototypes.',
-    whoItIsFor: 'Creative Kids, Teens, Aspiring Designers & Entrepreneurs',
-    pathways: [
-      {
-        id: 'ui-ux-brand',
-        title: 'Visual Communication, Branding & UI/UX Pathway',
-        ageGroup: 'Ages 10–18+ & Adults',
-        overview:
-          'Learn layout composition, color theory, typography, vector illustration, and interactive product design in Figma and Adobe Creative Cloud.',
-        levels: [
-          { level: 1, name: 'Discover', focus: 'Visual Principles, Color & Typography', project: 'Event Poster & Social Media Campaign' },
-          { level: 2, name: 'Learn', focus: 'Vector Illustration & Brand Identity', project: 'Complete Brand Logo & Style Guide' },
-          { level: 3, name: 'Build', focus: 'UI Components, Wireframing & Figma Auto-Layout', project: 'Mobile App Design System' },
-          { level: 4, name: 'Launch', focus: 'Interactive UX Prototyping & Case Study Curation', project: 'Published High-Fidelity App Prototype' },
-        ],
-        tools: ['Figma', 'Adobe Photoshop', 'Adobe Illustrator', 'Canva Pro', 'Behance'],
-        outcomes: ['Design complete brand guidelines', 'Build interactive Figma app prototypes', 'Graduate with a studio design portfolio'],
-      },
-    ],
-  },
-  {
-    id: 'robotics-future',
-    aliases: ['ai-robotics', 'robotics', 'future-skills'],
-    categoryLabel: 'FUTURE SKILLS',
-    filterGroup: 'future',
-    name: 'AI & Robotics Engineering',
-    shortName: 'AI & Robotics',
-    tagline: 'Generative AI, Autonomous Systems, IoT & Hardware Logic',
-    cardSummary: 'Design intelligent systems, program autonomous hardware, and build real-world robots.',
-    image: 'https://images.pexels.com/photos/8566472/pexels-photo-8566472.jpeg?auto=compress&cs=tinysrgb&w=1400',
-    accentText: 'text-red-500',
-    accentBorder: 'border-red-500/40',
-    accentGradient: 'from-slate-900 via-slate-900 to-slate-950',
-    description:
-      'Equip learners for the next decade with hands-on Generative AI engineering, robotics simulation, smart sensors, and ethical innovation.',
-    whoItIsFor: 'Innovators, Future Engineers & Forward-Thinking Teens/Adults',
-    pathways: [
-      {
-        id: 'future-innovator',
-        title: 'Applied AI, Robotics & Smart Systems',
-        ageGroup: 'Ages 10–18+ & Adults',
-        overview:
-          'Combine software intelligence with hardware simulations, Arduino and Micro:bit logic, and modern AI workflows.',
-        levels: [
-          { level: 1, name: 'Discover', focus: 'How AI, Sensors & Embedded Systems Work', project: 'Smart Home Circuit Simulation' },
-          { level: 2, name: 'Learn', focus: 'Microcontroller Logic & Prompt Engineering', project: 'Autonomous Obstacle-Avoiding Robot' },
-          { level: 3, name: 'Build', focus: 'Computer Vision & Voice/Text AI Agents', project: 'AI Vision Classifier Prototype' },
-          { level: 4, name: 'Launch', focus: 'Smart IoT + AI Capstone & Demo Defense', project: 'Community Impact Tech Innovation' },
-        ],
-        tools: ['Tinkercad Circuits', 'Micro:bit / Arduino', 'Teachable Machine', 'AI Agent Workflows'],
-        outcomes: ['Understand hardware and software integration', 'Build responsible AI-powered tools', 'Pitch original tech inventions confidently'],
-      },
-    ],
-  },
-  {
-    id: 'game-3d',
-    aliases: ['young-creators', 'young', 'early-learners', 'strategy-games', 'chess'],
-    categoryLabel: 'FUTURE SKILLS',
-    filterGroup: 'future',
-    name: '3D Worlds & Game Development',
-    shortName: '3D & Game Dev',
-    tagline: '3D Modeling, Roblox Lua, Unity & Interactive Worlds',
-    cardSummary: 'Architect interactive 3D environments, physics engines, and playable multiplayer worlds.',
-    image: 'https://images.pexels.com/photos/8728382/pexels-photo-8728382.jpeg?auto=compress&cs=tinysrgb&w=1400',
-    accentText: 'text-red-500',
-    accentBorder: 'border-red-500/40',
-    accentGradient: 'from-slate-900 via-slate-900 to-slate-950',
-    description:
-      'Turn game players into game creators. Learn 3D modeling, texturing, lighting, physics engines, and game scripting.',
-    whoItIsFor: 'Gamers, 3D Artists, Builders & Aspiring Game Engineers (Ages 8+)',
-    pathways: [
-      {
-        id: 'game-creator',
-        title: '3D Modeling & Game Engineering Pathway',
-        ageGroup: 'Ages 8–18+',
-        overview:
-          'Design 3D environments and script playable multiplayer and single-player games using Blender, Roblox Studio (Lua), and Unity.',
-        levels: [
-          { level: 1, name: 'Discover', focus: '3D Space, Environment Design & Level Layout', project: 'Playable 3D Obstacle World' },
-          { level: 2, name: 'Learn', focus: 'Lua / C# Scripting, Triggers & Game Physics', project: 'Custom Adventure Game with Inventory' },
-          { level: 3, name: 'Build', focus: '3D Modeling, Low-Poly Assets & Materials in Blender', project: 'Custom 3D Character & Vehicle Pack' },
-          { level: 4, name: 'Launch', focus: 'Game UI, Multiplayer Mechanics & Release', project: 'Published Studio Game Title' },
-        ],
-        tools: ['Blender 3D', 'Roblox Studio (Lua)', 'Unity Engine', 'C# Basics'],
-        outcomes: ['Model and texture original 3D assets', 'Write game logic in Lua and C#', 'Publish playable games for real players'],
-      },
-    ],
-  },
-  {
-    id: 'digital-literacy',
-    aliases: ['literacy'],
-    categoryLabel: 'TECHNOLOGY',
-    filterGroup: 'technology',
-    name: 'School of Digital Literacy & Computing',
-    shortName: 'Digital Literacy',
-    tagline: 'Computer Mastery, Productivity, Cyber Safety & Cloud',
-    cardSummary: 'Master modern operating systems, cloud collaboration workflows, and digital safety.',
-    image: 'https://images.pexels.com/photos/3861958/pexels-photo-3861958.jpeg?auto=compress&cs=tinysrgb&w=1400',
-    accentText: 'text-red-500',
-    accentBorder: 'border-red-500/40',
-    accentGradient: 'from-slate-900 via-slate-900 to-slate-950',
-    description:
-      'Essential computing fluency for modern learners and professionals—covering operating systems, touch typing, cloud collaboration, spreadsheets, and cybersecurity.',
-    whoItIsFor: 'Young Learners, Students, Professionals & Adults',
-    pathways: [
-      {
         id: 'comp-fluency',
-        title: 'Complete Computer Mastery & Cloud Productivity',
-        ageGroup: 'All Ages (Kids, Teens & Adults)',
+        title: 'Digital Literacy, Computing & Junior Coders',
+        ageGroup: 'Ages 6–18+ & All Learners',
         overview:
-          'Go from hesitant computer user to rapid, organized power user across Windows/macOS, Google Workspace, Microsoft 365, and modern cloud tools.',
+          'Foundational computer mastery, touch typing, cloud productivity suites, cyber safety, and Scratch computational logic.',
         levels: [
           { level: 1, name: 'Discover', focus: 'OS Navigation, File Systems & Touch Typing', project: 'Organized Cloud Digital Workspace' },
           { level: 2, name: 'Learn', focus: 'Document Publishing & Executive Presentations', project: 'Formatted Research Report & Pitch Deck' },
-          { level: 3, name: 'Build', focus: 'Spreadsheets, Formulas & Data Charts', project: 'Dynamic Budget & Analytics Workbook' },
+          { level: 3, name: 'Build', focus: 'Spreadsheets, Formulas & Interactive Coding Blocks', project: 'Dynamic Analytics Workbook & Arcade Game' },
           { level: 4, name: 'Launch', focus: 'Cloud Collaboration, Cyber Safety & Fluency Portfolio', project: 'Executive Digital Fluency Portfolio' },
         ],
-        tools: ['Google Workspace', 'Microsoft Office 365', 'Notion', 'Windows / macOS', 'Cloud Drive'],
-        outcomes: ['45+ WPM accurate touch typing', 'Mastery of spreadsheets and presentation design', 'Safe, confident digital citizenship'],
+        tools: ['Google Workspace', 'Microsoft Office 365', 'Scratch 3.0', 'Windows / macOS', 'Cloud Drive'],
+        outcomes: ['45+ WPM accurate touch typing', 'Mastery of spreadsheets and presentation design', 'Strong algorithmic thinking'],
       },
     ],
   },
   {
-    id: 'media-animation',
-    aliases: ['music-performing-arts', 'music', 'instruments'],
-    categoryLabel: 'CREATIVE',
+    id: 'music',
+    aliases: [
+      'music-programme',
+      'music-performing-arts',
+      'instruments',
+      'music-arts',
+      'performing-arts',
+    ],
+    categoryLabel: 'CREATIVE ARTS · MUSIC',
     filterGroup: 'creative',
-    name: 'School of Video, Animation & Media',
-    shortName: 'Video & Animation',
-    tagline: '2D/3D Animation, Motion Graphics & Cinema Editing',
-    cardSummary: 'Direct frame-by-frame animation, cinematic video edits, and studio motion graphics.',
-    image: 'https://images.pexels.com/photos/257904/pexels-photo-257904.jpeg?auto=compress&cs=tinysrgb&w=1400',
+    name: 'Music',
+    shortName: 'Music',
+    tagline: 'Instrumental Mastery, Piano, Guitar, Vocals, Music Theory & Audio Production',
+    cardSummary:
+      'Master piano, keyboard, guitar, drums, violin, vocal performance, sight-reading, and digital music production.',
+    image:
+      'https://images.pexels.com/photos/164743/pexels-photo-164743.jpeg?auto=compress&cs=tinysrgb&w=1400',
     accentText: 'text-red-500',
     accentBorder: 'border-red-500/40',
     accentGradient: 'from-slate-900 via-slate-900 to-slate-950',
     description:
-      'Master storytelling through frame-by-frame animation, rigging, cinematic video editing, sound design, and visual effects.',
-    whoItIsFor: 'Storytellers, Animators, Content Creators & Filmmakers',
+      'Progressive musical training covering piano/keyboard, guitar, violin, drums, vocal coaching, sight-reading, ear training, harmony, and digital audio production.',
+    whoItIsFor: 'Kids (5+), Teens, Aspiring Musicians, Vocalists & Music Producers',
     pathways: [
       {
-        id: 'motion-cinema',
-        title: 'Animation, Motion Graphics & Video Production',
-        ageGroup: 'Ages 9–18+ & Adults',
+        id: 'piano-instrumental',
+        title: 'Instrumental Mastery (Piano, Keyboard, Guitar, Violin & Drums)',
+        ageGroup: 'Ages 5–18+ & Adults',
         overview:
-          'From storyboarding and 12 principles of animation to professional non-linear video editing, color grading, and motion graphics.',
+          'Structured practical and theoretical instrumental mastery from foundational rhythm and posture to two-hand repertoire and ABRSM/MUSON grade exams.',
         levels: [
-          { level: 1, name: 'Discover', focus: 'Storyboarding, Timing & 2D Keyframes', project: 'Character Walk Cycle & Short Loop' },
-          { level: 2, name: 'Learn', focus: 'Video Editing, Cuts, Pacing & Audio Mix', project: 'Cinematic Mini-Documentary Edit' },
-          { level: 3, name: 'Build', focus: 'Character Rigging & Motion Typography', project: 'Animated Explainer Video' },
-          { level: 4, name: 'Launch', focus: 'Visual Effects, Color Grading & Showreel', project: '60-Second Industry Demo Reel' },
+          { level: 1, name: 'Discover', focus: 'Instrument Geography, Posture & Rhythm Fundamentals', project: '3 Foundational Melody Recital Pieces' },
+          { level: 2, name: 'Learn', focus: 'Staff Notation, Sight-Reading & Dynamic Expression', project: 'Classical & Contemporary Sheet Music Performance' },
+          { level: 3, name: 'Build', focus: 'Chord Progressions, Two-Hand Coordination & Scales', project: 'Full Multi-Section Recital Performance' },
+          { level: 4, name: 'Launch', focus: 'Improvisation, Exam Prep (ABRSM/Trinity) & Stage Recital', project: 'Live Studio Showcase & Grade Portfolio' },
         ],
-        tools: ['Premiere Pro', 'After Effects', 'CapCut Pro', 'Blender 2D', 'DaVinci Resolve'],
-        outcomes: ['Direct and edit broadcast-quality video', 'Create rigged 2D and motion animations', 'Publish a professional creator showreel'],
+        tools: ['Acoustic / Digital Piano', 'Guitar / Violin / Drums', 'Metronome', 'ABRSM / Trinity Syllabi'],
+        outcomes: ['Fluent grand-staff sight-reading', 'Confident two-hand & ensemble coordination', 'Readiness for international music board exams'],
+      },
+      {
+        id: 'vocals-audio-production',
+        title: 'Vocal Coaching, Songwriting & Digital Audio Production',
+        ageGroup: 'Ages 8–18+ & Adults',
+        overview:
+          'Develop pitch control, breath support, harmonic ear training, songwriting, and studio music production.',
+        levels: [
+          { level: 1, name: 'Discover', focus: 'Breath Control, Pitch Accuracy & Vocal Warmups', project: 'Solo Vocal Melody Recording' },
+          { level: 2, name: 'Learn', focus: 'Ear Training, Intervals & Harmonic Blending', project: 'Multi-Part Harmony Arrangement' },
+          { level: 3, name: 'Build', focus: 'Songwriting, Beat Arrangement & DAW Recording', project: 'Original Recorded Demo Track' },
+          { level: 4, name: 'Launch', focus: 'Mixing, Mastering & Live Stage Performance', project: 'Released Studio Single & Live Performance' },
+        ],
+        tools: ['Studio Condenser Mics', 'Logic Pro / FL Studio / BandLab', 'Ear Training Labs'],
+        outcomes: ['Strong vocal range and pitch control', 'Compose and arrange original music', 'Produce studio-quality audio recordings'],
       },
     ],
   },
   {
     id: 'academics',
-    aliases: ['academic-excellence', 'academic'],
+    aliases: [
+      'academics-programme',
+      'academic-excellence',
+      'academic',
+      'exams-languages',
+      'private-tutoring',
+      'tutoring',
+    ],
     categoryLabel: 'ACADEMICS',
     filterGroup: 'academics',
-    name: 'School of Core Academics & STEM',
-    shortName: 'Academics & STEM',
-    tagline: 'Mathematics, Sciences, English & Curriculum Mastery',
-    cardSummary: 'Achieve top-percentile mastery in mathematics, sciences, and analytical problem solving.',
-    image: 'https://images.pexels.com/photos/5905709/pexels-photo-5905709.jpeg?auto=compress&cs=tinysrgb&w=1400',
+    name: 'Academics',
+    shortName: 'Academics',
+    tagline: 'Mathematics, Sciences, English, STEM & Exam Mastery (WAEC, JAMB, IGCSE, SAT)',
+    cardSummary:
+      'Achieve top-percentile mastery in Mathematics, Sciences, English, and national/international examinations.',
+    image:
+      'https://images.pexels.com/photos/5905709/pexels-photo-5905709.jpeg?auto=compress&cs=tinysrgb&w=1400',
     accentText: 'text-red-500',
     accentBorder: 'border-red-500/40',
     accentGradient: 'from-slate-900 via-slate-900 to-slate-950',
     description:
-      'Personalized 1-on-1 and small-group academic mentorship across British (IGCSE/A-Level), American, Nigerian, IB, and Canadian curricula.',
-    whoItIsFor: 'Primary, Secondary & Pre-University Students (Ages 5–18)',
+      'Personalized 1-on-1 and small-group academic mentorship across Nigerian, British (IGCSE/A-Level), and American curricula alongside intensive WAEC, JAMB, SAT, and IELTS preparation.',
+    whoItIsFor: 'Primary, Secondary & Pre-University Students (Ages 5–18+)',
     pathways: [
       {
         id: 'stem-english',
-        title: 'Mathematics, Sciences & Academic Mastery Pathway',
+        title: 'Core Mathematics, Sciences & English Mastery Pathway',
         ageGroup: 'Ages 5–18 (Grades 1–12)',
         overview:
           'Eliminate learning gaps and build top-percentile mastery in Mathematics, Further Math, Physics, Chemistry, Biology, and English Literacy.',
         levels: [
           { level: 1, name: 'Discover', focus: 'Diagnostic Assessment & Core Concept Clarity', project: 'Personalized Mastery Action Plan' },
           { level: 2, name: 'Learn', focus: 'Guided Problem Solving & Analytical Drills', project: 'Topic-by-Topic Mastery Portfolio' },
-          { level: 3, name: 'Build', focus: 'Multi-Step Word Problems & Lab Reasoning', project: 'Applied STEM Investigation Report' },
+          { level: 3, name: 'Build', focus: 'Multi-Step Word Problems & Scientific Reasoning', project: 'Applied STEM Investigation Report' },
           { level: 4, name: 'Launch', focus: 'Timed Past-Paper Simulations & Distinction Prep', project: 'Top-Grade School & Board Distinction' },
         ],
         tools: ['Interactive Whiteboards', 'Desmos / GeoGebra', 'PhET Simulations', 'Past Paper Banks'],
         outcomes: ['Measurable grade improvement within 8 weeks', 'Deep conceptual confidence in Math and Science', 'Strong academic writing and critical reading'],
       },
+      {
+        id: 'global-prep',
+        title: 'WAEC, JAMB, IGCSE, SAT & Global Exams Track',
+        ageGroup: 'Ages 10–18+ & Pre-University',
+        overview:
+          'Structured score-maximizing preparation for WAEC, NECO, JAMB UTME, Cambridge Checkpoint, IGCSE, SAT, and IELTS.',
+        levels: [
+          { level: 1, name: 'Discover', focus: 'Baseline Mock Test & Syllabus Gap Audit', project: 'Targeted Section Score Roadmap' },
+          { level: 2, name: 'Learn', focus: 'High-Yield Concepts, Formulas & Examiner Rubrics', project: 'Core Strategy Drill Book' },
+          { level: 3, name: 'Build', focus: 'CBT Speed Drills & Past Question Dissection', project: 'Timed Section Sprint Benchmarks' },
+          { level: 4, name: 'Launch', focus: 'Full-Length Proctored Mock Exams & Peak Review', project: 'Distinction / 300+ JAMB / 1450+ SAT Readiness' },
+        ],
+        tools: ['Jaystarbliss CBT Simulator', 'Official WAEC/JAMB/Cambridge Banks', 'Speed Drill Timers'],
+        outcomes: ['Distinction readiness in WAEC, JAMB, and IGCSE', '1450+ SAT and Band 8.0+ IELTS strategies', 'High-speed exam accuracy under timed conditions'],
+      },
     ],
   },
   {
-    id: 'exams-languages',
-    aliases: ['private-tutoring', 'tutoring'],
-    categoryLabel: 'ACADEMICS',
-    filterGroup: 'academics',
-    name: 'School of Global Exams & Languages',
-    shortName: 'Exams & Languages',
-    tagline: 'SAT, IELTS, IGCSE, WAEC & Global Languages',
-    cardSummary: 'Prepare strategically for international admissions exams and global language fluency.',
-    image: 'https://images.pexels.com/photos/4145153/pexels-photo-4145153.jpeg?auto=compress&cs=tinysrgb&w=1400',
+    id: 'design-graphics',
+    aliases: [
+      'design-graphics-programme',
+      'creative-design',
+      'creative',
+      'design',
+      'creative-arts',
+      'graphic-design',
+      'media-animation',
+    ],
+    categoryLabel: 'CREATIVE ARTS · DESIGN & GRAPHICS',
+    filterGroup: 'creative',
+    name: 'Design and Graphics',
+    shortName: 'Design & Graphics',
+    tagline: 'Graphic Design, Brand Identity, UI/UX Design, Illustration & Motion Media',
+    cardSummary:
+      'Turn creative ideas into studio-grade visual brand systems, digital illustrations, and interactive UI/UX prototypes.',
+    image:
+      'https://images.pexels.com/photos/7988079/pexels-photo-7988079.jpeg?auto=compress&cs=tinysrgb&w=1400',
     accentText: 'text-red-500',
     accentBorder: 'border-red-500/40',
     accentGradient: 'from-slate-900 via-slate-900 to-slate-950',
     description:
-      'Targeted, high-accountability preparation for international admissions exams and global languages including French, English, Mandarin, and Diction.',
-    whoItIsFor: 'Test Takers, College Applicants & Global Communicators',
+      'Transform visual imagination into studio-grade brand identities, vector illustrations, print and social media visuals, motion graphics, and interactive mobile/web UI/UX prototypes.',
+    whoItIsFor: 'Creative Kids, Teens, Aspiring Designers & Visual Storytellers',
     pathways: [
       {
-        id: 'global-prep',
-        title: 'International Exam Prep & Language Fluency',
-        ageGroup: 'Ages 7–18+ & Adults',
+        id: 'ui-ux-brand',
+        title: 'Graphic Design, Visual Branding & UI/UX Pathway',
+        ageGroup: 'Ages 8–18+ & Adults',
         overview:
-          'Structured score-maximizing prep for SAT, IELTS, TOEFL, IGCSE, Checkpoint, and WAEC/JAMB alongside conversational and academic language fluency.',
+          'Learn layout composition, color theory, typography, vector illustration, brand identity systems, and interactive product design in Figma, Canva, and Adobe tools.',
         levels: [
-          { level: 1, name: 'Discover', focus: 'Baseline Mock Test & Score Gap Audit', project: 'Targeted Section Score Roadmap' },
-          { level: 2, name: 'Learn', focus: 'High-Yield Concepts, Vocabulary & Quantitative Rules', project: 'Core Strategy Drill Book' },
-          { level: 3, name: 'Build', focus: 'Pacing Strategies & Section Timing Mastery', project: 'Timed Section Sprint Benchmarks' },
-          { level: 4, name: 'Launch', focus: 'Full-Length Proctored Mock Exams & Peak Review', project: 'Target Percentile / Band Score Achievement' },
+          { level: 1, name: 'Discover', focus: 'Visual Principles, Color Theory & Typography', project: 'Event Poster & Social Media Campaign' },
+          { level: 2, name: 'Learn', focus: 'Vector Illustration, Logo Marks & Brand Identity', project: 'Complete Brand Logo & Style Guide' },
+          { level: 3, name: 'Build', focus: 'UI Components, Wireframing & Figma Auto-Layout', project: 'Mobile App Design System' },
+          { level: 4, name: 'Launch', focus: 'Interactive UX Prototyping & Case Study Curation', project: 'Published High-Fidelity App Prototype' },
         ],
-        tools: ['CBT Exam Simulator', 'Official Cambridge & CollegeBoard Banks', 'Speech & Fluency Labs'],
-        outcomes: ['1450+ SAT and Band 8.0+ IELTS strategies', 'Distinction readiness in IGCSE and WAEC', 'Confident spoken and written language fluency'],
+        tools: ['Figma', 'Adobe Photoshop', 'Adobe Illustrator', 'Canva Pro', 'Behance'],
+        outcomes: ['Design complete brand guidelines', 'Build interactive Figma app prototypes', 'Graduate with a studio design portfolio'],
+      },
+      {
+        id: 'motion-cinema',
+        title: 'Digital Illustration, Animation & Motion Graphics',
+        ageGroup: 'Ages 9–18+ & Adults',
+        overview:
+          'Master visual storytelling through digital illustration, storyboarding, 2D/3D animation keyframes, and motion graphics.',
+        levels: [
+          { level: 1, name: 'Discover', focus: 'Storyboarding, Digital Sketching & Keyframes', project: 'Character Concept Art & Animated Loop' },
+          { level: 2, name: 'Learn', focus: 'Motion Typography, Cuts & Visual Pacing', project: 'Cinematic Brand Promo Edit' },
+          { level: 3, name: 'Build', focus: 'Character Rigging & Explainer Animation', project: 'Animated Product Explainer Video' },
+          { level: 4, name: 'Launch', focus: 'Visual Effects, Color Grading & Showreel', project: '60-Second Creative Studio Showreel' },
+        ],
+        tools: ['Figma', 'After Effects', 'Premiere Pro', 'CapCut Pro', 'Blender 2D/3D'],
+        outcomes: ['Create custom digital illustrations and motion graphics', 'Direct and edit broadcast-quality visual media', 'Publish a professional creator showreel'],
       },
     ],
   },
 ];
 
-const CATEGORY_TABS: { id: 'all' | 'technology' | 'creative' | 'future' | 'academics'; label: string }[] = [
+const CATEGORY_TABS: { id: CoreCategoryFilterId; label: string }[] = [
   { id: 'all', label: 'All programs' },
   { id: 'technology', label: 'Technology' },
-  { id: 'creative', label: 'Creative' },
-  { id: 'future', label: 'Future skills' },
+  { id: 'creative', label: 'Creative Arts' },
+  { id: 'music', label: 'Music' },
   { id: 'academics', label: 'Academics' },
+  { id: 'design-graphics', label: 'Design and Graphics' },
 ];
 
 interface LearningSchoolsGridProps {
@@ -366,7 +330,7 @@ export default function LearningSchoolsGrid({
   onSelectSchool,
   onSchoolChange,
 }: LearningSchoolsGridProps = {}) {
-  const [activeCategory, setActiveCategory] = useState<'all' | 'technology' | 'creative' | 'future' | 'academics'>('all');
+  const [activeCategory, setActiveCategory] = useState<CoreCategoryFilterId>('all');
   const [activeIndex, setActiveIndex] = useState<number>(0);
   const [viewMode, setViewMode] = useState<'slider' | 'detail'>('slider');
   const [selectedDetailSchool, setSelectedDetailSchool] = useState<LearningSchool>(() => {
@@ -382,6 +346,9 @@ export default function LearningSchoolsGrid({
 
   const visibleSchools = useMemo(() => {
     if (activeCategory === 'all') return LEARNING_SCHOOLS;
+    if (activeCategory === 'music' || activeCategory === 'design-graphics') {
+      return LEARNING_SCHOOLS.filter((s) => s.id === activeCategory);
+    }
     return LEARNING_SCHOOLS.filter((s) => s.filterGroup === activeCategory);
   }, [activeCategory]);
 
@@ -519,7 +486,7 @@ export default function LearningSchoolsGrid({
     handleSelectIndex(nextIdx);
   };
 
-  const handleCategoryChange = (catId: 'all' | 'technology' | 'creative' | 'future' | 'academics') => {
+  const handleCategoryChange = (catId: CoreCategoryFilterId) => {
     setActiveCategory(catId);
     setActiveIndex(0);
     if (trackRef.current) {
@@ -551,6 +518,41 @@ export default function LearningSchoolsGrid({
   const totalVisible = visibleSchools.length;
   const safeActiveIndex = Math.min(activeIndex, Math.max(0, totalVisible - 1));
   const progressPercent = totalVisible > 0 ? ((safeActiveIndex + 1) / totalVisible) * 100 : 100;
+
+  const wheelCooldownRef = useRef<number>(0);
+
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el || viewMode !== 'slider') return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      if (Math.abs(e.deltaY) < 4) return;
+
+      const goingRight = e.deltaY > 0;
+      const canGoRight = safeActiveIndex < visibleSchools.length - 1;
+      const canGoLeft = safeActiveIndex > 0;
+
+      if ((goingRight && canGoRight) || (!goingRight && canGoLeft)) {
+        e.preventDefault();
+        const now = Date.now();
+        if (now - wheelCooldownRef.current < 240) return;
+        wheelCooldownRef.current = now;
+        const targetIdx = goingRight ? safeActiveIndex + 1 : safeActiveIndex - 1;
+        const clamped = Math.max(0, Math.min(visibleSchools.length - 1, targetIdx));
+        setActiveIndex(clamped);
+        const targetSchool = visibleSchools[clamped];
+        if (targetSchool) {
+          notifySchoolChange(targetSchool.id);
+        }
+        scrollToCardIndex(clamped, true);
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [viewMode, safeActiveIndex, visibleSchools, notifySchoolChange, scrollToCardIndex]);
 
   // Detail view helpers
   const detailSchoolIndex = LEARNING_SCHOOLS.findIndex((s) => s.id === selectedDetailSchool.id);
@@ -677,6 +679,7 @@ export default function LearningSchoolsGrid({
           <div className="relative -mx-4 sm:-mx-6 lg:-mx-8">
             <div
               ref={trackRef}
+              data-custom-wheel-carousel="true"
               onScroll={handleTrackScroll}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}

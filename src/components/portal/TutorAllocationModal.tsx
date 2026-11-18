@@ -142,7 +142,7 @@ export const TutorAllocationModal: React.FC<TutorAllocationModalProps> = ({
     }
   };
 
-  const inputClass = 'w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-sky-500';
+  const inputClass = 'w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#1E293B] dark:focus:ring-slate-400';
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -151,7 +151,7 @@ export const TutorAllocationModal: React.FC<TutorAllocationModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-white flex items-center justify-center">
               <School size={20} />
             </div>
             <div>
@@ -166,7 +166,7 @@ export const TutorAllocationModal: React.FC<TutorAllocationModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             <X size={18} />
           </button>
@@ -280,7 +280,7 @@ export const TutorAllocationModal: React.FC<TutorAllocationModalProps> = ({
             <button
               type="submit"
               disabled={saving}
-              className="px-6 py-2.5 rounded-2xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-black inline-flex items-center gap-2 shadow-sm transition-all"
+              className="px-6 py-2.5 rounded-2xl bg-[#1E293B] hover:bg-[#0F172A] dark:bg-[#B91C1C] dark:hover:bg-[#991B1B] text-white text-xs font-black inline-flex items-center gap-2 shadow-sm transition-all"
             >
               <Save size={15} />
               <span>{saving ? 'Allocating...' : 'Save School Allocation'}</span>

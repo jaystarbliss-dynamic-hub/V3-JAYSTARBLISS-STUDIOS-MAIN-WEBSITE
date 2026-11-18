@@ -21,6 +21,8 @@ import { getActiveImpersonation } from '../../utils/impersonation';
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
 import { resolvePartnerSchoolName } from '../../lib/classes';
 import { useEdgeSwipeDrawer } from '../../hooks/useEdgeSwipeDrawer';
+import PWAInstallButton from '../ui/PWAInstallButton';
+import { getExternalMainWebsiteUrl, useStandalonePWA } from '../../utils/pwa';
 import './portal-polish.css';
 
 type NavItem = {
@@ -60,6 +62,7 @@ function resolvePortalPageTitle(pathname: string, role: string, navGroups: NavGr
   if (clean.endsWith('/onboard-student')) return 'Onboard Student';
   if (clean.endsWith('/agreements')) return 'Agreements';
   if (clean.endsWith('/exam-history')) return 'Assessment History';
+  if (clean.endsWith('/academic-reporting')) return 'Academic Reporting';
   if (clean.endsWith('/exam-authoring') || clean.endsWith('/exams')) {
     if (role === 'school') return 'Assessment Overview';
     if (role === 'staff') return 'Assessments';
@@ -105,6 +108,7 @@ const PortalLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+  const isStandalone = useStandalonePWA();
   const role = location.pathname.split('/')[2] || 'student';
 
   const [displayName, setDisplayName] = useState('Portal User');
@@ -409,6 +413,7 @@ const PortalLayout: React.FC = () => {
           items: [
             { name: 'Assessments', path: '/portal/staff/assessments', icon: <ClipboardCheck size={19} />, desc: 'Create & manage assignments, activities, tests & assessments' },
             { name: 'Assessment History', path: '/portal/staff/exam-history', icon: <History size={19} />, desc: 'Review history across assignments, activities, tests & assessments' },
+            { name: 'Academic Reporting', path: '/portal/staff/academic-reporting', icon: <FileText size={19} />, desc: 'Grading profiles, reference lookup & official performance reports' },
             { name: 'Assignments & Review', path: '/portal/staff/assignments', icon: <FileText size={19} />, desc: 'Assign & grade individual student coursework' },
             { name: 'Milestone Roadmap', path: '/portal/staff/milestones', icon: <GraduationCap size={19} />, desc: 'Track learner & school curriculum milestones' }
           ]
@@ -505,14 +510,14 @@ const PortalLayout: React.FC = () => {
           <Link
             to={item.path}
             aria-label={item.name}
-            className={`relative flex items-center justify-center w-11 h-11 mx-auto my-0.5 rounded-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-1 ${
+            className={`relative flex items-center justify-center w-11 h-11 mx-auto my-0.5 rounded-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C] focus-visible:ring-offset-1 ${
               active
-                ? 'bg-[#E8F0FF] dark:bg-blue-950/50 text-[#2563EB] dark:text-blue-400 font-semibold shadow-xs'
-                : 'text-[#64748B] dark:text-slate-400 hover:bg-[#F0F5FF] dark:hover:bg-white/5 hover:text-[#2563EB] dark:hover:text-blue-400'
+                ? 'bg-[#1E293B] dark:bg-white/10 text-white font-semibold shadow-xs'
+                : 'text-[#64748B] dark:text-slate-400 hover:bg-[#F1F5F9] dark:hover:bg-white/5 hover:text-[#1E293B] dark:hover:text-white'
             }`}
           >
             {active && (
-              <span className="absolute left-1 w-1 h-5 rounded-full bg-[#2563EB] dark:bg-blue-400" />
+              <span className="absolute left-1 w-1 h-5 rounded-sm bg-[#B91C1C]" />
             )}
             <span className="shrink-0 flex items-center justify-center">{item.icon}</span>
           </Link>
@@ -520,23 +525,23 @@ const PortalLayout: React.FC = () => {
       );
     }
 
-    // Expanded / Mobile mode: full row with deliberate spacing, active indicator and typography
+    // Expanded / Mobile mode: full row with deliberate spacing, active indicator and white icon contrast
     return (
       <Tooltip content={!mobile ? item.desc : undefined} placement="right" delay={300}>
         <Link
           to={item.path}
           onClick={() => { if (mobile) setMobileMenuOpen(false); }}
-          className={`relative group flex items-center h-11 min-h-[44px] px-3 my-0.5 rounded-xl text-xs transition-colors overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-1 ${
+          className={`relative group flex items-center h-11 min-h-[44px] px-3 my-0.5 rounded-xl text-xs transition-colors overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C] focus-visible:ring-offset-1 ${
             active
-              ? 'bg-[#E8F0FF] dark:bg-blue-950/50 text-[#2563EB] dark:text-blue-400 font-semibold shadow-xs'
-              : 'text-[#14284B] dark:text-slate-200 hover:bg-[#F0F5FF] dark:hover:bg-white/5 hover:text-[#2563EB] dark:hover:text-blue-400 font-medium'
+              ? 'bg-[#1E293B] dark:bg-white/10 text-white font-semibold shadow-xs'
+              : 'text-[#14284B] dark:text-slate-200 hover:bg-[#F8FAFC] dark:hover:bg-white/5 hover:text-[#1E293B] dark:hover:text-white font-medium'
           }`}
         >
           {active && (
-            <span className="absolute left-1.5 w-1 h-5 rounded-full bg-[#2563EB] dark:bg-blue-400" />
+            <span className="absolute left-1.5 w-1 h-5 rounded-sm bg-[#B91C1C]" />
           )}
           <span className={`w-8 h-8 flex items-center justify-center shrink-0 ml-1 transition-colors ${
-            active ? 'text-[#2563EB] dark:text-blue-400' : 'text-[#64748B] dark:text-slate-400 group-hover:text-[#2563EB] dark:group-hover:text-blue-400'
+            active ? 'text-white' : 'text-[#64748B] dark:text-slate-400 group-hover:text-[#1E293B] dark:group-hover:text-white'
           }`}>
             {item.icon}
           </span>
@@ -595,9 +600,9 @@ const PortalLayout: React.FC = () => {
                   className="flex items-center gap-2.5 min-w-0 text-left cursor-pointer"
                 >
                   {photoURL ? (
-                    <img src={photoURL} alt="" className="w-8 h-8 rounded-full object-cover border border-[#2563EB]/40 shrink-0" referrerPolicy="no-referrer" />
+                    <img src={photoURL} alt="" className="w-8 h-8 rounded-lg object-cover border border-slate-300 dark:border-slate-700 shrink-0" referrerPolicy="no-referrer" />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-bold shrink-0">
+                    <div className="w-8 h-8 rounded-lg bg-[#1E293B] dark:bg-[#B91C1C] text-white flex items-center justify-center text-xs font-bold shrink-0">
                       {displayName.charAt(0)}
                     </div>
                   )}
@@ -625,12 +630,24 @@ const PortalLayout: React.FC = () => {
 
               {/* Drawer footer utilities */}
               <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-1">
-                <Link
-                  to="/"
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-[#64748B] hover:text-[#2563EB] hover:bg-[#F0F5FF] dark:hover:bg-white/5 transition-colors"
-                >
-                  <ExternalLink size={16} /> Main Website
-                </Link>
+                <PWAInstallButton variant="sidebar" expanded={true} />
+                {isStandalone ? (
+                  <a
+                    href={getExternalMainWebsiteUrl('/')}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-[#64748B] hover:text-[#1E293B] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-white/5 transition-colors"
+                  >
+                    <ExternalLink size={16} /> Open Main Website
+                  </a>
+                ) : (
+                  <Link
+                    to="/"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-[#64748B] hover:text-[#1E293B] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-white/5 transition-colors"
+                  >
+                    <ExternalLink size={16} /> Main Website
+                  </Link>
+                )}
                 <button
                   type="button"
                   onClick={logout}
@@ -668,11 +685,11 @@ const PortalLayout: React.FC = () => {
                   <img
                     src={photoURL}
                     alt={displayName}
-                    className="w-9 h-9 rounded-full object-cover border border-[#2563EB]/40"
+                    className="w-9 h-9 rounded-lg object-cover border border-slate-300 dark:border-slate-700"
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <span className="w-9 h-9 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-bold shadow-xs group-hover:scale-105 transition-transform">
+                  <span className="w-9 h-9 rounded-lg bg-[#1E293B] dark:bg-[#B91C1C] text-white flex items-center justify-center text-xs font-bold shadow-xs group-hover:scale-105 transition-transform">
                     {displayName.charAt(0).toUpperCase()}
                   </span>
                 )}
@@ -701,7 +718,7 @@ const PortalLayout: React.FC = () => {
                 type="button"
                 onClick={() => setSidebarExpanded(false)}
                 aria-label="Collapse sidebar"
-                className="p-1.5 rounded-lg text-[#64748B] hover:text-[#14284B] dark:hover:text-white hover:bg-[#F0F5FF] dark:hover:bg-white/10 transition-colors shrink-0 cursor-pointer"
+                className="p-1.5 rounded-lg text-[#64748B] hover:text-[#14284B] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-white/10 transition-colors shrink-0 cursor-pointer"
               >
                 <PanelLeftClose size={18} />
               </button>
@@ -715,31 +732,48 @@ const PortalLayout: React.FC = () => {
         </nav>
 
         {/* External & Account actions utility area */}
-        <div className="p-3 border-t border-[#E2E8F0] dark:border-slate-800 shrink-0 flex flex-col gap-1 bg-[#FAFCFF] dark:bg-[#12223F]">
-          <Tooltip content="Return to Main Website" placement="right">
-            <Link
-              to="/"
-              className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F0F5FF] dark:hover:bg-white/10 text-[#64748B] dark:text-slate-300 hover:text-[#2563EB] dark:hover:text-blue-400 text-xs font-semibold overflow-hidden transition-colors ${
-                !sidebarExpanded ? 'justify-center px-0' : ''
-              }`}
-            >
-              <span className="w-8 h-8 flex items-center justify-center shrink-0">
-                <ExternalLink size={17} />
-              </span>
-              {sidebarExpanded && <span className="pl-2 whitespace-nowrap truncate">Main Website</span>}
-            </Link>
+        <div className="p-3 border-t border-[#E2E8F0] dark:border-slate-800 shrink-0 flex flex-col gap-1 bg-[#F8FAFC] dark:bg-[#12223F]">
+          <PWAInstallButton variant="sidebar" expanded={sidebarExpanded} />
+          <Tooltip content={isStandalone ? "Open Main Website in Browser" : "Return to Main Website"} placement="right">
+            {isStandalone ? (
+              <a
+                href={getExternalMainWebsiteUrl('/')}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-slate-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors ${
+                  !sidebarExpanded ? 'justify-center px-0' : ''
+                }`}
+              >
+                <span className="w-8 h-8 flex items-center justify-center shrink-0">
+                  <ExternalLink size={17} />
+                </span>
+                {sidebarExpanded && <span className="pl-2 whitespace-nowrap truncate">Main Website</span>}
+              </a>
+            ) : (
+              <Link
+                to="/"
+                className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-slate-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors ${
+                  !sidebarExpanded ? 'justify-center px-0' : ''
+                }`}
+              >
+                <span className="w-8 h-8 flex items-center justify-center shrink-0">
+                  <ExternalLink size={17} />
+                </span>
+                {sidebarExpanded && <span className="pl-2 whitespace-nowrap truncate">Main Website</span>}
+              </Link>
+            )}
           </Tooltip>
 
           <Tooltip content="Appearance" placement="right">
             <button
               type="button"
               onClick={toggleTheme}
-              className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F0F5FF] dark:hover:bg-white/10 text-[#64748B] dark:text-slate-300 hover:text-[#2563EB] dark:hover:text-blue-400 text-xs font-semibold overflow-hidden transition-colors cursor-pointer ${
+              className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-slate-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors cursor-pointer ${
                 !sidebarExpanded ? 'justify-center px-0' : ''
               }`}
             >
               <span className="w-8 h-8 flex items-center justify-center shrink-0">
-                {theme === 'dark' ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} />}
+                {theme === 'dark' ? <Sun size={17} className="text-slate-200" /> : <Moon size={17} />}
               </span>
               {sidebarExpanded && <span className="pl-2 whitespace-nowrap truncate">Appearance</span>}
             </button>
@@ -784,7 +818,7 @@ const PortalLayout: React.FC = () => {
             <Tooltip content="Customer Support & Help Desk" placement="bottom">
               <Link
                 to={`/portal/${role}/support`}
-                className="p-2 rounded-xl text-[#64748B] hover:text-[#2563EB] dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center"
+                className="p-2 rounded-xl text-[#64748B] hover:text-[#1E293B] dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center"
                 aria-label="Customer Support"
               >
                 <HelpCircle size={18} />
@@ -795,10 +829,10 @@ const PortalLayout: React.FC = () => {
               <button
                 type="button"
                 onClick={toggleTheme}
-                className="p-2 rounded-xl text-[#64748B] hover:text-[#2563EB] dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className="p-2 rounded-xl text-[#64748B] hover:text-[#1E293B] dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 aria-label="Toggle theme"
               >
-                {theme === 'dark' ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
+                {theme === 'dark' ? <Sun size={18} className="text-slate-200" /> : <Moon size={18} />}
               </button>
             </Tooltip>
 
@@ -814,9 +848,9 @@ const PortalLayout: React.FC = () => {
                   aria-label="User profile menu"
                 >
                   {photoURL ? (
-                    <img src={photoURL} alt={displayName} className="w-8 h-8 rounded-full object-cover border border-[#2563EB]/40" referrerPolicy="no-referrer" />
+                    <img src={photoURL} alt={displayName} className="w-8 h-8 rounded-lg object-cover border border-slate-300 dark:border-slate-700" referrerPolicy="no-referrer" />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white flex items-center justify-center font-bold text-xs">
+                    <div className="w-8 h-8 rounded-lg bg-[#1E293B] dark:bg-[#B91C1C] text-white flex items-center justify-center font-bold text-xs">
                       {displayName.charAt(0)}
                     </div>
                   )}

@@ -374,14 +374,14 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                     }}
                     className={`p-2.5 sm:p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2 sm:gap-2.5 ${
                       active
-                        ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 ring-2 ring-blue-500/15'
+                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-50 dark:bg-slate-800/80 ring-1 ring-[#1E293B]/20'
                         : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                     }`}
                   >
                     <div
                       className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
                         active
-                          ? 'bg-blue-600 text-white'
+                          ? 'bg-[#1E293B] dark:bg-white text-white dark:text-[#1E293B]'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
                       }`}
                     >
@@ -410,7 +410,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setTargetSchoolIds(schools.map((s) => s.id))}
-                    className="text-blue-600 font-bold hover:underline cursor-pointer"
+                    className="text-[#B91C1C] dark:text-red-400 font-bold hover:underline cursor-pointer"
                   >
                     Select All
                   </button>
@@ -435,7 +435,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Filter partner schools by name or code..."
-                  className="w-full h-9 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  className="w-full h-9 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B] dark:focus:border-slate-400"
                 />
               </div>
 
@@ -454,7 +454,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                         onClick={() => toggleSchool(school.id)}
                         className={`w-full flex items-center justify-between px-3.5 py-2.5 cursor-pointer text-left transition-colors ${
                           checked
-                            ? 'bg-blue-50/50 dark:bg-blue-950/25'
+                            ? 'bg-slate-100/80 dark:bg-slate-800/60'
                             : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
                         }`}
                       >
@@ -462,7 +462,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                           <div
                             className={`w-4 h-4 rounded flex items-center justify-center border transition-colors shrink-0 ${
                               checked
-                                ? 'bg-blue-600 border-blue-600 text-white'
+                                ? 'bg-[#1E293B] border-[#1E293B] dark:bg-white dark:border-white text-white dark:text-[#1E293B]'
                                 : 'border-slate-300 dark:border-slate-700'
                             }`}
                           >
@@ -497,7 +497,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                     onClick={() =>
                       setTargetStudentIds(filteredPrivateStudents.map((s) => s.id))
                     }
-                    className="text-blue-600 font-bold hover:underline cursor-pointer"
+                    className="text-[#B91C1C] dark:text-red-400 font-bold hover:underline cursor-pointer"
                   >
                     Select Visible ({filteredPrivateStudents.length})
                   </button>
@@ -534,8 +534,8 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                     onClick={() => setPrivateCategoryFilter(subTab.id)}
                     className={`flex-1 min-w-[110px] py-1.5 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
                       privateCategoryFilter === subTab.id
-                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                        ? 'bg-white dark:bg-slate-900 text-[#B91C1C] dark:text-red-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     {subTab.label}
@@ -553,7 +553,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search private students by name, parent, class, or email..."
-                  className="w-full h-9 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  className="w-full h-9 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B] dark:focus:border-slate-400"
                 />
               </div>
 
@@ -573,7 +573,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                         onClick={() => toggleStudent(student.id)}
                         className={`w-full flex items-center justify-between px-3.5 py-2.5 cursor-pointer text-left transition-colors gap-2 ${
                           checked
-                            ? 'bg-blue-50/50 dark:bg-blue-950/25'
+                            ? 'bg-slate-100/80 dark:bg-slate-800/60'
                             : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
                         }`}
                       >
@@ -581,7 +581,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                           <div
                             className={`w-4 h-4 rounded flex items-center justify-center border transition-colors shrink-0 ${
                               checked
-                                ? 'bg-blue-600 border-blue-600 text-white'
+                                ? 'bg-[#1E293B] border-[#1E293B] dark:bg-white dark:border-white text-white dark:text-[#1E293B]'
                                 : 'border-slate-300 dark:border-slate-700'
                             }`}
                           >
@@ -593,13 +593,13 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                                 {student.name}
                               </span>
                               <span
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                                className={`text-[9px] font-black uppercase tracking-wider shrink-0 ${
                                   isParent
-                                    ? 'bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300'
-                                    : 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+                                    ? 'text-[#1E293B] dark:text-slate-300'
+                                    : 'text-[#B91C1C] dark:text-red-400'
                                 }`}
                               >
-                                {isParent ? 'Parent-Enrolled' : 'Individual Private'}
+                                · {isParent ? 'Parent-Enrolled' : 'Individual Private'}
                               </span>
                             </div>
                             {(student.parentName || student.plan || student.email) && (
@@ -607,13 +607,13 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                                 {isParent && student.parentName
                                   ? `Parent: ${student.parentName}`
                                   : student.email || ''}
-                                {student.plan ? ` • ${student.plan}` : ''}
+                                {student.plan ? ` · ${student.plan}` : ''}
                               </div>
                             )}
                           </div>
                         </div>
                         {student.grade && (
-                          <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400 shrink-0">
+                          <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 shrink-0">
                             {student.grade}
                           </span>
                         )}
@@ -673,12 +673,12 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                         onClick={() => toggleClass(cls)}
                         className={`px-3 py-2 rounded-xl border text-left text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
                           active
-                            ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'
+                            ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-white'
                             : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                         }`}
                       >
                         <span className="truncate">{cls}</span>
-                        {active && <Check size={13} className="shrink-0 text-blue-600" />}
+                        {active && <Check size={13} className="shrink-0 text-[#B91C1C] dark:text-red-400" />}
                       </button>
                     );
                   })}
@@ -737,7 +737,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                       value={schoolStudentSearch}
                       onChange={(e) => setSchoolStudentSearch(e.target.value)}
                       placeholder="Filter students in selected school/class..."
-                      className="w-full h-8 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                      className="w-full h-8 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B] dark:focus:border-slate-400"
                     />
                   </div>
                   <div className="max-h-40 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -755,7 +755,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                             onClick={() => toggleStudent(st.id)}
                             className={`w-full flex items-center justify-between px-3.5 py-2 cursor-pointer text-left transition-colors ${
                               checked
-                                ? 'bg-blue-50/50 dark:bg-blue-950/25'
+                                ? 'bg-slate-100/80 dark:bg-slate-800/60'
                                 : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
                             }`}
                           >
@@ -763,7 +763,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                               <div
                                 className={`w-4 h-4 rounded flex items-center justify-center border transition-colors shrink-0 ${
                                   checked
-                                    ? 'bg-blue-600 border-blue-600 text-white'
+                                    ? 'bg-[#1E293B] border-[#1E293B] dark:bg-white dark:border-white text-white dark:text-[#1E293B]'
                                     : 'border-slate-300 dark:border-slate-700'
                                 }`}
                               >
@@ -780,7 +780,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                                 </span>
                               )}
                               {st.grade && (
-                                <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
+                                <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
                                   {st.grade}
                                 </span>
                               )}
@@ -798,8 +798,8 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
 
         {/* Footer */}
         <div className="px-4 sm:px-6 py-3.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 truncate">
-            <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 truncate tabular-nums">
+            <ShieldCheck size={14} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
             <span className="truncate">
               {recipientType === 'ALL'
                 ? 'Targeting all assigned students'
@@ -828,7 +828,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
             <button
               type="button"
               onClick={handleApply}
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer whitespace-nowrap"
+              className="px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-black shadow-xs transition-all cursor-pointer whitespace-nowrap"
             >
               Confirm Recipients
             </button>

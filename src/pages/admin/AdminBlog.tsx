@@ -3,6 +3,7 @@ import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { getAllClientDatabases } from '../../lib/firebase';
 import { Plus, Trash2, Edit3, Newspaper, BookOpen, ExternalLink, Eye } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { getExternalMainWebsiteUrl } from '../../utils/pwa';
 
 const AdminBlog: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'NEWS' | 'BLOG'>('NEWS');
@@ -74,13 +75,14 @@ const AdminBlog: React.FC = () => {
     <div className="space-y-8">
       <div className="flex items-center justify-end">
         <div className="flex items-center gap-3">
-          <Link
-            to="/blog"
+          <a
+            href={getExternalMainWebsiteUrl('/blog')}
             target="_blank"
+            rel="noopener noreferrer"
             className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors"
           >
             <ExternalLink size={15} /> View Live News/Blog
-          </Link>
+          </a>
           <Link
             to={`/admin/blog/new?type=${activeTab === 'NEWS' ? 'news' : 'blog'}`}
             className="flex items-center gap-2 bg-brand-red text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-700 shadow-md shadow-brand-red/20 transition-all"

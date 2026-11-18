@@ -135,18 +135,19 @@ export const EmbeddedLearningMedia: React.FC<EmbeddedLearningMediaProps> = ({
   if (!parsed) return null;
 
   return (
-    <div className="rounded-2xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/40 dark:bg-slate-900/90 overflow-hidden shadow-sm">
-      <div className="px-4 py-3 bg-blue-100/60 dark:bg-blue-950/50 border-b border-blue-200/70 dark:border-blue-900/60 flex flex-wrap items-center justify-between gap-2">
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/90 overflow-hidden shadow-sm">
+      <div className="px-4 py-3 bg-slate-100/80 dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {parsed.embedUrl ? (
-            <PlayCircle size={16} className="text-blue-600 dark:text-blue-400 shrink-0" />
+            <PlayCircle size={16} className="text-[#B91C1C] shrink-0" />
           ) : (
-            <BookOpen size={16} className="text-blue-600 dark:text-blue-400 shrink-0" />
+            <BookOpen size={16} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
           )}
-          <span className="text-xs font-black uppercase tracking-wider text-blue-950 dark:text-blue-200 truncate">
+          <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white truncate">
             {title || parsed.providerLabel}
           </span>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+          <span className="text-slate-300 dark:text-slate-700">·</span>
+          <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
             {parsed.embedUrl ? 'Watch Inside Portal' : parsed.providerLabel}
           </span>
         </div>
@@ -156,7 +157,7 @@ export const EmbeddedLearningMedia: React.FC<EmbeddedLearningMediaProps> = ({
             href={parsed.originalUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 hover:underline shrink-0"
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-[#1E293B] dark:text-slate-200 hover:text-[#B91C1C] hover:underline shrink-0"
           >
             Open Original Link <ExternalLink size={12} />
           </a>
@@ -164,7 +165,7 @@ export const EmbeddedLearningMedia: React.FC<EmbeddedLearningMediaProps> = ({
       </div>
 
       {description && (
-        <div className="px-4 py-2.5 text-xs text-slate-700 dark:text-slate-300 border-b border-blue-100 dark:border-slate-800 leading-relaxed whitespace-pre-wrap">
+        <div className="px-4 py-2.5 text-xs text-slate-700 dark:text-slate-300 border-b border-slate-200/70 dark:border-slate-800 leading-relaxed whitespace-pre-wrap">
           {description}
         </div>
       )}
@@ -193,7 +194,7 @@ export const EmbeddedLearningMedia: React.FC<EmbeddedLearningMediaProps> = ({
       ) : (
         <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900">
           <div className="flex items-start gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-[#1E293B] dark:text-slate-200 shrink-0">
               <Globe size={18} />
             </div>
             <div className="min-w-0">
@@ -211,7 +212,7 @@ export const EmbeddedLearningMedia: React.FC<EmbeddedLearningMediaProps> = ({
               href={parsed.originalUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors shrink-0"
+              className="px-4 py-2 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors shrink-0"
             >
               Open Resource <ExternalLink size={13} />
             </a>

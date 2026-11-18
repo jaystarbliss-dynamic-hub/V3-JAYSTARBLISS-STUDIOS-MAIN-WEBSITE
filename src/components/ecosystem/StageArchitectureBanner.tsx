@@ -39,25 +39,25 @@ interface SpotlightTrack {
 
 const SPOTLIGHT_TRACKS: SpotlightTrack[] = [
   {
-    id: 'ai-robotics',
-    schoolId: 'robotics-future',
-    title: 'AI & Robotics',
-    summary: 'From intelligent systems to real-world robots.',
-    image: 'https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg?auto=compress&cs=tinysrgb&w=1200',
+    id: 'technology',
+    schoolId: 'technology',
+    title: 'Technology',
+    summary: 'Software engineering, web, Python, AI, and digital literacy.',
+    image: 'https://images.pexels.com/photos/5473298/pexels-photo-5473298.jpeg?auto=compress&cs=tinysrgb&w=1200',
   },
   {
-    id: 'creative-media',
-    schoolId: 'creative-design',
-    title: 'Creative Digital Media',
-    summary: 'Design. Create. Tell better stories.',
+    id: 'design-graphics',
+    schoolId: 'design-graphics',
+    title: 'Design and Graphics',
+    summary: 'Visual branding, graphic design, UI/UX, and creative media.',
     image: 'https://images.pexels.com/photos/7988086/pexels-photo-7988086.jpeg?auto=compress&cs=tinysrgb&w=1200',
   },
   {
-    id: 'future-skills',
-    schoolId: 'game-3d',
-    title: 'Future Skills',
-    summary: 'Adapt today. Lead tomorrow.',
-    image: 'https://images.pexels.com/photos/8728380/pexels-photo-8728380.jpeg?auto=compress&cs=tinysrgb&w=1200',
+    id: 'music',
+    schoolId: 'music',
+    title: 'Music',
+    summary: 'Instrumental mastery, vocals, music theory, and audio production.',
+    image: 'https://images.pexels.com/photos/164743/pexels-photo-164743.jpeg?auto=compress&cs=tinysrgb&w=1200',
   },
 ];
 

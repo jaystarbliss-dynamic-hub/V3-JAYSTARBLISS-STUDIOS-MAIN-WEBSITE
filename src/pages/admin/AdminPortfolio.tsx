@@ -3,6 +3,7 @@ import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { getAllClientDatabases } from '../../lib/firebase';
 import { Plus, Trash2, Edit3, ExternalLink, Gamepad2, Briefcase } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { getExternalMainWebsiteUrl } from '../../utils/pwa';
 
 const AdminPortfolio: React.FC = () => {
   const [projects, setProjects] = useState<any[]>([]);
@@ -22,7 +23,7 @@ const AdminPortfolio: React.FC = () => {
             const snapshot = await getDocs(collection(clientDb, 'portfolio'));
             snapshot.docs.forEach((docSnap) => {
               if (!merged.has(docSnap.id)) {
-                merged.set(docSnap.id, { id: docSnap.id, _collection: 'portfolio', ...docSnap.data() });
+                merged.set(docSnap.id, { ...docSnap.data(), id: docSnap.id, _collection: 'portfolio' });
               }
             });
           } catch {
@@ -34,6 +35,7 @@ const AdminPortfolio: React.FC = () => {
               if (!merged.has(docSnap.id)) {
                 const d = docSnap.data();
                 merged.set(docSnap.id, {
+                  ...d,
                   id: docSnap.id,
                   _collection: 'kidsProjects',
                   portfolioType: 'STUDENT_WORK',
@@ -42,7 +44,6 @@ const AdminPortfolio: React.FC = () => {
                   isFeatured: Boolean(d.isFeatured || d.featured),
                   featuredImage: d.imageUrl || d.featuredImage || '',
                   status: d.status || 'PUBLISHED',
-                  ...d,
                 });
               }
             });
@@ -92,13 +93,14 @@ const AdminPortfolio: React.FC = () => {
     <div className="space-y-8">
       <div className="flex items-center justify-end">
         <div className="flex items-center gap-3">
-          <Link
-            to="/portfolio"
+          <a
+            href={getExternalMainWebsiteUrl('/portfolio')}
             target="_blank"
+            rel="noopener noreferrer"
             className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors"
           >
             <ExternalLink size={15} /> View Live Showcase
-          </Link>
+          </a>
           <Link
             to="/admin/portfolio/new"
             className="flex items-center gap-2 bg-brand-red text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-700 shadow-md shadow-brand-red/20 transition-all"

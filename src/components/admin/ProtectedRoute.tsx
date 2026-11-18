@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
-import { Loader2 } from 'lucide-react';
+import BrandLoader from '../ui/BrandLoader';
 import ChangePasswordModal from '../portal/ChangePasswordModal';
 import { reconcileParentAndChildrenAccount } from '../../lib/usernameRegistry';
 
@@ -508,7 +508,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     return () => { mounted = false; unsubscribe(); };
   }, [rolesKey, location.pathname, redirectPath]);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900"><Loader2 className="w-10 h-10 animate-spin text-brand-red" /></div>;
+  if (loading) return <BrandLoader fullScreen />;
 
   if (!isAuthorized) {
     if (blockedMessage) return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-950 p-6"><div className="max-w-md w-full rounded-2xl border border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-900 p-7 text-center shadow-xl"><div className="mx-auto mb-4 w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/50 text-red-600 flex items-center justify-center font-black text-lg">!</div><h1 className="text-xl font-black text-gray-900 dark:text-white">Account access restricted</h1><p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{blockedMessage}</p></div></div>;

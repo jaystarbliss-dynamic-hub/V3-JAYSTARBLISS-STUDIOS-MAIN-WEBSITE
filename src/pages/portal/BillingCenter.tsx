@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { 
   Banknote, CheckCircle2, CreditCard, Download, 
   Loader2, RefreshCw, ShieldCheck, Wallet, X, 
-  Building2, Smartphone, BookOpen, 
+  Building2, BookOpen, 
   School, Check, Bell, UserCheck,
   ChevronDown, ChevronRight, ChevronUp,
   CheckSquare, Square, MinusSquare, User, Users, Sparkles,
@@ -24,6 +24,7 @@ import { MetricGridSkeleton, TableSkeleton } from '../../components/ui/Skeleton'
 import { FintechTransactionHistory } from '../../components/portal/FintechTransactionHistory';
 import { FintechWalletCard } from '../../components/portal/FintechWalletCard';
 import { FintechWithdrawalModal } from '../../components/portal/FintechWithdrawalModal';
+import { PaystackPaymentReviewModal } from '../../components/portal/PaystackPaymentReviewModal';
 import { auth, db } from '../../lib/firebase';
 import { collection, getDocs, getDoc, doc, query, where, limit } from 'firebase/firestore';
 import { getEffectiveAuth, isMasqueradingActive } from '../../utils/impersonation';
@@ -41,17 +42,12 @@ type Plan = {
   active: boolean; 
   role: string 
 };
-type PaymentMethod = 'card' | 'bank_transfer' | 'opay';
-
 const dueDateFor = (payment?: PaymentRecord) => { 
   if (!payment?.paidAt) return null; 
   const date = new Date(payment.paidAt); 
   date.setDate(date.getDate() + Number(payment.durationWeeks || 4) * 7); 
   return date; 
 };
-
-const methodLabel = (method: PaymentMethod) => 
-  method === 'card' ? 'Card' : method === 'bank_transfer' ? 'Bank Transfer' : 'OPay / Mobile Money';
 
 const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   const { toast } = useToast();
@@ -75,7 +71,6 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   const [paymentPercentage, setPaymentPercentage] = useState<number>(100);
   const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>([]);
   const [teachingMode, setTeachingMode] = useState(''); 
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card'); 
   const [showCheckout, setShowCheckout] = useState(false); 
   const [paying, setPaying] = useState(false);
 
@@ -660,8 +655,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
     );
   };
 
-  const processParentMultiPayment = async (event?: React.FormEvent) => {
-    if (event) event.preventDefault();
+  const processParentMultiPayment = async () => {
     if (isMasqueradingActive()) {
       toast.error('Payment authorization is disabled in Superadmin Impersonation Mode.');
       return;
@@ -674,7 +668,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
     try {
       const payload = {
         role: 'parent',
-        paymentMethod,
+        paymentPolicyAccepted: true,
         teachingMode: teachingMode || 'Multi-Program Curriculum Delivery',
         selectedItems: selectedItems.map(i => ({
           id: i.id,
@@ -723,12 +717,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
       setSelectedStudentId(opts?.studentId || selectedStudentId || data.students?.[0]?.id || '');
       setTeachingMode(targetPlan.teachingModes?.[0] || 'Standard Delivery');
     }
-    setPaymentMethod('card');
     setShowCheckout(true);
   };
 
-  const processPayment = async (event: React.FormEvent) => { 
-    event.preventDefault(); 
+  const processPayment = async () => { 
     if (isMasqueradingActive()) {
       toast.error('Payment authorization is disabled in Superadmin Impersonation Mode.');
       return;
@@ -741,7 +733,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
     try { 
       const checkoutPayload: Record<string, any> = {
         role,
-        paymentMethod,
+        paymentPolicyAccepted: true,
         teachingMode: teachingMode || 'Standard Delivery'
       };
 
@@ -827,31 +819,31 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
       <section className="space-y-6" aria-label="Billing center">
         <SEO title="Student Billing & Curriculum Status | Jaystarbliss Studios" description="Sponsored student status" noindex={true} />
 
-        <div className="bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/50 dark:from-emerald-950/20 dark:via-slate-900 dark:to-teal-950/10 border border-emerald-200/80 dark:border-emerald-800/60 rounded-3xl p-6 md:p-8 shadow-sm">
+        <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-xs">
           <div className="flex items-start gap-4">
-            <div className="min-w-12 min-h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center">
-              <CheckCircle2 size={24} />
+            <div className="min-w-12 min-h-12 rounded-xl bg-slate-900 text-white dark:bg-slate-800 flex items-center justify-center">
+              <CheckCircle2 size={24} className="text-brand-red" />
             </div>
             <div>
               <h2 className="text-lg font-black text-slate-900 dark:text-white">
                 No Individual Billing Required
               </h2>
               <p className="text-xs md:text-sm text-slate-600 dark:text-slate-300 mt-2 leading-relaxed max-w-3xl">
-                Your account is linked to <strong className="text-emerald-700 dark:text-emerald-400 font-black">{data.managerName || (data.managedBy === 'school' ? 'your partner school' : 'your parent / guardian')}</strong>. 
+                Your account is linked to <strong className="text-slate-900 dark:text-white font-black">{data.managerName || (data.managedBy === 'school' ? 'your partner school' : 'your parent / guardian')}</strong>. 
                 All program subscriptions, learning resources, and hands-on lab sessions are centrally administered. 
                 Enjoy your learning journey!
               </p>
 
-              <div className="mt-6 flex flex-wrap gap-4 pt-4 border-t border-emerald-100 dark:border-emerald-900/40 text-xs">
+              <div className="mt-6 flex flex-wrap gap-6 pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
                 <div className="flex items-center gap-2">
                   <span className="text-slate-500">Curriculum Access:</span>
-                  <span className="font-bold text-emerald-600 bg-emerald-100/60 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-full">
-                    Active & Unlimited
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    Active &amp; Unlimited
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-slate-500">CBT & Practical Exams:</span>
-                  <span className="font-bold text-emerald-600 bg-emerald-100/60 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-full">
+                  <span className="text-slate-500">CBT &amp; Practical Exams:</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
                     Passcode Enabled
                   </span>
                 </div>
@@ -867,6 +859,13 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   if (role === 'school') {
     const chargePreview = feeFromBase(schoolFee, feePolicy);
     const hasReminder = Boolean(schoolBilling?.lastReminderSentAt || schoolBilling?.status === 'DUE');
+    const selectedModeLabel = selectedMode === 'advance_termly'
+      ? 'Advance Termly'
+      : selectedMode === 'advance_monthly'
+      ? 'Advance Monthly'
+      : selectedMode === 'post_termly'
+      ? 'Post Termly'
+      : 'Post Monthly';
 
     return (
       <section className="space-y-6" aria-label="School billing center">
@@ -876,7 +875,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
           <button 
             type="button" 
             onClick={() => void load()} 
-            className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
+            className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
           >
             <RefreshCw size={14} /> Refresh Records
           </button>
@@ -884,10 +883,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
 
         {/* Due date notice if applicable */}
         {hasReminder && (
-          <div className="p-5 rounded-3xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex items-start gap-3 text-xs text-amber-900 dark:text-amber-200">
-            <Bell className="text-amber-600 mt-0.5 flex-shrink-0" size={18} />
+          <div className="p-5 rounded-2xl bg-red-50/70 dark:bg-red-950/20 border border-brand-red/30 flex items-start gap-3 text-xs text-slate-800 dark:text-slate-200">
+            <Bell className="text-brand-red mt-0.5 flex-shrink-0" size={18} />
             <div>
-              <strong className="font-black text-sm block">Payment Renewal Notice</strong>
+              <strong className="font-black text-sm block text-brand-red">Payment Renewal Notice</strong>
               <span className="mt-1 block leading-relaxed">
                 Your institutional subscription is scheduled for renewal. 
                 {schoolBilling?.nextDueDate && ` Scheduled Due Date: ${new Date(schoolBilling.nextDueDate).toLocaleDateString('en-NG', { dateStyle: 'long' })}.`}
@@ -898,22 +897,22 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
 
         {/* Impersonation Notice */}
         {isMasqueradingActive() && (
-          <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between gap-3 shadow-xs">
+          <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs flex items-center justify-between gap-3 shadow-xs">
             <div className="flex items-center gap-2.5">
-              <ShieldCheck size={18} className="text-amber-600 shrink-0" />
+              <ShieldCheck size={18} className="text-brand-red shrink-0" />
               <div>
                 <strong className="block font-black">Superadmin Impersonation Mode Active</strong>
                 <span>Payment authorization and Paystack checkouts are disabled while impersonating. Invoices, ledger breakdowns, and payment history are available in read-only mode.</span>
               </div>
             </div>
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200/80 dark:bg-amber-900 text-amber-900 dark:text-amber-100 shrink-0">
+            <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-red-50 dark:bg-red-950/50 text-brand-red shrink-0 border border-brand-red/20">
               Payments Disabled
             </span>
           </div>
         )}
 
         {/* Undergoing Programmes Card with multi-select */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-base font-black text-slate-900 dark:text-white">
@@ -943,7 +942,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                       setSelectedProgramIds([...selectedProgramIds, prog.id]);
                     }
                   }}
-                  className={`p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
+                  className={`p-4 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
                     isSelected 
                       ? 'border-brand-red bg-red-50/40 dark:bg-red-950/20 shadow-xs' 
                       : 'border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 opacity-70'
@@ -951,7 +950,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                 >
                   <div>
                     <div className="flex items-center justify-between">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-50 text-brand-red dark:bg-red-950/40">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-brand-red">
                         {prog.status || 'ACTIVE'}
                       </span>
                       <span className="text-xs font-mono font-black text-slate-900 dark:text-white">
@@ -982,8 +981,8 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
         {/* Dynamic School Billing Fee Card */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {!hasConfiguredSubscription || baseTotalForPrograms === 0 ? (
-            <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800/60 rounded-3xl p-8 shadow-sm text-center space-y-4">
-              <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-xs">
+            <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 shadow-sm text-center space-y-4">
+              <div className="w-14 h-14 rounded-xl bg-red-50 dark:bg-red-950/40 text-brand-red flex items-center justify-center mx-auto shadow-xs">
                 <Bell size={28} />
               </div>
               <div>
@@ -991,10 +990,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                   No Institutional Subscription Configured
                 </h3>
                 <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 leading-relaxed">
-                  No institutional curriculum subscription or custom fee has been configured for {data.schoolInfo?.name || 'this school'} yet. Please contact the Jaystarbliss administration to set up your institution's custom fee schedule.
+                  No institutional curriculum subscription or custom fee has been configured for {data.schoolInfo?.name || 'this school'} yet. Please contact the Jaystarbliss administration to set up your institution&apos;s custom fee schedule.
                 </p>
               </div>
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 text-xs font-mono font-bold text-slate-600 dark:text-slate-300">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono font-bold text-slate-600 dark:text-slate-300">
                 Institutional Subscription: Not Configured (₦0)
               </div>
             </div>
@@ -1012,7 +1011,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                     Active programs in this invoice: <strong className="text-slate-700 dark:text-slate-300">{selectedPrograms.map((p: any) => p.name).join(', ')}</strong>
                   </p>
                 </div>
-                <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-400">
                   {schoolCycle === 'monthly' ? '4 Weeks Cycle' : '12 Weeks Term'}
                 </span>
               </div>
@@ -1032,7 +1031,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                       key={opt.pct}
                       type="button"
                       onClick={() => setPaymentPercentage(opt.pct)}
-                      className={`p-3 rounded-2xl border text-left transition-all ${
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                         paymentPercentage === opt.pct
                           ? 'border-brand-red bg-red-50/50 dark:bg-red-950/20 text-slate-900 dark:text-white font-black'
                           : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-950/40 text-slate-600 dark:text-slate-400'
@@ -1047,9 +1046,9 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
 
               {/* Partial Payment Notice */}
               {paymentPercentage < 100 && (
-                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200">
-                  <div className="font-bold flex items-center gap-1.5">
-                    <Bell size={14} className="text-amber-600" />
+                <div className="p-4 rounded-xl bg-red-50/50 dark:bg-red-950/20 border border-brand-red/30 text-xs text-slate-800 dark:text-slate-200">
+                  <div className="font-bold flex items-center gap-1.5 text-brand-red">
+                    <Bell size={14} />
                     <span>Upfront Installment Mode Active ({paymentPercentage}%)</span>
                   </div>
                   <p className="mt-1 leading-relaxed">
@@ -1111,16 +1110,16 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                 type="button"
                 disabled={isMasqueradingActive()}
                 onClick={() => startCheckout()}
-                className={`w-full min-h-12 rounded-2xl font-black text-xs md:text-sm inline-flex items-center justify-center gap-2 shadow-sm transition-all ${
+                className={`w-full min-h-12 rounded-xl font-black text-xs md:text-sm inline-flex items-center justify-center gap-2 shadow-sm transition-all ${
                   isMasqueradingActive()
                     ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
-                    : 'bg-brand-red hover:bg-red-700 text-white cursor-pointer'
+                    : 'bg-brand-red hover:bg-red-800 text-white cursor-pointer'
                 }`}
               >
                 <CreditCard size={17} /> 
                 {isMasqueradingActive() 
                   ? `Checkout Disabled in Impersonation Mode (${formatNaira(schoolFee)})` 
-                  : `Proceed to Paystack Checkout (${formatNaira(schoolFee)})`}
+                  : `Review & Pay (${formatNaira(schoolFee)})`}
               </button>
             </div>
           )}
@@ -1136,7 +1135,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                 </div>
                 <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
                   <span className="text-slate-500">Latest Verified Payment:</span>
-                  <span className="font-bold">{payments[0] ? formatNaira(payments[0].customerTotal || payments[0].baseAmount) : '—'}</span>
+                  <span className="font-bold font-mono">{payments[0] ? formatNaira(extractPaymentAmountNaira(payments[0])) : '—'}</span>
                 </div>
                 <div className="flex justify-between py-1.5">
                   <span className="text-slate-500">Next Due Date:</span>
@@ -1148,15 +1147,15 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
             </div>
 
             {/* Institutional Payment & Receipt Instructions */}
-            <div className="bg-slate-50/80 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 text-xs space-y-3">
+            <div className="bg-slate-50/80 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 text-xs space-y-3">
               <div className="flex items-center gap-2 text-slate-900 dark:text-white font-black text-xs uppercase tracking-wider">
                 <Building2 size={16} className="text-brand-red" />
-                <span>Payment & Remittance Guide</span>
+                <span>Payment &amp; Remittance Guide</span>
               </div>
               <ul className="space-y-2 text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
                 <li className="flex items-start gap-2">
                   <span className="text-brand-red font-black">•</span>
-                  <span><strong>Instant Settlement:</strong> Click <em>Proceed to Paystack Checkout</em> to pay securely using Card, Bank Transfer, or USSD with instant automated reconciliation.</span>
+                  <span><strong>Paystack Hosted Checkout:</strong> Review your invoice and proceed to Paystack to complete payment securely using your preferred supported method.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-brand-red font-black">•</span>
@@ -1164,7 +1163,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-brand-red font-black">•</span>
-                  <span><strong>Installment Options:</strong> Select 50%, 70%, or 100% upfront depending on your school board's approved billing schedule.</span>
+                  <span><strong>Installment Options:</strong> Select 50%, 70%, or 100% upfront depending on your school board&apos;s approved billing schedule.</span>
                 </li>
               </ul>
             </div>
@@ -1174,85 +1173,49 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
         {/* Payment History & Receipts */}
         <div className="mt-8">
           <FintechTransactionHistory 
-            transactions={payments} 
+            transactions={allTransactions.map(p => ({ ...p, amount: extractPaymentAmountNaira(p) }))} 
             title="Institutional Transactions & Receipts"
             role="school"
-            emptyMessage="No verified school payments on record"
+            emptyMessage="No transaction records on file"
           />
         </div>
 
-        {/* Paystack Checkout Modal */}
-        {showCheckout && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
-            <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 p-6 md:p-8 shadow-2xl border border-slate-200 dark:border-slate-800">
-              <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-brand-red">Paystack Checkout Review</p>
-                  <h2 className="mt-1 text-xl font-black text-slate-900 dark:text-white">
-                    {data.schoolInfo?.name || 'Partner School'} - Lab Subscription
-                  </h2>
-                </div>
-                <button 
-                  type="button" 
-                  onClick={() => setShowCheckout(false)} 
-                  className="min-h-9 min-w-9 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <form onSubmit={processPayment} className="mt-6 space-y-4">
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Base Institutional Fee</span>
-                    <strong className="font-mono">{formatNaira(schoolFee)}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Estimated Paystack Transaction Fee</span>
-                    <strong className="font-mono">{formatNaira(chargePreview.transactionFee)}</strong>
-                  </div>
-                  <div className="flex justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-sm font-black">
-                    <span>Estimated Total Paid</span>
-                    <strong className="text-brand-red font-mono">{formatNaira(chargePreview.totalAmount)}</strong>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 text-xs text-blue-900 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200 leading-relaxed">
-                  <strong>Important:</strong> The transaction fee is estimated for transparency. Only <strong>{formatNaira(schoolFee)}</strong> is forwarded as the base amount to Paystack so the fee is never charged twice.
-                </div>
-
-                <div>
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Select Checkout Channel</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['card', 'bank_transfer', 'opay'] as PaymentMethod[]).map(method => (
-                      <button 
-                        key={method} 
-                        type="button" 
-                        onClick={() => setPaymentMethod(method)} 
-                        className={`min-h-14 rounded-xl border p-2 text-xs font-bold transition-all ${
-                          paymentMethod === method 
-                            ? 'border-brand-red bg-red-50 text-brand-red dark:bg-red-950/20' 
-                            : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        {method === 'card' ? <CreditCard className="mx-auto mb-1" size={16} /> : method === 'bank_transfer' ? <Building2 className="mx-auto mb-1" size={16} /> : <Smartphone className="mx-auto mb-1" size={16} />}
-                        {methodLabel(method)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <button 
-                  disabled={paying} 
-                  type="submit" 
-                  className="min-h-12 w-full rounded-xl bg-brand-red hover:bg-red-700 px-5 text-xs md:text-sm font-black text-white disabled:opacity-50 transition-all shadow-sm"
-                >
-                  {paying ? <Loader2 className="animate-spin mx-auto" size={18} /> : `Authorize ${methodLabel(paymentMethod)} Checkout`}
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
+        {/* School Paystack Review Modal */}
+        <PaystackPaymentReviewModal
+          isOpen={showCheckout}
+          onClose={() => { if (!paying) setShowCheckout(false); }}
+          reviewKey={`school:${selectedPrograms.map((p: any) => p.id).join(',')}:${paymentPercentage}:${selectedMode}:${schoolFee}`}
+          subtitle="Institutional Subscription Settlement"
+          title="Review Your Payment"
+          description="Please confirm the institutional subscription tracks and payment policy below before proceeding to Paystack."
+          contextRows={[
+            { label: 'School / Institution', value: data.schoolInfo?.name || 'Partner School' },
+            { label: 'Billing Cycle', value: schoolCycle === 'monthly' ? 'Monthly (4 Weeks)' : 'Termly (12 Weeks)' },
+            { label: 'Payment Schedule', value: selectedModeLabel },
+            { label: 'Invoice Percentage', value: `${paymentPercentage}% of full contract fee` }
+          ]}
+          lineItems={selectedPrograms.map((p: any) => ({
+            id: p.id,
+            primary: p.name,
+            secondary: p.details || 'Institutional Track',
+            meta: p.description || undefined,
+            amount: Number(p.fee || 0)
+          }))}
+          installment={paymentPercentage < 100 ? {
+            fullAmount: baseTotalForPrograms,
+            percentage: paymentPercentage,
+            payingNow: schoolFee,
+            remainingBalance
+          } : null}
+          subtotal={schoolFee}
+          estimatedFee={chargePreview.transactionFee}
+          estimatedTotal={chargePreview.totalAmount}
+          feeNote={`Estimated Paystack processing fee is shown for transparency. Paystack confirms the final fee dynamically at checkout against the ${formatNaira(schoolFee)} subtotal.`}
+          loading={paying}
+          disabled={isMasqueradingActive()}
+          disabledMessage="Checkout is disabled in Admin Impersonation mode."
+          onConfirmPaystack={processPayment}
+        />
       </section>
     );
   }
@@ -1266,7 +1229,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
         <button 
           type="button" 
           onClick={() => void load()} 
-          className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
+          className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
         >
           <RefreshCw size={14} /> Refresh Records
         </button>
@@ -1274,15 +1237,15 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
 
       {/* Impersonation Notice */}
       {isMasqueradingActive() && (
-        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between gap-3 shadow-xs">
+        <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs flex items-center justify-between gap-3 shadow-xs">
           <div className="flex items-center gap-2.5">
-            <ShieldCheck size={18} className="text-amber-600 shrink-0" />
+            <ShieldCheck size={18} className="text-brand-red shrink-0" />
             <div>
               <strong className="block font-black">Superadmin Impersonation Mode Active</strong>
               <span>Payment processing and withdrawal requests are disabled while impersonating. All ledger histories and account details are available in read-only mode.</span>
             </div>
           </div>
-          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200/80 dark:bg-amber-900 text-amber-900 dark:text-amber-100 shrink-0">
+          <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-red-50 dark:bg-red-950/50 text-brand-red shrink-0 border border-brand-red/20">
             Payments Disabled
           </span>
         </div>
@@ -1291,9 +1254,9 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
       {role !== 'staff' && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
-            <p className="text-xs text-slate-500">Latest Payment</p>
+            <p className="text-xs text-slate-500">Latest Verified Payment</p>
             <p className="mt-1 text-xl font-black font-mono text-slate-900 dark:text-white">
-              {payments[0] ? formatNaira(payments[0].customerTotal || Number(payments[0].amount || 0) / 100) : '—'}
+              {payments[0] ? formatNaira(extractPaymentAmountNaira(payments[0])) : '—'}
             </p>
             <p className="mt-1 text-xs text-slate-400">
               {payments[0] ? dateLabel(payments[0].paidAt) : 'No verified payment yet'}
@@ -1339,7 +1302,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                 <button
                   type="button"
                   onClick={selectAllDue}
-                  className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 dark:text-amber-200 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-brand-red dark:bg-red-950/30 dark:hover:bg-red-950/50 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <Clock size={13} />
                   <span>Select All Due</span>
@@ -1358,7 +1321,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                   <button
                     type="button"
                     onClick={clearSelection}
-                    className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 dark:text-rose-300 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <X size={13} />
                     <span>Clear ({selectedFeeItemIds.length})</span>
@@ -1399,21 +1362,21 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                 <button
                   type="button"
                   onClick={() => setParentFeeFilter('due')}
-                  className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                     parentFeeFilter === 'due'
-                      ? 'bg-white dark:bg-slate-700 text-amber-700 dark:text-amber-300 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-amber-600'
+                      ? 'bg-white dark:bg-slate-700 text-brand-red shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-brand-red'
                   }`}
                 >
-                  Payment Due ({parentFeeItems.filter(i => i.status === 'DUE').length})
+                  Payment Due ({parentFeeItems.filter(i => i.status === 'DUE' || i.status === 'PARTIALLY_PAID').length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setParentFeeFilter('paid')}
-                  className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                     parentFeeFilter === 'paid'
-                      ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-emerald-600'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   Paid &amp; Active ({parentFeeItems.filter(i => i.status === 'PAID').length})
@@ -1484,16 +1447,16 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                             <h3 className="font-black text-base text-slate-900 dark:text-white truncate">
                               {child.childName}
                             </h3>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                               {child.childClass || 'Standard Cohort'}
                             </span>
                             {child.allPaid ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 inline-flex items-center gap-1">
-                                <CheckCircle2 size={11} /> All Paid
+                              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 inline-flex items-center gap-1">
+                                <CheckCircle2 size={12} className="text-slate-800 dark:text-slate-200" /> All Paid
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 inline-flex items-center gap-1">
-                                <Clock size={11} /> {formatNaira(child.totalDue)} Due
+                              <span className="text-[11px] font-bold text-brand-red inline-flex items-center gap-1">
+                                <Clock size={12} /> {formatNaira(child.totalDue)} Due
                               </span>
                             )}
                           </div>
@@ -1613,12 +1576,12 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                                             </h5>
                                           </div>
                                           {isPaid ? (
-                                            <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 shrink-0">
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 shrink-0">
                                               Settled
                                             </span>
                                           ) : (
-                                            <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 shrink-0">
-                                              Due
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-brand-red shrink-0">
+                                              {prog.status === 'PARTIALLY_PAID' ? 'Partial Due' : 'Due'}
                                             </span>
                                           )}
                                         </div>
@@ -1701,7 +1664,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2.5 py-1 rounded-full text-xs font-black bg-brand-red text-white">
+                    <span className="px-2.5 py-0.5 rounded-md text-xs font-black bg-brand-red text-white">
                       {selectedItems.length} {selectedItems.length === 1 ? 'Program' : 'Programs'} Selected
                     </span>
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
@@ -1738,125 +1701,50 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
             </div>
           )}
 
-          {/* PARENT ITEMIZED CHECKOUT MODAL */}
-          {showParentCheckoutModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
-              <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 p-6 md:p-8 shadow-2xl border border-slate-200 dark:border-slate-800">
-                <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-wider text-brand-red">Direct Paystack Settlement</p>
-                    <h3 className="mt-1 text-xl font-black text-slate-900 dark:text-white">Review Selected Tuition Items</h3>
-                  </div>
-                  <button 
-                    type="button" 
-                    onClick={() => setShowParentCheckoutModal(false)} 
-                    className="min-h-9 min-w-9 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center cursor-pointer"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                <div className="mt-5 space-y-4">
-                  {/* Itemized Table */}
-                  <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold uppercase text-[10px]">
-                        <tr>
-                          <th className="p-3">Learner</th>
-                          <th className="p-3">Program &amp; Instructor</th>
-                          <th className="p-3 text-right">Fee</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {selectedItems.map(item => (
-                          <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                            <td className="p-3 font-bold text-slate-900 dark:text-white">
-                              {item.childName}
-                            </td>
-                            <td className="p-3 text-slate-600 dark:text-slate-300">
-                              <span className="font-semibold">{item.programName}</span>
-                              <span className="block text-[11px] text-slate-400">Mentor: {item.tutorName}</span>
-                            </td>
-                            <td className="p-3 text-right font-mono font-bold text-slate-900 dark:text-white">
-                              {formatNaira(item.amount)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Financial Breakdown */}
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/60 dark:border-slate-800 space-y-2 text-xs">
-                    <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
-                      <span>Base Tuition Subtotal:</span>
-                      <strong className="font-mono text-slate-900 dark:text-white">{formatNaira(selectedBaseTotal)}</strong>
-                    </div>
-                    <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
-                      <span>Est. Paystack Processing Fee:</span>
-                      <strong className="font-mono text-slate-900 dark:text-white">{formatNaira(selectedChargePreview.transactionFee)}</strong>
-                    </div>
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800 text-sm">
-                      <span className="font-black text-slate-900 dark:text-white">Grand Total Payable:</span>
-                      <strong className="font-mono font-black text-brand-red text-base">{formatNaira(selectedChargePreview.totalAmount)}</strong>
-                    </div>
-                  </div>
-
-                  {/* Payment Method Selector */}
-                  <div>
-                    <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Payment Method</p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(['card', 'bank_transfer', 'opay'] as PaymentMethod[]).map(method => (
-                        <button 
-                          key={method} 
-                          type="button" 
-                          onClick={() => setPaymentMethod(method)} 
-                          className={`min-h-14 rounded-xl border p-2 text-xs font-bold transition-all cursor-pointer ${
-                            paymentMethod === method 
-                              ? 'border-brand-red bg-red-50 text-brand-red dark:bg-red-950/20' 
-                              : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300'
-                          }`}
-                        >
-                          {method === 'card' ? <CreditCard className="mx-auto mb-1" size={16} /> : method === 'bank_transfer' ? <Building2 className="mx-auto mb-1" size={16} /> : <Smartphone className="mx-auto mb-1" size={16} />}
-                          {methodLabel(method)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Checkout Button */}
-                  <button 
-                    disabled={paying || isMasqueradingActive()} 
-                    type="button" 
-                    onClick={() => void processParentMultiPayment()}
-                    className="min-h-12 w-full rounded-2xl bg-brand-red hover:bg-red-700 disabled:opacity-50 px-5 text-xs md:text-sm font-black text-white transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {paying ? (
-                      <>
-                        <Loader2 className="animate-spin" size={18} />
-                        <span>Initializing Paystack Checkout...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ShieldCheck size={18} />
-                        <span>Pay {formatNaira(selectedChargePreview.totalAmount)} with {methodLabel(paymentMethod)}</span>
-                      </>
-                    )}
-                  </button>
-
-                  <p className="text-[11px] text-center text-slate-400">
-                    Secured by 256-bit encryption. Payment will update only the exact selected program records.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* PARENT ITEMIZED PAYSTACK REVIEW MODAL */}
+          <PaystackPaymentReviewModal
+            isOpen={showParentCheckoutModal}
+            onClose={() => { if (!paying) setShowParentCheckoutModal(false); }}
+            reviewKey={`parent-multi:${selectedItems.map(i => `${i.id}:${i.amount}`).join('|')}`}
+            subtitle="Family Tuition Settlement"
+            title="Review Your Payment"
+            description="Please verify each selected learner, programme track, and our Payment Policy before proceeding to Paystack."
+            contextRows={[
+              {
+                label: 'Learners Included',
+                value: Array.from(new Set(selectedItems.map(i => i.childName))).join(', ')
+              },
+              {
+                label: 'Selected Programmes',
+                value: `${selectedItems.length} programme track${selectedItems.length === 1 ? '' : 's'}`
+              },
+              {
+                label: 'Account Role',
+                value: 'Parent / Guardian'
+              }
+            ]}
+            lineItems={selectedItems.map(item => ({
+              id: item.id,
+              primary: item.childName,
+              secondary: item.programName,
+              meta: item.tutorName ? `Assigned Instructor: ${item.tutorName}` : undefined,
+              amount: Number(item.amount || 0)
+            }))}
+            subtotal={selectedBaseTotal}
+            estimatedFee={selectedChargePreview.transactionFee}
+            estimatedTotal={selectedChargePreview.totalAmount}
+            feeNote="Estimated Paystack fee is displayed for transparency. Only the exact verified base tuition items are settled, and Paystack confirms final gateway charges on checkout."
+            loading={paying}
+            disabled={isMasqueradingActive()}
+            disabledMessage="Payment checkout is restricted in Superadmin Impersonation mode."
+            onConfirmPaystack={processParentMultiPayment}
+          />
         </div>
       ) : role === 'student' ? (
         /* Independent Student View */
         <div className="space-y-6">
           {standardPlans.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-sm">
               <div className="mb-5">
                 <h3 className="text-xl font-black text-slate-900 dark:text-white">
                   Available Learning Programs
@@ -1882,7 +1770,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                               <p className="mt-1 text-xs leading-5 text-slate-500">{plan.description}</p>
                             )}
                           </div>
-                          <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[10px] font-black text-slate-700 dark:text-slate-300 shrink-0">
+                          <span className="border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-0.5 rounded-md text-[10px] font-black text-slate-700 dark:text-slate-300 shrink-0">
                             {plan.durationWeeks} weeks
                           </span>
                         </div>
@@ -1991,33 +1879,49 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
         onConfirmWithdrawal={handleConfirmWithdrawal}
       />
 
-      {/* Checkout Modal for Parents / Independent Students */}
-      {showCheckout && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 p-6 md:p-8 shadow-2xl border border-slate-200 dark:border-slate-800">
-            <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-brand-red">Paystack Checkout</p>
-                <h2 className="mt-1 text-xl font-black text-slate-900 dark:text-white">Payment Review</h2>
-              </div>
-              <button 
-                type="button" 
-                onClick={() => setShowCheckout(false)} 
-                className="min-h-9 min-w-9 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center"
-              >
-                <X size={18} />
-              </button>
-            </div>
+      {/* Single Paystack Review Modal for Parents / Independent Students */}
+      {(() => {
+        const activeSinglePlan = standardPlans.find(p => p.id === selectedPlanId) || standardPlans[0];
+        const activeStudentRecord = (data.students || []).find((s: any) => s.id === selectedStudentId);
+        const singleSubtotal = Number(activeSinglePlan?.baseAmount || 0);
+        const singleFeePreview = feeFromBase(singleSubtotal, feePolicy);
+        const learnerNameDisplay = role === 'parent'
+          ? (activeStudentRecord?.fullName || activeStudentRecord?.studentName || activeStudentRecord?.username || 'Select learner above')
+          : (auth.currentUser?.displayName || 'Student Account');
 
-            <form onSubmit={processPayment} className="mt-6 space-y-4">
+        return (
+          <PaystackPaymentReviewModal
+            isOpen={showCheckout}
+            onClose={() => { if (!paying) setShowCheckout(false); }}
+            reviewKey={`single:${activeSinglePlan?.id || ''}:${selectedStudentId}:${teachingMode}:${role}`}
+            subtitle="Tuition Settlement"
+            title="Review Your Payment"
+            description="Please review the learner, programme track, and our Payment Policy before proceeding to Paystack."
+            contextRows={[
+              { label: 'Learner', value: learnerNameDisplay },
+              { label: 'Programme / Track', value: activeSinglePlan?.name || 'Academy Learning Track' },
+              { label: 'Billing Cycle', value: `${activeSinglePlan?.durationWeeks || 4} Weeks` },
+              { label: 'Delivery Mode', value: teachingMode || 'Standard Delivery' },
+              { label: 'Tutor', value: activeStudentRecord?.tutorName || activeStudentRecord?.assignedTutorName || undefined }
+            ]}
+            subtotal={singleSubtotal}
+            estimatedFee={singleFeePreview.transactionFee}
+            estimatedTotal={singleFeePreview.totalAmount}
+            feeNote="Estimated Paystack processing fee is shown for transparency. Paystack confirms the final charge dynamically at hosted checkout."
+            loading={paying}
+            disabled={isMasqueradingActive() || (role === 'parent' && !selectedStudentId)}
+            disabledMessage={role === 'parent' && !selectedStudentId ? 'Please select the learner for this payment first.' : 'Payment checkout is restricted in Superadmin Impersonation mode.'}
+            onConfirmPaystack={processPayment}
+          >
+            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40">
               {role === 'parent' && (
                 <label className="block">
                   <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-slate-500">Select Child / Student</span>
-                  <select 
-                    required 
-                    value={selectedStudentId} 
-                    onChange={e => setSelectedStudentId(e.target.value)} 
-                    className="min-h-11 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs"
+                  <select
+                    required
+                    value={selectedStudentId}
+                    onChange={e => setSelectedStudentId(e.target.value)}
+                    className="min-h-11 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-900 dark:text-white"
                   >
                     <option value="">Select Child</option>
                     {(data.students || []).map((student: any) => (
@@ -2031,49 +1935,20 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
 
               <label className="block">
                 <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-slate-500">Teaching Delivery Mode</span>
-                <select 
-                  value={teachingMode} 
-                  onChange={e => setTeachingMode(e.target.value)} 
-                  className="min-h-11 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs"
+                <select
+                  value={teachingMode}
+                  onChange={e => setTeachingMode(e.target.value)}
+                  className="min-h-11 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-900 dark:text-white"
                 >
                   <option value="Physical Lab / In-Person">Physical Lab / In-Person</option>
                   <option value="Online 1-on-1 Mentorship">Online 1-on-1 Mentorship</option>
                   <option value="Hybrid (Lab + Virtual Sessions)">Hybrid (Lab + Virtual Sessions)</option>
                 </select>
               </label>
-
-              <div>
-                <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Payment Method</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['card', 'bank_transfer', 'opay'] as PaymentMethod[]).map(method => (
-                    <button 
-                      key={method} 
-                      type="button" 
-                      onClick={() => setPaymentMethod(method)} 
-                      className={`min-h-14 rounded-xl border p-2 text-xs font-bold transition-all ${
-                        paymentMethod === method 
-                          ? 'border-brand-red bg-red-50 text-brand-red dark:bg-red-950/20' 
-                          : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      {method === 'card' ? <CreditCard className="mx-auto mb-1" size={16} /> : method === 'bank_transfer' ? <Building2 className="mx-auto mb-1" size={16} /> : <Smartphone className="mx-auto mb-1" size={16} />}
-                      {methodLabel(method)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button 
-                disabled={paying} 
-                type="submit" 
-                className="min-h-12 w-full rounded-xl bg-brand-red hover:bg-red-700 px-5 text-xs md:text-sm font-black text-white disabled:opacity-50 transition-all shadow-sm"
-              >
-                {paying ? <Loader2 className="animate-spin mx-auto" size={18} /> : `Proceed with ${methodLabel(paymentMethod)}`}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+            </div>
+          </PaystackPaymentReviewModal>
+        );
+      })()}
     </section>
   );
 };

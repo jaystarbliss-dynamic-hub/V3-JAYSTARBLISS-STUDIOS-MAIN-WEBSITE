@@ -103,39 +103,33 @@ const statusBadgeMeta = (
     case 'COMPLETED':
       return {
         label: 'Completed',
-        className:
-          'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60',
+        className: 'text-slate-900 dark:text-white font-bold',
       };
     case 'GRADED':
       return {
         label: 'Graded',
-        className:
-          'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800/60',
+        className: 'text-slate-900 dark:text-white font-bold',
       };
     case 'SUBMITTED':
     case 'AWAITING_REVIEW':
       return {
-        label: 'Submitted • Awaiting Review',
-        className:
-          'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800/60',
+        label: 'Submitted · Awaiting Review',
+        className: 'text-[#1E293B] dark:text-slate-200 font-bold',
       };
     case 'RESUBMISSION_REQUIRED':
       return {
         label: 'Resubmission Required',
-        className:
-          'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60',
+        className: 'text-[#B91C1C] dark:text-red-400 font-bold',
       };
     case 'OVERDUE':
       return {
         label: 'Overdue',
-        className:
-          'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/60',
+        className: 'text-[#B91C1C] dark:text-red-400 font-bold',
       };
     default:
       return {
         label: 'Pending Submission',
-        className:
-          'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+        className: 'text-slate-600 dark:text-slate-400 font-semibold',
       };
   }
 };
@@ -734,17 +728,19 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
       <SEO title={`${title} | Jaystarbliss Studios`} description={subtitle} noindex={true} />
 
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-red/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-brand-red">
-              <ClipboardList size={12} /> Academic Sync
-            </span>
+          <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
+            <ClipboardList size={13} />
+            <span>Academic Sync</span>
             {role === 'student' && studentProfile && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                {studentProfile.className}
-                {studentProfile.schoolName ? ` • ${studentProfile.schoolName}` : ''}
-              </span>
+              <>
+                <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                <span className="normal-case tracking-normal text-slate-600 dark:text-slate-300 font-semibold">
+                  {studentProfile.className}
+                  {studentProfile.schoolName ? ` · ${studentProfile.schoolName}` : ''}
+                </span>
+              </>
             )}
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-1.5">
@@ -758,7 +754,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
             type="button"
             onClick={() => void loadData(true)}
             disabled={loading || refreshing}
-            className="min-h-10 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 inline-flex items-center gap-2 transition-colors cursor-pointer"
+            className="min-h-10 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 inline-flex items-center gap-2 transition-colors cursor-pointer"
           >
             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
             Refresh
@@ -780,10 +776,10 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
       </div>
 
       {success && (
-        <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 dark:border-emerald-800/60 p-4 text-sm text-emerald-800 dark:text-emerald-200">
-          <CheckCircle2 size={18} className="shrink-0" />
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-4 text-sm text-slate-800 dark:text-slate-100">
+          <CheckCircle2 size={18} className="shrink-0 text-[#1E293B] dark:text-slate-200" />
           <span>{success}</span>
-          <button className="ml-auto" onClick={() => setSuccess('')} aria-label="Dismiss">
+          <button className="ml-auto text-slate-500 hover:text-slate-800 dark:hover:text-white" onClick={() => setSuccess('')} aria-label="Dismiss">
             <X size={16} />
           </button>
         </div>
@@ -799,31 +795,31 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
         </div>
       )}
 
-      {/* 4-Card KPI Summary */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 4-Cell Divided KPI Summary Strip */}
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
         <Stat
-          icon={<ClipboardList size={20} />}
+          icon={<ClipboardList size={18} />}
           label="Total Assigned"
           value={stats.total}
-          accent="text-brand-red bg-brand-red/10"
+          accent="text-[#B91C1C] dark:text-red-400"
         />
         <Stat
-          icon={<Clock size={20} />}
+          icon={<Clock size={18} />}
           label="Pending / Active"
           value={stats.pending}
-          accent="text-amber-600 bg-amber-500/10"
+          accent="text-slate-700 dark:text-slate-300"
         />
         <Stat
-          icon={<Send size={20} />}
+          icon={<Send size={18} />}
           label="Submitted / In Review"
           value={stats.awaitingReview}
-          accent="text-blue-600 bg-blue-500/10"
+          accent="text-[#1E293B] dark:text-slate-200"
         />
         <Stat
-          icon={<GraduationCap size={20} />}
+          icon={<GraduationCap size={18} />}
           label="Graded & Completed"
           value={stats.completed}
-          accent="text-emerald-600 bg-emerald-500/10"
+          accent="text-slate-900 dark:text-white"
         />
       </div>
 
@@ -979,9 +975,9 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
 
       {/* Student Status Filter Bar */}
       {role === 'student' && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-200/80 dark:border-blue-900/50 bg-blue-50/60 dark:bg-blue-950/20 p-4 text-sm text-blue-900 dark:text-blue-200">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/70 p-4 text-sm text-slate-800 dark:text-slate-200">
           <div className="flex items-center gap-2.5">
-            <BookOpen size={18} className="shrink-0 text-blue-600" />
+            <BookOpen size={18} className="shrink-0 text-[#B91C1C] dark:text-red-400" />
             <span>
               Assignments from your tutor for your personal learning track and your school grade appear here automatically.
             </span>
@@ -994,8 +990,8 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
                 onClick={() => setSelectedStatusFilter(st)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                   selectedStatusFilter === st
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-white'
+                    ? 'bg-[#1E293B] dark:bg-[#B91C1C] text-white'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
                 }`}
               >
                 {st === 'ALL'
@@ -1160,17 +1156,17 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
 
                 {/* Live Cohort Preview */}
                 {form.schoolId && form.targetClass && (
-                  <div className="rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/80 dark:bg-blue-950/30 p-3 text-xs text-blue-900 dark:text-blue-200 flex items-start gap-2.5">
-                    <Users size={16} className="shrink-0 mt-0.5 text-blue-600" />
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-800 dark:text-slate-200 flex items-start gap-2.5">
+                    <Users size={16} className="shrink-0 mt-0.5 text-[#1E293B] dark:text-slate-300" />
                     <div>
-                      <p className="font-bold">
+                      <p className="font-bold tabular-nums">
                         {eligibleSchoolGradeStudents.length} enrolled student
                         {eligibleSchoolGradeStudents.length === 1 ? '' : 's'} matched in{' '}
-                        {schools.find((s) => s.id === form.schoolId)?.name || 'this school'} •{' '}
+                        {schools.find((s) => s.id === form.schoolId)?.name || 'this school'} ·{' '}
                         {form.targetClass}
                       </p>
                       {eligibleSchoolGradeStudents.length > 0 ? (
-                        <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                           Recipients:{' '}
                           {eligibleSchoolGradeStudents
                             .slice(0, 6)
@@ -1181,7 +1177,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
                             : ''}
                         </p>
                       ) : (
-                        <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                           Any student enrolled in this school and grade will automatically see this work on their dashboard.
                         </p>
                       )}
@@ -1537,13 +1533,13 @@ const Stat: React.FC<{ icon: React.ReactNode; label: string; value: number; acce
   value,
   accent,
 }) => (
-  <div className="pro-surface rounded-2xl p-4 sm:p-5 flex items-center gap-3.5">
-    <div className={`h-11 w-11 shrink-0 rounded-xl flex items-center justify-center ${accent}`}>
+  <div className="p-4 sm:p-5 flex items-center gap-3.5">
+    <div className={`h-10 w-10 shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center ${accent}`}>
       {icon}
     </div>
     <div>
-      <p className="text-xs font-semibold text-slate-500">{label}</p>
-      <p className="text-2xl font-black text-slate-900 dark:text-white">{value}</p>
+      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{value}</p>
     </div>
   </div>
 );
@@ -1605,33 +1601,31 @@ const AssignmentCard: React.FC<{
       {/* Top Meta Row */}
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
         <div className="min-w-0 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${badge.className}`}
-            >
-              {badge.label}
-            </span>
-
-            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <span className={badge.className}>{badge.label}</span>
+            <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
               {a.activityType === 'ACTIVITY' ? 'Learning Activity' : 'Assignment'}
             </span>
-
             {a.subject && (
-              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300">
-                {a.subject}
-              </span>
+              <>
+                <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                <span className="font-medium text-slate-600 dark:text-slate-300">{a.subject}</span>
+              </>
             )}
-
             {a.programName && (
-              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300">
-                {a.programName}
-              </span>
+              <>
+                <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                <span className="text-slate-500 dark:text-slate-400">{a.programName}</span>
+              </>
             )}
-
             {a.targetMode === 'SCHOOL_GRADE' && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300">
-                <School size={12} /> {a.schoolName || 'School'} • {a.targetClass || a.className}
-              </span>
+              <>
+                <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                <span className="inline-flex items-center gap-1 font-semibold text-slate-700 dark:text-slate-300">
+                  <School size={12} /> {a.schoolName || 'School'} · {a.targetClass || a.className}
+                </span>
+              </>
             )}
           </div>
 
@@ -1663,7 +1657,7 @@ const AssignmentCard: React.FC<{
               <span
                 className={
                   a.status === 'OVERDUE'
-                    ? 'font-bold text-rose-600 dark:text-rose-400'
+                    ? 'font-bold text-[#B91C1C] dark:text-red-400'
                     : 'font-semibold text-slate-700 dark:text-slate-300'
                 }
               >
@@ -1688,13 +1682,13 @@ const AssignmentCard: React.FC<{
             )}
 
           {a.grade != null && (
-            <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/30 px-4 py-2.5 text-right">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-4 py-2.5 text-right">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                 Score
               </p>
-              <p className="text-xl font-black text-slate-900 dark:text-white">
+              <p className="text-xl font-black text-slate-900 dark:text-white tabular-nums">
                 {a.grade}
-                <span className="text-xs font-semibold text-slate-500">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                   /{a.maxMarks || 100}
                 </span>
               </p>
@@ -1732,9 +1726,9 @@ const AssignmentCard: React.FC<{
 
       {/* Submitted Work Display (Visible to Student, Parent, and Tutor) */}
       {(a.submissionText || a.submissionUrl || a.submittedAt) && (
-        <div className="mt-4 rounded-xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/40 dark:bg-blue-950/20 p-4 space-y-2">
+        <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-4 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#1E293B] dark:text-slate-200">
               Learner Submission
             </p>
             {a.submittedAt && (
@@ -1763,9 +1757,9 @@ const AssignmentCard: React.FC<{
 
       {/* Tutor Feedback Display */}
       {a.feedback && (
-        <div className="mt-4 rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/60 dark:bg-emerald-950/20 p-4">
+        <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/90 dark:bg-slate-900/70 p-4">
           <div className="flex items-center justify-between gap-2 mb-1.5">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#B91C1C] dark:text-red-400">
               Tutor Feedback & Remarks
             </p>
             {a.reviewedAt && (
@@ -1811,15 +1805,15 @@ const AssignmentCard: React.FC<{
                 className="input"
               />
               {draft.url.trim() && !linkValidation.valid && (
-                <p className="text-xs font-semibold text-rose-600">{linkValidation.error}</p>
+                <p className="text-xs font-semibold text-[#B91C1C] dark:text-red-400">{linkValidation.error}</p>
               )}
               {linkValidation.valid && linkValidation.isGoogleLink && (
-                <label className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800 p-3 text-xs text-amber-900 dark:text-amber-200 cursor-pointer">
+                <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 dark:bg-slate-900 dark:border-slate-700 p-3 text-xs text-slate-800 dark:text-slate-200 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={Boolean(draft.driveConfirmed)}
                     onChange={(e) => onDraftChange({ driveConfirmed: e.target.checked })}
-                    className="mt-0.5 rounded border-amber-400"
+                    className="mt-0.5 rounded border-slate-400 text-[#B91C1C] focus:ring-[#B91C1C]"
                   />
                   <span>
                     <strong>Google Drive / Docs Sharing Check:</strong> I have set the link permission to{' '}

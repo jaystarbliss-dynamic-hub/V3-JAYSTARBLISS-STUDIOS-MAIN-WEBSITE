@@ -153,20 +153,13 @@ const checkClassMatch = (targetClass: string, assignedClasses?: string[], classL
   return true;
 };
 
-const getDocTypeBadge = (type?: string) => {
+const getDocTypeStyle = (type?: string) => {
   switch (type) {
-    case 'Syllabus':
-      return 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800';
-    case 'Lesson Note':
-      return 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800';
-    case 'Practical Worksheet':
-      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
-    case 'Cheatsheet':
-      return 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800';
     case 'Past Exam':
-      return 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+    case 'Syllabus':
+      return 'text-[#B91C1C] dark:text-red-400';
     default:
-      return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+      return 'text-[#1E293B] dark:text-slate-300';
   }
 };
 
@@ -848,17 +841,18 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
 
       {/* Compact Action & Status Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 sm:p-4 shadow-xs">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-bold text-slate-700 dark:text-slate-200">
+          <div className="inline-flex items-center gap-2 tabular-nums">
             <BookOpen size={14} className="text-brand-red" />
             <span>Total Resources:</span>
             <span className="font-mono font-black text-brand-red">{resources.length}</span>
           </div>
           {role === 'student' && studentInfo.studentClass && (
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-xs font-bold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
-              <GraduationCap size={14} />
+            <div className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+              <span aria-hidden="true">·</span>
+              <GraduationCap size={14} className="text-[#1E293B] dark:text-slate-300" />
               <span>Class: {studentInfo.studentClass}</span>
-              {studentInfo.schoolName && <span className="opacity-80">• {studentInfo.schoolName}</span>}
+              {studentInfo.schoolName && <span className="opacity-80">· {studentInfo.schoolName}</span>}
             </div>
           )}
         </div>
@@ -876,8 +870,8 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
 
       {/* Main Results Container (List Format with Filters, Recency & Unread Indicators) */}
       {role === 'student' && studentInfo.hasResources === false ? (
-        <div className="p-8 sm:p-12 rounded-3xl bg-slate-900/60 dark:bg-slate-950/80 border border-slate-800 text-center space-y-4 filter grayscale-[30%]">
-          <div className="w-16 h-16 rounded-3xl bg-slate-800 text-amber-400 flex items-center justify-center mx-auto border border-slate-700">
+        <div className="p-8 sm:p-12 rounded-3xl bg-slate-900/60 dark:bg-slate-950/80 border border-slate-800 text-center space-y-4">
+          <div className="w-16 h-16 rounded-3xl bg-slate-800 text-slate-200 flex items-center justify-center mx-auto border border-slate-700">
             <BookOpen size={28} />
           </div>
           <h2 className="text-xl font-black text-slate-200">
@@ -886,8 +880,8 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
           <p className="max-w-md mx-auto text-xs text-slate-400 leading-relaxed">
             Your enrolled program track (<strong>{studentInfo.programName || 'Enrolled Track'}</strong>) is configured without access to the general digital resource repository. 
           </p>
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold">
-            <span>🔒 Locked by Institutional Curriculum Settings</span>
+          <div className="inline-flex items-center gap-2 text-slate-300 text-xs font-bold">
+            <span>Locked by Institutional Curriculum Settings</span>
           </div>
         </div>
       ) : loading ? (
@@ -923,7 +917,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
             {/* Header */}
             <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-start justify-between gap-4">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brand-red/10 text-brand-red text-[10px] font-black uppercase tracking-wider mb-2">
+                <div className="inline-flex items-center gap-1.5 text-[#B91C1C] dark:text-red-400 text-[11px] font-black uppercase tracking-wider mb-1.5">
                   <Users size={12} />
                   <span>Institutional Class Delivery</span>
                 </div>
@@ -973,7 +967,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                     <button
                       type="button"
                       onClick={() => setAssignSelectedClasses(['All Classes'])}
-                      className="text-[11px] font-bold text-sky-600 hover:underline cursor-pointer"
+                      className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200 hover:underline cursor-pointer"
                     >
                       All Classes
                     </button>
@@ -1246,7 +1240,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                         onClick={() => setLearnerTab('school')}
                         className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
                           learnerTab === 'school'
-                            ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-2xs'
+                            ? 'bg-white dark:bg-slate-900 text-[#1E293B] dark:text-white shadow-2xs'
                             : 'text-slate-500'
                         }`}
                       >
@@ -1257,7 +1251,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                         onClick={() => setLearnerTab('private')}
                         className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
                           learnerTab === 'private'
-                            ? 'bg-white dark:bg-slate-900 text-purple-600 shadow-2xs'
+                            ? 'bg-white dark:bg-slate-900 text-[#B91C1C] dark:text-red-400 shadow-2xs'
                             : 'text-slate-500'
                         }`}
                       >
@@ -1291,7 +1285,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                               }
                               className={`w-full px-3 py-2 text-left flex items-center justify-between gap-2 text-xs transition-colors cursor-pointer ${
                                 selected
-                                  ? 'bg-blue-50/80 dark:bg-blue-950/40'
+                                  ? 'bg-slate-100 dark:bg-slate-800/80'
                                   : 'hover:bg-slate-50 dark:hover:bg-slate-900'
                               }`}
                             >
@@ -1299,13 +1293,13 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                                 <div className="flex items-center gap-1.5">
                                   <span className="font-bold text-slate-900 dark:text-white truncate">{lr.name}</span>
                                   <span
-                                    className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                    className={`text-[10px] font-bold uppercase ${
                                       lr.isPrivate
-                                        ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
-                                        : 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                                        ? 'text-[#B91C1C] dark:text-red-400'
+                                        : 'text-slate-500 dark:text-slate-400'
                                     }`}
                                   >
-                                    {lr.isPrivate ? 'Private' : 'School'}
+                                    · {lr.isPrivate ? 'Private' : 'School'}
                                   </span>
                                 </div>
                                 <div className="text-[10px] text-slate-400 truncate">
@@ -1317,7 +1311,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                               <span
                                 className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
                                   selected
-                                    ? 'bg-blue-600 text-white'
+                                    ? 'bg-[#1E293B] text-white dark:bg-white dark:text-[#1E293B]'
                                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                                 }`}
                               >
@@ -1405,16 +1399,16 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
             {/* Modal Header */}
             <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-start justify-between gap-4">
               <div>
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${getDocTypeBadge(previewDoc.docType)}`}>
+                <div className="flex flex-wrap items-center gap-2 mb-1.5 text-xs font-bold">
+                  <span className={`uppercase tracking-wider ${getDocTypeStyle(previewDoc.docType)}`}>
                     {previewDoc.docType}
                   </span>
-                  <span className="text-xs font-semibold text-gray-500">
-                    {previewDoc.classLevel}
+                  <span className="text-slate-500">
+                    · {previewDoc.classLevel}
                   </span>
                   {previewDoc.assignedClasses && previewDoc.assignedClasses.length > 0 && (
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800/60">
-                      Assigned: {previewDoc.assignedClasses.join(', ')}
+                    <span className="text-slate-500">
+                      · Assigned: {previewDoc.assignedClasses.join(', ')}
                     </span>
                   )}
                 </div>
@@ -1434,8 +1428,8 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs sm:text-sm custom-scrollbar">
               {previewDoc.classInstructions && (
-                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 text-amber-900 dark:text-amber-200 space-y-1">
-                  <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                     <BookOpen size={14} /> Class Instructions from School
                   </div>
                   <p className="text-xs leading-relaxed">{previewDoc.classInstructions}</p>
@@ -1455,7 +1449,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                   <ul className="space-y-2">
                     {previewDoc.content.learningObjectives.map((obj, i) => (
                       <li key={i} className="flex items-start gap-2 text-gray-700 dark:text-gray-300">
-                        <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+                        <CheckCircle2 size={16} className="text-[#1E293B] dark:text-slate-300 shrink-0 mt-0.5" />
                         <span>{obj}</span>
                       </li>
                     ))}
@@ -1471,7 +1465,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                       <h5 className="font-bold text-gray-900 dark:text-white">{concept.heading}</h5>
                       <p className="text-gray-600 dark:text-gray-400 text-xs leading-relaxed">{concept.detail}</p>
                       {concept.codeSnippet && (
-                        <pre className="p-3 bg-slate-900 text-emerald-400 rounded-xl font-mono text-[11px] overflow-x-auto">
+                        <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl font-mono text-[11px] overflow-x-auto">
                           {concept.codeSnippet}
                         </pre>
                       )}
@@ -1485,8 +1479,8 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                   <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Hands-on Exercises</h4>
                   <div className="space-y-2">
                     {previewDoc.content.practiceExercises.map((ex, i) => (
-                      <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 text-blue-900 dark:text-blue-200 border border-blue-100 dark:border-blue-900/40">
-                        <Terminal size={15} className="text-blue-600 shrink-0 mt-0.5" />
+                      <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800">
+                        <Terminal size={15} className="text-[#B91C1C] shrink-0 mt-0.5" />
                         <span className="text-xs">{ex}</span>
                       </div>
                     ))}

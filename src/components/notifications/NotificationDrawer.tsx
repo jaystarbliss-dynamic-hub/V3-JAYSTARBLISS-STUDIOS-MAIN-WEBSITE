@@ -122,42 +122,42 @@ export const NotificationDrawer: React.FC = () => {
   };
 
   const getNotificationIcon = (type?: string, priority?: string) => {
-    if (priority === 'urgent') return <ShieldAlert size={16} className="text-red-500" />;
+    if (priority === 'urgent') return <ShieldAlert size={16} className="text-[#B91C1C] dark:text-red-400" />;
     switch (type) {
       case 'academic':
       case 'exam':
       case 'resource':
-        return <BookOpen size={16} className="text-blue-500" />;
+        return <BookOpen size={16} className="text-[#1E293B] dark:text-slate-200" />;
       case 'billing':
-        return <CreditCard size={16} className="text-emerald-500" />;
+        return <CreditCard size={16} className="text-[#1E293B] dark:text-slate-200" />;
       case 'announcement':
       case 'broadcast':
-        return <Radio size={16} className="text-purple-500" />;
+        return <Radio size={16} className="text-[#B91C1C] dark:text-red-400" />;
       default:
-        return <Bell size={16} className="text-brand-red" />;
+        return <Bell size={16} className="text-[#B91C1C] dark:text-red-400" />;
     }
   };
 
   const getRecipientBadge = (n: AppNotification) => {
     if (n.recipientType === 'all' || n.recipientId === 'all') {
-      return { label: 'Universal Broadcast', bg: 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-300' };
+      return { label: 'Universal Broadcast', bg: 'text-[#B91C1C] dark:text-red-400' };
     }
     if (n.recipientType === 'all_students' || n.recipientId === 'all_students') {
-      return { label: 'All Students', bg: 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300' };
+      return { label: 'All Students', bg: 'text-[#1E293B] dark:text-slate-200' };
     }
     if (n.recipientType === 'all_parents' || n.recipientId === 'all_parents') {
-      return { label: 'All Parents', bg: 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300' };
+      return { label: 'All Parents', bg: 'text-[#1E293B] dark:text-slate-200' };
     }
     if (n.recipientType === 'all_staff' || n.recipientId === 'all_staff') {
-      return { label: 'Faculty & Staff', bg: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300' };
+      return { label: 'Faculty & Staff', bg: 'text-[#1E293B] dark:text-slate-200' };
     }
     if (n.recipientType === 'all_schools' || n.recipientId === 'all_schools') {
-      return { label: 'School Admins', bg: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300' };
+      return { label: 'School Admins', bg: 'text-[#1E293B] dark:text-slate-200' };
     }
     if (n.schoolName || n.recipientType === 'school_students') {
-      return { label: n.schoolName ? `School: ${n.schoolName}` : 'Partner School Cadets', bg: 'bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-300' };
+      return { label: n.schoolName ? `School: ${n.schoolName}` : 'Partner School Cadets', bg: 'text-[#1E293B] dark:text-slate-200' };
     }
-    return { label: 'Personal Message', bg: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300' };
+    return { label: 'Personal Message', bg: 'text-slate-500 dark:text-slate-400' };
   };
 
   const handleCopyText = (text: string) => {
@@ -208,7 +208,7 @@ export const NotificationDrawer: React.FC = () => {
                   <ArrowLeft size={18} />
                 </button>
               ) : (
-                <div className="w-9 h-9 rounded-xl bg-brand-red/10 text-brand-red flex items-center justify-center font-bold shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-slate-200/70 dark:bg-slate-800 text-[#B91C1C] dark:text-red-400 flex items-center justify-center font-bold shrink-0">
                   <Bell size={18} />
                 </div>
               )}
@@ -219,8 +219,8 @@ export const NotificationDrawer: React.FC = () => {
                     {selectedNotification ? 'Notification Details' : 'Notification Inbox'}
                   </h2>
                   {!selectedNotification && unreadCount > 0 && (
-                    <span className="px-2 py-0.5 rounded-full bg-brand-red text-white text-[10px] font-black">
-                      {unreadCount} Unread
+                    <span className="text-xs font-black text-[#B91C1C] dark:text-red-400 tabular-nums">
+                      · {unreadCount} Unread
                     </span>
                   )}
                 </div>
@@ -238,7 +238,7 @@ export const NotificationDrawer: React.FC = () => {
                 <button
                   type="button"
                   onClick={markAllAsRead}
-                  className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-brand-red hover:bg-brand-red/10 transition-colors flex items-center gap-1.5"
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center gap-1.5"
                   title="Mark all notifications as read"
                 >
                   <CheckCheck size={14} />
@@ -261,21 +261,27 @@ export const NotificationDrawer: React.FC = () => {
           {selectedNotification ? (
             /* DETAIL / READING VIEW */
             <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
-              {/* Badge & Target info */}
+              {/* Target & priority info */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                <div className="flex items-center gap-2">
-                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-lg ${getRecipientBadge(selectedNotification).bg}`}>
+                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
+                  <span className={getRecipientBadge(selectedNotification).bg}>
                     {getRecipientBadge(selectedNotification).label}
                   </span>
                   {selectedNotification.priority === 'urgent' && (
-                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 flex items-center gap-1">
-                      <ShieldAlert size={12} /> Urgent Priority
-                    </span>
+                    <>
+                      <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+                      <span className="text-[#B91C1C] dark:text-red-400 inline-flex items-center gap-1">
+                        <ShieldAlert size={12} /> Urgent Priority
+                      </span>
+                    </>
                   )}
                   {selectedNotification.priority === 'high' && (
-                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
-                      High Priority
-                    </span>
+                    <>
+                      <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+                      <span className="text-[#B91C1C] dark:text-red-400">
+                        High Priority
+                      </span>
+                    </>
                   )}
                 </div>
 
@@ -287,7 +293,7 @@ export const NotificationDrawer: React.FC = () => {
                     className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     title="Copy message"
                   >
-                    {copied ? <Check size={15} className="text-emerald-500" /> : <Copy size={15} />}
+                    {copied ? <Check size={15} className="text-[#1E293B] dark:text-white" /> : <Copy size={15} />}
                   </button>
 
                   <button
@@ -388,7 +394,7 @@ export const NotificationDrawer: React.FC = () => {
                   )}
                 </div>
 
-                {/* Filter Pills */}
+                {/* Filter Tabs */}
                 <div className="flex items-center gap-1.5 mt-2.5 overflow-x-auto no-scrollbar pb-1">
                   {[
                     { id: 'all', label: `All (${notifications.length})` },
@@ -402,9 +408,9 @@ export const NotificationDrawer: React.FC = () => {
                       key={tab.id}
                       type="button"
                       onClick={() => setActiveFilter(tab.id as NotificationFilter)}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap tabular-nums ${
                         activeFilter === tab.id
-                          ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
+                          ? 'bg-[#1E293B] dark:bg-white text-white dark:text-[#1E293B] shadow-xs'
                           : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                       }`}
                     >
@@ -448,15 +454,10 @@ export const NotificationDrawer: React.FC = () => {
                         onClick={() => selectNotification(item)}
                         className={`p-4 transition-all cursor-pointer group flex items-start gap-3.5 relative ${
                           !isRead 
-                            ? 'bg-red-50/35 dark:bg-red-950/15 hover:bg-red-50/70 dark:hover:bg-red-950/25' 
+                            ? 'bg-slate-50/90 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/70' 
                             : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
                         }`}
                       >
-                        {/* Unread Left Border Highlight */}
-                        {!isRead && (
-                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-red rounded-r" />
-                        )}
-
                         {/* Icon */}
                         <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 mt-0.5 border border-slate-200/50 dark:border-slate-700/50">
                           {getNotificationIcon(item.type, item.priority)}
@@ -465,18 +466,25 @@ export const NotificationDrawer: React.FC = () => {
                         {/* Content */}
                         <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex items-center justify-between gap-1.5">
-                            <div className="flex items-center gap-1.5 overflow-hidden">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${badge.bg} truncate max-w-[140px]`}>
+                            <div className="flex items-center gap-1.5 overflow-hidden text-[10px] font-black uppercase tracking-wider">
+                              <span className={`${badge.bg} truncate max-w-[140px]`}>
                                 {badge.label}
                               </span>
+                              {!isRead && (
+                                <>
+                                  <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+                                  <span className="text-[#B91C1C] dark:text-red-400">New</span>
+                                </>
+                              )}
                               {item.priority === 'urgent' && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500 text-white">
-                                  URGENT
-                                </span>
+                                <>
+                                  <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+                                  <span className="text-[#B91C1C] dark:text-red-400">URGENT</span>
+                                </>
                               )}
                             </div>
 
-                            <span className="text-[10px] font-medium text-slate-400 shrink-0">
+                            <span className="text-[10px] font-medium text-slate-400 shrink-0 tabular-nums">
                               {formatTimestamp(item.timestamp)}
                             </span>
                           </div>
@@ -507,13 +515,13 @@ export const NotificationDrawer: React.FC = () => {
                                     markAsRead(item.id, e);
                                   }
                                 }}
-                                className="text-slate-400 hover:text-brand-red font-medium transition-colors"
+                                className="text-slate-400 hover:text-[#B91C1C] font-medium transition-colors"
                                 title={isRead ? 'Mark as unread' : 'Mark as read'}
                               >
                                 {isRead ? 'Mark unread' : 'Mark read'}
                               </button>
 
-                              <span className="text-brand-red font-bold flex items-center gap-0.5">
+                              <span className="text-[#B91C1C] dark:text-red-400 font-bold flex items-center gap-0.5">
                                 Read <ChevronRight size={11} />
                               </span>
                             </div>
@@ -527,11 +535,11 @@ export const NotificationDrawer: React.FC = () => {
 
               {/* Footer */}
               <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/80 flex items-center justify-between text-xs text-slate-500 shrink-0">
-                <span>
+                <span className="tabular-nums">
                   {notifications.length} total message{notifications.length === 1 ? '' : 's'}
                 </span>
                 <span className="text-[11px] text-slate-400">
-                  Jaystar Notification Engine
+                  Jaystarbliss Institutional Inbox
                 </span>
               </div>
             </div>

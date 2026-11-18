@@ -18,8 +18,8 @@ import {
   ExternalLink,
   X,
 } from 'lucide-react';
-import { jsPDF } from 'jspdf';
 import { auth, db } from '../../lib/firebase';
+import { generateAgreementPdf } from '../../lib/pdf/agreementPdfGenerator';
 import {
   collection,
   doc,
@@ -122,15 +122,15 @@ function stripHtmlForPdf(raw: string): string {
 function statusBadgeStyle(status: string): string {
   const s = String(status || '').toUpperCase();
   if (s === 'ACTIVE' || s === 'SIGNED' || s === 'AGREED') {
-    return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60';
+    return 'text-[#1E293B] dark:text-white font-bold';
   }
   if (s === 'SHARED' || s === 'UNDER_DISCUSSION') {
-    return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800/60';
+    return 'text-slate-600 dark:text-slate-300 font-semibold';
   }
   if (s === 'REVISION_REQUESTED' || s === 'EXPIRED') {
-    return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60';
+    return 'text-[#B91C1C] dark:text-red-400 font-bold';
   }
-  return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
+  return 'text-slate-500 dark:text-slate-400 font-semibold';
 }
 
 const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) => {
@@ -332,89 +332,21 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
 
   const handleDownloadPdf = (agreement: AgreementRecord, versionOverride?: AgreementVersion | null) => {
     const ver = versionOverride || activeVersion;
-    const docPdf = new jsPDF({ unit: 'pt', format: 'a4' });
-    const pageWidth = docPdf.internal.pageSize.getWidth();
-    const margin = 48;
-    let y = 56;
-
-    docPdf.setFont('helvetica', 'bold');
-    docPdf.setFontSize(10);
-    docPdf.setTextColor(185, 28, 28);
-    docPdf.text(
-      `JAYSTARBLISS DYNAMIC INSTITUTE • OFFICIAL ${String(ver?.category || agreement.category)}`,
-      margin,
-      y
-    );
-    y += 22;
-
-    docPdf.setFont('helvetica', 'bold');
-    docPdf.setFontSize(16);
-    docPdf.setTextColor(20, 40, 75);
-    const titleLines = docPdf.splitTextToSize(String(ver?.title || agreement.title), pageWidth - margin * 2);
-    docPdf.text(titleLines, margin, y);
-    y += titleLines.length * 20 + 8;
-
-    docPdf.setFont('helvetica', 'normal');
-    docPdf.setFontSize(10);
-    docPdf.setTextColor(100, 116, 139);
-    docPdf.text(
-      `Recipient: ${agreement.recipientName || agreement.recipientType}   |   Status: ${ver?.status || agreement.status}   |   Version: v${ver?.versionNumber || 1}`,
-      margin,
-      y
-    );
-    y += 16;
-
-    if (ver?.effectiveDate || ver?.expiryDate) {
-      docPdf.text(
-        `Effective Date: ${ver?.effectiveDate || 'Not specified'}   |   Expiry Date: ${ver?.expiryDate || 'Ongoing'}`,
-        margin,
-        y
-      );
-      y += 18;
-    }
-
-    docPdf.setDrawColor(226, 232, 240);
-    docPdf.line(margin, y, pageWidth - margin, y);
-    y += 22;
-
-    docPdf.setFont('helvetica', 'normal');
-    docPdf.setFontSize(11);
-    docPdf.setTextColor(30, 41, 59);
-    const bodyText = stripHtmlForPdf(ver?.contentHtml || agreement.contentHtml || '');
-    const bodyLines = docPdf.splitTextToSize(bodyText || 'No content provided.', pageWidth - margin * 2);
-
-    for (const line of bodyLines) {
-      if (y > 760) {
-        docPdf.addPage();
-        y = 56;
-      }
-      docPdf.text(line, margin, y);
-      y += 16;
-    }
-
-    if (agreement.acknowledgedAt) {
-      if (y > 720) {
-        docPdf.addPage();
-        y = 56;
-      }
-      y += 20;
-      docPdf.setFont('helvetica', 'bold');
-      docPdf.setFontSize(10);
-      docPdf.setTextColor(16, 185, 129);
-      docPdf.text(
-        `Acknowledged by ${agreement.acknowledgedByName || agreement.recipientName} on ${new Date(
-          agreement.acknowledgedAt
-        ).toLocaleString()}`,
-        margin,
-        y
-      );
-    }
-
-    const safeFile = String(ver?.title || agreement.title || 'agreement')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-    docPdf.save(`${safeFile}-v${ver?.versionNumber || 1}.pdf`);
+    void generateAgreementPdf({
+      id: agreement.id,
+      title: String(ver?.title || agreement.title || 'Institutional Agreement'),
+      category: String(ver?.category || agreement.category || 'AGREEMENT'),
+      status: String(ver?.status || agreement.status || 'SHARED'),
+      recipientType: agreement.recipientType,
+      recipientName: agreement.recipientName,
+      recipientSchoolName: agreement.recipientType === 'SCHOOL' ? agreement.recipientName : undefined,
+      versionNumber: ver?.versionNumber || 1,
+      effectiveDate: ver?.effectiveDate || agreement.effectiveDate,
+      expiryDate: ver?.expiryDate || agreement.expiryDate,
+      contentHtml: ver?.contentHtml || agreement.contentHtml || '',
+      acknowledgedAt: agreement.acknowledgedAt,
+      acknowledgedByName: agreement.acknowledgedByName,
+    });
   };
 
   const openCreateModal = () => {
@@ -706,7 +638,7 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search title or recipient..."
-              className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#1E293B] dark:focus:ring-slate-400"
             />
           </div>
           <select
@@ -757,24 +689,22 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
                     }}
                     className={`p-4 transition-colors cursor-pointer ${
                       isSelected
-                        ? 'bg-blue-50/70 dark:bg-blue-950/30'
+                        ? 'bg-slate-100/90 dark:bg-slate-800/70'
                         : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
+                        <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                          <span className="font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                             {rec.category}
                           </span>
-                          <span
-                            className={`px-2 py-0.5 text-[10px] font-semibold rounded-md border ${statusBadgeStyle(
-                              rec.status
-                            )}`}
-                          >
+                          <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                          <span className={statusBadgeStyle(rec.status)}>
                             {rec.status.replace(/_/g, ' ')}
                           </span>
-                          <span className="text-[10px] font-mono text-slate-400">v{vCount}</span>
+                          <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                          <span className="font-mono text-slate-400 tabular-nums">v{vCount}</span>
                         </div>
                         <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-1 truncate">
                           {rec.title}
@@ -798,7 +728,7 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
                             type="button"
                             onClick={() => openEditModal(rec)}
                             title="Edit / Publish New Version"
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-[#1E293B] dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                           >
                             <Edit3 size={15} />
                           </button>
@@ -830,15 +760,12 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
           <div className="lg:col-span-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-5">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
               <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
+                <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                  <span className="font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                     {activeVersion?.category || selectedAgreement.category}
                   </span>
-                  <span
-                    className={`px-2 py-0.5 text-[10px] font-semibold rounded-md border ${statusBadgeStyle(
-                      activeVersion?.status || selectedAgreement.status
-                    )}`}
-                  >
+                  <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                  <span className={statusBadgeStyle(activeVersion?.status || selectedAgreement.status)}>
                     {(activeVersion?.status || selectedAgreement.status).replace(/_/g, ' ')}
                   </span>
                 </div>
@@ -877,7 +804,7 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
             {Array.isArray(selectedAgreement.versions) && selectedAgreement.versions.length > 1 && (
               <div className="flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/60 px-3.5 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
                 <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                  <History size={14} className="text-blue-600 dark:text-blue-400" />
+                  <History size={14} className="text-[#1E293B] dark:text-slate-300" />
                   <span className="font-semibold">Immutable Version History:</span>
                 </div>
                 <select
@@ -902,7 +829,7 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
             </div>
 
             {activeVersion?.attachmentUrl && (
-              <div className="flex items-center justify-between p-3 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-800/50 text-xs">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs">
                 <span className="font-medium text-slate-700 dark:text-slate-200">
                   Supporting Attachment Included
                 </span>
@@ -910,7 +837,7 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
                   href={activeVersion.attachmentUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                  className="inline-flex items-center gap-1 font-bold text-[#B91C1C] dark:text-red-400 hover:underline"
                 >
                   Open Attachment <ExternalLink size={13} />
                 </a>
@@ -938,7 +865,7 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
                     type="button"
                     disabled={responding}
                     onClick={() => handleRecipientAction(selectedAgreement, 'AGREED')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] dark:bg-[#B91C1C] dark:hover:bg-[#991B1B] text-white text-xs font-bold cursor-pointer disabled:opacity-50"
                   >
                     <CheckCircle2 size={14} /> Acknowledge & Agree
                   </button>
@@ -954,7 +881,7 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
                     type="button"
                     disabled={responding}
                     onClick={() => handleRecipientAction(selectedAgreement, 'REVISION_REQUESTED')}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#B91C1C]/40 dark:border-red-900/60 text-[#B91C1C] dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 text-xs font-semibold cursor-pointer disabled:opacity-50"
                   >
                     Request Revision
                   </button>

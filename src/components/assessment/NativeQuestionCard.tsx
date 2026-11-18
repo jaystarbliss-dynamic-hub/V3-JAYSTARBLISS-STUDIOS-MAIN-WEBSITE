@@ -157,7 +157,7 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
       onClick={onFocus}
       className={`rounded-2xl bg-white dark:bg-[#161B26] border transition-all duration-200 relative ${
         isActive
-          ? 'border-blue-600 dark:border-blue-500 shadow-md ring-2 ring-blue-500/10 border-l-[6px] border-l-blue-600'
+          ? 'border-[#1E293B] dark:border-slate-300 shadow-md ring-2 ring-[#1E293B]/10 dark:ring-white/10'
           : 'border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-xs'
       }`}
     >
@@ -208,7 +208,7 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
               value={question.prompt}
               onChange={(e) => onChange({ ...question, prompt: e.target.value })}
               placeholder="Question title or prompt..."
-              className="w-full text-sm sm:text-base font-bold text-slate-900 dark:text-white bg-slate-50/70 dark:bg-slate-900/60 hover:bg-slate-100/70 dark:hover:bg-slate-900/90 focus:bg-white dark:focus:bg-slate-900 px-3.5 py-2.5 rounded-xl border border-transparent focus:border-blue-500 focus:outline-none transition-all placeholder:text-slate-400"
+              className="w-full text-sm sm:text-base font-bold text-slate-900 dark:text-white bg-slate-50/70 dark:bg-slate-900/60 hover:bg-slate-100/70 dark:hover:bg-slate-900/90 focus:bg-white dark:focus:bg-slate-900 px-3.5 py-2.5 rounded-xl border border-transparent focus:border-[#1E293B] dark:focus:border-slate-400 focus:outline-none transition-all placeholder:text-slate-400"
             />
           </div>
 
@@ -216,7 +216,7 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
             <select
               value={resolvedType}
               onChange={(e) => handleTypeChange(e.target.value as QuestionTypeChoice)}
-              className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+              className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#1E293B]/20 focus:border-[#1E293B] cursor-pointer"
             >
               <option value="multiple_choice">● Multiple Choice</option>
               <option value="short_answer">▬ Short Answer</option>
@@ -242,8 +242,8 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
                       title={isCorrect ? 'Correct Answer' : 'Click to set as Correct Answer'}
                       className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
                         isCorrect
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'border-2 border-slate-300 dark:border-slate-700 hover:border-emerald-500 text-transparent hover:text-emerald-500'
+                          ? 'bg-[#1E293B] dark:bg-white text-white dark:text-[#1E293B] shadow-xs'
+                          : 'border-2 border-slate-300 dark:border-slate-700 hover:border-[#1E293B] dark:hover:border-slate-400 text-transparent hover:text-[#1E293B] dark:hover:text-slate-200'
                       }`}
                     >
                       {isCorrect ? (
@@ -253,16 +253,21 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
                       )}
                     </button>
 
-                    <div className="flex-1">
+                    <div className="flex-1 flex items-center gap-2">
                       <input
                         type="text"
                         value={opt.text}
                         onChange={(e) => handleOptionTextChange(optIdx, e.target.value)}
                         placeholder={`Option ${opt.id}...`}
-                        className={`w-full px-3 py-1.5 rounded-lg text-xs sm:text-sm text-slate-800 dark:text-slate-200 bg-transparent border border-transparent hover:border-slate-200 dark:hover:border-slate-800 focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none transition-all ${
-                          isCorrect ? 'font-bold text-emerald-900 dark:text-emerald-300' : ''
+                        className={`w-full px-3 py-1.5 rounded-lg text-xs sm:text-sm text-slate-800 dark:text-slate-200 bg-transparent border border-transparent hover:border-slate-200 dark:hover:border-slate-800 focus:border-[#1E293B] dark:focus:border-slate-400 focus:bg-white dark:focus:bg-slate-900 focus:outline-none transition-all ${
+                          isCorrect ? 'font-bold text-[#1E293B] dark:text-white' : ''
                         }`}
                       />
+                      {isCorrect && (
+                        <span className="text-[10px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400 shrink-0">
+                          Key
+                        </span>
+                      )}
                     </div>
 
                     {(question.options || []).length > 2 && (
@@ -283,7 +288,7 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
                 <button
                   type="button"
                   onClick={handleAddOption}
-                  className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
                 >
                   <Plus size={13} /> Add Option
                 </button>
@@ -318,7 +323,7 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
                     })
                   }
                   placeholder="e.g. Hypertext, HTML, Hyper Text (comma-separated)"
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-[#1E293B] dark:focus:border-slate-400"
                 />
               </div>
             </div>
@@ -342,7 +347,7 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
                     onChange({ ...question, deliverableInstructions: e.target.value })
                   }
                   placeholder="Points to look for e.g. clear problem definition, correct terminology, completeness..."
-                  className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-[#1E293B] dark:focus:border-slate-400"
                 />
               </div>
             </div>
@@ -351,8 +356,8 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
           {/* 4. LINK SUBMISSION */}
           {resolvedType === 'link_submission' && (
             <div className="space-y-3 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-400">
-                <Link size={14} /> Student Deliverable: URL Link Submission
+              <div className="flex items-center gap-2 text-xs font-bold text-[#1E293B] dark:text-slate-200">
+                <Link size={14} className="text-[#B91C1C] dark:text-red-400" /> Student Deliverable: URL Link Submission
               </div>
               <div>
                 <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 block mb-1">
@@ -365,7 +370,7 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
                     onChange({ ...question, deliverableInstructions: e.target.value })
                   }
                   placeholder="e.g. Paste your live project demo URL, GitHub repository, or Canva presentation link..."
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-[#1E293B] dark:focus:border-slate-400"
                 />
               </div>
             </div>
@@ -374,8 +379,8 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
           {/* 5. IMAGE SUBMISSION */}
           {resolvedType === 'image_submission' && (
             <div className="space-y-3 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2 text-xs font-bold text-emerald-700 dark:text-emerald-400">
-                <Image size={14} /> Student Deliverable: Image Upload
+              <div className="flex items-center gap-2 text-xs font-bold text-[#1E293B] dark:text-slate-200">
+                <Image size={14} className="text-[#B91C1C] dark:text-red-400" /> Student Deliverable: Image Upload
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -389,7 +394,7 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
                       onChange({ ...question, deliverableInstructions: e.target.value })
                     }
                     placeholder="e.g. Upload a screenshot of your Scratch code or design artwork..."
-                    className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                    className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-[#1E293B] dark:focus:border-slate-400"
                   />
                 </div>
                 <div>
@@ -401,7 +406,7 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
                     value={question.acceptedFileTypes || 'image/png, image/jpeg, image/webp'}
                     onChange={(e) => onChange({ ...question, acceptedFileTypes: e.target.value })}
                     placeholder="image/png, image/jpeg, application/pdf"
-                    className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                    className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-[#1E293B] dark:focus:border-slate-400"
                   />
                 </div>
               </div>
@@ -462,7 +467,7 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
                   onChange({ ...question, required: !question.required });
                 }}
                 className={`w-9 h-5 rounded-full transition-colors relative cursor-pointer ${
-                  question.required ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                  question.required ? 'bg-[#B91C1C]' : 'bg-slate-300 dark:bg-slate-700'
                 }`}
               >
                 <div

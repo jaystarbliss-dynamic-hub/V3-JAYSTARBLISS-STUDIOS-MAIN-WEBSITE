@@ -4,8 +4,8 @@ import {
   ShieldCheck, Users, ChevronRight, Search, Check, Copy,
   School, GraduationCap, AlertCircle
 } from 'lucide-react';
-import jsPDF from 'jspdf';
 import { billingPost } from '../../lib/billing';
+import { generateAccessPassPdf } from '../../lib/pdf/accessPassPdfGenerator';
 import { useToast } from '../../contexts/ToastContext';
 import SEO from '../../components/ui/SEO';
 import { auth, db, getStandbyFirestore } from '../../lib/firebase';
@@ -416,59 +416,20 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
     }
     const name = String(student.fullName || student.studentName || 'Student');
     const studentClass = String(student.class || student.classLevel || student.grade || 'General');
-    const pdf = new jsPDF();
-    
-    // Header styling
-    pdf.setFillColor(185, 28, 28);
-    pdf.rect(0, 0, 210, 26, 'F');
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(16);
-    pdf.text('JAYSTARBLISS STUDIOS', 20, 16);
-    
-    pdf.setTextColor(30, 41, 59);
-    pdf.setFontSize(14);
-    pdf.text('Official Student Access Pass', 20, 38);
-    
-    pdf.setDrawColor(226, 232, 240);
-    pdf.setFillColor(248, 250, 252);
-    pdf.roundedRect(20, 46, 170, 70, 4, 4, 'FD');
-    
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(10);
-    pdf.setTextColor(100, 116, 139);
-    pdf.text('STUDENT FULL NAME', 28, 58);
-    pdf.text('CLASS / LEVEL', 115, 58);
-    
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(12);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(name, 28, 66);
-    pdf.text(studentClass, 115, 66);
-    
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(10);
-    pdf.setTextColor(100, 116, 139);
-    pdf.text('PORTAL USERNAME', 28, 82);
-    pdf.text('ACCESS PASSCODE', 115, 82);
-    
-    pdf.setFont('courier', 'bold');
-    pdf.setFontSize(13);
-    pdf.setTextColor(185, 28, 28);
-    pdf.text(credentials.username, 28, 90);
-    pdf.text(credentials.accessCode, 115, 90);
-    
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(9);
-    pdf.setTextColor(100, 116, 139);
-    pdf.text(`Portal URL: ${window.location.origin}/portal`, 28, 106);
-    
-    pdf.setFont('helvetica', 'italic');
-    pdf.setFontSize(8.5);
-    pdf.text('Keep this document safe and strictly confidential. Do not share credentials.', 20, 126);
-    pdf.text(`Generated on ${new Date().toLocaleDateString('en-NG', { dateStyle: 'full' })}`, 20, 132);
-    
-    pdf.save(`${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-access-pass.pdf`);
+    const isPrivate = student.assignmentCategory === 'private';
+
+    void generateAccessPassPdf({
+      studentId: student.id,
+      studentName: name,
+      username: credentials.username,
+      accessCode: credentials.accessCode,
+      portalUrl: `${window.location.origin}/portal`,
+      className: studentClass,
+      schoolId: isPrivate ? 'private' : student.schoolId,
+      schoolName: isPrivate ? '' : student.schoolName,
+      enrolmentType: isPrivate ? 'private' : undefined,
+      parentName: student.parentName,
+    });
   };
 
   return (
@@ -480,9 +441,9 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
       />
 
       {/* Policy & Action bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-xs text-emerald-800 dark:text-emerald-300">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 p-4 text-xs text-slate-700 dark:text-slate-300">
         <div className="flex items-start gap-3">
-          <ShieldCheck size={18} className="mt-0.5 shrink-0 text-emerald-600" />
+          <ShieldCheck size={18} className="mt-0.5 shrink-0 text-[#1E293B] dark:text-slate-200" />
           <span>
             <strong>Zero-Knowledge Security:</strong> {isSchool ? 'School' : 'Staff'} student passcodes are securely hashed. When you click <em>Issue / Rotate Code</em>, the new access code is displayed for this session so you can print or export the access pack immediately.
           </span>
@@ -520,7 +481,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
               a.click();
               URL.revokeObjectURL(url);
             }}
-            className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-700 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+            className="rounded-xl bg-[#1E293B] hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 font-semibold text-white inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer whitespace-nowrap"
           >
             <Download size={14} />
             Export Credentials (CSV)
@@ -528,7 +489,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
           <button 
             type="button" 
             onClick={() => void load()} 
-            className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+            className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 font-semibold text-[#1E293B] dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer whitespace-nowrap"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh Records
@@ -551,8 +512,8 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
             />
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-slate-500 font-bold">
-            <GraduationCap size={15} className="text-brand-red" />
+          <div className="flex items-center gap-2 text-xs text-slate-500 font-bold tabular-nums">
+            <GraduationCap size={15} className="text-[#B91C1C]" />
             <span>{visibleStudents.length} of {students.length} Student{students.length === 1 ? '' : 's'}</span>
           </div>
         </div>
@@ -562,9 +523,9 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
           <button
             type="button"
             onClick={() => { setFilterTab('all'); setSelectedClass('All Classes'); setSelectedTrack('All Tracks'); }}
-            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer tabular-nums ${
               filterTab === 'all'
-                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                ? 'bg-white dark:bg-slate-900 text-[#1E293B] dark:text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -575,9 +536,9 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
               <button
                 type="button"
                 onClick={() => setFilterTab('school')}
-                className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer tabular-nums ${
                   filterTab === 'school'
-                    ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 font-black shadow-xs'
+                    ? 'bg-white dark:bg-slate-900 text-[#1E293B] dark:text-white font-black shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -586,9 +547,9 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
               <button
                 type="button"
                 onClick={() => setFilterTab('private')}
-                className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer tabular-nums ${
                   filterTab === 'private'
-                    ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 font-black shadow-xs'
+                    ? 'bg-white dark:bg-slate-900 text-[#B91C1C] dark:text-red-400 font-black shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -599,9 +560,9 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
           <button
             type="button"
             onClick={() => setFilterTab('classes')}
-            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer tabular-nums ${
               filterTab === 'classes'
-                ? 'bg-white dark:bg-slate-900 text-brand-red font-black shadow-xs'
+                ? 'bg-white dark:bg-slate-900 text-[#B91C1C] dark:text-red-400 font-black shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -610,9 +571,9 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
           <button
             type="button"
             onClick={() => setFilterTab('tracks')}
-            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer tabular-nums ${
               filterTab === 'tracks'
-                ? 'bg-white dark:bg-slate-900 text-brand-red font-black shadow-xs'
+                ? 'bg-white dark:bg-slate-900 text-[#B91C1C] dark:text-red-400 font-black shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -697,7 +658,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
         </div>
       ) : students.length === 0 ? (
         <div className="pro-surface rounded-2xl p-12 text-center">
-          <AlertCircle size={36} className="mx-auto text-amber-500 mb-3" />
+          <AlertCircle size={36} className="mx-auto text-[#B91C1C] mb-3" />
           <h3 className="font-black text-lg text-slate-900 dark:text-white">No students currently enrolled</h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
             Enrolled learners will automatically appear here once onboarded or added to the institutional roster.
@@ -706,7 +667,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
             <button 
               type="button" 
               onClick={() => void load()} 
-              className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+              className="rounded-xl bg-[#1E293B] hover:bg-slate-800 px-5 py-2.5 font-semibold text-white disabled:opacity-50 inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
             >
               <RefreshCw size={14} /> Refresh Records
             </button>
@@ -731,67 +692,64 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <h3 className="text-base font-black text-slate-900 dark:text-white">{name}</h3>
                       <span className="text-xs font-bold text-slate-500">
                         · {studentClass}
                       </span>
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${
+                      <span className={`text-xs font-semibold ${
                         isPrivate
-                          ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800'
-                          : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
+                          ? 'text-[#B91C1C] dark:text-red-400'
+                          : 'text-[#1E293B] dark:text-slate-300'
                       }`}>
-                        {isPrivate
+                        · {isPrivate
                           ? `Private Learner${student.parentName ? ` · ${student.parentName}` : ''}`
                           : `School-Assigned${student.schoolName ? ` · ${student.schoolName}` : ''}`}
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-slate-500 font-mono">
-                      @{student.username || 'pending'} {student.track ? `• ${student.track}` : ''}
+                      @{student.username || 'pending'} {student.track ? `· ${student.track}` : ''}
                     </p>
                   </div>
 
-                  <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${
+                  <span className={`text-xs font-bold shrink-0 ${
                     student.portalAccessEnabled !== false 
-                      ? 'text-emerald-600 dark:text-emerald-400' 
-                      : 'text-amber-600 dark:text-amber-400'
+                      ? 'text-[#1E293B] dark:text-slate-200' 
+                      : 'text-[#B91C1C] dark:text-red-400'
                   }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${
-                      student.portalAccessEnabled !== false ? 'bg-emerald-500' : 'bg-amber-500'
-                    }`} />
                     {student.portalAccessEnabled !== false ? 'Active' : 'Disabled'}
                   </span>
                 </div>
 
                 {/* Newly issued credential callout */}
                 {credential ? (
-                  <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800/60 dark:bg-amber-950/30 animate-fadeIn">
+                  <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 p-4 dark:bg-slate-950/60 animate-fadeIn">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400 flex items-center gap-1.5">
                          Fresh Credentials Issued
                       </span>
                       <button 
                         type="button" 
                         onClick={() => copyCredential(student)}
-                        className="text-[11px] font-bold text-amber-900 dark:text-amber-200 inline-flex items-center gap-1 hover:underline"
+                        className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200 inline-flex items-center gap-1 hover:underline cursor-pointer"
                       >
-                        {copiedId === student.id ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                        {copiedId === student.id ? <Check size={12} className="text-[#1E293B] dark:text-white" /> : <Copy size={12} />}
                         {copiedId === student.id ? 'Copied!' : 'Copy'}
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 font-mono text-xs">
-                      <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-amber-200/60 dark:border-amber-900/40">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 font-mono text-xs tabular-nums">
+                      <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
                         <span className="text-[10px] text-slate-400 block uppercase font-sans font-bold">Username</span>
                         <strong className="text-slate-900 dark:text-white font-black">{credential.username}</strong>
                       </div>
-                      <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-amber-200/60 dark:border-amber-900/40">
+                      <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
                         <span className="text-[10px] text-slate-400 block uppercase font-sans font-bold">Access Passcode</span>
-                        <strong className="text-brand-red font-black tracking-wider">{credential.accessCode}</strong>
+                        <strong className="text-[#B91C1C] dark:text-red-400 font-black tracking-wider">{credential.accessCode}</strong>
                       </div>
                     </div>
 
-                    <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-300 leading-tight">
+                    <p className="mt-2 text-[11px] text-slate-600 dark:text-slate-400 leading-tight">
                       This write-once passcode is now active. Download or copy it now before leaving.
                     </p>
                   </div>
@@ -807,7 +765,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                     type="button" 
                     disabled={busyId === student.id} 
                     onClick={() => void issue(student)} 
-                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white transition shadow-xs disabled:opacity-50 cursor-pointer"
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#B91C1C] hover:bg-red-700 px-4 py-2 text-xs font-semibold text-white transition shadow-xs disabled:opacity-50 cursor-pointer"
                   >
                     {busyId === student.id ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
                     {credential ? 'Rotate Code' : 'Issue Credentials'}
@@ -817,9 +775,9 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                     type="button" 
                     disabled={!credential} 
                     onClick={() => copyCredential(student)} 
-                    className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
                   >
-                    {copiedId === student.id ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                    {copiedId === student.id ? <Check size={13} className="text-[#1E293B] dark:text-white" /> : <Copy size={13} />}
                     Copy
                   </button>
 
@@ -827,7 +785,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                     type="button" 
                     disabled={!credential} 
                     onClick={() => exportPack(student)} 
-                    className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
                   >
                     <Download size={13} />
                     TXT
@@ -837,7 +795,7 @@ const StudentCredentialCenter: React.FC<Props> = ({ role }) => {
                     type="button" 
                     disabled={!credential} 
                     onClick={() => exportPdf(student)} 
-                    className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
                   >
                     <FileText size={13} />
                     PDF Pass

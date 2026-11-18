@@ -71,19 +71,19 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
   };
 
   const getNotificationIcon = (type?: string, priority?: string) => {
-    if (priority === 'urgent') return <ShieldAlert className="text-red-500" size={15} />;
+    if (priority === 'urgent') return <ShieldAlert className="text-[#B91C1C] dark:text-red-400" size={15} />;
     switch (type) {
       case 'academic':
       case 'exam':
       case 'resource':
-        return <BookOpen className="text-blue-500" size={15} />;
+        return <BookOpen className="text-[#1E293B] dark:text-slate-200" size={15} />;
       case 'billing':
-        return <CreditCard className="text-emerald-500" size={15} />;
+        return <CreditCard className="text-[#1E293B] dark:text-slate-200" size={15} />;
       case 'announcement':
       case 'broadcast':
-        return <Radio className="text-purple-500" size={15} />;
+        return <Radio className="text-[#B91C1C] dark:text-red-400" size={15} />;
       default:
-        return <Bell className="text-brand-red" size={15} />;
+        return <Bell className="text-[#B91C1C] dark:text-red-400" size={15} />;
     }
   };
 
@@ -105,14 +105,14 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
         id="header-notification-bell"
         type="button"
         onClick={() => setIsOpen(prev => !prev)}
-        className="relative p-2.5 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-red"
+        className="relative p-2.5 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
         aria-label="View notifications"
         title="Notifications & Alerts"
       >
         <Bell size={19} className="transition-transform active:scale-95" />
         
         {unreadCount > 0 && (
-          <span className="absolute top-1.5 right-1.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-brand-red text-[10px] font-black text-white shadow-xs animate-in zoom-in-50">
+          <span className="absolute top-1.5 right-1.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-[#B91C1C] text-[10px] font-black text-white shadow-xs animate-in zoom-in-50 tabular-nums">
             {unreadCount > 9 ? '9+' : unreadCount}
             <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping -z-10" />
           </span>
@@ -128,14 +128,14 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
           {/* Header */}
           <div className="px-4 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-900/90 backdrop-blur-xs">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-brand-red/10 text-brand-red flex items-center justify-center font-bold">
+              <div className="w-7 h-7 rounded-lg bg-slate-200/70 dark:bg-slate-800 text-[#B91C1C] dark:text-red-400 flex items-center justify-center font-bold">
                 <Bell size={14} />
               </div>
               <div>
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
                   Notifications &amp; Alerts
                 </h3>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">
                   {unreadCount === 0 ? 'All caught up' : `${unreadCount} unread update${unreadCount > 1 ? 's' : ''}`}
                 </p>
               </div>
@@ -146,7 +146,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                 <button
                   type="button"
                   onClick={markAllAsRead}
-                  className="text-[11px] font-bold text-brand-red hover:text-red-700 flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
+                  className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400 hover:text-red-800 flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
                   title="Mark all notifications as read"
                 >
                   <CheckCheck size={13} />
@@ -179,7 +179,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                     onClick={() => handleOpenItem(item)}
                     className={`p-3.5 flex items-start gap-3 transition-colors cursor-pointer group ${
                       !isRead 
-                        ? 'bg-red-50/40 dark:bg-red-950/15 hover:bg-red-50/80 dark:hover:bg-red-950/25' 
+                        ? 'bg-slate-50/90 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/70' 
                         : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
                     }`}
                   >
@@ -190,14 +190,16 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
                     {/* Content */}
                     <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center justify-between gap-2">
                         <h4 className={`text-xs font-bold truncate ${
                           !isRead ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-300'
                         }`}>
                           {item.title}
                         </h4>
                         {!isRead && (
-                          <span className="w-2 h-2 rounded-full bg-brand-red shrink-0" />
+                          <span className="text-[9px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400 shrink-0">
+                            New
+                          </span>
                         )}
                       </div>
 
@@ -206,13 +208,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                       </p>
 
                       <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400 dark:text-slate-500">
-                        <span className="flex items-center gap-1">
+                        <span className="flex items-center gap-1 tabular-nums">
                           <Clock size={10} />
                           {formatRelativeTime(item.timestamp)}
                         </span>
 
                         <div className="flex items-center gap-1.5 opacity-90 group-hover:opacity-100">
-                          <span className="text-brand-red font-bold flex items-center gap-0.5">
+                          <span className="text-[#B91C1C] dark:text-red-400 font-bold flex items-center gap-0.5">
                             Read <ChevronRight size={10} />
                           </span>
                         </div>
@@ -226,13 +228,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
           {/* Footer - Open Full Inbox Drawer */}
           <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900 flex items-center justify-between text-xs">
-            <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+            <span className="text-slate-500 dark:text-slate-400 text-[11px] tabular-nums">
               {notifications.length} message{notifications.length === 1 ? '' : 's'} total
             </span>
             <button
               type="button"
               onClick={handleOpenFullInbox}
-              className="text-xs font-bold text-brand-red hover:text-red-700 flex items-center gap-1.5 transition-colors"
+              className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:text-red-800 flex items-center gap-1.5 transition-colors"
             >
               <Inbox size={13} />
               <span>Open Full Inbox Drawer</span>

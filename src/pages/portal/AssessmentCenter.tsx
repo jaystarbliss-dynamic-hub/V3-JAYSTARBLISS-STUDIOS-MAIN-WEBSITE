@@ -48,43 +48,33 @@ const formatDate = (value?: string | null) => {
 
 const lifecycleBadge = (
   status: UnifiedAssessmentLifecycleStatus
-): { label: string; className: string; dotClass: string } => {
+): { label: string; textClass: string } => {
   switch (status) {
     case 'UPCOMING':
       return {
         label: 'Upcoming',
-        className:
-          'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60',
-        dotClass: 'bg-amber-500',
+        textClass: 'text-slate-600 dark:text-slate-400',
       };
     case 'ONGOING':
       return {
         label: 'Ongoing / Active',
-        className:
-          'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800/60',
-        dotClass: 'bg-blue-500',
+        textClass: 'text-[#B91C1C] dark:text-red-400',
       };
     case 'AWAITING_GRADING':
       return {
-        label: 'Submitted • Awaiting Grading',
-        className:
-          'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800/60',
-        dotClass: 'bg-purple-500',
+        label: 'Submitted · Awaiting Grading',
+        textClass: 'text-slate-600 dark:text-slate-400',
       };
     case 'GRADED':
       return {
         label: 'Graded & Released',
-        className:
-          'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60',
-        dotClass: 'bg-emerald-500',
+        textClass: 'text-[#1E293B] dark:text-slate-200',
       };
     case 'COMPLETED':
     default:
       return {
         label: 'Completed',
-        className:
-          'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
-        dotClass: 'bg-slate-500',
+        textClass: 'text-slate-600 dark:text-slate-400',
       };
   }
 };
@@ -335,10 +325,10 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs">
         <div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-red/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-brand-red">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
             <ClipboardCheck size={12} /> Unified Assessment Feed
           </span>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-1.5">
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-1">
             {bannerTitle}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
@@ -363,7 +353,7 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
               onClick={() => navigate('/portal/parent/examinations')}
               className="min-h-10 px-4 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
             >
-              <FileBarChart2 size={15} /> Official Assessment Results & PDF Reports
+              <FileBarChart2 size={15} /> Official Assessment Results &amp; PDF Reports
             </button>
           )}
 
@@ -380,50 +370,50 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
       </div>
 
       {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 dark:bg-red-950/40 p-4 text-sm text-red-800 dark:text-red-200 flex items-center gap-2">
+        <div className="rounded-2xl border border-[#B91C1C]/30 bg-red-50/70 dark:bg-red-950/30 p-4 text-sm text-[#B91C1C] dark:text-red-300 flex items-center gap-2">
           <AlertCircle size={18} className="shrink-0" />
           <span>{error}</span>
-          <button className="ml-auto" onClick={() => setError('')} aria-label="Dismiss">
+          <button className="ml-auto cursor-pointer" onClick={() => setError('')} aria-label="Dismiss">
             <X size={16} />
           </button>
         </div>
       )}
 
       {success && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 p-4 text-sm text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
-          <CheckCircle2 size={18} className="shrink-0" />
+        <div className="rounded-2xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-4 text-sm text-[#1E293B] dark:text-slate-200 flex items-center gap-2">
+          <CheckCircle2 size={18} className="shrink-0 text-[#1E293B] dark:text-slate-200" />
           <span>{success}</span>
-          <button className="ml-auto" onClick={() => setSuccess('')} aria-label="Dismiss">
+          <button className="ml-auto cursor-pointer" onClick={() => setSuccess('')} aria-label="Dismiss">
             <X size={16} />
           </button>
         </div>
       )}
 
-      {/* 4-Card KPI Summary */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard
-          icon={<ClipboardCheck size={20} />}
+      {/* Divided 4-Metric Strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
+        <MetricCell
+          icon={<ClipboardCheck size={18} />}
           label="Total Assessments & Quizzes"
           value={String(metrics.total)}
-          accent="text-brand-red bg-brand-red/10"
+          accent="text-[#B91C1C] dark:text-red-400"
         />
-        <MetricCard
-          icon={<CalendarClock size={20} />}
+        <MetricCell
+          icon={<CalendarClock size={18} />}
           label="Upcoming & Ongoing"
           value={String(metrics.upcomingOrOngoing)}
-          accent="text-blue-600 bg-blue-500/10"
+          accent="text-[#1E293B] dark:text-slate-200"
         />
-        <MetricCard
-          icon={<Clock size={20} />}
+        <MetricCell
+          icon={<Clock size={18} />}
           label="Submitted (Awaiting Grading)"
           value={String(metrics.awaitingGrading)}
-          accent="text-purple-600 bg-purple-500/10"
+          accent="text-[#1E293B] dark:text-slate-200"
         />
-        <MetricCard
-          icon={<Award size={20} />}
+        <MetricCell
+          icon={<Award size={18} />}
           label="Average Released Score"
           value={metrics.averagePercentage === null ? `${metrics.graded} Graded` : `${metrics.averagePercentage}%`}
-          accent="text-emerald-600 bg-emerald-500/10"
+          accent="text-[#1E293B] dark:text-slate-200"
         />
       </div>
 
@@ -639,34 +629,40 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
                   >
                     <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
                       <div className="min-w-0 space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border ${badge.className}`}
-                          >
-                            <span className={`h-1.5 w-1.5 rounded-full ${badge.dotClass}`} />
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                          <span className={`font-bold ${badge.textClass}`}>
                             {badge.label}
                           </span>
-
-                          <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                          <span className="text-slate-400" aria-hidden="true">·</span>
+                          <span className="font-bold text-[#1E293B] dark:text-slate-200">
                             {workTypeBadge(rec.workType)}
                           </span>
 
                           {rec.subject && (
-                            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300">
-                              {rec.subject}
-                            </span>
+                            <>
+                              <span className="text-slate-400" aria-hidden="true">·</span>
+                              <span className="font-semibold text-slate-600 dark:text-slate-300">
+                                {rec.subject}
+                              </span>
+                            </>
                           )}
 
                           {rec.programName && (
-                            <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300">
-                              {rec.programName}
-                            </span>
+                            <>
+                              <span className="text-slate-400" aria-hidden="true">·</span>
+                              <span className="font-medium text-slate-500 dark:text-slate-400">
+                                {rec.programName}
+                              </span>
+                            </>
                           )}
 
                           {rec.schoolName && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300">
-                              <School size={11} /> {rec.schoolName}
-                            </span>
+                            <>
+                              <span className="text-slate-400" aria-hidden="true">·</span>
+                              <span className="inline-flex items-center gap-1 font-semibold text-slate-600 dark:text-slate-300">
+                                <School size={11} /> {rec.schoolName}
+                              </span>
+                            </>
                           )}
                         </div>
 
@@ -679,7 +675,7 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
                             <span className="inline-flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
                               <UserRound size={13} className="text-brand-red" />
                               {rec.studentName}
-                              {rec.className ? ` • ${rec.className}` : ''}
+                              {rec.className ? ` · ${rec.className}` : ''}
                             </span>
                           )}
 
@@ -693,7 +689,7 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
                         </div>
 
                         {/* Dates Row */}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 pt-0.5">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 pt-0.5 tabular-nums">
                           {rec.assignedDate && (
                             <span>
                               <strong>Published:</strong> {formatDate(rec.assignedDate)}
@@ -711,7 +707,7 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
                             </span>
                           )}
                           {rec.releasedAt && (
-                            <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
+                            <span className="text-[#1E293B] dark:text-slate-200 font-semibold">
                               <strong>Graded:</strong> {formatDate(rec.releasedAt)}
                             </span>
                           )}
@@ -719,10 +715,10 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
                       </div>
 
                       {/* Score / Action Column */}
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-3 shrink-0 tabular-nums">
                         {rec.resultReleased && typeof rec.score === 'number' ? (
-                          <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/30 px-4 py-2.5 text-right">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                          <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-2.5 text-right">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                               Released Score
                             </p>
                             <p className="text-xl font-black text-slate-900 dark:text-white">
@@ -734,14 +730,14 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
                               ) : null}
                             </p>
                             {typeof rec.percentage === 'number' && (
-                              <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                              <p className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400">
                                 {rec.percentage}% Grade
                               </p>
                             )}
                           </div>
                         ) : rec.lifecycleStatus === 'AWAITING_GRADING' ? (
-                          <div className="rounded-2xl border border-purple-200 dark:border-purple-800/60 bg-purple-50/60 dark:bg-purple-950/30 px-4 py-2.5 text-right">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300">
+                          <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-2.5 text-right">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                               Grading Status
                             </p>
                             <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">
@@ -759,9 +755,9 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
                     )}
 
                     {rec.feedback && (
-                      <div className="mt-4 rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/60 dark:bg-emerald-950/20 p-4">
-                        <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300 mb-1">
-                          Tutor Feedback & Remarks
+                      <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-4">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-[#1E293B] dark:text-slate-200 mb-1">
+                          Tutor Feedback &amp; Remarks
                         </p>
                         <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">
                           {rec.feedback}
@@ -776,7 +772,7 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
                           onClick={() => navigate('/portal/parent/examinations')}
                           className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-red hover:underline cursor-pointer"
                         >
-                          <FileBarChart2 size={14} /> View Official Result & Download PDF Report
+                          <FileBarChart2 size={14} /> View Official Result &amp; Download PDF Report
                         </button>
                       </div>
                     )}
@@ -791,19 +787,19 @@ const AssessmentCenter: React.FC<{ role: AssessmentCenterRole }> = ({ role }) =>
   );
 };
 
-const MetricCard: React.FC<{
+const MetricCell: React.FC<{
   icon: React.ReactNode;
   label: string;
   value: string;
   accent: string;
 }> = ({ icon, label, value, accent }) => (
-  <div className="pro-surface rounded-2xl p-4 sm:p-5 flex items-center gap-3.5">
-    <div className={`h-11 w-11 shrink-0 rounded-xl flex items-center justify-center ${accent}`}>
+  <div className="p-4 sm:p-5 flex items-center gap-3.5">
+    <div className={`shrink-0 ${accent}`}>
       {icon}
     </div>
-    <div>
-      <p className="text-xs font-semibold text-slate-500">{label}</p>
-      <p className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">{value}</p>
+    <div className="min-w-0">
+      <p className="text-[11px] font-semibold text-slate-500 truncate">{label}</p>
+      <p className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tabular-nums">{value}</p>
     </div>
   </div>
 );

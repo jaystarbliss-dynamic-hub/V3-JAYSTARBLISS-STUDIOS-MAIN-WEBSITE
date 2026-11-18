@@ -1,8 +1,10 @@
 {
-  "name": "Jaystarbliss Studios",
+  "id": "/portal",
+  "name": "Jaystarbliss Studios Portal",
   "short_name": "Jaystarbliss",
-  "description": "Tech Education, Digital Innovation & Creative Solutions for Kids and Businesses in Lagos, Nigeria.",
-  "start_url": "/",
+  "description": "Dedicated learning, assessment, and school management portal for Jaystarbliss Studios.",
+  "start_url": "/portal?pwa=1",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0d0f17",
   "theme_color": "#ff2442",
@@ -41,13 +43,13 @@
       "src": "/android-chrome-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/android-chrome-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/apple-touch-icon.png",
@@ -58,7 +60,7 @@
       "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }

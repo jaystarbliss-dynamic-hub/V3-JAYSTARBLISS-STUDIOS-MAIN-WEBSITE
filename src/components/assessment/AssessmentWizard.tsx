@@ -367,7 +367,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 key={stepNum}
                 className={`h-2 rounded-full transition-all ${
                   currentStep >= stepNum
-                    ? 'w-7 sm:w-10 bg-blue-600'
+                    ? 'w-7 sm:w-10 bg-[#B91C1C]'
                     : 'w-4 sm:w-6 bg-slate-200 dark:bg-slate-800'
                 }`}
               />
@@ -442,7 +442,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                   onClick={() => setWorkType(option.id as AcademicWorkType)}
                   className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-4 ${
                     isSelected
-                      ? 'border-blue-600 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-950/30 shadow-md ring-2 ring-blue-500/20'
+                      ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 shadow-md ring-1 ring-[#1E293B]/20'
                       : 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#161B26] hover:border-slate-300 dark:hover:border-slate-700 shadow-xs'
                   }`}
                 >
@@ -451,7 +451,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                     <div
                       className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 transition-colors ${
                         isSelected
-                          ? 'bg-blue-600 text-white shadow-xs'
+                          ? 'bg-[#1E293B] dark:bg-white text-white dark:text-[#1E293B] shadow-xs'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                       }`}
                     >
@@ -459,12 +459,12 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                     </div>
 
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
                           {option.title}
                         </h3>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500">
-                          {option.badge}
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                          · {option.badge}
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-xl">
@@ -477,7 +477,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                   <div
                     className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
                       isSelected
-                        ? 'border-blue-600 bg-blue-600 text-white'
+                        ? 'border-[#B91C1C] bg-[#B91C1C] text-white'
                         : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900'
                     }`}
                   >
@@ -500,7 +500,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
             <button
               type="button"
               onClick={handleProceedFromStep1}
-              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer inline-flex items-center gap-2"
+              className="px-6 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer inline-flex items-center gap-2"
             >
               <span>Continue to Format</span>
               <ArrowRight size={15} />
@@ -527,9 +527,9 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
             {/* Option A: Native Assessment */}
             <div
               onClick={() => setDeliveryMode('NATIVE')}
-              className={`p-6 rounded-3xl border transition-all cursor-pointer space-y-4 ${
+              className={`p-6 rounded-2xl border transition-all cursor-pointer space-y-4 ${
                 deliveryMode === 'NATIVE'
-                  ? 'border-blue-600 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-950/30 shadow-md ring-2 ring-blue-500/20'
+                  ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 shadow-md ring-1 ring-[#1E293B]/20'
                   : 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#161B26] hover:border-slate-300 dark:hover:border-slate-700 shadow-xs'
               }`}
             >
@@ -537,8 +537,8 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 <div
                   className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black ${
                     deliveryMode === 'NATIVE'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400'
+                      ? 'bg-[#1E293B] dark:bg-white text-white dark:text-[#1E293B]'
+                      : 'bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200'
                   }`}
                 >
                   <FileText size={24} />
@@ -546,7 +546,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 <div
                   className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${
                     deliveryMode === 'NATIVE'
-                      ? 'border-blue-600 bg-blue-600 text-white'
+                      ? 'border-[#B91C1C] bg-[#B91C1C] text-white'
                       : 'border-slate-300 dark:border-slate-700'
                   }`}
                 >
@@ -563,17 +563,17 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 </p>
               </div>
 
-              <div className="pt-2 text-[11px] font-bold text-blue-700 dark:text-blue-300 flex items-center gap-1.5">
-                <CheckCircle2 size={13} /> Includes 5 question types, CSV/Text import &amp; Question Bank
+              <div className="pt-2 text-[11px] font-bold text-[#1E293B] dark:text-slate-300 flex items-center gap-1.5">
+                <CheckCircle2 size={13} className="text-[#B91C1C] dark:text-red-400" /> Includes 5 question types, CSV/Text import &amp; Question Bank
               </div>
             </div>
 
             {/* Option B: External Third-Party Link */}
             <div
               onClick={() => setDeliveryMode('EXTERNAL_LINK')}
-              className={`p-6 rounded-3xl border transition-all cursor-pointer space-y-4 ${
+              className={`p-6 rounded-2xl border transition-all cursor-pointer space-y-4 ${
                 deliveryMode === 'EXTERNAL_LINK'
-                  ? 'border-indigo-600 dark:border-indigo-500 bg-indigo-50/70 dark:bg-indigo-950/30 shadow-md ring-2 ring-indigo-500/20'
+                  ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 shadow-md ring-1 ring-[#1E293B]/20'
                   : 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#161B26] hover:border-slate-300 dark:hover:border-slate-700 shadow-xs'
               }`}
             >
@@ -581,8 +581,8 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 <div
                   className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black ${
                     deliveryMode === 'EXTERNAL_LINK'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400'
+                      ? 'bg-[#1E293B] dark:bg-white text-white dark:text-[#1E293B]'
+                      : 'bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200'
                   }`}
                 >
                   <Link2 size={24} />
@@ -590,7 +590,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 <div
                   className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${
                     deliveryMode === 'EXTERNAL_LINK'
-                      ? 'border-indigo-600 bg-indigo-600 text-white'
+                      ? 'border-[#B91C1C] bg-[#B91C1C] text-white'
                       : 'border-slate-300 dark:border-slate-700'
                   }`}
                 >
@@ -607,8 +607,8 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 </p>
               </div>
 
-              <div className="pt-2 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
-                <CheckCircle2 size={13} /> Fast setup without composing questions internally
+              <div className="pt-2 text-[11px] font-bold text-[#1E293B] dark:text-slate-300 flex items-center gap-1.5">
+                <CheckCircle2 size={13} className="text-[#B91C1C] dark:text-red-400" /> Fast setup without composing questions internally
               </div>
             </div>
           </div>
@@ -625,7 +625,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
             <button
               type="button"
               onClick={handleProceedFromStep2}
-              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer inline-flex items-center gap-2"
+              className="px-6 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer inline-flex items-center gap-2"
             >
               <span>Continue</span>
               <ArrowRight size={15} />
@@ -659,7 +659,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Mid-Term Web Engineering Quiz (Google Forms)"
-                className="w-full text-sm font-bold p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full text-sm font-bold p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1E293B]/20 focus:border-[#1E293B]"
               />
             </div>
 
@@ -675,7 +675,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                   value={externalUrl}
                   onChange={(e) => setExternalUrl(e.target.value)}
                   placeholder="https://docs.google.com/forms/d/e/... or https://forms.office.com/..."
-                  className="w-full pl-10 pr-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono"
+                  className="w-full pl-10 pr-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1E293B]/20 focus:border-[#1E293B] font-mono"
                 />
               </div>
               <p className="text-[11px] text-slate-400 mt-1">
@@ -694,7 +694,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   placeholder="e.g. Digital Literacy, Coding"
-                  className="w-full text-xs sm:text-sm p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs sm:text-sm p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B]"
                 />
               </div>
               <div>
@@ -704,7 +704,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 <select
                   value={targetClass}
                   onChange={(e) => setTargetClass(e.target.value)}
-                  className="w-full text-xs sm:text-sm p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  className="w-full text-xs sm:text-sm p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B] cursor-pointer"
                 >
                   {CANONICAL_CLASSES.map((cls) => (
                     <option key={cls} value={cls}>
@@ -724,7 +724,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowRecipientModal(true)}
-                  className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline cursor-pointer"
                 >
                   Manage Recipients →
                 </button>
@@ -733,7 +733,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
               {recipientSummary.totalCount === 0 ? (
                 <div
                   onClick={() => setShowRecipientModal(true)}
-                  className="p-6 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50/20 transition-all space-y-1.5"
+                  className="p-6 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl text-center cursor-pointer hover:border-[#1E293B] hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all space-y-1.5"
                 >
                   <Users size={24} className="mx-auto text-slate-400" />
                   <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
@@ -749,17 +749,17 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                     {recipientSummary.schools.map((name) => (
                       <span
                         key={name}
-                        className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-xl bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200"
+                        className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[#1E293B] dark:text-slate-200"
                       >
-                        <School size={12} /> {name}
+                        <School size={12} className="text-[#B91C1C] dark:text-red-400" /> {name}
                       </span>
                     ))}
                     {recipientSummary.students.map((name) => (
                       <span
                         key={name}
-                        className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200"
+                        className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[#1E293B] dark:text-slate-200"
                       >
-                        <User size={12} /> {name}
+                        <User size={12} className="text-slate-500 dark:text-slate-400" /> {name}
                       </span>
                     ))}
                   </div>
@@ -779,7 +779,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                   max={240}
                   value={duration}
                   onChange={(e) => setDuration(Number(e.target.value) || 30)}
-                  className="w-full text-xs p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                  className="w-full text-xs p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white tabular-nums"
                 />
               </div>
               <div>
@@ -808,7 +808,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
             <button
               type="button"
               onClick={handleProceedFromStep3}
-              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer inline-flex items-center gap-2"
+              className="px-6 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer inline-flex items-center gap-2"
             >
               <span>Review External Assessment</span>
               <ArrowRight size={15} />
@@ -831,7 +831,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
             </p>
           </div>
 
-          <div className="p-6 rounded-3xl bg-white dark:bg-[#161B26] border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
+          <div className="p-6 rounded-2xl bg-white dark:bg-[#161B26] border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-black text-slate-800 dark:text-white">
@@ -845,16 +845,16 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
               <button
                 type="button"
                 onClick={() => setShowRecipientModal(true)}
-                className="px-4 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold hover:bg-blue-100 transition-colors cursor-pointer inline-flex items-center gap-1.5 self-start sm:self-auto"
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold hover:bg-slate-200/80 transition-colors cursor-pointer inline-flex items-center gap-1.5 self-start sm:self-auto"
               >
-                <Users size={14} /> Open Recipient Picker
+                <Users size={14} className="text-[#B91C1C] dark:text-red-400" /> Open Recipient Picker
               </button>
             </div>
 
             {recipientSummary.totalCount === 0 ? (
               <div
                 onClick={() => setShowRecipientModal(true)}
-                className="p-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50/20 transition-all space-y-2"
+                className="p-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl text-center cursor-pointer hover:border-[#1E293B] hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all space-y-2"
               >
                 <Users size={32} className="mx-auto text-slate-400" />
                 <p className="text-sm font-bold text-slate-800 dark:text-white">
@@ -865,21 +865,21 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 </p>
                 <button
                   type="button"
-                  className="mt-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold"
+                  className="mt-2 px-4 py-2 rounded-xl bg-[#1E293B] text-white text-xs font-bold"
                 >
                   Select Recipients
                 </button>
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="p-4 rounded-2xl bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-900 dark:text-blue-200">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#1E293B] dark:text-slate-200 tabular-nums">
                     {recipientSummary.schools.length} School(s) and {recipientSummary.students.length} Private Learner(s) Assigned
                   </span>
                   <button
                     type="button"
                     onClick={() => setShowRecipientModal(true)}
-                    className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                    className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline cursor-pointer"
                   >
                     Change Selection
                   </button>
@@ -895,7 +895,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                         key={name}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300"
                       >
-                        <School size={13} className="text-blue-600" />
+                        <School size={13} className="text-[#B91C1C] dark:text-red-400" />
                         {name}
                       </span>
                     ))}
@@ -904,7 +904,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                         key={name}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300"
                       >
-                        <User size={13} className="text-emerald-600" />
+                        <User size={13} className="text-[#1E293B] dark:text-slate-300" />
                         {name}
                       </span>
                     ))}
@@ -927,7 +927,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
               type="button"
               disabled={recipientSummary.totalCount === 0}
               onClick={handleProceedFromStep3}
-              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer inline-flex items-center gap-2"
+              className="px-6 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 disabled:opacity-50 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer inline-flex items-center gap-2"
             >
               <span>Continue to Question Builder</span>
               <ArrowRight size={15} />
@@ -942,12 +942,12 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
       {currentStep === 4 && deliveryMode === 'NATIVE' && (
         <div className="space-y-6 animate-in fade-in duration-200">
           {/* Top Bar with Import Questions button */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-[#161B26] p-4 sm:p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-[#161B26] p-4 sm:p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs">
             <div>
               <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
                 Assessment Content Builder
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 tabular-nums">
                 {questions.length} Question(s) · {totalMarks} Total Marks
               </p>
             </div>
@@ -956,14 +956,14 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
               <button
                 type="button"
                 onClick={() => setShowImportModal(true)}
-                className="px-4 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold hover:bg-indigo-100 transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold hover:bg-slate-200/80 transition-colors cursor-pointer inline-flex items-center gap-1.5"
               >
-                <Upload size={14} /> Import Questions
+                <Upload size={14} className="text-[#B91C1C] dark:text-red-400" /> Import Questions
               </button>
               <button
                 type="button"
                 onClick={() => handleAddQuestion()}
-                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] text-white text-xs font-bold shadow-xs cursor-pointer inline-flex items-center gap-1.5"
               >
                 <Plus size={14} /> Add Question
               </button>
@@ -986,7 +986,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. End-of-Term Web Design & HTML Assessment"
-                  className="w-full text-sm font-bold p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  className="w-full text-sm font-bold p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B]"
                 />
               </div>
 
@@ -999,7 +999,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   placeholder="e.g. Software Engineering, Graphic Design"
-                  className="w-full text-xs sm:text-sm p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs sm:text-sm p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B]"
                 />
               </div>
 
@@ -1010,7 +1010,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 <select
                   value={programTitle}
                   onChange={(e) => setProgramTitle(e.target.value)}
-                  className="w-full text-xs sm:text-sm p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  className="w-full text-xs sm:text-sm p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B] cursor-pointer"
                 >
                   <option value="Smart Techies Programme">Smart Techies Programme</option>
                   <option value="Digital Literacy Programme">Digital Literacy Programme</option>
@@ -1029,7 +1029,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="e.g. Answer all questions carefully. Choose the single best option for multiple choice items."
-                  className="w-full text-xs p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B]"
                 />
               </div>
             </div>
@@ -1060,7 +1060,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
           <button
             type="button"
             onClick={() => handleAddQuestion()}
-            className="w-full p-4 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 hover:bg-blue-50/20 text-slate-600 dark:text-slate-400 hover:text-blue-600 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+            className="w-full p-4 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-[#1E293B] hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:text-[#1E293B] dark:hover:text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
           >
             <Plus size={16} /> Add Another Question
           </button>
@@ -1077,7 +1077,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
             <button
               type="button"
               onClick={handleProceedFromStep4}
-              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer inline-flex items-center gap-2"
+              className="px-6 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer inline-flex items-center gap-2"
             >
               <span>Review &amp; Publish</span>
               <ArrowRight size={15} />
@@ -1101,24 +1101,21 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
           </div>
 
           {/* Summary Card */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-[#161B26] border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-6">
+          <div className="p-6 rounded-2xl bg-white dark:bg-[#161B26] border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-6">
             {/* Header info */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
-                    {workType}
-                  </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                    {deliveryMode === 'EXTERNAL_LINK' ? 'External Link' : 'Native Studio'}
-                  </span>
-                </div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <span className="text-[#B91C1C] dark:text-red-400">{workType}</span>
+                  <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
+                  <span>{deliveryMode === 'EXTERNAL_LINK' ? 'External Link' : 'Native Studio'}</span>
+                </p>
                 <h3 className="text-lg font-black text-slate-900 dark:text-white mt-1">
                   {title || 'Untitled Assessment'}
                 </h3>
               </div>
 
-              <div className="text-right">
+              <div className="text-right tabular-nums">
                 <p className="text-xs font-bold text-slate-500">Total Marks</p>
                 <p className="text-xl font-black text-slate-900 dark:text-white">
                   {deliveryMode === 'EXTERNAL_LINK' ? 'External' : `${totalMarks} Marks`}
@@ -1126,15 +1123,15 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
               </div>
             </div>
 
-            {/* Grid Breakdown */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 space-y-1">
+            {/* Unified 3-cell KPI Strip */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 text-xs">
+              <div className="p-3.5 sm:p-4 space-y-1">
                 <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Subject</span>
                 <p className="font-bold text-slate-800 dark:text-slate-200">{subject || 'General'}</p>
                 <p className="text-[11px] text-slate-400">{programTitle}</p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 space-y-1">
+              <div className="p-3.5 sm:p-4 space-y-1 tabular-nums">
                 <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Audience</span>
                 <p className="font-bold text-slate-800 dark:text-slate-200">
                   {recipientSummary.totalCount} Selected
@@ -1144,7 +1141,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 space-y-1">
+              <div className="p-3.5 sm:p-4 space-y-1 tabular-nums">
                 <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Access &amp; Timing</span>
                 <p className="font-bold text-slate-800 dark:text-slate-200">
                   {duration ? `${duration} Minutes` : 'Untimed'}
@@ -1159,13 +1156,13 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
             {deliveryMode === 'NATIVE' && (
               <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-wider text-slate-400">
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-400 tabular-nums">
                     Questions Outline ({questions.length})
                   </span>
                   <button
                     type="button"
                     onClick={() => setCurrentStep(4)}
-                    className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                    className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline cursor-pointer"
                   >
                     Edit Questions →
                   </button>
@@ -1175,12 +1172,12 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                   {questions.map((q, i) => (
                     <div
                       key={q.id}
-                      className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-xs flex items-center justify-between gap-2"
+                      className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-xs flex items-center justify-between gap-2 tabular-nums"
                     >
                       <span className="truncate flex-1 text-slate-800 dark:text-slate-200">
                         <strong>Q{i + 1}:</strong> {q.prompt || 'Untitled Question'}
                       </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 text-slate-500 shrink-0">
+                      <span className="text-[10px] font-bold text-slate-500 shrink-0">
                         {q.points} pt(s)
                       </span>
                     </div>
@@ -1214,7 +1211,7 @@ export const AssessmentWizard: React.FC<AssessmentWizardProps> = ({
                 type="button"
                 disabled={isSubmitting}
                 onClick={() => void handleExecuteSave('active')}
-                className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
               >
                 <Send size={15} /> Publish Assessment
               </button>

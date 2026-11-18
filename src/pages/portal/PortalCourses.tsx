@@ -417,13 +417,13 @@ export const PortalCourses: React.FC = () => {
                     <FolderTree size={18} className="text-brand-red" />
                     <span>My Enrolled Programme Hierarchy &amp; Progress</span>
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
                     Overall Pathway Completion: <strong>{pathwaySummary.overallProgress}%</strong> ({pathwaySummary.completedRequiredUnits} of {pathwaySummary.totalRequiredUnits} required learning units completed)
                   </p>
                 </div>
                 {pathwaySummary.priorLearningApprovedUnits > 0 && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold">
-                    <Award size={13} /> {pathwaySummary.priorLearningApprovedUnits} Prior-Learning Credit(s) Approved
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#1E293B] dark:text-slate-200 tabular-nums">
+                    <Award size={14} className="text-[#B91C1C]" /> {pathwaySummary.priorLearningApprovedUnits} Prior-Learning Credit(s) Approved
                   </span>
                 )}
               </div>
@@ -490,43 +490,43 @@ export const PortalCourses: React.FC = () => {
                                 <Folder size={16} className="text-brand-red shrink-0" />
                               )
                             ) : (
-                              <BookOpen size={15} className="text-indigo-600 shrink-0" />
+                              <BookOpen size={15} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
                             )}
 
                             <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                 <span className="text-xs font-bold text-slate-900 dark:text-white">
                                   {p.title}
                                 </span>
                                 {hasChildren && (
-                                  <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400">
-                                    — {pct}% complete
+                                  <span className="text-[11px] font-black text-[#1E293B] dark:text-slate-300 tabular-nums">
+                                    · {pct}% complete
                                   </span>
                                 )}
                                 {status === 'PRIOR_LEARNING_APPROVED' ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800">
-                                    Prior Learning Approved
+                                  <span className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200">
+                                    · Prior Learning Approved
                                   </span>
                                 ) : status === 'COMPLETED' ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-green-100 text-green-800">
-                                    Completed
+                                  <span className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200">
+                                    · Completed
                                   </span>
                                 ) : status === 'CURRENT' ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-100 text-indigo-800">
-                                    Currently Learning
+                                  <span className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400">
+                                    · Currently Learning
                                   </span>
                                 ) : status === 'LOCKED' ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-800 flex items-center gap-1">
-                                    <Lock size={10} /> Locked (Requires{' '}
+                                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 inline-flex items-center gap-1">
+                                    · <Lock size={10} /> Locked (Requires{' '}
                                     {node.missingPrerequisites.map((m) => m.title).join(', ')})
                                   </span>
                                 ) : status === 'OPTIONAL' ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">
-                                    Optional
+                                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                    · Optional
                                   </span>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">
-                                    Upcoming
+                                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                    · Upcoming
                                   </span>
                                 )}
                               </div>
@@ -538,7 +538,7 @@ export const PortalCourses: React.FC = () => {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2.5 shrink-0">
+                          <div className="flex items-center gap-2.5 shrink-0 tabular-nums">
                             <span className="text-xs font-black text-slate-700 dark:text-slate-300">
                               {pct}%
                             </span>
@@ -554,13 +554,13 @@ export const PortalCourses: React.FC = () => {
                                     setPriorReqEvidence('');
                                     setPriorReqNotes('');
                                   }}
-                                  className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold hover:bg-emerald-100"
+                                  className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-bold hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
                                 >
                                   Already Completed? Request Credit
                                 </button>
                               )}
                             {node.priorLearningRecord?.status === 'PENDING' && (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800">
+                              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                                 Prior Credit Pending Verification
                               </span>
                             )}
@@ -603,12 +603,12 @@ export const PortalCourses: React.FC = () => {
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1.5 gap-2">
-                    <span className="text-[11px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-red-50 dark:bg-red-950/40 text-brand-red border border-red-100 dark:border-red-900/30 truncate">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#B91C1C] dark:text-red-400 truncate">
                       {mod.stageName}
                     </span>
                     {mod.badgeUnlocked && (
-                      <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
-                        <Award size={10} /> Certified
+                      <span className="flex items-center gap-1 text-[11px] font-bold text-[#1E293B] dark:text-slate-200 shrink-0">
+                        <Award size={11} className="text-[#B91C1C]" /> Certified
                       </span>
                     )}
                   </div>
@@ -642,10 +642,10 @@ export const PortalCourses: React.FC = () => {
             <div className="lg:col-span-2 bg-white dark:bg-[#0c1220] rounded-3xl border border-gray-200/80 dark:border-slate-800 p-6 sm:p-8 shadow-xs flex flex-col justify-between">
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-                  <span className="px-3 py-1 bg-brand-red/10 text-brand-red font-black text-xs rounded-lg uppercase tracking-wider">
+                  <span className="text-xs font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                     {selectedModule.stageName}
                   </span>
-                  <span className="text-xs text-gray-500 dark:text-slate-400 font-mono font-bold">
+                  <span className="text-xs text-gray-500 dark:text-slate-400 font-mono font-bold tabular-nums">
                     Duration: {selectedModule.duration}
                   </span>
                 </div>
@@ -655,8 +655,8 @@ export const PortalCourses: React.FC = () => {
                 </h2>
 
                 {selectedModule.instructor && (
-                  <div className="mb-4 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-xl border border-emerald-200 dark:border-emerald-800">
-                    <UserCheck size={13} /> Faculty Lead: {selectedModule.instructor}
+                  <div className="mb-4 inline-flex items-center gap-1.5 text-xs font-bold text-[#1E293B] dark:text-slate-300">
+                    <UserCheck size={14} className="text-[#B91C1C]" /> Faculty Lead: {selectedModule.instructor}
                   </div>
                 )}
 
@@ -664,10 +664,10 @@ export const PortalCourses: React.FC = () => {
                   {selectedModule.description}
                 </p>
 
-                {/* 📄 Dedicated Curriculum Document Banner / Preview Button */}
-                <div className="mb-6 p-4 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                {/* Dedicated Curriculum Document Banner / Preview Button */}
+                <div className="mb-6 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-600/10 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="w-10 h-10 rounded-xl bg-[#1E293B]/10 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 flex items-center justify-center shrink-0 mt-0.5">
                       <FileText size={20} />
                     </div>
                     <div>
@@ -687,7 +687,7 @@ export const PortalCourses: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setReadingCurriculum(selectedModule)}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                        className="px-4 py-2 bg-[#1E293B] hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                       >
                         <Eye size={14} />
                         <span>Read Curriculum</span>
@@ -699,7 +699,7 @@ export const PortalCourses: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleOpenCurriculumModal(selectedModule)}
-                        className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-brand-red hover:text-brand-red text-xs font-bold transition-colors inline-flex items-center gap-1.5"
+                        className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-brand-red hover:text-brand-red text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                       >
                         <Upload size={14} />
                         <span>{selectedModule.curriculumPdfUrl ? 'Update Curriculum' : 'Upload Curriculum'}</span>
@@ -722,7 +722,7 @@ export const PortalCourses: React.FC = () => {
                           key={`${topic}-${i}`}
                           className="p-3.5 rounded-xl border border-gray-100 dark:border-slate-800 bg-gray-50/70 dark:bg-slate-900/50 flex items-center gap-3 text-xs font-semibold text-gray-800 dark:text-gray-200"
                         >
-                          <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                          <CheckCircle2 size={16} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
                           <span className="truncate">{topic}</span>
                         </div>
                       ))}
@@ -813,7 +813,7 @@ export const PortalCourses: React.FC = () => {
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <Award size={18} className="text-emerald-600" />
+                  <Award size={18} className="text-[#B91C1C]" />
                   <span>Request Prior-Learning Recognition</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -884,7 +884,7 @@ export const PortalCourses: React.FC = () => {
               <button
                 type="submit"
                 disabled={submittingPriorReq}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
               >
                 <Send size={13} />
                 <span>{submittingPriorReq ? 'Submitting...' : 'Submit for Tutor Verification'}</span>
@@ -901,12 +901,12 @@ export const PortalCourses: React.FC = () => {
             {/* Modal Header */}
             <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-start justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="px-2.5 py-0.5 rounded-full bg-brand-red/10 text-brand-red text-[10px] font-black uppercase">
+                <div className="flex items-center gap-2 mb-1.5 text-[11px] font-bold">
+                  <span className="text-[#B91C1C] dark:text-red-400 uppercase tracking-wider">
                     Official Curriculum Reader
                   </span>
-                  <span className="text-xs text-slate-400 font-bold">
-                    {readingCurriculum.stageName}
+                  <span className="text-slate-400">
+                    · {readingCurriculum.stageName}
                   </span>
                 </div>
                 <h2 className="text-xl font-black text-slate-900 dark:text-white">
@@ -940,7 +940,7 @@ export const PortalCourses: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {readingCurriculum.topics.map((topic, i) => (
                       <div key={i} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex items-center gap-3">
-                        <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                        <CheckCircle2 size={16} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
                         <span className="font-semibold text-slate-800 dark:text-slate-200">{topic}</span>
                       </div>
                     ))}
@@ -950,10 +950,10 @@ export const PortalCourses: React.FC = () => {
 
               {/* If Google Drive or Web PDF Link */}
               {readingCurriculum.curriculumPdfUrl && (
-                <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h5 className="font-bold text-indigo-950 dark:text-indigo-200 text-sm">Full Curriculum PDF / Document Link</h5>
-                    <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-0.5 font-mono truncate max-w-md">
+                    <h5 className="font-bold text-slate-900 dark:text-white text-sm">Full Curriculum PDF / Document Link</h5>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-mono truncate max-w-md">
                       {readingCurriculum.curriculumPdfUrl}
                     </p>
                   </div>
@@ -961,7 +961,7 @@ export const PortalCourses: React.FC = () => {
                     href={readingCurriculum.curriculumPdfUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-colors inline-flex items-center gap-1.5 shrink-0"
+                    className="px-4 py-2 bg-[#1E293B] hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors inline-flex items-center gap-1.5 shrink-0"
                   >
                     <span>Open in Full Viewer</span>
                     <ExternalLink size={13} />

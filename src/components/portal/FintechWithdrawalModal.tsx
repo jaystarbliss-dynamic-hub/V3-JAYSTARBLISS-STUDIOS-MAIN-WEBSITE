@@ -244,7 +244,7 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
       <div className="w-full max-w-lg rounded-t-[32px] sm:rounded-3xl bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] overflow-y-auto" role="dialog" aria-modal="true">
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-brand-red/10 text-brand-red flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/40 text-brand-red flex items-center justify-center">
               <ArrowDownToLine size={20} />
             </div>
             <div>
@@ -253,26 +253,26 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
               </h2>
               <p className="text-xs text-slate-500">
                 Available Balance:{' '}
-                <strong className="font-mono text-emerald-600 dark:text-emerald-400 font-black">
+                <strong className="font-mono text-slate-900 dark:text-white font-black">
                   {formatCurrency(availableBalance)}
                 </strong>
               </p>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-500" aria-label="Close">
+          <button type="button" onClick={onClose} className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-500 cursor-pointer" aria-label="Close">
             <X size={16} />
           </button>
         </div>
 
         {step === 'saved-choice' && (
           <div className="mt-6 space-y-4">
-            <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/20 p-5">
-              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 mb-2">
-                <CheckCircle2 size={18} />
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 p-5">
+              <div className="flex items-center gap-2 text-slate-900 dark:text-white mb-2">
+                <CheckCircle2 size={18} className="text-brand-red" />
                 <span className="text-sm font-black">Previous account available</span>
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-300">Withdraw to the verified account saved on your profile?</p>
-              <div className="mt-4 rounded-xl bg-white/80 dark:bg-slate-900/70 border border-emerald-100 dark:border-emerald-900/50 p-3">
+              <div className="mt-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3">
                 <p className="text-xs font-black text-slate-900 dark:text-white">{savedAccountName}</p>
                 <p className="text-[11px] text-slate-500 mt-1">
                   {(availableBanks.find(bank => bank.code === savedBankCode)?.name || 'Verified Nigerian bank') + ' •••• ' + (savedAccountLast4 || savedAccountNumber.slice(-4))}
@@ -280,10 +280,10 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button type="button" onClick={() => setStep('form')} className="min-h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center justify-center gap-2">
+              <button type="button" onClick={() => setStep('form')} className="min-h-12 rounded-xl bg-brand-red hover:bg-red-800 text-white text-xs font-black flex items-center justify-center gap-2 cursor-pointer">
                 Yes, use this account <ArrowRight size={15} />
               </button>
-              <button type="button" onClick={resetToAnotherAccount} className="min-h-12 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-black hover:bg-slate-50 dark:hover:bg-slate-800">
+              <button type="button" onClick={resetToAnotherAccount} className="min-h-12 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-black hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
                 Withdraw to another account
               </button>
             </div>
@@ -300,10 +300,10 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
                   value={bankSearch}
                   onChange={event => setBankSearch(event.target.value)}
                   placeholder="Search Nigerian banks, mobile banks or microfinance banks"
-                  className="w-full min-h-11 pl-10 pr-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-900 dark:text-white outline-hidden"
+                  className="w-full min-h-11 pl-10 pr-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-900 dark:text-white outline-hidden"
                 />
               </div>
-              <div className="mt-2 max-h-44 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
                 {filteredBanks.length === 0 ? (
                   <div className="p-4 text-xs text-slate-500">No supported bank found. Try another search.</div>
                 ) : (
@@ -317,7 +317,7 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
                         setAccountName('');
                         setAccountVerified(false);
                       }}
-                      className={'w-full text-left px-3.5 py-3 border-b last:border-b-0 border-slate-100 dark:border-slate-700/70 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-xs ' + (bank.code === bankCode ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 font-black' : 'text-slate-700 dark:text-slate-200 font-semibold')}
+                      className={'w-full text-left px-3.5 py-3 border-b last:border-b-0 border-slate-100 dark:border-slate-700/70 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-xs cursor-pointer ' + (bank.code === bankCode ? 'bg-red-50/70 dark:bg-red-950/30 text-brand-red font-black' : 'text-slate-700 dark:text-slate-200 font-semibold')}
                     >
                       {bank.name}
                     </button>
@@ -328,7 +328,7 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
                 <p className="mt-1.5 text-[11px] text-slate-500">Selected: <span className="font-bold text-slate-800 dark:text-slate-200">{selectedBank.name}</span></p>
               )}
               {directoryLoading && <p className="mt-2 text-[11px] text-slate-500">Loading the live Nigerian bank directory…</p>}
-              {!directoryLoading && availableBanks.length === 0 && <p className="mt-2 text-[11px] text-rose-600 dark:text-rose-400">The bank directory could not be loaded. Close this window and try again.</p>}
+              {!directoryLoading && availableBanks.length === 0 && <p className="mt-2 text-[11px] text-brand-red">The bank directory could not be loaded. Close this window and try again.</p>}
             </div>
 
             <div>
@@ -346,21 +346,21 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
                     setAccountVerified(false);
                   }}
                   placeholder="Enter account number"
-                  className="flex-1 min-h-12 px-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-sm font-black text-slate-900 dark:text-white tracking-widest outline-hidden"
+                  className="flex-1 min-h-12 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-sm font-black text-slate-900 dark:text-white tracking-widest outline-hidden"
                 />
                 <button
                   type="button"
                   disabled={verifyingAccount || !selectedBank || !/^\d{10}$/.test(accountNumber)}
                   onClick={verifyAndSaveAccount}
-                  className="min-h-12 px-4 rounded-2xl bg-slate-900 dark:bg-slate-700 text-white text-[11px] font-black disabled:opacity-40 flex items-center gap-2"
+                  className="min-h-12 px-4 rounded-xl bg-slate-900 dark:bg-slate-700 text-white text-[11px] font-black disabled:opacity-40 flex items-center gap-2 cursor-pointer"
                 >
                   {verifyingAccount ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
                   Verify
                 </button>
               </div>
               {accountVerified && accountName && (
-                <div className="mt-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/80 flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300">
-                  <CheckCircle2 size={14} className="shrink-0 text-emerald-600" />
+                <div className="mt-2 p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 flex items-center gap-2 text-xs text-slate-900 dark:text-white">
+                  <CheckCircle2 size={14} className="shrink-0 text-brand-red" />
                   <span className="font-bold truncate">Verified Name: {accountName}</span>
                 </div>
               )}
@@ -377,12 +377,12 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
                 value={amount}
                 onChange={event => setAmount(event.target.value)}
                 placeholder="0.00"
-                className="w-full min-h-12 px-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-base font-black text-slate-900 dark:text-white outline-hidden"
+                className="w-full min-h-12 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-base font-black text-slate-900 dark:text-white outline-hidden"
               />
             </div>
 
             {numAmount > 0 && (
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
                 <div className="flex justify-between text-slate-500">
                   <span>Withdrawal Amount</span>
                   <span className="font-mono font-bold text-slate-900 dark:text-white">{formatCurrency(numAmount)}</span>
@@ -401,7 +401,7 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
             <button
               type="submit"
               disabled={!selectedBank || !accountVerified || !accountName || numAmount <= 0 || numAmount > availableBalance}
-              className="w-full min-h-12 rounded-2xl bg-brand-red hover:bg-red-700 text-white font-black text-xs transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
+              className="w-full min-h-12 rounded-xl bg-brand-red hover:bg-red-800 text-white font-black text-xs transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
             >
               Review Payout <ArrowRight size={15} />
             </button>
@@ -410,21 +410,21 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
 
         {step === 'confirm' && selectedBank && (
           <div className="mt-5 space-y-5">
-            <div className="p-5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 text-center">
-              <span className="text-xs text-emerald-800 dark:text-emerald-300 font-bold uppercase tracking-wider">Payout Amount</span>
-              <p className="text-3xl font-black font-mono text-emerald-700 dark:text-emerald-300 mt-1">{formatCurrency(netAmount)}</p>
-              <p className="text-[11px] text-emerald-600 dark:text-emerald-400">To {selectedBank.name}</p>
+            <div className="p-5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-center">
+              <span className="text-xs text-slate-600 dark:text-slate-300 font-bold uppercase tracking-wider">Payout Amount</span>
+              <p className="text-3xl font-black font-mono text-slate-900 dark:text-white mt-1">{formatCurrency(netAmount)}</p>
+              <p className="text-[11px] text-brand-red font-bold">To {selectedBank.name}</p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
               <div className="p-3 flex justify-between gap-4"><span className="text-slate-500">Destination Bank</span><strong className="text-right text-slate-900 dark:text-white">{selectedBank.name}</strong></div>
               <div className="p-3 flex justify-between gap-4"><span className="text-slate-500">Account Number</span><strong className="font-mono text-slate-900 dark:text-white">{accountNumber || ('••••••' + (savedAccountLast4 || ''))}</strong></div>
               <div className="p-3 flex justify-between gap-4"><span className="text-slate-500">Beneficiary Name</span><strong className="text-right text-slate-900 dark:text-white">{accountName}</strong></div>
             </div>
 
             <div className="flex gap-3 pt-2">
-              <button type="button" onClick={() => setStep('form')} className="flex-1 min-h-12 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs font-black text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">Back</button>
-              <button type="button" disabled={submitting} onClick={handleFinalSubmit} className="flex-1 min-h-12 rounded-2xl bg-brand-red hover:bg-red-700 text-white text-xs font-black transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50">
+              <button type="button" onClick={() => setStep('form')} className="flex-1 min-h-12 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-black text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer">Back</button>
+              <button type="button" disabled={submitting} onClick={handleFinalSubmit} className="flex-1 min-h-12 rounded-xl bg-brand-red hover:bg-red-800 text-white text-xs font-black transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer">
                 {submitting ? <><Loader2 size={16} className="animate-spin" /> Processing…</> : <><ShieldCheck size={16} /> Withdraw Now</>}
               </button>
             </div>

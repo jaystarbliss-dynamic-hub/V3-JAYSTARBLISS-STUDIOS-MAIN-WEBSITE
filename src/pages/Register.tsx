@@ -13,6 +13,7 @@ import { collection, addDoc, doc, setDoc, serverTimestamp, getDoc, deleteDoc } f
 import { useTheme } from '../hooks/useTheme';
 import SEO from '../components/ui/SEO';
 import { JaystarblissIcon } from '../components/common/JaystarblissLogo';
+import { useStandalonePWA } from '../utils/pwa';
 import { useToast } from '../contexts/ToastContext';
 import CyberLiquidButton from '../components/portal/CyberLiquidButton';
 import portalWallpaper from '../assets/jdi login bg.png';
@@ -69,6 +70,7 @@ const Register: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const isStandalone = useStandalonePWA();
   
   const [mode, setMode] = useState<RegisterMode>('parent');
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -94,6 +96,7 @@ const Register: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
   
   // Parent Fields
   const [childrenCount, setChildrenCount] = useState('1 Child');
@@ -580,7 +583,20 @@ const Register: React.FC = () => {
         {/* TOP BRAND HEADER - Clean without 'JAYSTARBLISS' text, logo beside 'Create your account' */}
         <div className="glass-header text-center pt-3 pb-4">
           <div className="flex items-center justify-center gap-3 select-none mx-auto mb-2">
-            <JaystarblissIcon className="w-8 h-8 rounded-xl shrink-0 shadow-md" />
+            {isStandalone ? (
+              <span className="inline-flex items-center">
+                <JaystarblissIcon className="w-8 h-8 rounded-xl shrink-0 shadow-md" />
+              </span>
+            ) : (
+              <Link
+                to="/"
+                title="Back to main website"
+                aria-label="Back to main website"
+                className="inline-flex items-center cursor-pointer hover:opacity-85 transition-opacity"
+              >
+                <JaystarblissIcon className="w-8 h-8 rounded-xl shrink-0 shadow-md" />
+              </Link>
+            )}
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               Create your account
             </h1>
@@ -1230,10 +1246,17 @@ const Register: React.FC = () => {
                 />
                 <span>
                   I agree to the Jaystarbliss Studios{' '}
-                  <Link to="/legal" target="_blank" className="text-white underline hover:text-brand-red">
-                    Terms of Service
-                  </Link>{' '}
-                  and Privacy Policy.
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setShowTermsModal(true);
+                    }}
+                    className="text-white underline hover:text-brand-red font-semibold cursor-pointer"
+                  >
+                    Terms of Service and Privacy Policy
+                  </button>
+                  .
                 </span>
               </label>
 
@@ -1257,13 +1280,30 @@ const Register: React.FC = () => {
               Sign In to Portal Hub →
             </Link>
           </div>
+          {!isStandalone && (
+            <div className="text-center pt-2">
+              <Link
+                to="/"
+                className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-300 hover:text-white hover:underline transition-colors"
+              >
+                <ArrowLeft size={13} />
+                <span>Back to main website</span>
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* FOOTER */}
         <div className="glass-footer flex items-center justify-between px-6 py-4 border-t border-white/10 text-xs text-slate-400">
-          <Link to="/" className="back-link inline-flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors">
-            <ArrowLeft size={14} /> Main Site
-          </Link>
+          {isStandalone ? (
+            <Link to="/portal" className="back-link inline-flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors">
+              <ArrowLeft size={14} /> Portal Login
+            </Link>
+          ) : (
+            <Link to="/" className="back-link inline-flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors">
+              <ArrowLeft size={14} /> Back to main website
+            </Link>
+          )}
           
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400">
@@ -1280,6 +1320,62 @@ const Register: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {showTermsModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="register-terms-title"
+          onClick={() => setShowTermsModal(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-white/15 bg-slate-900 text-slate-100 shadow-2xl p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 id="register-terms-title" className="text-base font-bold text-white">
+                Terms of Service &amp; Privacy Policy
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowTermsModal(false)}
+                className="text-xs font-semibold text-slate-400 hover:text-white px-2 py-1 rounded-lg bg-white/5 cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+            <div className="space-y-3 text-xs leading-relaxed text-slate-300 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+              <p>
+                By creating a Jaystarbliss Studios Portal account, you confirm that the registration information
+                provided is accurate and authorized for yourself, your ward, or your teaching profile.
+              </p>
+              <p>
+                <strong className="text-white">Portal Access &amp; Conduct:</strong> Student, parent, and instructor
+                credentials are personal and must not be shared. Assessments, live classes, and academic records are
+                monitored to uphold academic integrity.
+              </p>
+              <p>
+                <strong className="text-white">Data Privacy:</strong> Account details, class schedules, and academic
+                progress are stored securely solely to deliver instruction, guardian reporting, and verified
+                certification within Jaystarbliss Studios.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => {
+                  setAgreeTerms(true);
+                  setShowTermsModal(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold transition-colors cursor-pointer"
+              >
+                Accept &amp; Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

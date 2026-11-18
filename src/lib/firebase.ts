@@ -4,7 +4,8 @@ import {
   getFirestore, 
   persistentLocalCache,
   persistentMultipleTabManager,
-  memoryLocalCache
+  memoryLocalCache,
+  setLogLevel
 } from "firebase/firestore";
 import { 
   getAuth, 
@@ -16,6 +17,14 @@ import {
   browserPopupRedirectResolver
 } from "firebase/auth";
 import { getStorage } from "firebase/storage";
+
+// Silence internal @firebase/firestore transport/offline timeout console.error logs
+// while Firestore transparently operates from persistent local cache and long-polling fallback.
+try {
+  setLogLevel("silent");
+} catch {
+  // ignore if unsupported in test environment
+}
 
 const envDbId = typeof import.meta !== "undefined" ? (import.meta as any).env?.VITE_FIREBASE_DATABASE_ID : "";
 export const DEFAULT_DATABASE_ID = "(default)";

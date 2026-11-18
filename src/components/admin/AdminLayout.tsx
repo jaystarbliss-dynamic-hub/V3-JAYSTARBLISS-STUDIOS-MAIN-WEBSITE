@@ -31,6 +31,7 @@ import {
   SUPER_ADMIN_EMAILS,
 } from '../../utils/adminRbac';
 import { getActiveImpersonation } from '../../utils/impersonation';
+import { getExternalMainWebsiteUrl, useStandalonePWA } from '../../utils/pwa';
 
 interface NavItem {
   name: string;
@@ -65,6 +66,7 @@ function resolveAdminPageTitle(pathname: string, flatNavList: NavItem[]): string
   if (clean === '/admin/agreements') return 'Agreements Centre';
   if (clean === '/admin/examinations') return 'Assessments';
   if (clean === '/admin/examination-history') return 'Assessment History';
+  if (clean === '/admin/academic-reporting') return 'Academic Reporting';
   if (clean === '/admin/billing') return 'Billing';
   if (clean === '/admin/settings') return 'Settings';
   if (clean === '/admin/support') return 'Support';
@@ -85,6 +87,7 @@ const AdminLayout: React.FC = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [impersonateModalOpen, setImpersonateModalOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const isStandalone = useStandalonePWA();
 
   useEdgeSwipeDrawer(sidebarOpen, setSidebarOpen, 1024);
 
@@ -240,6 +243,7 @@ const AdminLayout: React.FC = () => {
       items: [
         { name: "Assessments", href: "/admin/examinations", icon: FileText, desc: "Create, schedule, secure and manage assessments" },
         { name: "Assessment History", href: "/admin/examination-history", icon: FileText, desc: "Review submissions, grading, results and export reports" },
+        { name: "Academic Reporting", href: "/admin/academic-reporting", icon: Award, desc: "Grading profiles, reference lookup & official term/session/programme reports" },
       ]
     },
     {
@@ -285,6 +289,7 @@ const AdminLayout: React.FC = () => {
           items: [
             { name: "Assessments", href: "/admin/examinations", icon: FileText, desc: "Create, schedule, secure and manage assessments" },
             { name: "Assessment History", href: "/admin/examination-history", icon: FileText, desc: "Review submissions, grading, results and export reports" },
+            { name: "Academic Reporting", href: "/admin/academic-reporting", icon: Award, desc: "Grading profiles, reference lookup & official term/session/programme reports" },
           ]
         }
       ];
@@ -428,7 +433,7 @@ const AdminLayout: React.FC = () => {
                         setSidebarOpen(false);
                         setImpersonateModalOpen(true);
                       }}
-                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-bold"
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-[#B91C1C] dark:text-red-300 text-xs font-bold"
                     >
                       <UserCheck size={14} />
                       <span>Log in as Scholar / School / Tutor</span>
@@ -454,11 +459,11 @@ const AdminLayout: React.FC = () => {
                               onClick={() => setSidebarOpen(false)}
                               className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
                                 isActive
-                                  ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-400/30'
+                                  ? 'bg-[#1E293B] text-white dark:bg-white/10 border border-slate-700/60'
                                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'
                               }`}
                             >
-                              <Icon size={15} className="shrink-0" />
+                              <Icon size={15} className={`shrink-0 ${isActive ? 'text-white' : ''}`} />
                               <span className="truncate">{item.name}</span>
                             </Link>
                           );
@@ -514,7 +519,7 @@ const AdminLayout: React.FC = () => {
                   <span className="font-bold text-xs sm:text-sm tracking-tight text-gray-900 dark:text-white truncate">
                     JAYSTARBLISS
                   </span>
-                  <span className="text-[10px] text-sky-600 dark:text-sky-400 font-mono font-semibold truncate">Admin Console</span>
+                  <span className="text-[10px] text-[#B91C1C] dark:text-red-400 font-mono font-semibold truncate">Admin Console</span>
                 </motion.div>
               )}
             </button>
@@ -548,7 +553,7 @@ const AdminLayout: React.FC = () => {
               <button
                 type="button"
                 onClick={toggleAllSections}
-                className="text-[10px] font-mono text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 font-semibold transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-sky-500/10"
+                className="text-[10px] font-mono text-[#1E293B] dark:text-slate-300 hover:text-[#B91C1C] dark:hover:text-red-400 font-semibold transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-white/5"
               >
                 <ChevronsUpDown size={11} />
                 <span>{areAllSectionsExpanded ? 'Collapse All' : 'Expand All'}</span>
@@ -572,11 +577,11 @@ const AdminLayout: React.FC = () => {
                     aria-expanded={isExpanded}
                   >
                     <span className="flex items-center gap-1.5 truncate">
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors ${hasActiveItem ? 'bg-sky-500 shadow-xs shadow-sky-500/50' : 'bg-slate-300 dark:bg-slate-600 group-hover:bg-slate-400'}`} />
+                      <span className={`w-1.5 h-1.5 shrink-0 transition-colors ${hasActiveItem ? 'bg-[#B91C1C]' : 'bg-slate-300 dark:bg-slate-600 group-hover:bg-slate-400'}`} />
                       <span className="truncate">{group.sectionTitle}</span>
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0 ml-1.5">
-                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-slate-200/70 dark:bg-white/10 text-slate-500 dark:text-slate-400 font-mono font-semibold">
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-semibold">
                         {group.items.length}
                       </span>
                       <ChevronDown 
@@ -607,14 +612,14 @@ const AdminLayout: React.FC = () => {
                           to={item.href}
                           className={`group flex items-center h-10 px-2 rounded-xl transition-colors ${
                             isActive 
-                              ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-400/30 dark:border-sky-500/30 shadow-xs' 
+                              ? 'bg-[#1E293B] text-white dark:bg-white/10 border border-slate-700/60 shadow-xs' 
                               : 'text-gray-600 dark:text-slate-300 hover:bg-slate-900/5 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white'
                           }`}
                         >
                           <div className="w-8 h-8 flex items-center justify-center shrink-0">
                             <Icon 
                               className={`h-4 w-4 transition-colors ${
-                                isActive ? 'text-sky-600 dark:text-sky-400' : 'text-gray-400 dark:text-slate-400 group-hover:text-gray-900 dark:group-hover:text-white'
+                                isActive ? 'text-white' : 'text-gray-400 dark:text-slate-400 group-hover:text-gray-900 dark:group-hover:text-white'
                               }`} 
                             />
                           </div>
@@ -687,20 +692,33 @@ const AdminLayout: React.FC = () => {
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {currentScope !== 'SUPER_ADMIN' && (
               <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold">
-                <ShieldCheck size={13} className="text-sky-600 dark:text-sky-400" />
+                <ShieldCheck size={13} className="text-[#B91C1C] dark:text-red-400" />
                 <span>{capabilities.roleLabel}</span>
               </span>
             )}
 
             {currentScope === 'SUPER_ADMIN' && (
-              <Link
-                to="/wireframes"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px] font-bold transition-colors"
-              >
-                <Layers size={14} />
-                <span className="hidden sm:inline">Redesign Wireframes (5 Boards)</span>
-                <span className="sm:hidden">Wireframes</span>
-              </Link>
+              isStandalone ? (
+                <a
+                  href={getExternalMainWebsiteUrl('/wireframes')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-bold transition-colors"
+                >
+                  <Layers size={14} />
+                  <span className="hidden sm:inline">Redesign Wireframes (5 Boards)</span>
+                  <span className="sm:hidden">Wireframes</span>
+                </a>
+              ) : (
+                <Link
+                  to="/wireframes"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-bold transition-colors"
+                >
+                  <Layers size={14} />
+                  <span className="hidden sm:inline">Redesign Wireframes (5 Boards)</span>
+                  <span className="sm:hidden">Wireframes</span>
+                </Link>
+              )
             )}
 
             {/* Impersonate Icon Button */}
@@ -709,7 +727,7 @@ const AdminLayout: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setImpersonateModalOpen(true)}
-                  className="p-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 transition-colors cursor-pointer shrink-0"
+                  className="p-2 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/50 text-[#B91C1C] dark:text-red-400 transition-colors cursor-pointer shrink-0"
                   aria-label="Log in as user"
                 >
                   <UserCheck size={17} />
@@ -750,7 +768,7 @@ const AdminLayout: React.FC = () => {
                 className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
                 aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               >
-                {theme === 'dark' ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} />}
+                {theme === 'dark' ? <Sun size={17} className="text-slate-200" /> : <Moon size={17} />}
               </button>
             </Tooltip>
 
@@ -765,7 +783,7 @@ const AdminLayout: React.FC = () => {
                   aria-label="Global Settings"
                   className="p-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center justify-center"
                 >
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-sky-600 to-blue-600 text-white flex items-center justify-center shadow-xs">
+                  <div className="w-7 h-7 rounded-lg bg-[#1E293B] dark:bg-[#B91C1C] text-white flex items-center justify-center shadow-xs">
                     <ShieldCheck size={15} />
                   </div>
                 </Link>
@@ -776,7 +794,7 @@ const AdminLayout: React.FC = () => {
                   aria-label={capabilities.roleLabel}
                   className="p-1 rounded-xl flex items-center justify-center"
                 >
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-sky-600 to-blue-600 text-white flex items-center justify-center shadow-xs">
+                  <div className="w-7 h-7 rounded-lg bg-[#1E293B] dark:bg-[#B91C1C] text-white flex items-center justify-center shadow-xs">
                     <ShieldCheck size={15} />
                   </div>
                 </div>

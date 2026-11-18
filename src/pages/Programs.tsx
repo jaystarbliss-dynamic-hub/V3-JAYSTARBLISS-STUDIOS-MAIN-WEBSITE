@@ -43,46 +43,45 @@ function resolveProgramRouteSlug(program: any): string {
 }
 
 const SCHOOL_FILTER_MAP: Record<string, { label: string; icon: React.FC<{ size?: number; className?: string }> }> = {
-  ALL: { label: 'All Programmes', icon: Layers },
-  'technology-programming': { label: 'Technology Programme', icon: Laptop },
-  'creative-design': { label: 'Design & Graphics Programme', icon: Palette },
-  'music-performing-arts': { label: 'Music Programme', icon: Music },
-  'academic-excellence': { label: 'Academics Programme', icon: GraduationCap },
-  'digital-literacy': { label: 'Digital Literacy (Track)', icon: Brain },
-  'strategy-games': { label: 'Chess & Strategy (Track)', icon: Gamepad2 },
-  'young-creators': { label: 'Young Creators (Track)', icon: Baby },
-  'private-tutoring': { label: 'Private Mentorship Mode', icon: Users }
+  ALL: { label: 'All Four Programmes', icon: Layers },
+  'technology-programming': { label: 'Technology', icon: Laptop },
+  'music-performing-arts': { label: 'Music', icon: Music },
+  'academic-excellence': { label: 'Academics', icon: GraduationCap },
+  'creative-design': { label: 'Design and Graphics', icon: Palette },
 };
 
 const CANONICAL_SCHOOL_MAP: Record<string, { schoolId: string; filterKey: string }> = {
-  'tech-programming': { schoolId: 'tech-programming', filterKey: 'technology-programming' },
-  'technology-programming': { schoolId: 'tech-programming', filterKey: 'technology-programming' },
-  'tech': { schoolId: 'tech-programming', filterKey: 'technology-programming' },
-  'coding': { schoolId: 'tech-programming', filterKey: 'technology-programming' },
-  'digital_and_technology': { schoolId: 'tech-programming', filterKey: 'technology-programming' },
-  'digital-technology': { schoolId: 'tech-programming', filterKey: 'technology-programming' },
-  'digital-literacy': { schoolId: 'digital-literacy', filterKey: 'digital-literacy' },
-  'literacy': { schoolId: 'digital-literacy', filterKey: 'digital-literacy' },
-  'creative-design': { schoolId: 'creative-design', filterKey: 'creative-design' },
-  'creative': { schoolId: 'creative-design', filterKey: 'creative-design' },
-  'design': { schoolId: 'creative-design', filterKey: 'creative-design' },
-  'music-performing-arts': { schoolId: 'music-performing-arts', filterKey: 'music-performing-arts' },
-  'music': { schoolId: 'music-performing-arts', filterKey: 'music-performing-arts' },
-  'instruments': { schoolId: 'music-performing-arts', filterKey: 'music-performing-arts' },
-  'academic-excellence': { schoolId: 'academic-excellence', filterKey: 'academic-excellence' },
-  'academics': { schoolId: 'academic-excellence', filterKey: 'academic-excellence' },
-  'academic': { schoolId: 'academic-excellence', filterKey: 'academic-excellence' },
-  'strategy-games': { schoolId: 'strategy-games', filterKey: 'strategy-games' },
-  'strategy': { schoolId: 'strategy-games', filterKey: 'strategy-games' },
-  'chess': { schoolId: 'strategy-games', filterKey: 'strategy-games' },
-  'young-creators': { schoolId: 'young-creators', filterKey: 'young-creators' },
-  'young': { schoolId: 'young-creators', filterKey: 'young-creators' },
-  'early-learners': { schoolId: 'young-creators', filterKey: 'young-creators' },
-  'private-tutoring': { schoolId: 'private-tutoring', filterKey: 'private-tutoring' },
-  'tutoring': { schoolId: 'private-tutoring', filterKey: 'private-tutoring' },
-  'school-partnership': { schoolId: 'tech-programming', filterKey: 'ALL' },
-  'school_programs': { schoolId: 'tech-programming', filterKey: 'ALL' },
-  'school-programs': { schoolId: 'tech-programming', filterKey: 'ALL' }
+  'technology': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'tech-programming': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'technology-programming': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'tech': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'coding': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'digital_and_technology': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'digital-technology': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'digital-literacy': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'literacy': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'design-graphics': { schoolId: 'design-graphics', filterKey: 'creative-design' },
+  'creative-design': { schoolId: 'design-graphics', filterKey: 'creative-design' },
+  'creative-arts': { schoolId: 'design-graphics', filterKey: 'creative-design' },
+  'creative': { schoolId: 'design-graphics', filterKey: 'creative-design' },
+  'design': { schoolId: 'design-graphics', filterKey: 'creative-design' },
+  'music-performing-arts': { schoolId: 'music', filterKey: 'music-performing-arts' },
+  'music': { schoolId: 'music', filterKey: 'music-performing-arts' },
+  'instruments': { schoolId: 'music', filterKey: 'music-performing-arts' },
+  'academic-excellence': { schoolId: 'academics', filterKey: 'academic-excellence' },
+  'academics': { schoolId: 'academics', filterKey: 'academic-excellence' },
+  'academic': { schoolId: 'academics', filterKey: 'academic-excellence' },
+  'strategy-games': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'strategy': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'chess': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'young-creators': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'young': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'early-learners': { schoolId: 'technology', filterKey: 'technology-programming' },
+  'private-tutoring': { schoolId: 'academics', filterKey: 'academic-excellence' },
+  'tutoring': { schoolId: 'academics', filterKey: 'academic-excellence' },
+  'school-partnership': { schoolId: 'technology', filterKey: 'ALL' },
+  'school_programs': { schoolId: 'technology', filterKey: 'ALL' },
+  'school-programs': { schoolId: 'technology', filterKey: 'ALL' }
 };
 
 const Programs: React.FC = () => {
@@ -94,7 +93,7 @@ const Programs: React.FC = () => {
     bannerImage: ''
   });
   const [activeView, setActiveView] = useState<'ecosystem' | 'roadmap' | 'pathfinder' | 'catalog'>('ecosystem');
-  const [selectedSchoolId, setSelectedSchoolId] = useState<string>('tech-programming');
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string>('technology');
   const [programs, setPrograms] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSchoolFilter, setSelectedSchoolFilter] = useState<string>('ALL');

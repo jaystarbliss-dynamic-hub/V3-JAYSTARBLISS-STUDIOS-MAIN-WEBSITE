@@ -54,8 +54,8 @@ function normalizeKidsProject(id: string, raw: Record<string, any>): KidsProject
       : baseCreator;
 
   return {
-    id,
     ...raw,
+    id,
     title: String(raw.title || 'Untitled Project'),
     creator: formattedCreator || baseCreator,
     studentName: baseCreator,

@@ -11,6 +11,11 @@ import {
   resolveTrustedStudentFeeAndTutor,
   PaymentPlan
 } from "../../api/_lib/billing";
+import {
+  assertAndBuildPaymentPolicyAudit,
+  buildPaystackInitializePayload,
+  PaymentPolicyAuditRecord
+} from "../../api/_lib/paystack-policy";
 
 const token = (event: any) => { const header = event.headers?.authorization || event.headers?.Authorization || ""; return header.startsWith("Bearer ") ? header.slice(7) : ""; };
 const json = (statusCode: number, body: Record<string, unknown>) => ({ statusCode, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify(body) });
@@ -58,6 +63,13 @@ export const handler: Handler = async (event) => {
     const body = JSON.parse(event.body || "{}"); const requestedRole = String(body.role || actualRole).toLowerCase();
     if (requestedRole !== actualRole) return json(403, { error: "Payment role does not match your active portal role." });
     if (!["parent", "school", "student"].includes(actualRole)) return json(403, { error: "This account is not eligible to make tuition payments." });
+
+    let policyAudit: PaymentPolicyAuditRecord;
+    try {
+      policyAudit = assertAndBuildPaymentPolicyAudit(body, decoded.uid);
+    } catch {
+      return json(400, { error: "You must read and agree to the Payment Policy before proceeding to Paystack." });
+    }
 
     const config = await getPaymentConfig();
     let planId = String(body.planId || "").trim();
@@ -317,48 +329,45 @@ export const handler: Handler = async (event) => {
     const feeRole = actualRole === "school" ? "school" : "parent";
 
     const chargePreview = calculateCustomerCharge(plan.baseAmount, getFeePolicy(config, feeRole));
-    const paymentMethod = String(body.paymentMethod || "card").toLowerCase();
-    const channelMap: Record<string, string> = { card: "card", bank_transfer: "bank_transfer", opay: "mobile_money" };
-    const channel = channelMap[paymentMethod];
-    if (!channel) return json(400, { error: "Unsupported payment method." });
     if (!process.env.PAYSTACK_SECRET_KEY) return json(503, { error: "Payment gateway is not configured." });
     const callbackRoot = process.env.PUBLIC_APP_URL; if (!callbackRoot) return json(500, { error: "Payment callback is not configured." });
     const callbackPath = actualRole === "school" ? "/portal/school/payments" : actualRole === "parent" ? "/portal/parent/payments" : "/portal/student/payments";
 
+    const paystackPayload = buildPaystackInitializePayload({
+      email: decoded.email,
+      amountMinor: Math.round(plan.baseAmount * 100),
+      callbackUrl: `${callbackRoot.replace(/\/$/, "")}${callbackPath}`,
+      metadata: {
+        userId: decoded.uid,
+        role: actualRole,
+        planRole: plan.role,
+        planId,
+        planName: plan.name,
+        baseAmount: plan.baseAmount,
+        fullContractAmount: fullSchoolContractAmount || plan.baseAmount,
+        paymentPercentage: appliedPaymentPercentage,
+        remainingBalance: calculatedRemainingBalance,
+        estimatedTransactionFee: chargePreview.transactionFee,
+        estimatedCustomerTotal: chargePreview.totalAmount,
+        durationWeeks,
+        teachingMode,
+        studentId: studentId || (verifiedMultiItems.length > 0 ? verifiedMultiItems[0].childId : null),
+        studentName: student?.fullName || student?.studentName || enrollment?.studentName || (verifiedMultiItems.length > 0 ? Array.from(new Set(verifiedMultiItems.map(i => i.childName))).join(", ") : null),
+        tutorId: resolvedTutorId || null,
+        selectedItems: verifiedMultiItems.length > 0 ? verifiedMultiItems : null,
+        studentIds: verifiedMultiItems.length > 0 ? Array.from(new Set(verifiedMultiItems.map(i => i.childId))) : (studentId ? [studentId] : []),
+        enrollmentRequestId: enrollmentRequestId || null,
+        schoolId: schoolId || null,
+        checkoutProvider: "paystack",
+        paymentSource: String(body.paymentSource || (actualRole === "school" ? "School Institutional Settlement" : actualRole === "student" ? "Student Portal Settlement" : "Parent Account Settlement")),
+        ...policyAudit
+      }
+    });
+
     const response = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: decoded.email,
-        amount: Math.round(plan.baseAmount * 100),
-        currency: "NGN",
-        callback_url: `${callbackRoot.replace(/\/$/, "")}${callbackPath}`,
-        channels: [channel],
-        metadata: {
-          userId: decoded.uid,
-          role: actualRole,
-          planRole: plan.role,
-          planId,
-          planName: plan.name,
-          baseAmount: plan.baseAmount,
-          fullContractAmount: fullSchoolContractAmount || plan.baseAmount,
-          paymentPercentage: appliedPaymentPercentage,
-          remainingBalance: calculatedRemainingBalance,
-          estimatedTransactionFee: chargePreview.transactionFee,
-          estimatedCustomerTotal: chargePreview.totalAmount,
-          durationWeeks,
-          teachingMode,
-          studentId: studentId || (verifiedMultiItems.length > 0 ? verifiedMultiItems[0].childId : null),
-          studentName: student?.fullName || student?.studentName || enrollment?.studentName || (verifiedMultiItems.length > 0 ? Array.from(new Set(verifiedMultiItems.map(i => i.childName))).join(", ") : null),
-          tutorId: resolvedTutorId || null,
-          selectedItems: verifiedMultiItems.length > 0 ? verifiedMultiItems : null,
-          studentIds: verifiedMultiItems.length > 0 ? Array.from(new Set(verifiedMultiItems.map(i => i.childId))) : (studentId ? [studentId] : []),
-          enrollmentRequestId: enrollmentRequestId || null,
-          schoolId: schoolId || null,
-          paymentMethod,
-          paymentSource: String(body.paymentSource || "Parent Account Settlement")
-        }
-      })
+      body: JSON.stringify(paystackPayload)
     });
     const data = await response.json();
     if (!response.ok || !data.status || !data.data?.authorization_url) { console.error("Paystack initialization failed:", data); return json(502, { error: "Unable to initialize payment." }); }
@@ -378,6 +387,7 @@ export const handler: Handler = async (event) => {
         schoolId: schoolId || null,
         paymentReference: data.data.reference,
         paymentStatus: "PENDING",
+        ...policyAudit,
         updatedAt: new Date()
       }, { merge: true });
     }

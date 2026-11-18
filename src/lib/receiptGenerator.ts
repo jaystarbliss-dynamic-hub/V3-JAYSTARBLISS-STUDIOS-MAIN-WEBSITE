@@ -1,4 +1,21 @@
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
+import {
+  JDI_COLORS,
+  JDI_INSTITUTION_NAME,
+  PDF_LAYOUT,
+  formatDocumentRefNo,
+  formatPdfCurrency,
+  formatShortDateDDMMYY,
+  sanitizePdfText,
+  loadOfficialWatermarkAsset,
+  drawInstitutionalDocumentHeader,
+  preparePageBackgroundAndWatermark,
+  ensurePdfSpace,
+  applyFooterAcrossAllPages,
+  drawTranslucentRect,
+  drawSectionHeading,
+} from './pdf';
+import { extractPaymentAmountNaira } from './billing';
 
 export interface TransactionReceiptData {
   id: string;
@@ -32,7 +49,8 @@ export interface TransactionReceiptData {
   schoolId?: string;
   tutorName?: string;
   tutorId?: string;
-  paymentMethod?: string;
+  channel?: string | null;
+  paymentMethod?: string | null;
   status?: string;
   category?: string;
   teachingMode?: string;
@@ -79,11 +97,6 @@ export const formatReceiptDate = (date: Date): string => {
   return `${month} ${day}${suffix(day)}, ${year} ${hours}:${minutes}:${seconds}`;
 };
 
-/**
- * Normalizes and formats the full receipt details
- * ensuring: "PROGRAMME FEE NAME" - "USERNAME"
- * and extracting detailed user role, payer name, beneficiary, and multi-student details.
- */
 export const getReceiptDetails = (data: Partial<TransactionReceiptData> | any) => {
   if (!data) {
     return {
@@ -98,22 +111,24 @@ export const getReceiptDetails = (data: Partial<TransactionReceiptData> | any) =
       beneficiary: 'Registered Cadet',
       schoolName: '',
       isMultipleStudents: false,
-      isParentPaidForStudent: false
+      isParentPaidForStudent: false,
     };
   }
 
-  // 1. Resolve Programme Name
   let rawProg = String(
-    data.programName || 
-    data.programmeName || 
-    data.plan || 
-    data.paymentPlanName || 
-    data.description || 
-    ''
+    data.programName ||
+      data.programmeName ||
+      data.plan ||
+      data.paymentPlanName ||
+      data.description ||
+      ''
   ).trim();
 
-  // Clean out legacy generic prefixes if a dash is present
-  if (rawProg.startsWith('Tuition Payment - ') || rawProg.startsWith('Tuition - ') || rawProg.startsWith('Partner School - ')) {
+  if (
+    rawProg.startsWith('Tuition Payment - ') ||
+    rawProg.startsWith('Tuition - ') ||
+    rawProg.startsWith('Partner School - ')
+  ) {
     const parts = rawProg.split(' - ');
     if (parts.length > 1) rawProg = parts.slice(1).join(' - ');
   }
@@ -122,18 +137,29 @@ export const getReceiptDetails = (data: Partial<TransactionReceiptData> | any) =
   }
   const programName = rawProg || 'Digital Literacy & Technology Track';
 
-  // 2. Resolve Role
   const rawRole = String(data.payerRole || data.userRole || data.role || '').toLowerCase();
   let payerRole = 'Student';
   let roleLabel = 'Cadet / Student';
 
-  if (rawRole.includes('school') || Boolean(data.schoolId) || Boolean(data.schoolName && !data.parentId)) {
+  if (
+    rawRole.includes('school') ||
+    Boolean(data.schoolId) ||
+    Boolean(data.schoolName && !data.parentId)
+  ) {
     payerRole = 'School';
     roleLabel = 'School / Partner Institution';
-  } else if (rawRole.includes('parent') || Boolean(data.parentId) || (data.studentName && data.payerName && data.studentName !== data.payerName)) {
+  } else if (
+    rawRole.includes('parent') ||
+    Boolean(data.parentId) ||
+    (data.studentName && data.payerName && data.studentName !== data.payerName)
+  ) {
     payerRole = 'Parent';
     roleLabel = 'Parent / Guardian';
-  } else if (rawRole.includes('tutor') || rawRole.includes('staff') || rawRole.includes('instructor')) {
+  } else if (
+    rawRole.includes('tutor') ||
+    rawRole.includes('staff') ||
+    rawRole.includes('instructor')
+  ) {
     payerRole = 'Staff';
     roleLabel = 'Staff / Faculty Member';
   } else if (rawRole.includes('admin')) {
@@ -141,15 +167,14 @@ export const getReceiptDetails = (data: Partial<TransactionReceiptData> | any) =
     roleLabel = 'Platform Administrator';
   }
 
-  // 3. Resolve Payer Name (who actually paid)
   let payerName = String(
-    data.payerName || 
-    data.userName || 
-    (payerRole === 'School' ? data.schoolName : '') || 
-    data.customerName || 
-    data.userEmail || 
-    data.email || 
-    ''
+    data.payerName ||
+      data.userName ||
+      (payerRole === 'School' ? data.schoolName : '') ||
+      data.customerName ||
+      data.userEmail ||
+      data.email ||
+      ''
   ).trim();
 
   if (!payerName) {
@@ -159,17 +184,21 @@ export const getReceiptDetails = (data: Partial<TransactionReceiptData> | any) =
     else payerName = 'Registered Student';
   }
 
-  // 4. Resolve Student(s) & Beneficiary
   let studentNames: string[] = [];
   if (Array.isArray(data.studentNames)) {
     studentNames = data.studentNames.filter(Boolean);
   } else if (typeof data.studentNames === 'string' && data.studentNames.trim()) {
-    studentNames = data.studentNames.split(',').map((s: string) => s.trim()).filter(Boolean);
+    studentNames = data.studentNames
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter(Boolean);
   } else if (data.studentName) {
     studentNames = [data.studentName.trim()];
   }
 
-  const studentCount = Number(data.studentCount || data.studentsCount || (studentNames.length > 0 ? studentNames.length : 1));
+  const studentCount = Number(
+    data.studentCount || data.studentsCount || (studentNames.length > 0 ? studentNames.length : 1)
+  );
   const isMultipleStudents = studentCount > 1 || studentNames.length > 1;
   const primaryStudentName = studentNames[0] || data.studentName || '';
   const isParentPaidForStudent = payerRole === 'Parent' && Boolean(primaryStudentName);
@@ -177,8 +206,8 @@ export const getReceiptDetails = (data: Partial<TransactionReceiptData> | any) =
   let beneficiary = '';
   if (payerRole === 'School') {
     const sName = data.schoolName || payerName;
-    beneficiary = isMultipleStudents 
-      ? `${sName} (${studentCount} Enrolled Cadets)` 
+    beneficiary = isMultipleStudents
+      ? `${sName} (${studentCount} Enrolled Cadets)`
       : `${sName} (Institutional Lab Cohort)`;
   } else if (isParentPaidForStudent) {
     if (isMultipleStudents) {
@@ -192,14 +221,13 @@ export const getReceiptDetails = (data: Partial<TransactionReceiptData> | any) =
     beneficiary = `${payerName} (${roleLabel})`;
   }
 
-  // 5. Construct Canonical Display Title: "PROGRAMME FEE NAME" - "USERNAME"
-  // E.g. "Digital Literacy (Entry Level) - South Gold Montessori School"
-  // OR "Pre Developers phase I - Eno Torru"
   let targetEntity = '';
   if (payerRole === 'School') {
     targetEntity = data.schoolName || payerName;
   } else if (isParentPaidForStudent) {
-    targetEntity = isMultipleStudents ? `${studentNames.join(' & ')} (Parent: ${payerName})` : primaryStudentName;
+    targetEntity = isMultipleStudents
+      ? `${studentNames.join(' & ')} (Parent: ${payerName})`
+      : primaryStudentName;
   } else {
     targetEntity = primaryStudentName || payerName;
   }
@@ -218,94 +246,119 @@ export const getReceiptDetails = (data: Partial<TransactionReceiptData> | any) =
     beneficiary,
     schoolName: data.schoolName || (payerRole === 'School' ? payerName : ''),
     isMultipleStudents,
-    isParentPaidForStudent
+    isParentPaidForStudent,
   };
 };
 
-export const generatePdfReceipt = (data: TransactionReceiptData) => {
-  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+export async function createPdfReceiptDocument(data: TransactionReceiptData): Promise<jsPDF> {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = PDF_LAYOUT.MARGIN_X;
+  const contentWidth = pageWidth - marginX * 2;
+  const watermarkAsset = await loadOfficialWatermarkAsset();
+
   const date = parseDate(data.paidAt || data.createdAt);
   const formattedDate = formatReceiptDate(date);
-  const reference = data.reference || data.id || 'JST-TXN-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-  const transactionNo = data.transactionNo || '26' + Date.now().toString() + Math.floor(Math.random() * 1000);
-  const sessionId = data.sessionId || '1000' + Date.now().toString() + Math.floor(Math.random() * 10000);
-  const rawAmount = Number(data.customerTotal || data.amount || data.baseAmount || 0);
-  const amountStr = formatCurrency(rawAmount);
+  const shortDate = formatShortDateDDMMYY(date);
+  const reference = sanitizePdfText(
+    data.reference || data.id || formatDocumentRefNo('JDI-TXN', String(Date.now()))
+  );
+  const refNo = formatDocumentRefNo('JDI-RCP', data.reference || data.id);
+  const transactionNo = sanitizePdfText(
+    data.transactionNo || `TXN-${reference.replace(/[^A-Z0-9]/gi, '').slice(0, 12)}`
+  );
+  const sessionId = sanitizePdfText(
+    data.sessionId || `SES-${refNo.replace(/[^A-Z0-9]/gi, '').slice(-10)}`
+  );
 
+  const rawAmount = extractPaymentAmountNaira(data);
+  const amountStr = formatPdfCurrency(rawAmount);
   const details = getReceiptDetails(data);
   const statusUpper = String(data.status || 'UNKNOWN').trim().toUpperCase();
-  const isPaid = ['SUCCESS', 'SUCCESSFUL', 'PAID', 'COMPLETED', 'APPROVED', 'CONFIRMED', 'VERIFIED'].includes(statusUpper);
+  const isPaid = [
+    'SUCCESS',
+    'SUCCESSFUL',
+    'PAID',
+    'COMPLETED',
+    'APPROVED',
+    'CONFIRMED',
+    'VERIFIED',
+  ].includes(statusUpper);
   const isPartial = ['PARTIALLY_PAID', 'PARTIAL'].includes(statusUpper);
   const isPending = ['PENDING', 'PROCESSING'].includes(statusUpper);
 
-  // Background Header Accent
-  pdf.setFillColor(15, 23, 42); // #0f172a
-  pdf.rect(0, 0, 210, 48, 'F');
+  preparePageBackgroundAndWatermark(doc, watermarkAsset);
 
-  // Brand Name & Subtitle
-  pdf.setTextColor(255, 255, 255);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(17);
-  pdf.text('JAYSTARBLISS DIGITAL ACADEMY', 15, 19);
+  let cursorY = drawInstitutionalDocumentHeader(doc, {
+    institutionTitle: JDI_INSTITUTION_NAME,
+    subtitleLine: `OFFICIAL ELECTRONIC PAYMENT RECEIPT  |  DATE: ${shortDate}`,
+    refNo,
+  });
 
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(8.5);
-  pdf.setTextColor(148, 163, 184);
-  pdf.text('Empowering Young African Innovators • Official Electronic Payment Receipt', 15, 26);
-  pdf.text('Portal: jaystarbliss-studios.name.ng/portal | Billing Support: jaystarblissstudios@gmail.com', 15, 32);
+  // Hero Amount Summary Card
+  const heroHeight = 36;
+  drawTranslucentRect(
+    doc,
+    marginX,
+    cursorY,
+    contentWidth,
+    heroHeight,
+    JDI_COLORS.ICE_BG,
+    0.85,
+    JDI_COLORS.ICE_BORDER,
+    2.5
+  );
 
-  // Status Badge in Header
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.2);
+  doc.setTextColor(...JDI_COLORS.INK_MUTED);
+  doc.text('RECEIPT FOR:', marginX + 6, cursorY + 7.5);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.8);
+  doc.setTextColor(...JDI_COLORS.INK_DARK);
+  const titleLines = doc.splitTextToSize(
+    sanitizePdfText(details.displayTitle).toUpperCase(),
+    contentWidth - 56
+  ) as string[];
+  doc.text(titleLines.slice(0, 2), marginX + 6, cursorY + 13);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.setTextColor(...JDI_COLORS.NAVY_PRIMARY);
+  doc.text(amountStr, marginX + 6, cursorY + 25.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.2);
   if (isPaid) {
-    pdf.setFillColor(16, 185, 129); // Emerald
-  } else if (isPartial || isPending) {
-    pdf.setFillColor(245, 158, 11); // Amber
-  } else {
-    pdf.setFillColor(225, 29, 72); // Rose
-  }
-  pdf.roundedRect(150, 14, 45, 10, 3, 3, 'F');
-  pdf.setTextColor(255, 255, 255);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8);
-  pdf.text(statusUpper.replace('_', ' '), 172.5, 20.5, { align: 'center' });
-
-  // Main Card Wrapper
-  pdf.setFillColor(248, 250, 252);
-  pdf.roundedRect(15, 52, 180, 42, 4, 4, 'F');
-  pdf.setDrawColor(226, 232, 240);
-  pdf.roundedRect(15, 52, 180, 42, 4, 4, 'S');
-
-  // Hero Section
-  pdf.setTextColor(100, 116, 139);
-  pdf.setFontSize(8.5);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('RECEIPT FOR: ' + details.displayTitle.toUpperCase(), 22, 63);
-
-  pdf.setTextColor(15, 23, 42);
-  pdf.setFontSize(20);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(amountStr, 22, 75);
-
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  if (isPaid) {
-    pdf.setTextColor(16, 185, 129);
-    pdf.text('✓ Verified & Reconciled on Jaystarbliss Ledger', 22, 85);
+    doc.setTextColor(...JDI_COLORS.EMERALD_TEXT);
+    doc.text('Verified & Reconciled on Jaystarbliss Financial Ledger', marginX + 6, cursorY + 31.8);
   } else if (isPartial) {
-    pdf.setTextColor(217, 119, 6);
-    pdf.text('• Partially Settled — Remaining Balance Tracked on Ledger', 22, 85);
+    doc.setTextColor(...JDI_COLORS.AMBER_BADGE);
+    doc.text('Partially Settled — Remaining Balance Tracked on Ledger', marginX + 6, cursorY + 31.8);
   } else {
-    pdf.setTextColor(100, 116, 139);
-    pdf.text(`Status: ${statusUpper}`, 22, 85);
+    doc.setTextColor(...JDI_COLORS.INK_MUTED);
+    doc.text(`Settlement Status: ${statusUpper}`, marginX + 6, cursorY + 31.8);
   }
 
-  // Table Details
-  pdf.setTextColor(15, 23, 42);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(11);
-  pdf.text('Official Transaction Breakdown', 15, 104);
+  // Right Status Badge inside Hero Card
+  const badgeColor = isPaid
+    ? JDI_COLORS.EMERALD_BADGE
+    : isPartial || isPending
+    ? JDI_COLORS.AMBER_BADGE
+    : JDI_COLORS.CRIMSON_BADGE;
+  doc.setFillColor(...badgeColor);
+  doc.roundedRect(pageWidth - marginX - 44, cursorY + 8, 38, 9, 2, 2, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.8);
+  doc.setTextColor(...JDI_COLORS.WHITE);
+  doc.text(statusUpper.replace(/_/g, ' '), pageWidth - marginX - 25, cursorY + 13.8, {
+    align: 'center',
+  });
 
-  let y = 112;
-  const rowHeight = 8.8;
+  cursorY += heroHeight + 9;
+
+  cursorY = drawSectionHeading(doc, 'Official Transaction Breakdown', marginX, cursorY, contentWidth);
 
   const rows: [string, string][] = [
     ['Transaction No.', transactionNo],
@@ -313,237 +366,328 @@ export const generatePdfReceipt = (data: TransactionReceiptData) => {
     ['Payment Reference', reference],
     ['Transaction Date', formattedDate],
     ['Programme / Fee Name', details.programName],
-    ...(data.selectedPrograms ? [
-      ['Selected Program Tracks', String(data.selectedPrograms)] as [string, string]
-    ] : []),
-    ...((data.paymentPercentage && Number(data.paymentPercentage) < 100) || Number(data.remainingBalance || 0) > 0 ? [
-      ['Payment Mode / Percentage', data.paymentPercentage ? `${data.paymentPercentage}% Installment Settlement` : 'Partial Settlement'] as [string, string],
-      ['Full Invoice Amount', formatCurrency(data.fullProgramFee || data.amount)] as [string, string],
-      ['Remaining Balance Due', formatCurrency(data.remainingBalance || 0)] as [string, string],
-    ] : []),
+    ...(data.selectedPrograms
+      ? [['Selected Program Tracks', String(data.selectedPrograms)] as [string, string]]
+      : []),
+    ...((data.paymentPercentage && Number(data.paymentPercentage) < 100) ||
+    Number(data.remainingBalance || 0) > 0
+      ? [
+          [
+            'Payment Mode / Percentage',
+            data.paymentPercentage
+              ? `${data.paymentPercentage}% Installment Settlement`
+              : 'Partial Settlement',
+          ] as [string, string],
+          ['Full Invoice Amount', formatPdfCurrency(data.fullProgramFee || data.amount)] as [
+            string,
+            string,
+          ],
+          ['Remaining Balance Due', formatPdfCurrency(data.remainingBalance || 0)] as [
+            string,
+            string,
+          ],
+        ]
+      : []),
     ['Paid By (Payer Name)', details.payerName],
     ['Payer Portal Role', `${details.roleLabel} (${details.payerRole})`],
     ['Beneficiary / Cadet(s)', details.beneficiary],
-    ...(details.isMultipleStudents && details.studentList.length > 0 ? [
-      ['Enrolled Student List', `${details.studentCount} Cadets: ${details.studentList.join(', ')}`] as [string, string]
-    ] : []),
-    ['Payment Method', data.paymentMethod || 'Paystack Direct Bank / Card'],
+    ...(details.isMultipleStudents && details.studentList.length > 0
+      ? [
+          [
+            'Enrolled Student List',
+            `${details.studentCount} Cadets: ${details.studentList.join(', ')}`,
+          ] as [string, string],
+        ]
+      : []),
+    ['Payment Method', (() => {
+      const ch = String(data.channel || '').trim();
+      const pm = String(data.paymentMethod || '').trim();
+      const chosen = ch || pm;
+      if (!chosen) return 'Not Recorded';
+      if (chosen.toLowerCase() === 'paystack') return 'Paystack Hosted Checkout (Channel Not Recorded)';
+      return chosen.replace(/_/g, ' ');
+    })()],
     ['Teaching Delivery Mode', data.teachingMode || 'Standard Practical Coding Delivery'],
     ['Duration / Coverage', data.durationWeeks ? `${data.durationWeeks} Weeks` : 'Termly Track'],
     ['Settlement Status', statusUpper],
   ];
 
-  rows.forEach(([label, val], idx) => {
-    if (idx % 2 === 0) {
-      pdf.setFillColor(241, 245, 249);
-      pdf.rect(15, y - 5.5, 180, rowHeight, 'F');
+  const labelColW = 58;
+  const valColW = contentWidth - labelColW - 8;
+
+  rows.forEach(([label, rawVal], idx) => {
+    const cleanVal = sanitizePdfText(rawVal || '—');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    const wrappedVal = doc.splitTextToSize(cleanVal, valColW) as string[];
+    const rowH = Math.max(8, wrappedVal.length * 4.2 + 3.8);
+
+    cursorY = ensurePdfSpace(doc, cursorY, rowH, refNo, watermarkAsset);
+
+    if (idx % 2 === 1) {
+      drawTranslucentRect(doc, marginX, cursorY, contentWidth, rowH, JDI_COLORS.SOFT_TINT, 0.58);
     }
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8.5);
-    pdf.setTextColor(100, 116, 139);
-    pdf.text(label, 19, y);
+    doc.setDrawColor(...JDI_COLORS.BORDER_LIGHT);
+    doc.setLineWidth(0.2);
+    doc.line(marginX, cursorY + rowH, marginX + contentWidth, cursorY + rowH);
 
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(15, 23, 42);
-    const textVal = String(val);
-    const displayVal = textVal.length > 58 ? textVal.substring(0, 55) + '...' : textVal;
-    pdf.text(displayVal, 78, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.4);
+    doc.setTextColor(...JDI_COLORS.INK_MUTED);
+    doc.text(sanitizePdfText(label), marginX + 3, cursorY + 5.2);
 
-    y += rowHeight;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...JDI_COLORS.INK_DARK);
+    doc.text(wrappedVal, marginX + labelColW, cursorY + 5.2);
+
+    cursorY += rowH;
   });
 
-  // Security Note & Watermark
-  y += 6;
-  pdf.setFillColor(236, 253, 245);
-  pdf.roundedRect(15, y, 180, 22, 3, 3, 'F');
-  pdf.setDrawColor(167, 243, 208);
-  pdf.roundedRect(15, y, 180, 24, 3, 3, 'S');
+  cursorY += 7;
+  cursorY = ensurePdfSpace(doc, cursorY, 24, refNo, watermarkAsset);
 
-  pdf.setTextColor(6, 95, 70);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8.5);
-  pdf.text('OFFICIAL VERIFIED DIGITAL STATEMENT', 22, y + 7);
+  drawTranslucentRect(
+    doc,
+    marginX,
+    cursorY,
+    contentWidth,
+    21,
+    JDI_COLORS.EMERALD_BG,
+    0.84,
+    JDI_COLORS.EMERALD_BORDER,
+    2.2
+  );
 
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7.5);
-  pdf.setTextColor(4, 120, 87);
-  pdf.text('This receipt was electronically generated by Jaystarbliss Academy and serves as official proof', 22, y + 13);
-  pdf.text('of payment for academic enrollment, curriculum licensing, and student access verification.', 22, y + 18);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...JDI_COLORS.EMERALD_TEXT);
+  doc.text('OFFICIAL VERIFIED DIGITAL STATEMENT', marginX + 5, cursorY + 6.8);
 
-  // Footer
-  pdf.setFontSize(7.5);
-  pdf.setTextColor(148, 163, 184);
-  pdf.text('Jaystarbliss Studios • Coding, Robotics, AI & Technology Excellence for Africa', 105, 285, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.8);
+  doc.setTextColor(...JDI_COLORS.INK_BODY);
+  doc.text(
+    'This receipt was electronically generated by Jaystarbliss Dynamic Institute and serves as official proof',
+    marginX + 5,
+    cursorY + 12.2
+  );
+  doc.text(
+    'of payment for academic enrollment, curriculum licensing, and student portal verification.',
+    marginX + 5,
+    cursorY + 16.8
+  );
 
-  // Save the PDF
-  const filename = `receipt-${reference}.pdf`;
-  pdf.save(filename);
+  applyFooterAcrossAllPages(doc);
+  return doc;
+}
+
+export const generatePdfReceipt = async (data: TransactionReceiptData): Promise<void> => {
+  const doc = await createPdfReceiptDocument(data);
+  const reference = data.reference || data.id || 'JST-TXN';
+  doc.save(`receipt-${reference}.pdf`);
 };
 
 export interface StatementExportOptions {
   title?: string;
   periodLabel?: string;
   accountLabel?: string;
+  statementId?: string;
 }
 
-/**
- * Generates a complete multi-page PDF statement containing EVERY selected/filtered transaction.
- */
-export const generatePdfStatement = (
+export async function createPdfStatementDocument(
   transactions: TransactionReceiptData[],
   options?: StatementExportOptions
-): { exportedCount: number; totalInflow: number; totalOutflow: number } => {
+): Promise<{ doc: jsPDF; exportedCount: number; totalInflow: number; totalOutflow: number }> {
   const list = Array.isArray(transactions) ? transactions : [];
-  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = PDF_LAYOUT.MARGIN_X;
+  const contentWidth = pageWidth - marginX * 2;
+  const watermarkAsset = await loadOfficialWatermarkAsset();
 
   const isConfirmedSuccess = (st: unknown) => {
     const norm = String(st ?? '').trim().toUpperCase();
-    return ['SUCCESS', 'SUCCESSFUL', 'PAID', 'COMPLETED', 'APPROVED', 'CONFIRMED', 'VERIFIED', 'PARTIALLY_PAID', 'PARTIAL'].includes(norm);
+    return [
+      'SUCCESS',
+      'SUCCESSFUL',
+      'PAID',
+      'COMPLETED',
+      'APPROVED',
+      'CONFIRMED',
+      'VERIFIED',
+      'PARTIALLY_PAID',
+      'PARTIAL',
+    ].includes(norm);
   };
 
   let totalInflow = 0;
   let totalOutflow = 0;
-  list.forEach(t => {
+  list.forEach((t) => {
     if (!isConfirmedSuccess(t.status)) return;
-    const amt = Number(t.customerTotal || t.amount || t.baseAmount || 0);
+    const amt = extractPaymentAmountNaira(t);
     if (!Number.isFinite(amt) || amt <= 0) return;
     const isOut = t.type === 'outflow' || t.type === 'payout' || t.type === 'transfer';
     if (isOut) totalOutflow += amt;
     else totalInflow += amt;
   });
 
-  const drawPageHeader = (pageNumber: number) => {
-    pdf.setFillColor(15, 23, 42);
-    pdf.rect(0, 0, 210, 38, 'F');
+  const refNo = formatDocumentRefNo(
+    'JDI-STMT',
+    options?.statementId || `${options?.periodLabel || ''}:${list.length}`
+  );
+  const shortDate = formatShortDateDDMMYY(new Date());
+  const periodSegment = options?.periodLabel ? `PERIOD: ${options.periodLabel}` : `DATE: ${shortDate}`;
+  const docTitleLabel = sanitizePdfText(
+    options?.title || 'OFFICIAL ACCOUNT STATEMENT & TRANSACTION LEDGER'
+  ).toUpperCase();
 
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(15);
-    pdf.text('JAYSTARBLISS DIGITAL ACADEMY', 14, 16);
+  preparePageBackgroundAndWatermark(doc, watermarkAsset);
 
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8.5);
-    pdf.setTextColor(148, 163, 184);
-    pdf.text(options?.title || 'Official Account Statement & Transaction Ledger', 14, 23);
-    pdf.text(
-      `Generated: ${formatReceiptDate(new Date())}${options?.periodLabel ? ` • Period: ${options.periodLabel}` : ''}`,
-      14,
-      29
-    );
-
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8.5);
-    pdf.text(`Page ${pageNumber}`, 196, 16, { align: 'right' });
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(148, 163, 184);
-    pdf.text(`${list.length} Record${list.length === 1 ? '' : 's'}`, 196, 23, { align: 'right' });
-  };
-
-  const drawTableColumnsHeader = (startY: number) => {
-    pdf.setFillColor(241, 245, 249);
-    pdf.rect(14, startY - 5, 182, 8, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(71, 85, 105);
-    pdf.text('#', 16, startY);
-    pdf.text('DATE', 24, startY);
-    pdf.text('REFERENCE', 52, startY);
-    pdf.text('DESCRIPTION / BENEFICIARY', 85, startY);
-    pdf.text('STATUS', 148, startY);
-    pdf.text('AMOUNT (NGN)', 194, startY, { align: 'right' });
-    return startY + 7;
-  };
-
-  let pageNumber = 1;
-  drawPageHeader(pageNumber);
-
-  // Summary Box on Page 1
-  pdf.setFillColor(248, 250, 252);
-  pdf.roundedRect(14, 43, 182, 22, 3, 3, 'F');
-  pdf.setDrawColor(226, 232, 240);
-  pdf.roundedRect(14, 43, 182, 22, 3, 3, 'S');
-
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7.5);
-  pdf.setTextColor(100, 116, 139);
-  pdf.text('TOTAL RECORDS', 20, 50);
-  pdf.text('VERIFIED INFLOW', 65, 50);
-  pdf.text('VERIFIED OUTFLOW', 120, 50);
-
-  pdf.setFontSize(11);
-  pdf.setTextColor(15, 23, 42);
-  pdf.text(`${list.length}`, 20, 58);
-  pdf.setTextColor(16, 185, 129);
-  pdf.text(formatCurrency(totalInflow), 65, 58);
-  pdf.setTextColor(15, 23, 42);
-  pdf.text(formatCurrency(totalOutflow), 120, 58);
-
-  let y = drawTableColumnsHeader(74);
-
-  list.forEach((item, index) => {
-    if (y > 268) {
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(7);
-      pdf.setTextColor(148, 163, 184);
-      pdf.text('Jaystarbliss Studios • Official Multi-Record Financial Statement', 105, 286, { align: 'center' });
-
-      pdf.addPage();
-      pageNumber += 1;
-      drawPageHeader(pageNumber);
-      y = drawTableColumnsHeader(48);
-    }
-
-    if (index % 2 === 1) {
-      pdf.setFillColor(248, 250, 252);
-      pdf.rect(14, y - 4.5, 182, 7.5, 'F');
-    }
-
-    const d = parseDate(item.paidAt || item.createdAt);
-    const shortDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const ref = String(item.reference || item.id || '—').slice(0, 16);
-    const details = getReceiptDetails(item);
-    const desc = details.displayTitle.length > 35 ? details.displayTitle.slice(0, 32) + '...' : details.displayTitle;
-    const statusText = String(item.status || 'UNKNOWN').trim().toUpperCase().slice(0, 14);
-    const rawAmt = Number(item.customerTotal || item.amount || item.baseAmount || 0);
-    const isOut = item.type === 'outflow' || item.type === 'payout' || item.type === 'transfer';
-    const amtFormatted = `${isOut ? '-' : '+'}${formatCurrency(rawAmt)}`;
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(71, 85, 105);
-    pdf.text(String(index + 1), 16, y);
-    pdf.text(shortDate, 24, y);
-    pdf.text(ref, 52, y);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(desc, 85, y);
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(isConfirmedSuccess(item.status) ? 16 : 100, isConfirmedSuccess(item.status) ? 185 : 116, isConfirmedSuccess(item.status) ? 129 : 139);
-    pdf.text(statusText, 148, y);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(isOut ? 15 : 16, isOut ? 23 : 185, isOut ? 42 : 129);
-    pdf.text(amtFormatted, 194, y, { align: 'right' });
-
-    y += 7.5;
+  let cursorY = drawInstitutionalDocumentHeader(doc, {
+    institutionTitle: JDI_INSTITUTION_NAME,
+    subtitleLine: `${docTitleLabel}  |  ${periodSegment}`,
+    refNo,
   });
 
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7);
-  pdf.setTextColor(148, 163, 184);
-  pdf.text('Jaystarbliss Studios • Official Multi-Record Financial Statement', 105, 286, { align: 'center' });
+  // Summary Cards Row
+  const summaryH = 22;
+  drawTranslucentRect(
+    doc,
+    marginX,
+    cursorY,
+    contentWidth,
+    summaryH,
+    JDI_COLORS.ICE_BG,
+    0.85,
+    JDI_COLORS.ICE_BORDER,
+    2.5
+  );
 
-  const dateSlug = new Date().toISOString().slice(0, 10);
-  pdf.save(`jaystarbliss-statement-${dateSlug}-${list.length}-records.pdf`);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.4);
+  doc.setTextColor(...JDI_COLORS.INK_MUTED);
+  doc.text('TOTAL RECORDS', marginX + 6, cursorY + 7);
+  doc.text('VERIFIED INFLOW', marginX + 52, cursorY + 7);
+  doc.text('VERIFIED OUTFLOW', marginX + 114, cursorY + 7);
+
+  doc.setFontSize(11.5);
+  doc.setTextColor(...JDI_COLORS.INK_DARK);
+  doc.text(String(list.length), marginX + 6, cursorY + 15.5);
+  doc.setTextColor(...JDI_COLORS.EMERALD_TEXT);
+  doc.text(formatPdfCurrency(totalInflow), marginX + 52, cursorY + 15.5);
+  doc.setTextColor(...JDI_COLORS.NAVY_PRIMARY);
+  doc.text(formatPdfCurrency(totalOutflow), marginX + 114, cursorY + 15.5);
+
+  cursorY += summaryH + 8;
+
+  const colWidths = [9, 22, 31, 61, 24, 33]; // sum = 180 mm
+  const drawTableColumnsHeader = (y: number): number => {
+    doc.setFillColor(...JDI_COLORS.NAVY_PRIMARY);
+    doc.rect(marginX, y, contentWidth, 8, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.4);
+    doc.setTextColor(...JDI_COLORS.WHITE);
+
+    let x = marginX;
+    doc.text('#', x + 2.2, y + 5.2);
+    x += colWidths[0];
+    doc.text('DATE', x + 2, y + 5.2);
+    x += colWidths[1];
+    doc.text('REFERENCE', x + 2, y + 5.2);
+    x += colWidths[2];
+    doc.text('DESCRIPTION / BENEFICIARY', x + 2, y + 5.2);
+    x += colWidths[3];
+    doc.text('STATUS', x + 2, y + 5.2);
+    doc.text('AMOUNT (NGN)', marginX + contentWidth - 2.5, y + 5.2, { align: 'right' });
+
+    return y + 8;
+  };
+
+  cursorY = drawTableColumnsHeader(cursorY);
+
+  list.forEach((item, index) => {
+    const d = parseDate(item.paidAt || item.createdAt);
+    const shortIsoDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate()
+    ).padStart(2, '0')}`;
+    const ref = sanitizePdfText(String(item.reference || item.id || '—')).slice(0, 18);
+    const details = getReceiptDetails(item);
+    const descClean = sanitizePdfText(details.displayTitle);
+    const statusText = sanitizePdfText(String(item.status || 'UNKNOWN').trim().toUpperCase()).slice(
+      0,
+      16
+    );
+    const rawAmt = extractPaymentAmountNaira(item);
+    const isOut = item.type === 'outflow' || item.type === 'payout' || item.type === 'transfer';
+    const amtFormatted = `${isOut ? '-' : '+'}${formatPdfCurrency(rawAmt)}`;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.3);
+    const descLines = doc.splitTextToSize(descClean, colWidths[3] - 4) as string[];
+    const rowH = Math.max(7.2, descLines.length * 3.7 + 3.4);
+
+    cursorY = ensurePdfSpace(doc, cursorY, rowH, refNo, watermarkAsset, (freshY) =>
+      drawTableColumnsHeader(freshY)
+    );
+
+    if (index % 2 === 1) {
+      drawTranslucentRect(doc, marginX, cursorY, contentWidth, rowH, JDI_COLORS.SOFT_TINT, 0.55);
+    }
+
+    doc.setDrawColor(...JDI_COLORS.BORDER_LIGHT);
+    doc.setLineWidth(0.2);
+    doc.line(marginX, cursorY + rowH, marginX + contentWidth, cursorY + rowH);
+
+    let x = marginX;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.3);
+    doc.setTextColor(...JDI_COLORS.INK_MUTED);
+    doc.text(String(index + 1), x + 2.2, cursorY + 4.4);
+    x += colWidths[0];
+
+    doc.setFont('helvetica', 'normal');
+    doc.text(shortIsoDate, x + 2, cursorY + 4.4);
+    x += colWidths[1];
+
+    doc.text(ref, x + 2, cursorY + 4.4, { maxWidth: colWidths[2] - 3 });
+    x += colWidths[2];
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...JDI_COLORS.INK_DARK);
+    doc.text(descLines, x + 2, cursorY + 4.4);
+    x += colWidths[3];
+
+    const ok = isConfirmedSuccess(item.status);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...(ok ? JDI_COLORS.EMERALD_TEXT : JDI_COLORS.INK_MUTED));
+    doc.text(statusText, x + 2, cursorY + 4.4, { maxWidth: colWidths[4] - 3 });
+
+    doc.setTextColor(...(isOut ? JDI_COLORS.NAVY_PRIMARY : JDI_COLORS.EMERALD_TEXT));
+    doc.text(amtFormatted, marginX + contentWidth - 2.5, cursorY + 4.4, { align: 'right' });
+
+    cursorY += rowH;
+  });
+
+  applyFooterAcrossAllPages(doc);
 
   return {
+    doc,
     exportedCount: list.length,
     totalInflow: Number(totalInflow.toFixed(2)),
-    totalOutflow: Number(totalOutflow.toFixed(2))
+    totalOutflow: Number(totalOutflow.toFixed(2)),
   };
+}
+
+export const generatePdfStatement = async (
+  transactions: TransactionReceiptData[],
+  options?: StatementExportOptions
+): Promise<{ exportedCount: number; totalInflow: number; totalOutflow: number }> => {
+  const { doc, exportedCount, totalInflow, totalOutflow } = await createPdfStatementDocument(
+    transactions,
+    options
+  );
+  const dateSlug = new Date().toISOString().slice(0, 10);
+  doc.save(`jaystarbliss-statement-${dateSlug}-${exportedCount}-records.pdf`);
+  return { exportedCount, totalInflow, totalOutflow };
 };
-
-

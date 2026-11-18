@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PhotoUpload from '../../components/admin/PhotoUpload';
+import { getExternalMainWebsiteUrl } from '../../utils/pwa';
 
 interface KidsProjectRecord {
   id?: string;
@@ -202,13 +203,14 @@ const AdminKidsProjects: React.FC = () => {
       {/* Action Bar */}
       <div className="flex items-center justify-end">
         <div className="flex items-center gap-3">
-          <Link
-            to="/portfolio"
+          <a
+            href={getExternalMainWebsiteUrl('/portfolio')}
             target="_blank"
+            rel="noopener noreferrer"
             className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-medium hover:bg-slate-200 transition-colors"
           >
             <ExternalLink size={15} /> View Public Kids Corner
-          </Link>
+          </a>
           <button
             onClick={handleOpenCreate}
             className="flex items-center gap-2 bg-amber-500 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-sm hover:bg-amber-400 shadow-md shadow-amber-500/20 transition-all"
@@ -226,12 +228,14 @@ const AdminKidsProjects: React.FC = () => {
             <strong>Scratch Embeds Tip:</strong> Use embed URLs formatted like <code className="bg-slate-800 px-1.5 py-0.5 rounded text-amber-300 font-mono">https://scratch.mit.edu/projects/[PROJECT_ID]/embed</code> to enable seamless in-browser play!
           </p>
         </div>
-        <Link 
-          to="/magic-particles"
+        <a 
+          href={getExternalMainWebsiteUrl('/magic-particles')}
+          target="_blank"
+          rel="noopener noreferrer"
           className="text-xs text-cyan-400 hover:text-cyan-300 font-bold shrink-0 ml-4 flex items-center gap-1"
         >
           View Magic Particles &rarr;
-        </Link>
+        </a>
       </div>
 
       {/* Table of Kids Projects */}

@@ -1,0 +1,1725 @@
+# JAYSTARBLISS STUDIOS — ACADEMIC PERFORMANCE, GRADING & OFFICIAL REPORTING SYSTEM
+
+## PROJECT OBJECTIVE
+
+Extend the existing Jaystarbliss Dynamic Institute application with a comprehensive Academic Performance Management and Official Reporting System.
+
+This system will enable authorized Jaystarbliss platform administrators and tutors assigned to schools or individual learners to:
+
+1. Locate existing assessments and official reports using their unique reference numbers.
+2. Configure grading systems for an entire school, a class, a programme or an individual learner.
+3. Aggregate a learner's academic performance across assessments, assignments, activities, tests and examinations.
+4. Generate official end-of-term reports for school learners.
+5. Generate comprehensive end-of-session reports covering all three school terms.
+6. Generate end-of-programme reports for private learners.
+7. Generate end-of-year reports for private learners.
+8. Save, track, review, issue, retrieve and download official reports.
+
+This must be implemented as a unified academic reporting architecture, not as a standalone PDF generator.
+
+**CRITICAL: We have already started implementing document and assessment references in Google AI Studio following earlier reporting-system instructions. Do not replace this work, introduce another independent reference system or break anything already implemented. Inspect the current workspace first and extend the existing implementation.**
+
+Repository:
+https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE
+
+Use the current Google AI Studio working copy as the source of truth for any changes already made there, including uncommitted changes. The GitHub repository may not contain the latest work.
+
+Do not reset, overwrite or revert newer workspace changes.
+
+---
+
+# PART 1: BEGIN WITH A COMPLETE IMPLEMENTATION AUDIT
+
+Before writing code, inspect the actual current application.
+
+This is extremely important because reference-number functionality and document redesign have already been discussed and partially implemented in earlier development work.
+
+### A. Existing reference implementation
+
+Search the entire codebase for:
+
+- Reference number generation.
+- Assessment references.
+- Report references.
+- PDF reference metadata.
+- Report identifiers.
+- Reference registries or indexes.
+- Reference validation.
+- Reference persistence.
+- Reference search components.
+- Existing reference formats.
+- Reference-number display in generated documents.
+
+Determine:
+
+1. Which record types already have permanent references.
+2. How references are generated.
+3. Whether references are stored in Firestore or generated only at download time.
+4. Whether each learner's report has its own reference.
+5. Whether an assessment and its individual learner results have distinct references.
+6. Whether historical reports can be retrieved using their existing references.
+7. Whether duplicate references are technically possible.
+8. Whether bulk PDF generation preserves individual references.
+
+**Reuse the existing reference format, generator, registry and data relationships wherever they already exist.**
+
+Only create missing functionality.
+
+Do not replace existing references or reassign them to previously issued reports.
+
+### B. Existing academic infrastructure
+
+Inspect these files and their dependencies:
+
+- `src/lib/academicSyncEngine.ts`
+- `src/lib/classes.ts`
+- `api/_lib/jdi-assessment.js`
+- `src/lib/examReportPdfGenerator.ts`
+- `src/pages/portal/TutorExaminations.tsx`
+- `src/pages/portal/ExaminationHistory.tsx`
+- `src/pages/portal/AssessmentCenter.tsx`
+- `src/pages/portal/AssignmentCenter.tsx`
+- `src/pages/portal/MilestoneCenter.tsx`
+- `src/pages/portal/SchoolLearnerInsights.tsx`
+
+Backend functions:
+
+- `netlify/functions/jdi-examinations.ts`
+- `netlify/functions/jdi-exam-management.ts`
+- `netlify/functions/examination-attempt.ts`
+- `netlify/functions/tutor-examinations.ts`
+- `netlify/functions/student-examinations.ts`
+- `netlify/functions/parent-examination-results.ts`
+- `netlify/functions/academic-assessments.ts`
+- `netlify/functions/academic-assignments.ts`
+- `netlify/functions/academic-attendance.ts`
+- `netlify/functions/academic-milestones.ts`
+- Relevant academic student, school and programme APIs.
+
+These files are a starting point, not an exhaustive list.
+
+Inspect the actual Firestore collections, document structures, existing database configurations, user roles and record relationships before designing the new data model.
+
+---
+
+# PART 2: AUTHORITY, ACCESS CONTROL AND PERMISSIONS
+
+This requirement is non-negotiable.
+
+**ALL AUTHORITY OVER GRADING CONFIGURATION, OVERALL PERFORMANCE CALCULATION AND OFFICIAL REPORT GENERATION MUST REMAIN WITH JAYSTARBLISS PLATFORM ADMINISTRATORS AND AUTHORIZED TUTORS.**
+
+School administrators must not independently configure the grading framework, override final grades, or generate and issue official academic performance reports.
+
+## 1. Jaystarbliss platform administrators
+
+Platform administrators have full authority.
+
+They can:
+
+- Access all authorized school records.
+- Access all private learner records.
+- Create and manage school grading profiles.
+- Create and manage private learner grading profiles.
+- Configure academic sessions and term periods.
+- Configure private programme reporting periods.
+- Configure grading weights and grade boundaries.
+- Customize reports for entire schools.
+- Customize reports for individual learners.
+- Generate reports in bulk.
+- Preview and approve reports.
+- Release and issue official reports.
+- Correct previously issued reports using proper versioning.
+- Search all assessment and report references.
+- Review historical grading configurations.
+- Access overall academic performance analytics.
+
+## 2. Tutors assigned to schools
+
+An authorized tutor may perform the same relevant academic-reporting operations within their assigned school and authorized teaching scope.
+
+They can:
+
+- Configure grading for an assigned school.
+- Configure grading for an assigned class or cohort.
+- Configure grading for an individual learner they are authorized to teach.
+- Generate end-of-term reports for eligible learners.
+- Generate end-of-session reports for eligible school learners.
+- Preview and review reports.
+- Release and issue reports within their authorized scope.
+- Generate reports for private learners assigned to them.
+- Manage programme-specific and individual learner grading configurations.
+- Search assessments and reports within their authorized scope.
+
+A tutor's authorization must be verified using the existing school assignments, staff-school access records, student assignments and programme relationships.
+
+Being a tutor in the system alone must not grant access to every school's learners.
+
+## 3. School administrators
+
+School administrators are not grading authorities.
+
+They must not be given controls for:
+
+- Creating grading profiles.
+- Changing category weights.
+- Changing grade boundaries.
+- Overriding calculated results.
+- Creating individual grade exceptions.
+- Generating or issuing official academic performance reports.
+- Changing an already released report.
+- Approving an unofficial result as an official report.
+
+However, preserve their existing ability to view official assessment results and access reports already released to their institution, subject to existing permissions.
+
+They must not be able to see unreleased private learner data or reports belonging to another school.
+
+## 4. Students and parents
+
+Students and parents should receive access to their own officially released reports through their existing reporting and examination interfaces.
+
+Do not introduce new student or parent permissions that expose:
+
+- Unreleased assessment scores.
+- Tutor marking notes not intended for publication.
+- Internal grading configurations.
+- Another learner's reports.
+- Other schools' records.
+
+Preserve all existing result-release restrictions.
+
+## 5. Backend enforcement
+
+These permissions must be enforced server-side.
+
+Do not rely on hiding buttons or dashboard sections.
+
+Verify the authenticated Firebase user, account status, current role, assigned school, assigned tutor relationship and target learner.
+
+Every grading-profile change, report-generation action and report-release operation must be independently authorized.
+
+---
+
+# PART 3: OFFICIAL ASSESSMENT AND REPORT REFERENCE LOOKUP
+
+Create a dedicated Reference Lookup facility for platform administrators and authorized tutors.
+
+The purpose is to make retrieving a particular assessment or previously generated report extremely easy.
+
+## 1. Search interface
+
+Introduce a professionally designed search field in appropriate administration and tutor academic-reporting interfaces.
+
+Suggested heading:
+
+**Academic Records Lookup**
+
+Supporting text:
+
+Search for an assessment or official learner report using its reference number.
+
+The search field should accept:
+
+- Assessment reference numbers.
+- Individual assessment report references.
+- End-of-term report references.
+- End-of-session report references.
+- End-of-programme report references.
+- End-of-year report references.
+
+Use the reference system already implemented in the current workspace.
+
+Do not invent a new reference format if the application already has one.
+
+Search should work regardless of letter casing or accidental leading/trailing whitespace.
+
+Preserve the actual stored reference.
+
+## 2. Search results
+
+Each result should provide useful information at a glance:
+
+- Reference number.
+- Record type.
+- Assessment or report title.
+- Learner name.
+- School or private enrolment classification.
+- Class or programme.
+- Academic session or reporting period.
+- Generation date.
+- Report status.
+- Assessment or report score where authorized.
+
+Use appropriate result types to distinguish:
+
+- Assessment.
+- Individual assessment report.
+- Term report.
+- Session report.
+- Programme completion report.
+- Annual private learner report.
+
+## 3. Result actions
+
+Depending on the user's authority and the record's status, provide:
+
+- View Record.
+- View Assessment Details.
+- Preview Report.
+- Download PDF.
+- View Report History.
+- View Related Assessments.
+- View Reference Information.
+
+Do not expose actions that the current user's permissions do not allow.
+
+Clicking a result should take the user to the actual source record or appropriate report details interface.
+
+It should not simply display a PDF filename.
+
+## 4. Reference persistence
+
+Every reference must remain permanent.
+
+Downloading an existing report again must not generate another reference.
+
+The assessment's reference must remain associated with the same assessment.
+
+Each learner's individual report must have its own distinct report reference.
+
+A bulk report generation must generate or reuse the correct individual references for each learner.
+
+If a report is corrected or reissued, preserve the original reference and history. Apply the existing versioning strategy or introduce an explicit superseding report version with an auditable relationship.
+
+Never allow two unrelated records to share the same reference.
+
+Use a secure server-side reference allocation mechanism with uniqueness checks.
+
+Do not use sequential document IDs as public references if that would expose internal database identifiers.
+
+## 5. Missing reference handling
+
+If the current reference implementation does not cover some record types, extend it without breaking existing references.
+
+For historical records:
+
+- Preserve any valid existing reference.
+- Where necessary, generate and persist a permanent reference using the established format.
+- Do not regenerate valid historical references.
+- Avoid duplicate references.
+- Record any migration or reference assignment in an audit log.
+
+If there is no existing reference registry but references are already stored on individual source documents, do not automatically duplicate every record into another registry unless a dedicated index is technically necessary.
+
+The objective is one coherent reference system.
+
+---
+
+# PART 4: BUILD A CENTRAL ACADEMIC PERFORMANCE & GRADING ENGINE
+
+This is the central feature of the project.
+
+The application must be able to calculate a learner's overall academic performance for a defined reporting period.
+
+The calculation should use all eligible and properly graded academic records associated with the learner during that period.
+
+The system must support:
+
+- Assessments.
+- Quizzes.
+- Assignments.
+- Projects.
+- Class activities.
+- Tests.
+- Examinations.
+- Practical tasks.
+- Other explicitly scored academic work.
+
+The system must also incorporate qualitative academic evidence from:
+
+- Attendance.
+- Learning milestones.
+- Programme progression.
+- Completed practical achievements.
+- Tutor feedback.
+- General learner participation.
+
+However, do not automatically convert ungraded milestones or attendance statuses into academic scores.
+
+Numerical performance and qualitative learner development must remain distinguishable.
+
+## 1. Existing data sources to consolidate
+
+Inspect and reuse the existing authoritative records.
+
+### Assessment and examination records
+
+- `jdiExams`
+- `schoolExams`
+- `jdiExamAttempts`
+
+These cover the existing unified assessment system.
+
+Use the associated exam definitions and individual learner attempts to retrieve:
+
+- Assessment title.
+- Subject.
+- Assessment category.
+- Learner identity.
+- School or programme association.
+- Score.
+- Maximum score.
+- Percentage.
+- Attempt status.
+- Grading status.
+- Tutor feedback.
+- Submission date.
+- Result-release date.
+
+Only use scores appropriate for official reporting.
+
+### Assignment records
+
+Inspect:
+
+- `assignments`
+- `assignmentSubmissions`
+- Mirrored assignment records in `jdiExams` and `schoolExams`.
+- Related records in `jdiExamAttempts`.
+
+The existing `academicSyncEngine.ts` already combines multiple representations of academic work.
+
+Extend this existing synchronization logic or build a server-side equivalent.
+
+Do not count an assignment twice simply because it appears in multiple collections.
+
+For a school-wide assignment, obtain the actual learner-specific submission and score rather than treating the master assignment as a graded result for every learner.
+
+### Manually recorded academic assessments
+
+Inspect:
+
+`academic_assessments`
+
+These currently support manually recorded scores and tutor feedback.
+
+Preserve this functionality.
+
+Audit the score structure and identify whether the score is stored out of 100 or another maximum.
+
+Do not silently reinterpret existing records.
+
+### Activities and milestones
+
+Inspect:
+
+- Existing graded activities.
+- Ungraded activities.
+- `milestones`.
+
+Include numerical scores only where an actual grading rubric or score exists.
+
+Ungraded activities should still be available as evidence of participation and learning engagement.
+
+### Attendance
+
+Inspect:
+
+`attendance`
+
+Use the existing attendance records to calculate attendance information for the selected period.
+
+Support:
+
+- Present.
+- Absent.
+- Late.
+- Excused.
+
+Attendance should appear as a separate report metric by default.
+
+It may become part of a numerical grading framework only when an authorized administrator or tutor explicitly enables it and defines an appropriate calculation method.
+
+Never invent an attendance grade.
+
+---
+
+# PART 5: SCORING NORMALIZATION, DATA INTEGRITY AND DUPLICATE PREVENTION
+
+This part requires particular care.
+
+The existing academic infrastructure contains different score structures.
+
+For example:
+
+- Examinations use `score` and `maxScore`.
+- Assignments use `grade` and `maxMarks`.
+- Manually recorded academic assessments have historically used a 100-point scale.
+- Some activities have no numerical marks.
+
+Normalize all eligible scores into a standard percentage for the purpose of weighted academic calculations:
+
+Percentage = (Earned Marks / Maximum Available Marks) × 100.
+
+But preserve each original score and maximum score.
+
+Never overwrite historical marks simply to make them conform to the new calculation engine.
+
+### 1. Score-schema audit
+
+Inspect every source and determine:
+
+- Whether its score is a raw mark.
+- Whether it is already a percentage.
+- Its maximum available marks.
+- Its grading status.
+- Whether its results have been officially released.
+- Whether it represents a final or intermediate submission.
+
+The existing `academic-assignments.ts` validation currently allows grades from 0 to 100, while assignment records also have `maxMarks`.
+
+Investigate this carefully before consuming historical data.
+
+Do not assume that a stored score is a percentage simply because it is a number below 100.
+
+### 2. Eligible results
+
+For an official performance report:
+
+- Include properly graded or finalized academic records.
+- Include assessment results that satisfy the existing publication/release requirements.
+- Exclude pending or unreviewed submissions from the final numerical calculation.
+- Flag missing grades.
+- Flag incomplete assessments.
+- Preserve tutor feedback.
+- Do not convert missing records into zero automatically.
+
+### 3. Missing work policy
+
+Make the handling of missing assignments configurable.
+
+Possible options:
+
+- Exclude missing work from the calculated result and flag it.
+- Award zero after the due date according to the selected grading policy.
+- Mark the report incomplete pending further review.
+
+A submission awaiting tutor marking must not automatically be treated as zero.
+
+An ungraded activity must not reduce a learner's overall score.
+
+### 4. Multiple attempts and resubmissions
+
+A learner may have several attempts or submissions for the same work.
+
+Ensure the grading engine selects the correct final result.
+
+Respect the existing configured assessment attempt policy.
+
+Where no explicit policy exists, use the latest authorized finalized/released result as the default, and document that treatment in the grading calculation details.
+
+Never add multiple attempts together as though they were separate assessments.
+
+For assignment resubmissions, use the final approved graded submission, not every previous submission.
+
+### 5. Deduplication
+
+Implement a canonical academic-work identity.
+
+Use existing relationships such as:
+
+- Exam ID.
+- Attempt ID.
+- Assignment ID.
+- Submission document ID.
+- Learner ID.
+- Existing linked-work identifiers.
+
+One underlying graded work item must contribute only once.
+
+If the same item appears in `assignments` and `jdiExams`, resolve the relationship before calculating the result.
+
+### 6. Calculation transparency
+
+Every generated report should have an auditable calculation breakdown showing:
+
+- Included academic records.
+- Excluded records.
+- Reason for exclusion.
+- Raw earned marks.
+- Maximum marks.
+- Normalized percentage.
+- Category assignment.
+- Weight applied.
+- Final contribution.
+
+A tutor or administrator should be able to understand exactly how the overall score was obtained.
+
+---
+
+# PART 6: FULLY CUSTOMIZABLE GRADING CONFIGURATION BUILDER
+
+Create a professional Grading Configuration Builder accessible only to authorized platform administrators and tutors.
+
+This must be a proper functional configuration interface.
+
+It should not be a static collection of grading presets.
+
+The user must be able to configure the grading system for:
+
+1. An entire school.
+2. A selected class or cohort.
+3. An individual learner.
+4. A private learner's specific programme.
+5. A private learner's individual reporting period.
+
+## 1. Grading categories
+
+Allow authorized users to define the categories that contribute to overall academic performance.
+
+Possible categories include:
+
+- Assignments.
+- Projects.
+- Class Activities.
+- Quizzes.
+- Tests.
+- Mid-Term Assessments.
+- Practical Assessments.
+- Final Examinations.
+- Other Custom Academic Work.
+
+These should be configurable.
+
+The administrator or tutor should be able to:
+
+- Add a category.
+- Rename a category.
+- Remove a category.
+- Set its contribution weight.
+- Define which records belong to it.
+- Choose how scores in that category are aggregated.
+- Enable or disable the category for the reporting period.
+
+The application must support custom categories without forcing every school or programme to use the same evaluation structure.
+
+## 2. Category weighting
+
+Allow each category to have a percentage contribution.
+
+Example configuration:
+
+<escape>Assignments and Projects: 20%</escape>
+
+<escape>Class Activities: 10%</escape>
+
+<escape>Quizzes: 10%</escape>
+
+<escape>Tests and Mid-Term: 20%</escape>
+
+<escape>Final Examination: 40%</escape>
+
+Total: 100%.
+
+This is an illustrative example only.
+
+Never force this weighting on all schools or programmes.
+
+The application must validate the total weight.
+
+An active grading profile must have valid weights totalling exactly 100%, subject to controlled decimal precision.
+
+Clearly identify errors where the configured weights do not add up.
+
+## 3. Category calculation methods
+
+Allow the authorized user to choose how results within a category are aggregated.
+
+Support at least:
+
+**A. Total marks method**
+
+Total earned marks divided by total available marks, multiplied by 100.
+
+This allows assignments with different maximum marks to contribute proportionately to the category.
+
+**B. Assessment percentage average**
+
+Average the individual normalized assessment percentages.
+
+This gives each eligible assessment equal influence within that category.
+
+The selected method must be saved as part of the grading configuration.
+
+Do not change the aggregation method silently during calculation.
+
+## 4. Grade boundaries and classifications
+
+Allow administrators and authorized tutors to customize the grading scale.
+
+Each grade entry should include:
+
+- Grade letter or classification.
+- Minimum percentage.
+- Maximum percentage.
+- Performance description.
+- Pass/fail classification where applicable.
+
+For example, the existing Jaystarbliss grading function uses:
+
+- A: 70–100.
+- B: 60–69.
+- C: 50–59.
+- D: 45–49.
+- E: 40–44.
+- F: Below 40.
+
+Use this existing scale as a recognizable starter preset where appropriate, but make it editable.
+
+Do not permanently hardcode these thresholds into the new reporting engine.
+
+Validate that grade ranges do not overlap or leave unexplained gaps.
+
+Support custom labels and classifications.
+
+Allow the authorized user to set the minimum pass mark independently of the descriptive grade labels.
+
+## 5. Missing categories and empty data
+
+Do not silently redistribute a category's weight because the learner has no score in that category.
+
+For example, if Final Examination contributes 40% but there is no eligible examination result, the system must flag the missing data.
+
+Provide an explicit option for authorized users to:
+
+- Retain the category and mark the result incomplete.
+- Exclude the category and deliberately redistribute the remaining weights.
+
+Any redistribution must be previewed and explicitly confirmed.
+
+Record the resulting configuration and the person who approved it.
+
+## 6. Individual learner overrides
+
+Authorized users must be able to customize grading for a specific learner.
+
+For example, an administrator may establish a school-wide grading profile and then override the configuration for one learner.
+
+Provide clear visibility into:
+
+- The inherited school or programme profile.
+- The individual override.
+- Categories changed.
+- Weight changes.
+- Grade-scale changes.
+- The person who made the change.
+- The date and reason for the change.
+
+Allow authorized users to reset the learner to the inherited configuration.
+
+Do not silently modify the original school-wide profile when an individual override is created.
+
+## 7. Reusable grading profiles
+
+Support saving configurations as reusable profiles.
+
+Examples:
+
+- School Standard Grading.
+- Junior Class Grading.
+- Practical Technology Programme.
+- Programming Programme.
+- Private Music Programme.
+- Custom Individual Learner Profile.
+
+Profiles must be scoped correctly.
+
+A tutor must not accidentally apply a private learner's grading profile to an unrelated school.
+
+---
+
+# PART 7: ACADEMIC PERIOD AND CALENDAR MANAGEMENT
+
+The reporting engine needs genuine academic periods.
+
+Do not rely on manually typed academic-session text as the only way to determine which assessments belong in a particular report.
+
+The existing `academicSession` field in the document-header configuration is descriptive metadata, not a complete academic calendar.
+
+Create or extend an appropriate Academic Period Management system.
+
+## 1. School academic sessions
+
+Support school-specific academic sessions.
+
+Each academic session must contain:
+
+- Session name.
+- School ID.
+- Start date.
+- End date.
+- Session status.
+- Term 1.
+- Term 2.
+- Term 3.
+
+Each term must have:
+
+- Term name.
+- Start date.
+- End date.
+- Reporting status.
+- Optional reporting notes.
+
+Example:
+
+2026/2027 Academic Session
+
+- Term 1: Exact configured dates.
+- Term 2: Exact configured dates.
+- Term 3: Exact configured dates.
+
+The dates must be configured by an authorized platform administrator or tutor assigned to that school.
+
+Do not guess term dates.
+
+## 2. Private learner programme periods
+
+Private learners require programme-based reporting periods.
+
+Resolve the actual enrolment and programme association.
+
+Where available, use:
+
+- Programme ID.
+- Programme name.
+- Programme start date.
+- Programme completion date.
+- Module progression.
+- Programme status.
+- Assigned tutor.
+
+The end-of-programme report should be tied to the actual learner's selected programme.
+
+Where dates are missing, allow an authorized user to configure the reporting period explicitly.
+
+Do not assume that every private programme lasts one year.
+
+## 3. Private learner annual period
+
+Support an independently defined one-year reporting period.
+
+The tutor or administrator must be able to select the precise start and end dates.
+
+The period should support a clear annual academic summary, even where the learner is enrolled in multiple programmes.
+
+## 4. Period membership
+
+An academic item must belong to a reporting period based on its actual relevant completion or submission date.
+
+Examples:
+
+- An examination belongs to the period in which the learner submitted the attempt.
+- An assignment belongs to the period in which the learner completed the eligible submission.
+- An attendance record belongs to the actual class date.
+- A completed milestone belongs to its completion date.
+
+Do not assign work to a term merely because its creation date or due date falls within that term.
+
+Where source records lack reliable dates, flag them for review.
+
+---
+
+# PART 8: FOUR OFFICIAL PERFORMANCE REPORT TYPES
+
+The system must produce four official categories of overall learner performance reports.
+
+All four must use the unified Jaystarbliss PDF document branding framework established in the earlier document redesign work.
+
+Preserve the permanent institutional logo watermark and existing school/private header distinction.
+
+Use the exact watermark asset already specified:
+
+`public/FINAL_LOGO_JDI-removebg-preview.png`
+
+Do not reintroduce the old document-header customizer.
+
+## REPORT TYPE A: END-OF-TERM REPORT — SCHOOL LEARNERS
+
+Generate one individual report per eligible learner for a selected school term.
+
+The report must identify:
+
+- Registered school name as the main bold heading.
+- Learner name.
+- Class / Grade.
+- Academic session.
+- Selected term.
+- Reporting period.
+- Report reference number.
+
+### Academic performance summary
+
+Include:
+
+- Overall term percentage.
+- Overall grade.
+- Performance classification.
+- Number of graded assessments.
+- Number of assignments completed.
+- Pending or excluded assessments where relevant.
+
+### Category breakdown
+
+Show performance in each configured category.
+
+For example:
+
+| Category | Score | Weight | Contribution |
+|---|---:|---:|---:|
+| Assignments | 85% | 20% | 17 |
+| Activities | 90% | 10% | 9 |
+| Quizzes | 78% | 10% | 7.8 |
+| Tests | 72% | 20% | 14.4 |
+| Examination | 80% | 40% | 32 |
+| Overall | | 100% | 80.2 |
+
+The example is illustrative.
+
+Use actual learner records and configured grading rules.
+
+### Subject and programme performance
+
+Where applicable, break results down by:
+
+- Subject.
+- Programme.
+- Learning track.
+- Relevant academic area.
+
+Do not fabricate subject grades where there is insufficient data.
+
+### Attendance and participation
+
+Include:
+
+- Attendance rate.
+- Present sessions.
+- Absences.
+- Late arrivals.
+- Excused absences.
+- Relevant learning milestones.
+
+### Tutor remarks
+
+Include:
+
+- Strengths.
+- Areas requiring improvement.
+- General tutor feedback.
+- Suggested areas of focus for the next term.
+
+Where appropriate, allow the authorized tutor to add an overall term remark before releasing the report.
+
+## REPORT TYPE B: END-OF-SESSION REPORT — SCHOOL LEARNERS
+
+This is the comprehensive annual school report.
+
+It must contain performance across all three configured terms.
+
+It should not merely duplicate Term 3 results.
+
+### Institutional identity
+
+The registered school's name must be the bold heading at the top.
+
+Display:
+
+- Learner identity.
+- School.
+- Class.
+- Academic session.
+- Session reporting period.
+- Report reference.
+
+### Three-term comparison
+
+Display:
+
+- Term 1 performance.
+- Term 2 performance.
+- Term 3 performance.
+- Annual overall performance.
+- Grade progression.
+- Academic improvement or decline.
+
+Where appropriate, use charts to make performance progression easy to understand.
+
+### Annual academic summary
+
+Include:
+
+- Performance per subject.
+- Performance per configured grading category.
+- Number of assessments completed.
+- Major assignments and projects.
+- Key achievements.
+- Attendance summary across all three terms.
+- Completed learning milestones.
+- Strengths and development areas.
+- Annual tutor/class feedback.
+
+### Annual calculation
+
+The annual grading framework may use either:
+
+- Configured weighting across Terms 1, 2 and 3.
+- Aggregated academic evidence across the complete session.
+
+Allow the authorized administrator or tutor to configure the chosen method.
+
+Do not average the three term percentages blindly when the underlying assessment counts, maximum marks or period weights differ.
+
+Ensure each underlying academic record contributes only once to the annual result.
+
+The annual report must preserve all three individual term results as separate components.
+
+## REPORT TYPE C: END-OF-PROGRAMME REPORT — PRIVATE LEARNERS
+
+This report is for privately enrolled learners.
+
+Its bold institutional heading must be:
+
+**JAYSTARBLISS DYNAMIC INSTITUTE**
+
+Display the learner's:
+
+- Name.
+- Private enrolment classification.
+- Programme.
+- Programme start date.
+- Programme completion date.
+- Assigned tutor.
+- Reporting reference.
+
+### Performance summary
+
+Include:
+
+- Overall programme performance.
+- Programme grade.
+- Module performance.
+- Assignments.
+- Projects.
+- Practical assessments.
+- Quizzes.
+- Tests.
+- Examinations.
+- Completed programme milestones.
+
+### Practical skills and achievements
+
+Where actual evidence exists, include:
+
+- Skills acquired.
+- Projects completed.
+- Practical competencies demonstrated.
+- Module completion.
+- Areas of proficiency.
+- Areas needing more practice.
+
+These should be derived from actual programme records and tutor observations.
+
+Do not invent practical achievements based on enrolment alone.
+
+### Tutor evaluation
+
+Provide:
+
+- Overall tutor remarks.
+- Strengths.
+- Areas for further development.
+- Programme completion recommendation.
+- Suggested next learning stage.
+
+The tutor must be able to customize the narrative before the report is officially released.
+
+A report should not falsely certify programme completion if the learner has not fulfilled the required completion conditions.
+
+## REPORT TYPE D: END-OF-YEAR REPORT — PRIVATE LEARNERS
+
+This report covers a defined one-year reporting period.
+
+The institutional heading must be:
+
+**JAYSTARBLISS DYNAMIC INSTITUTE**
+
+The report should provide a comprehensive picture of the private learner's progress over the year.
+
+Include:
+
+- Learner identity.
+- Relevant programmes.
+- Reporting date range.
+- Overall year performance.
+- Programme-by-programme results.
+- Assessment progression.
+- Assignment and project performance.
+- Practical achievements.
+- Module completion.
+- Attendance and participation where available.
+- Learning milestones.
+- Tutor evaluation.
+- Recommended next learning objectives.
+
+Where a learner participates in multiple programmes, provide a clear breakdown for each.
+
+Do not blindly combine incomparable programme scores.
+
+Normalize eligible scores and apply the selected grading profile.
+
+The year report should provide both an overall learner summary and an appropriate programme-specific breakdown.
+
+---
+
+# PART 9: REPORT GENERATION WORKFLOW
+
+Create a central Academic Performance & Reporting Centre accessible to authorized users.
+
+This can be integrated into the existing assessment/reporting architecture rather than creating disconnected pages.
+
+### Step 1: Select report type
+
+Available report types:
+
+- End-of-Term Report.
+- End-of-Session Report.
+- End-of-Programme Report.
+- End-of-Year Report.
+
+Only show applicable options for the selected learner's enrolment category.
+
+### Step 2: Select reporting scope
+
+Support:
+
+- Entire school.
+- Selected class or cohort.
+- Selected programme.
+- Individual learner.
+
+For private learners, allow programme-specific and individual learner reporting.
+
+### Step 3: Select reporting period
+
+Examples:
+
+For schools:
+
+- Academic session.
+- Term 1.
+- Term 2.
+- Term 3.
+- Full session.
+
+For private learners:
+
+- Programme start to completion.
+- Selected programme period.
+- Defined one-year period.
+
+Use actual configured periods.
+
+### Step 4: Select grading profile
+
+Allow the user to choose:
+
+- Existing applicable profile.
+- Inherited school profile.
+- Programme-specific profile.
+- Individual learner override.
+
+The user must be able to review the selected configuration before proceeding.
+
+### Step 5: Configure report content
+
+Provide appropriate inclusion controls.
+
+For example:
+
+- Include detailed assessment history.
+- Include assignments and projects.
+- Include activity performance.
+- Include attendance.
+- Include learning milestones.
+- Include tutor remarks.
+- Include subject breakdown.
+- Include graphical performance analysis.
+
+Do not allow report-content toggles to override underlying security or grading rules.
+
+### Step 6: Calculate and preview
+
+Run the academic calculation engine.
+
+Show the user:
+
+- Number of eligible learners.
+- Number of academic records processed.
+- Number of graded records.
+- Number of pending records.
+- Number of excluded records.
+- Overall calculation.
+- Missing-data warnings.
+
+For bulk reports, provide a learner-by-learner summary.
+
+Flag learners with missing data or incomplete grading.
+
+Do not silently issue incomplete final grades.
+
+### Step 7: Review individual reports
+
+Provide a way to preview every learner's overall result before release.
+
+Authorized tutors should be able to add or edit their remarks.
+
+Allow corrections to the configuration before finalizing.
+
+### Step 8: Generate official reports
+
+Generate individual PDFs.
+
+For school-wide operations:
+
+- Generate an individual report for each eligible learner.
+- Retain each learner's unique reference.
+- Provide ZIP download for bulk convenience.
+- Preserve individual PDFs in the report registry.
+
+Do not combine the entire school's reports into one undifferentiated PDF without preserving each learner's individual document identity.
+
+### Step 9: Release and issue
+
+Only an authorized platform administrator or assigned tutor may officially release the report.
+
+After release:
+
+- Persist the report.
+- Preserve the exact grading profile.
+- Preserve the calculation details.
+- Preserve the source-record references.
+- Save the generated report reference.
+- Record the releasing user.
+- Record the release timestamp.
+- Make the report available through the existing authorized learner, parent and school viewing channels.
+
+---
+
+# PART 10: REPORT RECORDS, HISTORY AND IMMUTABLE SNAPSHOTS
+
+Reports must be treated as official academic records.
+
+Do not regenerate a historical report from changing live records every time someone opens it.
+
+When a report is finalized, persist a complete snapshot containing:
+
+- Report type.
+- Report reference.
+- Learner identity.
+- School/programme identity.
+- Reporting period.
+- Selected grading profile ID.
+- Grading profile version.
+- Category weights.
+- Grade boundaries.
+- Included academic records.
+- Excluded records and their reasons.
+- Original scores.
+- Maximum scores.
+- Normalized percentages.
+- Category calculations.
+- Final overall score.
+- Final grade.
+- Tutor remarks.
+- Attendance summary.
+- Milestone summary.
+- Generated PDF information.
+- Generated timestamp.
+- Released timestamp.
+- Issuing administrator or tutor.
+- Report version.
+
+The original released report must remain reproducible.
+
+## Corrections and reissues
+
+If an authorized tutor or administrator discovers an error after issuing a report:
+
+1. Do not silently overwrite the original.
+2. Open the historical report.
+3. Allow an authorized correction workflow.
+4. Recalculate or edit the permitted information.
+5. Generate a new report version.
+6. Record the correction reason.
+7. Record who made the correction.
+8. Preserve the original report.
+9. Link the new report to the superseded version.
+10. Ensure the latest official version is clearly identifiable.
+
+A historical report must never change invisibly because a tutor later modifies an assessment score or grading profile.
+
+---
+
+# PART 11: GRADING PROFILE AND REPORT AUDIT TRAIL
+
+Every important operation must be auditable.
+
+Record:
+
+- Profile creation.
+- Profile modification.
+- Individual learner override.
+- School-level grading changes.
+- Category weight changes.
+- Grade-boundary changes.
+- Academic-period configuration.
+- Report calculation.
+- Report preview.
+- Report release.
+- Report correction.
+- Report reissue.
+
+Each audit record should identify:
+
+- Actor UID.
+- Actor role.
+- School ID where applicable.
+- Learner ID where applicable.
+- Programme ID where applicable.
+- Previous configuration where relevant.
+- New configuration.
+- Timestamp.
+- Reason for the change.
+
+Do not permit ordinary report viewers to modify audit records.
+
+Preserve historical configurations so that previously issued reports remain reproducible.
+
+---
+
+# PART 12: RECOMMENDED DATA ARCHITECTURE
+
+Inspect the current database before creating collections.
+
+Reuse existing academic and reference structures wherever possible.
+
+Do not blindly create duplicate collections.
+
+If the current system does not already have equivalent functionality, introduce appropriately structured records for the following responsibilities.
+
+### A. Academic period records
+
+Potential collection:
+
+`academicPeriods`
+
+Responsibilities:
+
+- School academic sessions.
+- Term date ranges.
+- Private programme reporting periods.
+- Annual private learner periods.
+- Reporting status.
+
+### B. Grading profiles
+
+Potential collection:
+
+`academicGradingProfiles`
+
+Responsibilities:
+
+- Grading categories.
+- Percentage weights.
+- Aggregation method.
+- Grade boundaries.
+- Missing-work rules.
+- Profile scope.
+- Version information.
+- Authorized owner and editor.
+
+### C. Official performance reports
+
+Potential collection:
+
+`academicPerformanceReports`
+
+Responsibilities:
+
+- Permanent report references.
+- Learner and school information.
+- Reporting period.
+- Grading profile snapshot.
+- Calculated results.
+- Report status.
+- PDF storage reference.
+- Report history.
+- Release and correction information.
+
+### D. Reference search index
+
+Only where required by the existing implementation.
+
+Potential collection:
+
+`academicReferenceIndex`
+
+Responsibilities:
+
+- Reference normalization.
+- Reference-to-record lookup.
+- Record type.
+- Underlying document ID.
+- Report version.
+- Authorized search metadata.
+
+If an existing reference registry already serves this purpose, extend it instead.
+
+### E. Report calculation service
+
+Create a reusable, preferably server-side calculation engine.
+
+Possible organization:
+
+`src/lib/academic-reporting/`
+
+Potential responsibilities:
+
+- `academicDataResolver.ts`
+- `gradingEngine.ts`
+- `gradingProfiles.ts`
+- `academicPeriods.ts`
+- `reportCalculator.ts`
+- `reportSnapshot.ts`
+- `reportReferences.ts`
+- `reportPermissions.ts`
+
+The exact organization may differ, but keep data retrieval, calculation, permissions and PDF rendering appropriately separated.
+
+### Backend safety
+
+Use authenticated server-side Firebase Admin operations for sensitive report calculations, official reference allocation, grading updates, report issuance and historical snapshots.
+
+Do not expose answer keys, private marking information or unauthorized school data through client-side broad Firestore queries.
+
+---
+
+# PART 13: OFFICIAL PDF DESIGN AND BRANDING
+
+All four report types must use the unified institutional PDF document design system established in the earlier instructions.
+
+### School reports
+
+The registered school's name appears prominently in bold at the top.
+
+### Private learner reports
+
+The main bold heading must be:
+
+JAYSTARBLISS DYNAMIC INSTITUTE
+
+### Permanent watermark
+
+Use:
+
+`public/FINAL_LOGO_JDI-removebg-preview.png`
+
+The transparent black logo must be the subtle central watermark on all pages.
+
+Preserve its original proportions and transparency.
+
+### Shared branding
+
+Use:
+
+- Navy geometric upper banner.
+- Professional institutional typography.
+- Crimson accent details where appropriate.
+- Light document backgrounds.
+- Central watermark.
+- Appropriate reference number.
+- Contact footer.
+- Page numbering.
+- Consistent geometric bottom design.
+
+Do not make the logo a large conventional top-header graphic.
+
+### Document-specific content
+
+Each report type must have its own suitable information arrangement.
+
+School term reports should emphasize term performance.
+
+School session reports should emphasize three-term progression.
+
+Private programme reports should emphasize programme completion and skills acquired.
+
+Private annual reports should emphasize yearly learner development.
+
+Do not force all four documents into identical content layouts.
+
+Use appropriate charts, tables and performance comparisons where they genuinely improve understanding.
+
+Ensure multi-page reports repeat the watermark and appropriate branding without overlapping the report content.
+
+---
+
+# PART 14: ACADEMIC DASHBOARD AND REPORTING EXPERIENCE
+
+The reporting centre should be easy for administrators and tutors to use.
+
+Provide meaningful sections such as:
+
+1. Report Overview.
+2. Reference Lookup.
+3. Grading Profiles.
+4. Academic Periods.
+5. Generate Reports.
+6. Issued Reports.
+7. Report History.
+
+### Report overview
+
+Show meaningful metrics:
+
+- Reports generated.
+- Reports released.
+- Reports awaiting review.
+- Learners covered.
+- Schools covered.
+- Incomplete reports.
+- Reports requiring correction.
+
+Only show information within the current user's authorized scope.
+
+### Grading profile management
+
+Provide searchable profiles with:
+
+- Profile name.
+- Scope.
+- School or programme.
+- Last updated.
+- Updated by.
+- Number of learners using the profile.
+
+### Issued reports
+
+Provide a list with:
+
+- Report reference.
+- Learner.
+- School or programme.
+- Report type.
+- Reporting period.
+- Issue date.
+- Issued by.
+- Current version.
+- Report status.
+
+Allow filtering by school, report type, academic session, term, programme, learner and release status.
+
+### Report preview
+
+The preview should allow tutors to inspect:
+
+- Academic summary.
+- Category breakdown.
+- Individual assessments.
+- Attendance.
+- Milestones.
+- Tutor remarks.
+- Final grade.
+
+Clearly identify incomplete information.
+
+Do not confuse an internal preview with an officially released report.
+
+---
+
+# PART 15: STRICT DATA AND GRADING RULES
+
+These requirements are mandatory.
+
+1. Never invent a score.
+2. Never invent an attendance percentage.
+3. Never invent learner achievements.
+4. Never fabricate completed assignments.
+5. Never assume an ungraded activity has a numerical score.
+6. Never include pending submissions as zero automatically.
+7. Never count mirrored academic records twice.
+8. Never use a score without verifying its maximum marks.
+9. Never convert an existing raw mark into a percentage incorrectly.
+10. Never expose unreleased examination results.
+11. Never use another school's data when generating a school report.
+12. Never generate a private learner's report using another learner's records.
+13. Never assume a school term's date range.
+14. Never assume that a private programme is completed.
+15. Never silently change an existing report after official release.
+
+Where information is missing, display an appropriate warning and allow authorized review.
+
+The report-generation process must prioritize accuracy over producing a report for every learner at all costs.
+
+---
+
+# PART 16: TESTING AND ACCEPTANCE CRITERIA
+
+Do not declare this feature complete merely because the application compiles.
+
+Test the actual academic data, grading calculations, report snapshots, references and permissions.
+
+## A. Reference lookup
+
+- Existing assessment references remain unchanged.
+- Existing report references remain unchanged.
+- New individual reports receive permanent unique references.
+- Reference search finds assessment records.
+- Reference search finds individual assessment reports.
+- Reference search finds term reports.
+- Reference search finds session reports.
+- Reference search finds programme reports.
+- Reference search finds private annual reports.
+- Case and whitespace normalization work.
+- Repeated PDF downloads preserve the original reference.
+- Corrected reports retain their historical version relationships.
+- Unauthorized users cannot search restricted references.
+
+## B. Grading configuration
+
+- Platform administrators can create and manage profiles.
+- Assigned tutors can configure their authorized schools and learners.
+- School administrators cannot change grading profiles.
+- Tutors cannot manage unassigned schools or learners.
+- Category weights are validated.
+- Grade boundaries are validated.
+- Individual overrides do not alter school-wide profiles.
+- Empty categories do not silently receive zero.
+- Weight redistribution requires explicit approval.
+- Profile changes are auditable.
+
+## C. Calculation engine
+
+- Assessment results are included correctly.
+- Assignment scores are included correctly.
+- Project scores are included correctly.
+- Eligible activities are included correctly.
+- Ungraded activities are excluded from numerical grading.
+- Multiple submissions are handled correctly.
+- Duplicate mirrored records are counted once.
+- Normalized percentages are accurate.
+- Different maximum marks are handled correctly.
+- Pending marking does not become zero.
+- Missing-work policy is applied correctly.
+- Attendance calculations are accurate.
+- Historical data remains unchanged.
+
+## D. School reports
+
+- Individual term reports work.
+- Term 1, Term 2 and Term 3 remain distinct.
+- Session reports contain all three terms.
+- Annual calculations use the selected configured method.
+- The same assessment is not counted twice.
+- School name appears as the main heading.
+- Each learner gets a distinct report reference.
+- Bulk PDF generation works.
+
+## E. Private learner reports
+
+- End-of-programme reports use the correct programme.
+- Annual reports use the selected date range.
+- Multiple programmes are represented correctly.
+- Programme-specific achievements are accurate.
+- JAYSTARBLISS DYNAMIC INSTITUTE appears as the main heading.
+- Each report receives a permanent reference.
+- Private parent-enrolled and individually enrolled learners are both supported.
+
+## F. Historical integrity
+
+- Issued reports remain unchanged.
+- Grading profile versions are preserved.
+- Source records are traceable.
+- Corrections create new versions.
+- Old reports remain retrievable.
+
+## G. Technical validation
+
+Run:
+
+`npm run build`
+
+`npm run lint`
+
+Run relevant existing tests and introduce calculation and authorization tests.
+
+Test:
+
+- An administrator.
+- A tutor assigned to one school.
+- A tutor assigned to a private learner.
+- A tutor without permission for another school.
+- A school administrator.
+- A parent.
+- A student.
+
+Test the actual PDF outputs and confirm that reference numbers remain consistent between the report interface, saved records and downloaded files.
+
+Do not deploy automatically.
+
+Do not merge into main automatically.
+
+---
+
+# FINAL IMPLEMENTATION INSTRUCTION
+
+Treat this as a major institutional academic-records feature.
+
+We are not just producing another report template.
+
+We are building a system that can accurately evaluate a learner's performance over a defined period, apply a customizable grading framework, preserve the underlying academic evidence and produce an official report that can be retrieved and verified using its reference number.
+
+The system must work across both school and private learner structures.
+
+The reporting authority must remain with Jaystarbliss platform administrators and tutors assigned to the relevant schools or learners.
+
+School administrators may view reports released to their institution but cannot configure grading or independently generate and issue official reports.
+
+Most importantly:
+
+**EXTEND THE EXISTING REFERENCE IMPLEMENTATION. DO NOT BUILD A COMPETING REFERENCE SYSTEM.**
+
+**REUSE THE EXISTING ACADEMIC RECORDS. DO NOT CREATE DUPLICATE OR FABRICATED ACADEMIC DATA.**
+
+**PRESERVE ALL EXISTING ASSESSMENT, ASSIGNMENT, EXAMINATION, GRADING, RESULT-RELEASE AND REPORTING FUNCTIONALITY.**
+
+Implement the complete solution in a maintainable way, test the actual workflows and provide a detailed implementation report.
+
+At completion, document:
+
+- Existing reference functionality discovered and reused.
+- Any reference functionality extended.
+- New search functionality.
+- Academic data sources integrated.
+- Grading engine implementation.
+- Grading configuration capabilities.
+- Academic calendar implementation.
+- Four report types implemented.
+- PDF and ZIP generation.
+- Report reference persistence.
+- Historical report versioning.
+- Permissions and security.
+- Tests performed and results.
+- Outstanding issues.
+
+Do not deploy or merge automatically.

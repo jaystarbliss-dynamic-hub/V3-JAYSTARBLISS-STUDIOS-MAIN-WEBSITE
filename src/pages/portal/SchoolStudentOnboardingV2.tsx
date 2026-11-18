@@ -671,7 +671,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
           <UserPlus size={15} />
           <span>Individual Student Onboarding</span>
           {onboardingTab === 'SINGLE' && (
-            <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
+            <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C]" />
           )}
         </button>
 
@@ -687,7 +687,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
           <Users size={15} />
           <span>Bulk Onboard Students (Paste / CSV)</span>
           {onboardingTab === 'BULK' && (
-            <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C] rounded-full" />
+            <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C]" />
           )}
         </button>
       </div>
@@ -808,7 +808,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                   onClick={copyCredentials}
                   className="min-h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3.5 text-xs font-bold inline-flex items-center gap-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-100"
                 >
-                  {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                  {copied ? <Check size={14} className="text-[#1E293B] dark:text-white" /> : <Copy size={14} />}
                   <span>{copied ? 'Copied!' : 'Copy Info'}</span>
                 </button>
                 <button
@@ -857,7 +857,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                   onClick={() => setBulkInputMode('PASTE')}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer ${
                     bulkInputMode === 'PASTE'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-[#1E293B] text-white'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                   }`}
                 >
@@ -868,7 +868,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                   onClick={() => setBulkInputMode('CSV')}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer ${
                     bulkInputMode === 'CSV'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-[#1E293B] text-white'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                   }`}
                 >
@@ -886,7 +886,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleInsertSampleBulkText}
-                    className="text-xs font-bold text-blue-600 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                    className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
                   >
                     <Sparkles size={13} /> Insert Format Example
                   </button>
@@ -899,14 +899,14 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                   placeholder={
                     'Full Name | Class | Programme\nAda Johnson | Grade 5 | Digital Literacy\nSamuel Bello | Grade 5 | Digital Literacy\nGrace Daniel | Grade 6 | Coding'
                   }
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-3.5 font-mono text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-600"
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-3.5 font-mono text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B]"
                 />
 
                 <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={() => handleParseBulkPreview(bulkRawText)}
-                    className="rounded-xl bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 text-white px-5 py-2.5 text-xs font-bold cursor-pointer"
+                    className="rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white px-5 py-2.5 text-xs font-bold cursor-pointer"
                   >
                     Preview &amp; Validate Records
                   </button>
@@ -922,18 +922,18 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleDownloadSampleCsv}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:underline cursor-pointer"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline cursor-pointer"
                   >
                     <Download size={14} /> Download Sample CSV Template
                   </button>
                 </div>
 
                 <div className="p-6 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl text-center space-y-3">
-                  <Upload size={28} className="mx-auto text-blue-600" />
+                  <Upload size={28} className="mx-auto text-[#1E293B] dark:text-slate-300" />
                   <p className="text-xs font-bold text-slate-800 dark:text-white">
                     Choose a .CSV spreadsheet file to preview
                   </p>
-                  <label className="inline-flex px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer">
+                  <label className="inline-flex px-4 py-2.5 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white text-xs font-bold cursor-pointer">
                     <span>Select .CSV File</span>
                     <input
                       type="file"
@@ -1023,11 +1023,11 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                               }
                             />
                           </td>
-                          <td className="p-3 font-mono text-slate-400">#{row.rowNumber}</td>
+                          <td className="p-3 font-mono text-slate-400 tabular-nums">#{row.rowNumber}</td>
                           <td className="p-3 font-bold text-slate-900 dark:text-white">
                             {row.fullName || '—'}
                           </td>
-                          <td className="p-3 font-semibold text-blue-600 dark:text-blue-400">
+                          <td className="p-3 font-semibold text-[#1E293B] dark:text-slate-200">
                             {row.className || row.rawClass || '—'}
                           </td>
                           <td className="p-3 text-slate-600 dark:text-slate-300">
@@ -1038,15 +1038,15 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                           </td>
                           <td className="p-3">
                             {row.valid ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
-                                <CheckCircle2 size={12} /> Ready
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#1E293B] dark:text-slate-200">
+                                <CheckCircle2 size={13} /> Ready
                               </span>
                             ) : (
                               <div className="space-y-0.5">
                                 {row.errors.map((err: string, i: number) => (
                                   <p
                                     key={i}
-                                    className="text-[11px] font-bold text-rose-600 flex items-center gap-1"
+                                    className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400 flex items-center gap-1"
                                   >
                                     <AlertCircle size={12} /> {err}
                                   </p>
@@ -1065,13 +1065,13 @@ const SchoolStudentOnboardingV2: React.FC = () => {
 
           {/* STEP 3: PROVISIONING OUTCOMES & CREDENTIAL EXPORT */}
           {bulkOutcomes && (
-            <section className="rounded-2xl border-2 border-emerald-500/30 bg-white dark:bg-[#161B26] p-5 sm:p-6 shadow-md space-y-4">
+            <section className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#161B26] p-5 sm:p-6 shadow-md space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-black text-slate-900 dark:text-white">
                     Bulk Onboarding Results
                   </h3>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-500 tabular-nums">
                     {bulkOutcomes.filter((r) => r.status === 'CREATED').length} created ·{' '}
                     {bulkOutcomes.filter((r) => r.status === 'SKIPPED_DUPLICATE').length} skipped
                     duplicates ·{' '}
@@ -1086,7 +1086,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleExportBulkCredentialsCsv}
-                    className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-bold inline-flex items-center gap-2 cursor-pointer"
+                    className="rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white px-4 py-2.5 text-xs font-bold inline-flex items-center gap-2 cursor-pointer"
                   >
                     <Download size={14} /> Download Issued Credentials (.CSV)
                   </button>
@@ -1112,17 +1112,17 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                         </td>
                         <td className="p-3">{out.className}</td>
                         <td className="p-3 font-mono">{out.username}</td>
-                        <td className="p-3 font-mono font-bold text-slate-900 dark:text-white">
+                        <td className="p-3 font-mono font-bold text-slate-900 dark:text-white tabular-nums">
                           {out.accessCode || '—'}
                         </td>
                         <td className="p-3">
                           <span
-                            className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                            className={`text-[11px] font-bold uppercase ${
                               out.status === 'CREATED'
-                                ? 'bg-emerald-100 text-emerald-800'
+                                ? 'text-[#1E293B] dark:text-slate-200'
                                 : out.status === 'SKIPPED_DUPLICATE'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-rose-100 text-rose-800'
+                                ? 'text-slate-500 dark:text-slate-400'
+                                : 'text-[#B91C1C] dark:text-red-400'
                             }`}
                           >
                             {out.status}

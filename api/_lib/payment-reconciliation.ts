@@ -10,6 +10,7 @@ import {
   PaymentPlan
 } from "./billing";
 import { createPortalNotification } from "./email";
+import { extractPolicyAuditFromMetadata } from "./paystack-policy";
 
 const asString = (value: unknown) => String(value ?? "").trim();
 
@@ -357,6 +358,8 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
       tutorId ||
       (verifiedSelectedItems.length > 0 && verifiedSelectedItems.some(i => Boolean(i.tutorId) && i.tutorId !== "lead_tutor"))
     );
+    const verifiedChannel = asString(tx.channel) || null;
+    const policyAudit = extractPolicyAuditFromMetadata(metadata, userId, paidAt);
 
     paymentData = {
       userId,
@@ -387,7 +390,9 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
       durationWeeks,
       cycleDays,
       teachingMode: asString(metadata.teachingMode || enrollment.teachingMode || enrollment.modeOfTeaching || plan.teachingModes[0]),
-      paymentMethod: asString(tx.channel || metadata.paymentMethod || "paystack"),
+      channel: verifiedChannel,
+      paymentMethod: verifiedChannel || asString(metadata.paymentMethod) || "paystack",
+      checkoutProvider: "paystack",
       paymentSource,
       escrowQuarter,
       paidThrough: paidThrough.toISOString(),
@@ -403,7 +408,8 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
       createdAt: new Date(),
       verifiedAt: new Date(),
       verifiedBy: verifiedUserId ? "portal_return" : "paystack_webhook",
-      walletCredited: hasVerifiedTutorAllocation
+      walletCredited: hasVerifiedTutorAllocation,
+      ...policyAudit
     };
 
     transaction.create(canonicalPaymentRef, paymentData);
@@ -486,6 +492,7 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
       studentId: studentId || null,
       tutorId: tutorId || null,
       schoolId: schoolId || null,
+      ...policyAudit,
       paidAt,
       updatedAt: new Date()
     }, { merge: true });

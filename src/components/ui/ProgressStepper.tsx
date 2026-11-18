@@ -31,7 +31,7 @@ export const ProgressStepper: React.FC<ProgressStepperProps> = ({
       {/* Mobile Compact Progress Bar */}
       <div className="md:hidden mb-6">
         <div className="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-400 mb-2">
-          <span className="uppercase tracking-wider text-brand-red font-black">
+          <span className="uppercase tracking-wider text-[#B91C1C] dark:text-red-400 font-black tabular-nums">
             Step {currentStep + 1} of {steps.length}
           </span>
           <span className="text-slate-900 dark:text-white font-extrabold truncate max-w-[200px]">
@@ -40,7 +40,7 @@ export const ProgressStepper: React.FC<ProgressStepperProps> = ({
         </div>
         <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
           <motion.div
-            className="bg-gradient-to-r from-brand-red to-red-500 h-full rounded-full"
+            className="bg-[#B91C1C] h-full rounded-full"
             initial={{ width: 0 }}
             animate={{ width: `${progressPercent}%` }}
             transition={{ duration: 0.35, ease: 'easeOut' }}
@@ -67,13 +67,13 @@ export const ProgressStepper: React.FC<ProgressStepperProps> = ({
                   type="button"
                   disabled={!isClickable}
                   onClick={() => isClickable && onStepClick?.(idx)}
-                  className={`relative flex items-center justify-center w-11 h-11 rounded-2xl font-bold text-sm transition-all duration-300 z-10 select-none ${
-                    isClickable ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-red focus:ring-offset-2' : 'cursor-default'
+                  className={`relative flex items-center justify-center w-11 h-11 rounded-2xl font-bold text-sm transition-all duration-300 z-10 select-none tabular-nums ${
+                    isClickable ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#B91C1C] focus:ring-offset-2' : 'cursor-default'
                   } ${
                     isCompleted
-                      ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20 hover:bg-emerald-600'
+                      ? 'bg-[#1E293B] dark:bg-white text-white dark:text-[#1E293B] shadow-md hover:bg-[#0F172A]'
                       : isCurrent
-                      ? 'bg-brand-red text-white ring-4 ring-brand-red/20 shadow-lg shadow-brand-red/30'
+                      ? 'bg-[#B91C1C] text-white ring-4 ring-[#B91C1C]/20 shadow-lg'
                       : 'bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-500'
                   }`}
                   aria-current={isCurrent ? 'step' : undefined}
@@ -91,7 +91,7 @@ export const ProgressStepper: React.FC<ProgressStepperProps> = ({
                 {idx < steps.length - 1 && (
                   <div className="flex-1 mx-3 h-1 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden relative">
                     <motion.div
-                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-500 to-brand-red h-full rounded-full"
+                      className="absolute inset-y-0 left-0 bg-[#1E293B] dark:bg-white h-full rounded-full"
                       initial={{ width: 0 }}
                       animate={{ width: isCompleted ? '100%' : '0%' }}
                       transition={{ duration: 0.3 }}
@@ -103,11 +103,11 @@ export const ProgressStepper: React.FC<ProgressStepperProps> = ({
               {/* Step Title and Subtitle */}
               <div className="mt-3 text-left max-w-[140px]">
                 <div
-                  className={`text-xs font-black uppercase tracking-wider transition-colors ${
+                  className={`text-xs font-black uppercase tracking-wider transition-colors tabular-nums ${
                     isCurrent
-                      ? 'text-brand-red'
+                      ? 'text-[#B91C1C] dark:text-red-400'
                       : isCompleted
-                      ? 'text-emerald-600 dark:text-emerald-400'
+                      ? 'text-[#1E293B] dark:text-white'
                       : 'text-slate-400 dark:text-slate-500'
                   }`}
                 >

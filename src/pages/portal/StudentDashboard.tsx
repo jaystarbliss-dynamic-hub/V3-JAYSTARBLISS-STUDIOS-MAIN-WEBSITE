@@ -1,31 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Activity,
+  AlertCircle,
   ArrowRight,
   Award,
-  Bell,
   Calendar,
   CheckCircle2,
+  ClipboardList,
   Clock,
-  Code2,
-  Download,
   ExternalLink,
   FileText,
+  Link as LinkIcon,
+  Loader2,
   Lock,
   Radio,
-  Trophy,
-  UserCheck,
-  Video,
-  X,
   Send,
-  Loader2,
   Upload,
-  Link as LinkIcon,
-  BookOpen,
-  ClipboardList,
-  AlertCircle,
-  School
+  UserCheck,
+  X,
 } from 'lucide-react';
 import {
   collection,
@@ -36,20 +28,24 @@ import {
   query,
   where,
   updateDoc,
-  serverTimestamp
 } from 'firebase/firestore';
-import { auth, db } from '../../lib/firebase';
+import { auth, db, getAllClientDatabases } from '../../lib/firebase';
 import SEO from '../../components/ui/SEO';
-import { AchievementBadgeGrid } from '../../components/ecosystem/AchievementBadge';
-import { DashboardGreeting } from '../../components/portal/DashboardGreeting';
-import { StudentAnalyticsVisualizer } from '../../components/portal/StudentAnalyticsVisualizer';
-import { ResourceListView } from '../../components/portal/ResourceListView';
+import {
+  StudentAnalyticsVisualizer,
+  type LearningProgressItem,
+  type StudentGradeRecord,
+} from '../../components/portal/StudentAnalyticsVisualizer';
 import { TypingMastersAcademyCard } from '../../components/portal/TypingMastersAcademyCard';
 import { useToast } from '../../contexts/ToastContext';
-import { useNotifications } from '../../contexts/NotificationContext';
-import { getEffectiveAuth } from '../../utils/impersonation';
-import { isStudentClassMatch } from '../../utils/classMatching';
-import { isStudentEligibleForWork, normalizeWorkType } from '../../lib/classes';
+import {
+  calculateGradeLetter,
+  calculateScorePercentage,
+  computeExamMaxScore,
+  isAttemptResultReleased,
+  isStudentEligibleForWork,
+  normalizeWorkType,
+} from '../../lib/classes';
 import {
   doesScheduleMatchStudent,
   resolveFullStudentEnrollmentContext,
@@ -57,12 +53,7 @@ import {
 import {
   type LinkedLearnerProfile,
   fetchAssignmentsForLearner,
-  submitUnifiedAssignment,
 } from '../../lib/academicSyncEngine';
-import {
-  generateModuleCertificatePdf,
-  type ModuleCertificateData,
-} from '../../lib/certificatePdfGenerator';
 import {
   ResponsiveContainer,
   PieChart,
@@ -203,26 +194,24 @@ const formatDate = (value?: string) => {
   }
 };
 
-const normalizeStr = (v?: any) => String(v || '').trim().toLowerCase();
-
 export const StudentDashboard: React.FC = () => {
   const toast = useToast();
-  const { unreadCount } = useNotifications();
 
   const [student, setStudent] = useState<StudentInfo | null>(null);
   const [modules, setModules] = useState<ProgramModule[]>([]);
-  const [classResources, setClassResources] = useState<ResourceItem[]>([]);
-  const [generalResources, setGeneralResources] = useState<ResourceItem[]>([]);
-  const [personalResources, setPersonalResources] = useState<ResourceItem[]>([]);
-  const [personalLinks, setPersonalLinks] = useState<LinkItem[]>([]);
+  const [, setClassResources] = useState<ResourceItem[]>([]);
+  const [, setGeneralResources] = useState<ResourceItem[]>([]);
+  const [, setPersonalResources] = useState<ResourceItem[]>([]);
+  const [, setPersonalLinks] = useState<LinkItem[]>([]);
   const [exams, setExams] = useState<ExamItem[]>([]);
+  const [releasedGrades, setReleasedGrades] = useState<StudentGradeRecord[]>([]);
   const [studentSchedules, setStudentSchedules] = useState<any[]>([]);
   const [dynamicMilestones, setDynamicMilestones] = useState<DynamicMilestone[]>([]);
   const [studentAssignments, setStudentAssignments] = useState<DynamicAssignment[]>([]);
   const [curriculumTopics, setCurriculumTopics] = useState<string[]>([]);
   const [enrolledProgramName, setEnrolledProgramName] = useState<string>('');
   const [isEdclubAllowed, setIsEdclubAllowed] = useState<boolean>(false);
-  const [hasResourcesAllowed, setHasResourcesAllowed] = useState<boolean>(true);
+  const [, setHasResourcesAllowed] = useState<boolean>(true);
   const [programDetails, setProgramDetails] = useState<{
     hasStages: boolean;
     stageNumber?: number;
@@ -238,9 +227,6 @@ export const StudentDashboard: React.FC = () => {
   const [isSubmittingLink, setIsSubmittingLink] = useState(false);
 
   const [loading, setLoading] = useState(true);
-  const [selectedModuleForCert, setSelectedModuleForCert] = useState<ProgramModule | null>(null);
-  const [certStudentName, setCertStudentName] = useState('');
-  const [generatingCert, setGeneratingCert] = useState(false);
 
   const fetchStudentData = async () => {
     setLoading(true);
@@ -762,6 +748,7 @@ export const StudentDashboard: React.FC = () => {
       setGeneralResources(generalList);
 
       const examMap = new Map<string, ExamItem>();
+      const rawExamLookup = new Map<string, any>();
       const studentSchoolAliases = [
         activeSchoolId,
         studentRecord.schoolId,
@@ -776,6 +763,7 @@ export const StudentDashboard: React.FC = () => {
 
       (examSnapshot.docs || []).forEach((examDoc: any) => {
         const raw = examDoc.data() || {};
+        rawExamLookup.set(examDoc.id, { id: examDoc.id, ...raw });
         if (
           isStudentEligibleForWork(
             {
@@ -797,6 +785,55 @@ export const StudentDashboard: React.FC = () => {
         }
       });
       setExams(Array.from(examMap.values()));
+
+      // Load released exam/test attempts for analytics grade trends
+      try {
+        const allDbs = getAllClientDatabases();
+        const attemptSnaps = await Promise.all(
+          allDbs.map((inst) =>
+            getDocs(collection(inst, 'jdiExamAttempts')).catch(() => ({ docs: [] } as any))
+          )
+        );
+        const gradesMap = new Map<string, StudentGradeRecord>();
+        attemptSnaps.forEach((snap: any) => {
+          snap?.docs?.forEach?.((ad: any) => {
+            const a = ad.data() || {};
+            const matchesStudent =
+              (currentUid && (a.studentUid === currentUid || a.studentId === currentUid)) ||
+              (currentStudentId && a.studentId === currentStudentId);
+            if (!matchesStudent) return;
+            const parentExam = rawExamLookup.get(String(a.examId || '')) || {};
+            if (!isAttemptResultReleased(a, parentExam)) return;
+            const maxScore = computeExamMaxScore(parentExam, a);
+            const rawScore = typeof a.score === 'number' ? a.score : Number(a.score || 0);
+            const percentage =
+              typeof a.percentage === 'number' && Number.isFinite(a.percentage)
+                ? Math.round(a.percentage)
+                : calculateScorePercentage(rawScore, maxScore);
+            const dateVal =
+              typeof a.releasedAt?.toDate === 'function'
+                ? a.releasedAt.toDate().toISOString()
+                : typeof a.submittedAt?.toDate === 'function'
+                ? a.submittedAt.toDate().toISOString()
+                : String(a.releasedAt || a.submittedAt || a.updatedAt || '');
+            gradesMap.set(ad.id, {
+              id: ad.id,
+              date: dateVal,
+              assessment: String(parentExam.title || a.examTitle || 'Assessment'),
+              subject: String(parentExam.subject || a.subject || resolvedProgramTitle || 'General'),
+              grade: percentage,
+              score: rawScore,
+              maxScore,
+              tier: calculateGradeLetter(percentage),
+              workType: normalizeWorkType(parentExam.workType || a.workType, parentExam),
+            });
+          });
+        });
+        setReleasedGrades(Array.from(gradesMap.values()));
+      } catch (gErr) {
+        console.warn('Student released grades lookup notice:', gErr);
+        setReleasedGrades([]);
+      }
 
       // Student verified modules (for certificates)
       try {
@@ -920,7 +957,7 @@ export const StudentDashboard: React.FC = () => {
 
     studentAssignments.forEach((a) => {
       const s = String(a.status || a.reviewStatus || '').toUpperCase();
-      if (s === 'COMPLETED' || s === 'REVIEWED') {
+      if (s === 'COMPLETED' || s === 'REVIEWED' || s === 'GRADED') {
         completed++;
       } else if (['SUBMITTED', 'IN_PROGRESS', 'AWAITING_REVIEW', 'RESUBMISSION_REQUIRED'].includes(s)) {
         inProgress++;
@@ -932,13 +969,53 @@ export const StudentDashboard: React.FC = () => {
     const total = studentAssignments.length;
     const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
     const chartData = [
-      { name: 'Completed', value: completed, color: '#10B981' },
-      { name: 'In Progress', value: inProgress, color: '#38BDF8' },
-      { name: 'Pending', value: pending, color: '#F59E0B' },
+      { name: 'Completed', value: completed, color: '#1E293B' },
+      { name: 'In Progress', value: inProgress, color: '#B91C1C' },
+      { name: 'Pending', value: pending, color: '#94A3B8' },
     ].filter(item => item.value > 0);
 
     return { completed, inProgress, pending, total, rate, chartData };
   }, [studentAssignments]);
+
+  const analyticsLearningTracks = useMemo<LearningProgressItem[]>(() => {
+    if (modules.length > 0) {
+      const trackMap = new Map<string, { total: number; done: number }>();
+      modules.forEach((m) => {
+        const name = m.trackName || enrolledProgramName || 'Learning Track';
+        const cur = trackMap.get(name) || { total: 0, done: 0 };
+        cur.total += 1;
+        if (m.completed) cur.done += 1;
+        trackMap.set(name, cur);
+      });
+      return Array.from(trackMap.entries()).map(([subject, counts]) => ({
+        subject,
+        modulesDone: counts.done,
+        modulesTotal: counts.total,
+        progress: counts.total > 0 ? Math.round((counts.done / counts.total) * 100) : 0,
+      }));
+    }
+    if (dynamicMilestones.length > 0 && enrolledProgramName) {
+      return [
+        {
+          subject: enrolledProgramName,
+          modulesDone: completedMilestonesCount,
+          modulesTotal: dynamicMilestones.length,
+          progress: curriculumScorePercentage,
+        },
+      ];
+    }
+    return [];
+  }, [modules, dynamicMilestones, enrolledProgramName, completedMilestonesCount, curriculumScorePercentage]);
+
+  const enrolledSubjectNames = useMemo(() => {
+    const set = new Set<string>();
+    (student?.subjects || []).forEach((s) => s && set.add(s));
+    if (enrolledProgramName && enrolledProgramName !== 'Pending Programme Confirmation') {
+      set.add(enrolledProgramName);
+    }
+    releasedGrades.forEach((g) => g.subject && set.add(g.subject));
+    return Array.from(set);
+  }, [student?.subjects, enrolledProgramName, releasedGrades]);
 
   // Real-time comparison for Live vs Upcoming classes
   const scheduleAnalysis = useMemo(() => {
@@ -1072,40 +1149,6 @@ export const StudentDashboard: React.FC = () => {
     }
   };
 
-  const handleDownloadCertificate = (module: ProgramModule, customName?: string) => {
-    if (!module.completed) return;
-    const studentName = (customName || certStudentName || student?.fullName || '').trim();
-    if (!studentName) {
-      toast.error('Enter the student name before generating the certificate.');
-      return;
-    }
-
-    setGeneratingCert(true);
-    try {
-      const credentialId = stableCredentialId(student?.username || student?.accessCode || student?.id || 'student', module.id);
-      const certificate: ModuleCertificateData = {
-        studentName,
-        studentId: student?.username || student?.accessCode || student?.id || undefined,
-        moduleTitle: module.title,
-        moduleStage: module.stageName,
-        programTrack: module.trackName,
-        competencies: module.competencies,
-        issueDate: module.completionDate || undefined,
-        credentialId,
-        instructorName: module.instructor || undefined,
-      };
-
-      generateModuleCertificatePdf(certificate);
-      toast.success(`Certificate for “${module.title}” generated successfully.`);
-      setSelectedModuleForCert(null);
-    } catch (error) {
-      console.error('Certificate generation failed:', error);
-      toast.error('Failed to generate the certificate PDF.');
-    } finally {
-      setGeneratingCert(false);
-    }
-  };
-
   const schoolDisplayName = student?.schoolName || student?.school || sessionStorage.getItem('studentSchoolName');
 
   if (loading) {
@@ -1147,35 +1190,62 @@ export const StudentDashboard: React.FC = () => {
         </section>
       ) : (
         <>
-          <DashboardGreeting
-            name={student.fullName || undefined}
-            role="Student"
-            subtitle={schoolDisplayName ? `${schoolDisplayName} • ${enrolledProgramName || student.plan || 'Digital Literacy Junior'}` : "Your learning overview, kept focused on the things that matter most."}
-          />
+          {/* Concise Institutional Workspace Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
+            <div>
+              <h1 className="text-lg sm:text-xl font-bold text-[#1E293B] dark:text-white tracking-tight">
+                {student.fullName || student.name || 'Student'}
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {enrolledProgramName || student.plan || 'Enrolled Track'}
+                {(student.class || student.grade) ? ` · ${student.class || student.grade}` : ''}
+                {schoolDisplayName ? ` · ${schoolDisplayName}` : ' · Private Learner'}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <Link
+                to="/portal/student/assessments"
+                className="min-h-9 px-3.5 py-2 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+              >
+                <span>Assessments</span>
+                <ArrowRight size={13} aria-hidden="true" />
+              </Link>
+              <Link
+                to="/portal/student/assignments"
+                className="min-h-9 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold text-[#1E293B] dark:text-slate-200 inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+              >
+                <span>Assignments</span>
+              </Link>
+            </div>
+          </div>
 
-          {/* 🔴 ACTIVE LIVE CLASS BANNER (If Active Today and In Session) */}
+          {/* Active Live Class Banner */}
           {scheduleAnalysis.liveSession && (
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 border-2 border-emerald-500/80 p-5 text-white shadow-lg animate-fade-in">
+            <div className="rounded-xl bg-[#1E293B] border border-[#B91C1C]/60 p-5 text-white">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-2.5 py-0.5 text-[10px] font-black uppercase text-white shadow-xs">
-                      <Radio size={12} className="animate-spin" /> LIVE CLASS IN SESSION
+                  <div className="flex flex-wrap items-center gap-2 mb-1 text-xs">
+                    <span className="inline-flex items-center gap-1.5 font-bold uppercase tracking-wider text-red-300">
+                      <Radio size={13} aria-hidden="true" /> Live Class in Session
                     </span>
-                    <span className="text-xs text-emerald-300 font-bold">
+                    <span className="text-slate-400" aria-hidden="true">·</span>
+                    <span className="text-slate-200 font-medium">
                       {scheduleAnalysis.liveSession.formattedDate || 'Today'}
                     </span>
                   </div>
-                  <h3 className="text-lg font-black text-white">
+                  <h2 className="text-base sm:text-lg font-bold text-white">
                     {scheduleAnalysis.liveSession.title || scheduleAnalysis.liveSession.programName || 'Live Classroom Session'}
-                  </h3>
-                  <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-300 font-medium">
+                  </h2>
+                  <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-300">
                     {scheduleAnalysis.liveSession.startTime && (
-                      <span>⏰ {scheduleAnalysis.liveSession.startTime} – {scheduleAnalysis.liveSession.endTime}</span>
+                      <span className="font-mono tabular-nums inline-flex items-center gap-1">
+                        <Clock size={12} aria-hidden="true" />
+                        {scheduleAnalysis.liveSession.startTime} – {scheduleAnalysis.liveSession.endTime}
+                      </span>
                     )}
                     {scheduleAnalysis.liveSession.tutorName && (
-                      <span className="flex items-center gap-1">
-                        <UserCheck size={13} className="text-brand-red" />
+                      <span className="inline-flex items-center gap-1">
+                        <UserCheck size={13} className="text-red-300" aria-hidden="true" />
                         Instructor: {scheduleAnalysis.liveSession.tutorName}
                       </span>
                     )}
@@ -1187,87 +1257,92 @@ export const StudentDashboard: React.FC = () => {
                     href={scheduleAnalysis.liveSession.meetingLink}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-black text-white hover:bg-emerald-700 shadow-md shadow-emerald-900/40 transition shrink-0"
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#B91C1C] px-5 py-2 text-xs font-bold text-white hover:bg-red-800 transition-colors shrink-0"
                   >
-                    Join Live Room Now <ExternalLink size={14} />
+                    Join Live Room <ExternalLink size={14} aria-hidden="true" />
                   </a>
                 )}
               </div>
             </div>
           )}
 
-          {/* 🚀 LEADER PANEL: CURRENT PROGRAMME & PROGRESS OVERVIEW (Light & pleasant in light mode, dark & rich in dark mode) */}
-          <section 
-            className="relative overflow-hidden rounded-3xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white p-6 sm:p-7 shadow-sm border border-slate-200/90 dark:border-slate-800"
-          >
-            <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-              {/* Left Column (7 cols): Current Program, Class Cohort & Milestone Stats */}
-              <div className="lg:col-span-7 space-y-4">
-                <div className="space-y-1">
-                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight leading-snug">
-                    {enrolledProgramName || student.plan || 'Digital Literacy Junior'}
+          {/* Programme & Deliverables Overview */}
+          <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 sm:p-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <div className="lg:col-span-7 space-y-5">
+                <div>
+                  <h2 className="text-lg sm:text-xl font-bold text-[#1E293B] dark:text-white tracking-tight">
+                    {enrolledProgramName || student.plan || 'Digital Literacy'}
                   </h2>
-                  <p className="text-sm sm:text-base font-bold text-slate-600 dark:text-slate-300">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     {student.class || student.grade ? `Class Cohort: ${student.class || student.grade}` : 'Standard Curriculum Track'}
-                    {(student.schoolName || schoolDisplayName) ? ` • ${student.schoolName || schoolDisplayName}` : ''}
+                    {(student.schoolName || schoolDisplayName) ? ` · ${student.schoolName || schoolDisplayName}` : ''}
                   </p>
                 </div>
 
-                {/* Quick Dynamic Milestones Progress Strip */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
-                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/60 p-3.5 shadow-xs">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Curriculum Score</p>
-                    <p className="text-xl font-black text-slate-900 dark:text-white mt-0.5">{curriculumScorePercentage}%</p>
-                    <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                      {dynamicMilestones.length > 0 
-                        ? `${completedMilestonesCount} of ${dynamicMilestones.length} Milestones`
+                {/* Divided Metrics Strip */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40">
+                  <div className="p-4">
+                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                      Curriculum Progress
+                    </p>
+                    <p className="text-xl font-bold text-[#1E293B] dark:text-white mt-1 tabular-nums">
+                      {dynamicMilestones.length > 0 ? `${curriculumScorePercentage}%` : '—'}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+                      {dynamicMilestones.length > 0
+                        ? `${completedMilestonesCount} of ${dynamicMilestones.length} milestones`
                         : 'No milestones set yet'}
                     </p>
                   </div>
-                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/60 p-3.5 shadow-xs">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Active Tasks</p>
-                    <p className="text-xl font-black text-slate-900 dark:text-white mt-0.5">{assignmentStats.total}</p>
-                    <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                      {assignmentStats.completed} Completed
+                  <div className="p-4">
+                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                      Assigned Tasks
+                    </p>
+                    <p className="text-xl font-bold text-[#1E293B] dark:text-white mt-1 tabular-nums">
+                      {assignmentStats.total}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+                      {assignmentStats.completed} verified complete
                     </p>
                   </div>
-                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/60 p-3.5 shadow-xs col-span-2 sm:col-span-1">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Current Stage</p>
-                    <p className="text-base sm:text-lg font-black text-slate-900 dark:text-white mt-0.5 truncate">
+                  <div className="p-4">
+                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                      Current Stage
+                    </p>
+                    <p className="text-base font-bold text-[#1E293B] dark:text-white mt-1 truncate">
                       {programDetails.hasStages
                         ? (programDetails.stageName || `Stage ${programDetails.stageNumber || 1}`)
                         : (student.class || student.grade || 'Standard Track')}
                     </p>
-                    <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                      {programDetails.hasStages ? (programDetails.nextProgramTitle ? `Next: ${programDetails.nextProgramTitle}` : 'Series Program') : 'Enrolled Course'}
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                      {programDetails.hasStages
+                        ? (programDetails.nextProgramTitle ? `Next: ${programDetails.nextProgramTitle}` : 'Series Track')
+                        : 'Enrolled Course'}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Right Column (5 cols): Recharts Donut Chart for Active Assignment Completion */}
-              <div className="lg:col-span-5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/60 p-4 sm:p-5 flex flex-col justify-between shadow-xs">
-                <div className="flex items-center justify-between mb-1">
-                  <div>
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
-                      Progress Overview &amp; Deliverables
-                    </h3>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Real-time assignment submission velocity
-                    </p>
-                  </div>
-                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30">
-                    Live
-                  </span>
+              {/* Deliverables Donut Overview */}
+              <div className="lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-4 sm:p-5 flex flex-col justify-between">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#1E293B] dark:text-white">
+                    Deliverables Summary
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Assignment completion across current tasks
+                  </p>
                 </div>
 
-                <div className="h-44 w-full relative flex items-center justify-center my-1">
+                <div className="h-44 w-full relative flex items-center justify-center my-2">
                   {assignmentStats.total === 0 ? (
                     <div className="text-center p-4">
-                      <ClipboardList size={28} className="mx-auto text-slate-400 mb-1" />
-                      <p className="text-xs font-bold text-slate-700 dark:text-white">No active assignments</p>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Tasks assigned by your tutor will display here.</p>
+                      <ClipboardList size={26} className="mx-auto text-slate-400 mb-1.5" aria-hidden="true" />
+                      <p className="text-xs font-bold text-[#1E293B] dark:text-white">No active assignments</p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Tasks assigned by your tutor will appear here.
+                      </p>
                     </div>
                   ) : (
                     <>
@@ -1279,7 +1354,7 @@ export const StudentDashboard: React.FC = () => {
                             cy="50%"
                             innerRadius={48}
                             outerRadius={68}
-                            paddingAngle={4}
+                            paddingAngle={3}
                             dataKey="value"
                           >
                             {assignmentStats.chartData.map((entry, index) => (
@@ -1291,10 +1366,10 @@ export const StudentDashboard: React.FC = () => {
                               if (active && payload && payload.length) {
                                 const d = payload[0];
                                 return (
-                                  <div className="bg-slate-900 text-white border border-slate-700 rounded-xl p-2.5 text-xs shadow-xl">
-                                    <p className="font-bold flex items-center gap-1.5">
-                                      <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: d.payload.color }} />
-                                      {d.name}: <span className="font-mono font-black">{d.value}</span>
+                                  <div className="bg-[#1E293B] text-white border border-slate-700 rounded-lg p-2.5 text-xs shadow-lg">
+                                    <p className="font-semibold flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-xs inline-block" style={{ backgroundColor: d.payload.color }} />
+                                      {d.name}: <span className="font-mono font-bold tabular-nums">{d.value}</span>
                                     </p>
                                   </div>
                                 );
@@ -1304,12 +1379,11 @@ export const StudentDashboard: React.FC = () => {
                           />
                         </PieChart>
                       </ResponsiveContainer>
-                      {/* Donut Center Completion Rate */}
                       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono leading-none">
+                        <span className="text-2xl font-bold text-[#1E293B] dark:text-white tabular-nums leading-none">
                           {assignmentStats.rate}%
                         </span>
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-300 mt-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mt-1">
                           Completed
                         </span>
                       </div>
@@ -1317,242 +1391,284 @@ export const StudentDashboard: React.FC = () => {
                   )}
                 </div>
 
-                {/* Donut Legend Breakdown Pills */}
-                <div className="grid grid-cols-3 gap-1.5 pt-1 text-center">
-                  <div className="p-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-700/50">
-                    <p className="text-[9px] font-bold text-emerald-700 dark:text-emerald-300 uppercase">Done</p>
-                    <p className="text-xs font-black text-slate-900 dark:text-white font-mono">{assignmentStats.completed}</p>
+                <div className="grid grid-cols-3 divide-x divide-slate-200 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800 pt-2.5 text-center">
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Done</p>
+                    <p className="text-xs font-bold text-[#1E293B] dark:text-white font-mono tabular-nums">
+                      {assignmentStats.completed}
+                    </p>
                   </div>
-                  <div className="p-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-700/50">
-                    <p className="text-[9px] font-bold text-sky-700 dark:text-sky-300 uppercase">In Progress</p>
-                    <p className="text-xs font-black text-slate-900 dark:text-white font-mono">{assignmentStats.inProgress}</p>
+                  <div>
+                    <p className="text-[10px] font-semibold text-[#B91C1C]">In Progress</p>
+                    <p className="text-xs font-bold text-[#1E293B] dark:text-white font-mono tabular-nums">
+                      {assignmentStats.inProgress}
+                    </p>
                   </div>
-                  <div className="p-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-700/50">
-                    <p className="text-[9px] font-bold text-amber-700 dark:text-amber-300 uppercase">Pending</p>
-                    <p className="text-xs font-black text-slate-900 dark:text-white font-mono">{assignmentStats.pending}</p>
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Pending</p>
+                    <p className="text-xs font-bold text-[#1E293B] dark:text-white font-mono tabular-nums">
+                      {assignmentStats.pending}
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Dynamic Curriculum Progression Path (Only rendered if actual topics/syllabus exist) */}
+            {/* Dynamic Curriculum Progression Path */}
             {curriculumTopics.length > 0 && (
-              <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700/70">
+              <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                    Curriculum Stage Progression Path ({curriculumTopics.length} Weekly Topics)
+                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                    Syllabus Topics ({curriculumTopics.length} Weekly Topics)
                   </span>
-                  <Link 
-                    to="/portal/student/assignments" 
-                    className="text-[10px] font-bold text-red-600 dark:text-red-400 hover:underline inline-flex items-center gap-1"
+                  <Link
+                    to="/portal/student/assignments"
+                    className="text-xs font-semibold text-[#B91C1C] hover:underline inline-flex items-center gap-1"
                   >
-                    View All Topics <ArrowRight size={10} />
+                    View Topics <ArrowRight size={11} aria-hidden="true" />
                   </Link>
                 </div>
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-700 dark:text-slate-300">
                   {curriculumTopics.map((topic, idx) => (
-                    <div 
-                      key={`topic-${idx}`}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/80 text-xs font-bold text-slate-800 dark:text-slate-200 shrink-0 shadow-xs"
-                    >
-                      <span className="w-4 h-4 rounded-full bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300 flex items-center justify-center text-[10px] font-black">
-                        W{idx + 1}
+                    <span key={`topic-${idx}`} className="inline-flex items-center gap-1.5">
+                      <span className="font-mono font-bold text-[#B91C1C] tabular-nums">
+                        {String(idx + 1).padStart(2, '0')}.
                       </span>
-                      <span className="truncate max-w-[140px]">{topic}</span>
-                    </div>
+                      <span>{topic}</span>
+                    </span>
                   ))}
                 </div>
               </div>
             )}
           </section>
 
-          {/* 🧪 ASSIGNED ASSESSMENTS & WORK SECTION */}
-          <section className="rounded-2xl bg-white dark:bg-slate-900 p-5 sm:p-6 border border-slate-200/90 dark:border-slate-800 shadow-xs">
-            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          {/* Academic Analytics Visualizer (Real Data) */}
+          <StudentAnalyticsVisualizer
+            studentName={student.fullName || student.name || 'Student'}
+            studentClass={student.class || student.grade || 'Standard Track'}
+            enrolledSubjects={enrolledSubjectNames}
+            completedModulesCount={modules.filter((m) => m.completed).length}
+            totalModulesCount={modules.length}
+            learningTracks={analyticsLearningTracks}
+            assignments={studentAssignments}
+            gradeRecords={releasedGrades}
+            milestones={dynamicMilestones}
+          />
+
+          {/* Assigned Assessments & Work */}
+          <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="p-5 sm:px-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <FileText size={18} className="text-brand-red" /> Assigned Assessments &amp; Work ({exams.length})
+                <h2 className="text-base font-bold text-[#1E293B] dark:text-white tracking-tight flex items-center gap-2">
+                  <FileText size={17} className="text-[#B91C1C]" aria-hidden="true" />
+                  <span>Assigned Assessments &amp; Work ({exams.length})</span>
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                  Class tests, formal assessments, and interactive learning activities assigned to your class or account.
+                  Class tests, formal assessments, and activities assigned to your class or account.
                 </p>
               </div>
               <Link
                 to="/portal/student/assessments"
-                className="text-xs font-black text-brand-red inline-flex items-center gap-1 hover:underline"
+                className="text-xs font-semibold text-[#B91C1C] inline-flex items-center gap-1 hover:underline shrink-0"
               >
-                Open Assessments &amp; Work <ArrowRight size={13} />
+                Open Assessments &amp; Work <ArrowRight size={13} aria-hidden="true" />
               </Link>
             </div>
 
             {exams.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-5 text-center space-y-1.5">
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">No active assessments right now</p>
-                <p className="text-[11px] text-slate-500">
-                  Any test, quiz, activity, or assessment assigned to your class will appear here and in your Assessments &amp; Work tab.
+              <div className="p-8 text-center">
+                <p className="text-xs font-bold text-[#1E293B] dark:text-white">No active assessments right now</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Any test, quiz, activity, or assessment assigned to your class will appear here.
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {exams.slice(0, 6).map((ex) => (
                   <div
                     key={ex.id}
-                    className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900/80 p-4 flex flex-col justify-between shadow-xs hover:border-brand-red/40 transition-colors gap-3"
+                    className="px-5 py-3.5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors"
                   >
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-red-50 dark:bg-red-950/60 px-2 py-0.5 text-[9px] font-black uppercase text-brand-red dark:text-red-300">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-[#1E293B] dark:text-white truncate">
+                        {ex.title}
+                      </h3>
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        <span className="font-semibold text-[#B91C1C] uppercase">
                           {ex.workType || 'EXAMINATION'}
                         </span>
+                        <span className="mx-1.5" aria-hidden="true">·</span>
+                        <span>{ex.subject || 'Technology'}</span>
                         {ex.targetClass && (
-                          <span className="text-[10px] font-bold text-slate-500">
-                            {ex.targetClass}
-                          </span>
+                          <>
+                            <span className="mx-1.5" aria-hidden="true">·</span>
+                            <span>{ex.targetClass}</span>
+                          </>
                         )}
-                      </div>
-                      <h4 className="mt-2 text-sm font-black text-slate-900 dark:text-white line-clamp-1">
-                        {ex.title}
-                      </h4>
-                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                        {ex.subject || 'Computer Technology'}
-                        {ex.durationMinutes ? ` • ${ex.durationMinutes} mins` : ''}
+                        {ex.durationMinutes ? (
+                          <>
+                            <span className="mx-1.5" aria-hidden="true">·</span>
+                            <span className="tabular-nums">{ex.durationMinutes} mins</span>
+                          </>
+                        ) : null}
                       </p>
                     </div>
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-                      <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                        Assigned to your class
+                    <Link
+                      to="/portal/student/assessments"
+                      className="min-h-8 px-3.5 py-1.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors self-start sm:self-auto shrink-0"
+                    >
+                      <span>
+                        Open {ex.workType ? ex.workType.charAt(0).toUpperCase() + ex.workType.slice(1).toLowerCase() : 'Assessment'}
                       </span>
-                      <Link
-                        to="/portal/student/assessments"
-                        className="px-3.5 py-1.5 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-black inline-flex items-center gap-1.5 transition-all shadow-xs"
-                      >
-                        <span>
-                          Open {ex.workType ? ex.workType.charAt(0).toUpperCase() + ex.workType.slice(1).toLowerCase() : 'Assessment'}
-                        </span>
-                        <ArrowRight size={12} />
-                      </Link>
-                    </div>
+                      <ArrowRight size={12} aria-hidden="true" />
+                    </Link>
                   </div>
                 ))}
               </div>
             )}
           </section>
 
-          {/* 📝 ACTIVE ASSIGNMENTS & GOOGLE LINK SUBMISSION SECTION */}
-          <section className="rounded-2xl bg-white dark:bg-slate-900 p-5 sm:p-6 border border-slate-200/90 dark:border-slate-800 shadow-xs">
-            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          {/* Active Assignments & Google Link Submission */}
+          <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="p-5 sm:px-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <ClipboardList size={18} className="text-brand-red" /> Active Assignments &amp; Tasks ({studentAssignments.length})
+                <h2 className="text-base font-bold text-[#1E293B] dark:text-white tracking-tight flex items-center gap-2">
+                  <ClipboardList size={17} className="text-[#B91C1C]" aria-hidden="true" />
+                  <span>Active Assignments &amp; Tasks ({studentAssignments.length})</span>
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                  Submit your completed homework, practical drills, or Google Drive / Docs project links for tutor review.
+                  Submit completed homework, practical drills, or Google Drive project links for tutor review.
                 </p>
               </div>
               <Link
                 to="/portal/student/assignments"
-                className="text-xs font-black text-brand-red inline-flex items-center gap-1 hover:underline"
+                className="text-xs font-semibold text-[#B91C1C] inline-flex items-center gap-1 hover:underline shrink-0"
               >
-                All Assignments <ArrowRight size={13} />
+                All Assignments <ArrowRight size={13} aria-hidden="true" />
               </Link>
             </div>
 
             {studentAssignments.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center space-y-1.5">
-                <ClipboardList size={30} className="mx-auto text-slate-400" />
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">No assignments currently assigned</p>
-                <p className="text-[11px] text-slate-500">When your instructor assigns an active task or project, it will appear here with an instant Google Link upload button.</p>
+              <div className="p-8 text-center">
+                <ClipboardList size={26} className="mx-auto text-slate-400 mb-1.5" aria-hidden="true" />
+                <p className="text-xs font-bold text-[#1E293B] dark:text-white">No assignments currently assigned</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Tasks and projects assigned by your instructor will appear here.
+                </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {studentAssignments.map((a) => {
-                  const isSubmitted = ['SUBMITTED', 'AWAITING_REVIEW'].includes(a.status || a.reviewStatus || '');
-                  const isCompleted = ['COMPLETED', 'REVIEWED'].includes(a.status || a.reviewStatus || '');
-                  const isResubmit = a.status === 'RESUBMISSION_REQUIRED' || a.reviewStatus === 'RESUBMISSION_REQUIRED';
+                  const statusUpper = String(a.status || a.reviewStatus || '').toUpperCase();
+                  const isSubmitted = ['SUBMITTED', 'AWAITING_REVIEW'].includes(statusUpper);
+                  const isCompleted = ['COMPLETED', 'REVIEWED', 'GRADED'].includes(statusUpper);
+                  const isResubmit = statusUpper === 'RESUBMISSION_REQUIRED';
 
                   return (
                     <div
                       key={a.id}
-                      className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900/80 p-4 flex flex-col justify-between shadow-xs hover:border-brand-red/40 transition-colors gap-3"
+                      className="px-5 py-4 sm:px-6 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors"
                     >
-                      <div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-black uppercase ${
-                            isCompleted
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                      <div className="min-w-0 space-y-1 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-bold text-[#1E293B] dark:text-white truncate">
+                            {a.title}
+                          </h3>
+                          <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                          <span
+                            className={`inline-flex items-center gap-1 text-xs font-semibold ${
+                              isCompleted
+                                ? 'text-[#1E293B] dark:text-slate-200'
+                                : isResubmit
+                                ? 'text-[#B91C1C]'
+                                : 'text-slate-600 dark:text-slate-400'
+                            }`}
+                          >
+                            {isCompleted ? (
+                              <CheckCircle2 size={12} aria-hidden="true" />
+                            ) : isSubmitted ? (
+                              <Clock size={12} aria-hidden="true" />
+                            ) : (
+                              <AlertCircle size={12} className="text-[#B91C1C]" aria-hidden="true" />
+                            )}
+                            {isCompleted
+                              ? 'Completed'
                               : isSubmitted
-                              ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'
+                              ? 'Under Review'
                               : isResubmit
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                              : 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
-                          }`}>
-                            {isCompleted ? <CheckCircle2 size={10} /> : isSubmitted ? <Clock size={10} /> : <AlertCircle size={10} />}
-                            {isCompleted ? 'Completed' : isSubmitted ? 'Under Review' : isResubmit ? 'Resubmission Requested' : 'Active Task'}
+                              ? 'Resubmission Requested'
+                              : 'Active Task'}
                           </span>
                           {a.dueDate && (
-                            <span className="text-[10px] font-bold text-slate-500 font-mono">
-                              Due: {formatDate(a.dueDate)}
-                            </span>
+                            <>
+                              <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                              <span className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                                Due {formatDate(a.dueDate)}
+                              </span>
+                            </>
                           )}
                         </div>
 
-                        <h4 className="mt-2 text-sm font-black text-slate-900 dark:text-white line-clamp-1">
-                          {a.title}
-                        </h4>
                         {a.instructions && (
-                          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
+                          <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
                             {a.instructions}
                           </p>
                         )}
-                        {a.tutorName && (
-                          <p className="mt-1.5 text-[11px] text-slate-500 flex items-center gap-1">
-                            <UserCheck size={12} className="text-brand-red shrink-0" />
-                            Assigned by: <strong className="text-slate-700 dark:text-slate-300">{a.tutorName}</strong>
-                          </p>
-                        )}
 
-                        {a.submissionUrl && (
-                          <div className="mt-2 text-[11px] flex items-center gap-1.5 text-sky-600 dark:text-sky-400 font-bold truncate">
-                            <LinkIcon size={12} className="shrink-0" />
-                            <a href={a.submissionUrl} target="_blank" rel="noreferrer" className="hover:underline truncate">
-                              {a.submissionUrl}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                          {a.tutorName && (
+                            <span className="inline-flex items-center gap-1">
+                              <UserCheck size={12} className="text-[#B91C1C]" aria-hidden="true" />
+                              Assigned by <strong className="text-[#1E293B] dark:text-slate-200">{a.tutorName}</strong>
+                            </span>
+                          )}
+                          {a.submissionUrl && (
+                            <a
+                              href={a.submissionUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-[#1E293B] dark:text-slate-200 font-semibold hover:text-[#B91C1C] hover:underline truncate max-w-xs"
+                            >
+                              <LinkIcon size={12} aria-hidden="true" />
+                              <span className="truncate">{a.submissionUrl}</span>
                             </a>
-                          </div>
-                        )}
+                          )}
+                        </div>
 
                         {a.feedback && (
-                          <div className="mt-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 text-[11px] text-emerald-900 dark:text-emerald-300">
+                          <p className="text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 mt-1.5">
                             <strong>Tutor Feedback:</strong> {a.feedback}
-                            {a.grade !== undefined && <span> (Score: {a.grade}/100)</span>}
-                          </div>
+                            {a.grade !== undefined && <span className="font-mono tabular-nums"> ({a.grade}/100)</span>}
+                          </p>
                         )}
                       </div>
 
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-                        {isCompleted ? (
-                          <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                            <CheckCircle2 size={13} /> Verified by Tutor
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenSubmitModal(a)}
-                            className="px-3.5 py-1.5 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-black inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-                          >
-                            <Upload size={12} />
-                            <span>{isSubmitted ? 'Update Google Link' : 'Submit Google Link'}</span>
-                          </button>
-                        )}
-
+                      <div className="flex items-center gap-2.5 shrink-0">
                         {a.resourceUrl && (
                           <a
                             href={a.resourceUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-[11px] font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white inline-flex items-center gap-1"
+                            className="min-h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1"
                           >
-                            <FileText size={12} /> {a.resourceTitle || 'Resource'}
+                            <FileText size={12} aria-hidden="true" />
+                            <span>{a.resourceTitle || 'Resource'}</span>
                           </a>
+                        )}
+
+                        {isCompleted ? (
+                          <span className="text-xs font-semibold text-[#1E293B] dark:text-slate-200 inline-flex items-center gap-1">
+                            <CheckCircle2 size={13} aria-hidden="true" /> Verified
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSubmitModal(a)}
+                            className="min-h-8 px-3.5 py-1.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <Upload size={12} aria-hidden="true" />
+                            <span>{isSubmitted ? 'Update Link' : 'Submit Google Link'}</span>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1562,7 +1678,7 @@ export const StudentDashboard: React.FC = () => {
             )}
           </section>
 
-          {/* ⌨️ TYPING MASTERS ACADEMY & EDCLUB WORKSPACE */}
+          {/* Typing Masters Academy Workspace */}
           {isEdclubAllowed && (
             <TypingMastersAcademyCard
               studentName={student.fullName || student.name || 'Student'}
@@ -1573,180 +1689,235 @@ export const StudentDashboard: React.FC = () => {
             />
           )}
 
-          {/* 📅 UPCOMING CLASS SCHEDULE & TIMETABLE WIDGET */}
-          <section className="rounded-2xl bg-white dark:bg-slate-900 p-5 sm:p-6 border border-slate-200/90 dark:border-slate-800 shadow-xs">
-            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          {/* Upcoming Class Schedule */}
+          <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="p-5 sm:px-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <Calendar size={18} className="text-brand-red" /> Upcoming Class Schedule
+                <h2 className="text-base font-bold text-[#1E293B] dark:text-white tracking-tight flex items-center gap-2">
+                  <Calendar size={17} className="text-[#B91C1C]" aria-hidden="true" />
+                  <span>Upcoming Class Schedule</span>
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                  Your upcoming virtual classrooms, timetable sessions, and tutor schedules.
+                  Upcoming virtual classrooms, timetable sessions, and tutor schedules.
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4 shrink-0">
                 <Link
                   to="/portal/student/calendar"
-                  className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-red dark:hover:text-brand-red inline-flex items-center gap-1 transition-colors"
+                  className="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-[#B91C1C] inline-flex items-center gap-1 transition-colors"
                 >
-                  <Calendar size={12} /> Timetable
+                  <Calendar size={12} aria-hidden="true" /> Timetable
                 </Link>
                 <Link
                   to="/portal/student/live-classrooms"
-                  className="text-xs font-black text-brand-red inline-flex items-center gap-1 hover:underline"
+                  className="text-xs font-semibold text-[#B91C1C] inline-flex items-center gap-1 hover:underline"
                 >
-                  All Live Classes <ArrowRight size={13} />
+                  All Live Classes <ArrowRight size={13} aria-hidden="true" />
                 </Link>
               </div>
             </div>
 
             {scheduleAnalysis.upcoming.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {scheduleAnalysis.upcoming.map((occ: any) => (
                   <div
                     key={occ.id}
-                    className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-4 flex flex-col justify-between shadow-xs hover:border-brand-red/40 transition-colors"
+                    className="px-5 py-3.5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors"
                   >
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-brand-red/10 px-2 py-0.5 text-[9px] font-black uppercase text-brand-red">
-                          <Calendar size={10} /> UPCOMING
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-[#1E293B] dark:text-white truncate">
+                        {occ.title || occ.programName || 'Class Session'}
+                      </h3>
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        <span className="font-semibold text-[#B91C1C]">
+                          {occ.formattedDate || occ.date}
                         </span>
                         {occ.startTime && (
-                          <span className="text-[10px] font-bold text-slate-500 font-mono">
-                            ⏰ {occ.startTime} – {occ.endTime}
-                          </span>
+                          <>
+                            <span className="mx-1.5" aria-hidden="true">·</span>
+                            <span className="font-mono tabular-nums">
+                              {occ.startTime} – {occ.endTime}
+                            </span>
+                          </>
                         )}
-                      </div>
-                      <h4 className="mt-2.5 text-xs sm:text-sm font-black text-slate-900 dark:text-white line-clamp-1">
-                        {occ.title || occ.programName || 'Class Session'}
-                      </h4>
-                      <p className="mt-0.5 text-[11px] font-bold text-brand-red dark:text-red-400">
-                        {occ.formattedDate || occ.date}
+                        <span className="mx-1.5" aria-hidden="true">·</span>
+                        <span>{occ.classLevel || 'Assigned Cohort'}</span>
+                        {occ.tutorName && (
+                          <>
+                            <span className="mx-1.5" aria-hidden="true">·</span>
+                            <span>Faculty: {occ.tutorName}</span>
+                          </>
+                        )}
                       </p>
-                      {occ.tutorName && (
-                        <p className="mt-1.5 text-[11px] text-slate-500 flex items-center gap-1 font-medium">
-                          <UserCheck size={12} className="text-brand-red shrink-0" />
-                          Faculty: <strong className="text-slate-700 dark:text-slate-300 font-bold">{occ.tutorName}</strong>
-                        </p>
-                      )}
                     </div>
-
-                    <div className="mt-4 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400">
-                        {occ.classLevel ? `Cohort: ${occ.classLevel}` : 'Assigned Cohort'}
-                      </span>
+                    <div className="shrink-0">
                       {occ.meetingLink ? (
                         <a
                           href={occ.meetingLink}
                           target="_blank"
                           rel="noreferrer"
-                          className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-black inline-flex items-center gap-1 hover:bg-emerald-500 hover:text-white transition-all"
+                          className="min-h-8 px-3.5 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#B91C1C] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
                         >
-                          Join Room <ExternalLink size={10} />
+                          Join Room <ExternalLink size={12} aria-hidden="true" />
                         </a>
                       ) : (
-                        <span className="text-[10px] font-medium text-slate-400">Link on start</span>
+                        <span className="text-xs text-slate-400">Link available at start</span>
                       )}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center">
-                <Calendar size={28} className="mx-auto text-slate-400 dark:text-slate-500" />
-                <p className="mt-2 text-xs font-bold text-slate-800 dark:text-slate-200">No upcoming class sessions scheduled today</p>
-                <p className="mt-0.5 text-[11px] text-slate-500">Your upcoming weekly timetable and sessions will appear here once timetabled by your instructor.</p>
+              <div className="p-8 text-center">
+                <Calendar size={26} className="mx-auto text-slate-400" aria-hidden="true" />
+                <p className="mt-2 text-xs font-bold text-[#1E293B] dark:text-white">No upcoming class sessions scheduled</p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  Upcoming timetable sessions will appear here once published by your instructor.
+                </p>
                 <Link
                   to="/portal/student/calendar"
-                  className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-brand-red hover:underline"
+                  className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#B91C1C] hover:underline"
                 >
-                  View Full Schedule <ArrowRight size={12} />
+                  View Full Schedule <ArrowRight size={12} aria-hidden="true" />
                 </Link>
               </div>
             )}
           </section>
 
-          {/* 📊 ROADMAP MILESTONES & RECENT ACTIVITIES */}
+          {/* Curriculum Milestones & Recent Activity Feeds */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <section className="rounded-2xl bg-white dark:bg-slate-900 p-5 sm:p-6 border border-slate-200/90 dark:border-slate-800 shadow-xs">
-              <div className="mb-4 flex items-center justify-between">
+            <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 overflow-hidden">
+              <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-base font-bold text-slate-900 dark:text-white">Curriculum Milestones</h2>
-                  <p className="mt-0.5 text-xs text-slate-500">Target milestones calibrated by your instructor.</p>
+                  <h2 className="text-base font-bold text-[#1E293B] dark:text-white tracking-tight">
+                    Curriculum Milestones
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    Target milestones calibrated by your instructor.
+                  </p>
                 </div>
-                <Link to="/portal/student/milestones" className="text-xs font-bold text-brand-red inline-flex items-center gap-1">
-                  All Milestones <ArrowRight size={13} />
+                <Link
+                  to="/portal/student/milestones"
+                  className="text-xs font-semibold text-[#B91C1C] inline-flex items-center gap-1 hover:underline shrink-0"
+                >
+                  All Milestones <ArrowRight size={13} aria-hidden="true" />
                 </Link>
               </div>
 
               {dynamicMilestones.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center">
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">No milestones published yet</p>
-                  <p className="mt-1 text-[11px] text-slate-500">Your tutor will publish term milestones dynamically for your program.</p>
+                <div className="p-8 text-center">
+                  <p className="text-xs font-bold text-[#1E293B] dark:text-white">No milestones published yet</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Your tutor will publish term milestones dynamically for your programme.
+                  </p>
                 </div>
               ) : (
-                <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-72 overflow-y-auto custom-scrollbar">
                   {dynamicMilestones.map((m, idx) => (
-                    <div key={m.id} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/50">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
-                        m.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                      }`}>
-                        {m.status === 'COMPLETED' ? <CheckCircle2 size={14} /> : <span className="text-[10px] font-black">{idx + 1}</span>}
+                    <div key={m.id} className="px-5 py-3.5 flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <span className="mt-0.5 text-xs font-mono font-bold text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
+                          {m.status === 'COMPLETED' ? (
+                            <CheckCircle2 size={15} className="text-[#1E293B] dark:text-slate-200" aria-hidden="true" />
+                          ) : (
+                            `${String(idx + 1).padStart(2, '0')}.`
+                          )}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-[#1E293B] dark:text-white">{m.title}</p>
+                          {m.description && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                              {m.description}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-slate-900 dark:text-white">{m.title}</p>
-                        {m.description && <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{m.description}</p>}
-                      </div>
+                      <span
+                        className={`text-[11px] font-semibold shrink-0 ${
+                          m.status === 'COMPLETED'
+                            ? 'text-[#1E293B] dark:text-slate-200'
+                            : m.status === 'IN_PROGRESS'
+                            ? 'text-[#B91C1C]'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {m.status.replace(/_/g, ' ')}
+                      </span>
                     </div>
                   ))}
                 </div>
               )}
             </section>
 
-            <section className="rounded-2xl bg-white dark:bg-slate-900 p-5 sm:p-6 border border-slate-200/90 dark:border-slate-800 shadow-xs">
-              <div className="mb-4 flex items-center justify-between">
+            <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 overflow-hidden">
+              <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-base font-bold text-slate-900 dark:text-white">Recent Learning Activity</h2>
-                  <p className="mt-0.5 text-xs text-slate-500">Verified activity recorded for your account.</p>
+                  <h2 className="text-base font-bold text-[#1E293B] dark:text-white tracking-tight">
+                    Recent Learning Activity
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    Verified module completions recorded for your account.
+                  </p>
                 </div>
-                <Award size={16} className="text-brand-red" aria-hidden="true" />
+                <Award size={16} className="text-[#B91C1C]" aria-hidden="true" />
               </div>
 
-              {modules.filter(m => m.completed).length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center">
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">No completed activity yet</p>
-                  <p className="mt-1 text-[11px] text-slate-500">Completed milestones and assignments will appear here once approved by your tutor.</p>
+              {modules.filter((m) => m.completed).length === 0 ? (
+                <div className="p-8 text-center">
+                  <p className="text-xs font-bold text-[#1E293B] dark:text-white">No completed activity yet</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Completed modules will appear here chronologically once verified by your tutor.
+                  </p>
                 </div>
               ) : (
-                <div className="space-y-2.5">
-                  {modules.filter(m => m.completed).slice(0, 5).map(module => (
-                    <div key={module.id} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/50">
-                      <Award size={15} className="mt-0.5 text-emerald-600" />
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-900 dark:text-white">{module.title}</p>
-                        <p className="text-[10px] text-slate-500">{module.completionDate ? `Completed ${formatDate(module.completionDate)}` : 'Completed'}</p>
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {modules
+                    .filter((m) => m.completed)
+                    .slice(0, 6)
+                    .map((module) => (
+                      <div key={module.id} className="px-5 py-3.5 flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <CheckCircle2
+                            size={15}
+                            className="mt-0.5 text-[#1E293B] dark:text-slate-200 shrink-0"
+                            aria-hidden="true"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-[#1E293B] dark:text-white truncate">
+                              {module.title}
+                            </p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              {module.trackName} · {module.stageName}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 shrink-0">
+                          {module.completionDate ? formatDate(module.completionDate) : 'Completed'}
+                        </span>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               )}
             </section>
           </div>
 
-          {/* 🚀 MODAL: SUBMIT ASSIGNMENT VIA GOOGLE LINK */}
+          {/* Modal: Submit Assignment via Google Link */}
           {submittingAssignment && (
-            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6">
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 shadow-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-black text-slate-900 dark:text-white">Submit Assignment Work</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">{submittingAssignment.title}</p>
+                    <h3 className="text-base font-bold text-[#1E293B] dark:text-white">
+                      Submit Assignment Work
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {submittingAssignment.title}
+                    </p>
                   </div>
                   <button
                     onClick={() => setSubmittingAssignment(null)}
                     type="button"
-                    className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
+                    className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
                     aria-label="Close"
                   >
                     <X size={18} />
@@ -1754,12 +1925,13 @@ export const StudentDashboard: React.FC = () => {
                 </div>
 
                 <form onSubmit={handleSubmitGoogleAssignment} className="space-y-4">
-                  <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-xs text-blue-900 dark:text-blue-200">
-                    <p className="font-bold flex items-center gap-1.5 mb-1">
-                      <LinkIcon size={14} /> Google Link Submission
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300">
+                    <p className="font-bold text-[#1E293B] dark:text-white flex items-center gap-1.5 mb-1">
+                      <LinkIcon size={14} className="text-[#B91C1C]" aria-hidden="true" /> Google Link Submission
                     </p>
                     <p className="leading-relaxed">
-                      Upload or share your Google Docs, Google Drive file, Google Slides presentation, or public project URL below. Make sure link sharing is set to <em>"Anyone with the link can view"</em>.
+                      Share your Google Docs, Google Drive, Slides, or project URL below and ensure sharing is set to{' '}
+                      <em>&ldquo;Anyone with the link can view&rdquo;</em>.
                     </p>
                   </div>
 
@@ -1773,7 +1945,7 @@ export const StudentDashboard: React.FC = () => {
                       value={submissionGoogleUrl}
                       onChange={(e) => setSubmissionGoogleUrl(e.target.value)}
                       placeholder="https://docs.google.com/... or https://drive.google.com/..."
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2.5 text-sm font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-red outline-none"
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2.5 text-sm font-mono text-[#1E293B] dark:text-white focus:ring-2 focus:ring-[#B91C1C] outline-none"
                     />
                   </div>
 
@@ -1786,7 +1958,7 @@ export const StudentDashboard: React.FC = () => {
                       value={submissionNotes}
                       onChange={(e) => setSubmissionNotes(e.target.value)}
                       placeholder="Any additional explanations or questions for your instructor..."
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-red outline-none resize-y"
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-[#1E293B] dark:text-white focus:ring-2 focus:ring-[#B91C1C] outline-none resize-y"
                     />
                   </div>
 
@@ -1794,14 +1966,14 @@ export const StudentDashboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setSubmittingAssignment(null)}
-                      className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={isSubmittingLink}
-                      className="px-5 py-2.5 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-black inline-flex items-center gap-2 shadow-md shadow-red-900/20 disabled:opacity-50"
+                      className="px-5 py-2 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold inline-flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                     >
                       {isSubmittingLink ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                       <span>{isSubmittingLink ? 'Submitting…' : 'Submit to Tutor'}</span>

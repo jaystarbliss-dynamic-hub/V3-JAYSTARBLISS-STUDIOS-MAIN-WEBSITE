@@ -403,25 +403,31 @@ const PortalCalendar: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
         <div className="space-y-1">
           {isStudentRole && studentCtx ? (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
               {studentCtx.isSchoolStudent ? (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 text-[11px] font-black text-blue-700 dark:text-blue-300">
-                  <School size={13} /> {studentCtx.schoolName || 'Partner School'}
+                <span className="inline-flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
+                  <School size={13} className="text-brand-red" aria-hidden="true" /> {studentCtx.schoolName || 'Partner School'}
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 text-[11px] font-black text-emerald-700 dark:text-emerald-300">
-                  <User size={13} /> Private Student Schedule
+                <span className="inline-flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
+                  <User size={13} className="text-brand-red" aria-hidden="true" /> Private Student Schedule
                 </span>
               )}
               {studentCtx.className && (
-                <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                  {studentCtx.className}
-                </span>
+                <>
+                  <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    {studentCtx.className}
+                  </span>
+                </>
               )}
               {enrolledProgramsDisplay && (
-                <span className="rounded-lg bg-brand-red/10 px-2.5 py-1 text-[11px] font-black text-brand-red">
-                  {enrolledProgramsDisplay}
-                </span>
+                <>
+                  <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                  <span className="font-bold text-brand-red">
+                    {enrolledProgramsDisplay}
+                  </span>
+                </>
               )}
             </div>
           ) : (
@@ -568,27 +574,33 @@ const PortalCalendar: React.FC = () => {
                                       </div>
 
                                       <div className="flex-1 min-w-0 space-y-1">
-                                        <div className="flex flex-wrap items-center gap-1.5">
-                                          <span className="inline-flex items-center rounded-md bg-brand-red/10 px-2 py-0.5 text-[10px] font-black uppercase text-brand-red">
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+                                          <span className="font-bold uppercase tracking-wide text-brand-red">
                                             {programLabel}
                                           </span>
                                           {session.dayOfWeek && (
-                                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-300">
-                                              <Repeat size={10} />
-                                              {Array.isArray(session.selectedDays) &&
-                                              session.selectedDays.length > 1
-                                                ? session.selectedDays.join(', ')
-                                                : session.dayOfWeek}
-                                            </span>
+                                            <>
+                                              <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                                              <span className="inline-flex items-center gap-1 font-medium text-slate-600 dark:text-slate-300">
+                                                <Repeat size={10} aria-hidden="true" />
+                                                {Array.isArray(session.selectedDays) &&
+                                                session.selectedDays.length > 1
+                                                  ? session.selectedDays.join(', ')
+                                                  : session.dayOfWeek}
+                                              </span>
+                                            </>
                                           )}
                                           {session.studentName && isParentRole && (
-                                            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-black text-emerald-700 dark:text-emerald-300">
-                                              <User size={10} /> {session.studentName}
-                                            </span>
+                                            <>
+                                              <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                                              <span className="inline-flex items-center gap-1 font-semibold text-slate-800 dark:text-slate-200">
+                                                <User size={10} aria-hidden="true" /> {session.studentName}
+                                              </span>
+                                            </>
                                           )}
                                         </div>
 
-                                        <h3 className="text-sm font-black text-slate-900 dark:text-white truncate">
+                                        <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
                                           {session.title || programLabel}
                                         </h3>
 
@@ -621,14 +633,14 @@ const PortalCalendar: React.FC = () => {
                                             href={linkCheck.normalizedUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand-red hover:bg-red-700 text-white px-4 py-2.5 text-xs font-black shadow-xs transition-all"
+                                            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-red hover:bg-red-800 text-white px-4 py-2 text-xs font-bold shadow-xs transition-all"
                                           >
                                             <Video size={14} /> Join Class <ExternalLink size={12} />
                                           </a>
                                         ) : session.deliveryMode !== 'physical' ? (
                                           <span
                                             title="Your instructor or administrator has not configured a joining link for this session yet."
-                                            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/70 text-slate-400 px-3.5 py-2 text-[11px] font-bold cursor-not-allowed"
+                                            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/70 text-slate-400 px-3.5 py-2 text-[11px] font-semibold cursor-not-allowed"
                                           >
                                             <Link2 size={13} /> Link Not Configured
                                           </span>
@@ -637,7 +649,7 @@ const PortalCalendar: React.FC = () => {
                                     </div>
 
                                     {status === 'absent' && session.absenceReason && (
-                                      <div className="rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 px-3 py-2 text-[11px] text-rose-700 dark:text-rose-300 flex gap-2">
+                                      <div className="rounded-lg bg-red-50/70 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 px-3 py-2 text-[11px] text-brand-red dark:text-red-300 flex gap-2">
                                         <AlertCircle size={14} className="shrink-0 mt-0.5" />
                                         <span>
                                           <b>Why this class was marked absent:</b>{' '}
@@ -646,12 +658,12 @@ const PortalCalendar: React.FC = () => {
                                       </div>
                                     )}
                                     {status === 'cancelled' && session.cancellationReason && (
-                                      <div className="rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-2 text-[11px] text-slate-600 dark:text-slate-300">
+                                      <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-2 text-[11px] text-slate-600 dark:text-slate-300">
                                         <b>Reason:</b> {session.cancellationReason}
                                       </div>
                                     )}
                                     {status === 'rescheduled' && (
-                                      <div className="rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-300">
+                                      <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-2 text-[11px] text-slate-700 dark:text-slate-300">
                                         <p>
                                           <b>Why it was rescheduled:</b>{' '}
                                           {session.rescheduleReason ||

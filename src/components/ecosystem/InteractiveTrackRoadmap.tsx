@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 
 export interface RoadmapMilestone {
@@ -1146,6 +1146,37 @@ const InteractiveTrackRoadmap: React.FC = () => {
   const safeActiveIndex = Math.min(activeIndex, Math.max(0, totalVisible - 1));
   const progressPercent = totalVisible > 0 ? ((safeActiveIndex + 1) / totalVisible) * 100 : 100;
 
+  const wheelCooldownRef = useRef<number>(0);
+
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el || viewMode !== 'carousel') return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      if (Math.abs(e.deltaY) < 4) return;
+
+      const goingRight = e.deltaY > 0;
+      const canGoRight = safeActiveIndex < visibleTracks.length - 1;
+      const canGoLeft = safeActiveIndex > 0;
+
+      if ((goingRight && canGoRight) || (!goingRight && canGoLeft)) {
+        e.preventDefault();
+        const now = Date.now();
+        if (now - wheelCooldownRef.current < 240) return;
+        wheelCooldownRef.current = now;
+        const targetIdx = goingRight ? safeActiveIndex + 1 : safeActiveIndex - 1;
+        const clamped = Math.max(0, Math.min(visibleTracks.length - 1, targetIdx));
+        setActiveIndex(clamped);
+        scrollToCardIndex(clamped, true);
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [viewMode, safeActiveIndex, visibleTracks.length, scrollToCardIndex]);
+
   // Detail mode helpers
   const detailTrackIndex = ROADMAP_TRACKS.findIndex((t) => t.id === selectedDetailTrack.id);
   const currentMilestone =
@@ -1267,6 +1298,7 @@ const InteractiveTrackRoadmap: React.FC = () => {
           <div className="relative -mx-4 sm:-mx-6 lg:-mx-8">
             <div
               ref={trackRef}
+              data-custom-wheel-carousel="true"
               onScroll={handleTrackScroll}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}

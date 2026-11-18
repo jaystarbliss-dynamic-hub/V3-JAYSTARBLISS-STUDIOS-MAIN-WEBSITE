@@ -1,6 +1,19 @@
 import { jsPDF } from 'jspdf';
+import {
+  JDI_COLORS,
+  JDI_CONTACTS,
+  JDI_INSTITUTION_NAME,
+  JDI_INSTITUTION_SUBTITLE,
+  sanitizePdfText,
+  loadOfficialWatermarkAsset,
+  preparePageBackgroundAndWatermark,
+} from './pdf';
 
-const makeStableCredentialId = (studentId: string | undefined, studentName: string, moduleTitle: string) => {
+const makeStableCredentialId = (
+  studentId: string | undefined,
+  studentName: string,
+  moduleTitle: string
+) => {
   let hash = 0;
   const source = `${studentId || studentName}:${moduleTitle}`;
   for (let index = 0; index < source.length; index += 1) {
@@ -13,256 +26,281 @@ export interface ModuleCertificateData {
   studentName: string;
   studentId?: string;
   moduleTitle: string;
-  moduleStage?: string; // e.g. "STAGE 1: DISCOVER" or "STAGE 3: APPLY"
-  programTrack: string; // e.g. "School of Technology & Programming"
+  moduleStage?: string;
+  programTrack: string;
   competencies?: string[];
   issueDate?: string;
   credentialId?: string;
   instructorName?: string;
 }
 
-/**
- * Generates and downloads a prestigious, publication-grade Certificate of Module Completion
- * in landscape A4 format using jsPDF vector graphics.
- */
-export function generateModuleCertificatePdf(data: ModuleCertificateData): void {
+function drawLandscapeNavyCorners(doc: jsPDF, pageWidth: number, pageHeight: number): void {
+  const anyDoc = doc as any;
+  if (typeof anyDoc.triangle !== 'function') return;
+
+  // Top-left geometric navy facet
+  doc.setFillColor(...JDI_COLORS.NAVY_STEEL);
+  anyDoc.triangle(0, 0, 52, 0, 0, 28, 'F');
+  doc.setFillColor(...JDI_COLORS.NAVY_PRIMARY);
+  anyDoc.triangle(0, 0, 34, 0, 0, 19, 'F');
+
+  // Bottom-right geometric navy facet
+  doc.setFillColor(...JDI_COLORS.NAVY_STEEL);
+  anyDoc.triangle(pageWidth - 52, pageHeight, pageWidth, pageHeight - 28, pageWidth, pageHeight, 'F');
+  doc.setFillColor(...JDI_COLORS.NAVY_PRIMARY);
+  anyDoc.triangle(pageWidth - 34, pageHeight, pageWidth, pageHeight - 19, pageWidth, pageHeight, 'F');
+}
+
+function drawVectorSealStar(doc: jsPDF, cx: number, cy: number, outerR: number, innerR: number): void {
+  const anyDoc = doc as any;
+  if (typeof anyDoc.triangle !== 'function') return;
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i < 10; i += 1) {
+    const angle = (Math.PI / 5) * i - Math.PI / 2;
+    const r = i % 2 === 0 ? outerR : innerR;
+    pts.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
+  }
+  doc.setFillColor(...JDI_COLORS.CRIMSON);
+  for (let i = 0; i < 10; i += 1) {
+    const next = pts[(i + 1) % 10];
+    anyDoc.triangle(cx, cy, pts[i][0], pts[i][1], next[0], next[1], 'F');
+  }
+}
+
+export async function createModuleCertificatePdfDocument(
+  data: ModuleCertificateData
+): Promise<jsPDF> {
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
-    format: 'a4'
+    format: 'a4',
   });
 
   const pageWidth = doc.internal.pageSize.getWidth(); // 297 mm
   const pageHeight = doc.internal.pageSize.getHeight(); // 210 mm
   const centerX = pageWidth / 2;
 
-  const studentName = data.studentName?.trim() || 'Valued Scholar';
-  const moduleTitle = data.moduleTitle?.trim() || 'Digital Technology & Innovation Module';
-  const moduleStage = data.moduleStage?.trim() || 'MASTERY MILESTONE';
-  const programTrack = data.programTrack?.trim() || 'Jaystarbliss Digital Ecosystem';
-  const issueDate = data.issueDate || new Date().toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
+  const watermarkAsset = await loadOfficialWatermarkAsset();
+
+  const studentName = sanitizePdfText(data.studentName?.trim() || 'Valued Scholar');
+  const moduleTitle = sanitizePdfText(
+    data.moduleTitle?.trim() || 'Digital Technology & Innovation Module'
+  );
+  const moduleStage = sanitizePdfText(data.moduleStage?.trim() || 'MASTERY MILESTONE');
+  const programTrack = sanitizePdfText(
+    data.programTrack?.trim() || 'Jaystarbliss Digital Ecosystem'
+  );
+  const issueDate = sanitizePdfText(
+    data.issueDate ||
+      new Date().toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      })
+  );
+  const credentialId = sanitizePdfText(
+    data.credentialId || makeStableCredentialId(data.studentId, studentName, moduleTitle)
+  );
+  const instructorName = sanitizePdfText(
+    data.instructorName || 'Academic Directorate & Lead Mentors'
+  );
+
+  // 1. Light Ivory background + Permanent centered watermark behind certificate details
+  preparePageBackgroundAndWatermark(doc, watermarkAsset, {
+    backgroundRgb: JDI_COLORS.IVORY_BG,
+    watermark: { opacity: 0.085, scaleRatio: 0.62, offsetY: 2 },
   });
-  const credentialId = data.credentialId || makeStableCredentialId(data.studentId, studentName, moduleTitle);
-  const instructorName = data.instructorName || 'Academic Directorate & Lead Mentors';
 
-  // -------------------------------------------------------------
-  // 1. Luxury Background & Borders
-  // -------------------------------------------------------------
-  // Outer Ivory / Soft Warm Background
-  doc.setFillColor(254, 253, 250); // #FEFDFA
-  doc.rect(0, 0, pageWidth, pageHeight, 'F');
+  // Top-left & bottom-right navy geometric accents
+  drawLandscapeNavyCorners(doc, pageWidth, pageHeight);
 
-  // Deep Slate Outer Margin Accent Frame
-  doc.setFillColor(15, 23, 42); // #0F172A (Slate 900)
-  doc.rect(6, 6, pageWidth - 12, pageHeight - 12, 'S');
+  // Institutional framing lines (deep navy outer, crimson double accent inner)
+  doc.setDrawColor(...JDI_COLORS.NAVY_PRIMARY);
+  doc.setLineWidth(1.3);
+  doc.rect(8, 8, pageWidth - 16, pageHeight - 16, 'S');
 
-  // Crimson Accent Border (Double line)
-  doc.setDrawColor(223, 70, 39); // #DF4627 (Jaystarbliss Crimson)
-  doc.setLineWidth(1.2);
-  doc.rect(10, 10, pageWidth - 20, pageHeight - 20, 'S');
+  doc.setDrawColor(...JDI_COLORS.CRIMSON);
+  doc.setLineWidth(0.75);
+  doc.rect(11.5, 11.5, pageWidth - 23, pageHeight - 23, 'S');
 
-  doc.setDrawColor(203, 213, 225); // Slate 300
-  doc.setLineWidth(0.4);
-  doc.rect(12, 12, pageWidth - 24, pageHeight - 24, 'S');
+  doc.setDrawColor(...JDI_COLORS.BORDER_MID);
+  doc.setLineWidth(0.35);
+  doc.rect(13.5, 13.5, pageWidth - 27, pageHeight - 27, 'S');
 
-  // Decorative Corner Rosettes / Angles
-  const cornerSize = 14;
+  // Corner Rosettes
+  const cornerSize = 12;
   const drawCornerOrnaments = (x: number, y: number, isRight: boolean, isBottom: boolean) => {
     const dirX = isRight ? -1 : 1;
     const dirY = isBottom ? -1 : 1;
-    doc.setDrawColor(223, 70, 39);
-    doc.setLineWidth(0.8);
-    doc.line(x, y + dirY * 4, x, y + dirY * cornerSize);
-    doc.line(x + dirX * 4, y, x + dirX * cornerSize, y);
-    doc.setFillColor(223, 70, 39);
-    doc.circle(x + dirX * 3, y + dirY * 3, 1.2, 'F');
+    doc.setDrawColor(...JDI_COLORS.NAVY_PRIMARY);
+    doc.setLineWidth(0.9);
+    doc.line(x, y + dirY * 3.5, x, y + dirY * cornerSize);
+    doc.line(x + dirX * 3.5, y, x + dirX * cornerSize, y);
+    doc.setFillColor(...JDI_COLORS.CRIMSON);
+    doc.circle(x + dirX * 2.5, y + dirY * 2.5, 1.2, 'F');
   };
 
-  drawCornerOrnaments(10, 10, false, false);
-  drawCornerOrnaments(pageWidth - 10, 10, true, false);
-  drawCornerOrnaments(10, pageHeight - 10, false, true);
-  drawCornerOrnaments(pageWidth - 10, pageHeight - 10, true, true);
+  drawCornerOrnaments(11.5, 11.5, false, false);
+  drawCornerOrnaments(pageWidth - 11.5, 11.5, true, false);
+  drawCornerOrnaments(11.5, pageHeight - 11.5, false, true);
+  drawCornerOrnaments(pageWidth - 11.5, pageHeight - 11.5, true, true);
 
-  // -------------------------------------------------------------
   // 2. Institution Brand Header
-  // -------------------------------------------------------------
-  // Brand Name
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(15, 23, 42); // Slate 900
-  doc.text('JAYSTARBLISS STUDIOS', centerX, 24, { align: 'center' });
+  doc.setFontSize(16.5);
+  doc.setTextColor(...JDI_COLORS.NAVY_PRIMARY);
+  doc.text(JDI_INSTITUTION_NAME, centerX, 26, { align: 'center' });
 
-  // Subtitle
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(223, 70, 39); // Crimson
-  doc.text('INSTITUTE OF DIGITAL INNOVATION & CREATIVE ARTS', centerX, 29, { align: 'center' });
+  doc.setFontSize(8.2);
+  doc.setTextColor(...JDI_COLORS.CRIMSON);
+  doc.text(JDI_INSTITUTION_SUBTITLE, centerX, 31.5, { align: 'center' });
 
-  // Thin separator divider
-  doc.setDrawColor(226, 232, 240);
+  doc.setDrawColor(...JDI_COLORS.BORDER_MID);
   doc.setLineWidth(0.5);
-  doc.line(centerX - 45, 32, centerX + 45, 32);
+  doc.line(centerX - 52, 34.5, centerX + 52, 34.5);
 
-  // -------------------------------------------------------------
   // 3. Certificate Title
-  // -------------------------------------------------------------
   doc.setFont('times', 'bold');
-  doc.setFontSize(22);
-  doc.setTextColor(15, 23, 42);
-  doc.text('CERTIFICATE OF MODULE COMPLETION', centerX, 44, { align: 'center' });
+  doc.setFontSize(22.5);
+  doc.setTextColor(...JDI_COLORS.INK_DARK);
+  doc.text('CERTIFICATE OF MODULE COMPLETION', centerX, 46, { align: 'center' });
 
-  // Stage Pill / Tagline
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.setTextColor(100, 116, 139);
-  doc.text(`VERIFIED CURRICULUM MILESTONE • ${moduleStage.toUpperCase()}`, centerX, 50, { align: 'center' });
+  doc.setTextColor(...JDI_COLORS.INK_MUTED);
+  doc.text(`VERIFIED CURRICULUM MILESTONE  •  ${moduleStage.toUpperCase()}`, centerX, 52, {
+    align: 'center',
+  });
 
-  // -------------------------------------------------------------
   // 4. Recipient Presentation
-  // -------------------------------------------------------------
   doc.setFont('times', 'italic');
-  doc.setFontSize(11);
-  doc.setTextColor(71, 85, 105);
-  doc.text('This credential is officially conferred upon', centerX, 60, { align: 'center' });
+  doc.setFontSize(11.5);
+  doc.setTextColor(...JDI_COLORS.INK_BODY);
+  doc.text('This credential is officially conferred upon', centerX, 62, { align: 'center' });
 
-  // Student Full Name
   doc.setFont('times', 'bold');
   doc.setFontSize(26);
-  doc.setTextColor(15, 23, 42);
-  doc.text(studentName, centerX, 74, { align: 'center' });
+  doc.setTextColor(...JDI_COLORS.NAVY_PRIMARY);
+  doc.text(studentName, centerX, 75.5, { align: 'center', maxWidth: pageWidth - 52 });
 
-  // Underline for name
-  const nameWidth = Math.min(doc.getTextWidth(studentName) + 16, 180);
-  doc.setDrawColor(223, 70, 39);
+  const nameWidth = Math.min(Math.max(doc.getTextWidth(studentName) + 18, 70), 185);
+  doc.setDrawColor(...JDI_COLORS.CRIMSON);
   doc.setLineWidth(0.9);
-  doc.line(centerX - nameWidth / 2, 78, centerX + nameWidth / 2, 78);
+  doc.line(centerX - nameWidth / 2, 79.5, centerX + nameWidth / 2, 79.5);
 
-  // -------------------------------------------------------------
-  // 5. Achievement Narrative & Module Info
-  // -------------------------------------------------------------
+  // 5. Narrative & Module Banner
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
-  doc.setTextColor(51, 65, 85);
+  doc.setTextColor(...JDI_COLORS.INK_BODY);
   doc.text(
     'for successfully demonstrating technical proficiency, completing practical laboratory challenges,',
     centerX,
-    87,
+    88,
     { align: 'center' }
   );
   doc.text(
     'and achieving verified mastery in the specialized program module:',
     centerX,
-    92.5,
+    93.5,
     { align: 'center' }
   );
 
-  // Module Title Banner Box
-  doc.setFillColor(241, 245, 249); // Slate 100
-  doc.roundedRect(centerX - 85, 98, 170, 18, 3, 3, 'F');
-  doc.setDrawColor(203, 213, 225);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(centerX - 85, 98, 170, 18, 3, 3, 'S');
+  doc.setFillColor(...JDI_COLORS.ICE_BG);
+  doc.roundedRect(centerX - 88, 99, 176, 18.5, 2.5, 2.5, 'F');
+  doc.setDrawColor(...JDI_COLORS.ICE_BORDER);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(centerX - 88, 99, 176, 18.5, 2.5, 2.5, 'S');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
-  doc.setTextColor(15, 23, 42);
-  doc.text(moduleTitle, centerX, 106, { align: 'center' });
+  doc.setTextColor(...JDI_COLORS.NAVY_PRIMARY);
+  doc.text(moduleTitle, centerX, 107, { align: 'center', maxWidth: 168 });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.setTextColor(223, 70, 39);
-  doc.text(programTrack, centerX, 112, { align: 'center' });
+  doc.setTextColor(...JDI_COLORS.CRIMSON);
+  doc.text(programTrack, centerX, 113.5, { align: 'center', maxWidth: 168 });
 
-  // Competencies List (if provided)
   if (data.competencies && data.competencies.length > 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    const skillsText = `Core Competencies: ${data.competencies.slice(0, 4).join(' • ')}`;
-    doc.text(skillsText, centerX, 123, { align: 'center' });
+    doc.setTextColor(...JDI_COLORS.INK_MUTED);
+    const skillsText = sanitizePdfText(
+      `Core Competencies: ${data.competencies.slice(0, 4).join(' • ')}`
+    );
+    doc.text(skillsText, centerX, 124.5, { align: 'center', maxWidth: pageWidth - 60 });
   }
 
-  // -------------------------------------------------------------
-  // 6. Security Seal & Signatures
-  // -------------------------------------------------------------
-  const sigY = 156;
+  // 6. Signatures & Vector Seal
+  const sigY = 155;
 
-  // Left Signature: Instructor / Technical Lead
-  doc.setDrawColor(148, 163, 184);
+  doc.setDrawColor(...JDI_COLORS.NAVY_PRIMARY);
   doc.setLineWidth(0.5);
-  doc.line(35, sigY, 95, sigY);
-
+  doc.line(36, sigY, 96, sigY);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text(instructorName, 65, sigY + 5, { align: 'center' });
-
+  doc.setTextColor(...JDI_COLORS.INK_DARK);
+  doc.text(instructorName, 66, sigY + 5.2, { align: 'center', maxWidth: 62 });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.setTextColor(100, 116, 139);
-  doc.text('Lead Technical Instructor / Mentor', 65, sigY + 9, { align: 'center' });
+  doc.setTextColor(...JDI_COLORS.INK_MUTED);
+  doc.text('Lead Technical Instructor / Mentor', 66, sigY + 9.5, { align: 'center' });
 
-  // Center Official Seal Emblem
+  // Center Seal
   const sealX = centerX;
   const sealY = sigY + 2;
+  doc.setDrawColor(...JDI_COLORS.NAVY_PRIMARY);
+  doc.setLineWidth(1.1);
+  doc.circle(sealX, sealY, 13.5, 'S');
+  doc.setDrawColor(...JDI_COLORS.CRIMSON);
+  doc.setLineWidth(0.45);
+  doc.circle(sealX, sealY, 11.4, 'S');
 
-  // Seal Circles
-  doc.setDrawColor(223, 70, 39);
-  doc.setLineWidth(1.2);
-  doc.circle(sealX, sealY, 14, 'S');
+  drawVectorSealStar(doc, sealX, sealY - 4.2, 2.7, 1.15);
 
-  doc.setDrawColor(203, 213, 225);
-  doc.setLineWidth(0.4);
-  doc.circle(sealX, sealY, 12, 'S');
-
-  // Star in seal
-  doc.setFillColor(223, 70, 39);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(223, 70, 39);
-  doc.text('★', sealX, sealY - 3, { align: 'center' });
+  doc.setFontSize(6.2);
+  doc.setTextColor(...JDI_COLORS.NAVY_PRIMARY);
+  doc.text('VERIFIED', sealX, sealY + 1.8, { align: 'center' });
+  doc.text('ACCREDITED', sealX, sealY + 5.4, { align: 'center' });
 
-  doc.setFontSize(6.5);
-  doc.text('VERIFIED', sealX, sealY + 2, { align: 'center' });
-  doc.text('ACCREDITED', sealX, sealY + 6, { align: 'center' });
-
-  // Right Signature: Academic Director
-  doc.setDrawColor(148, 163, 184);
+  // Right Signature
+  doc.setDrawColor(...JDI_COLORS.NAVY_PRIMARY);
   doc.setLineWidth(0.5);
-  doc.line(pageWidth - 95, sigY, pageWidth - 35, sigY);
-
+  doc.line(pageWidth - 96, sigY, pageWidth - 36, sigY);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text('Academic Directorate', pageWidth - 65, sigY + 5, { align: 'center' });
-
+  doc.setTextColor(...JDI_COLORS.INK_DARK);
+  doc.text('Academic Directorate', pageWidth - 66, sigY + 5.2, { align: 'center' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.setTextColor(100, 116, 139);
-  doc.text('Director of Curriculum & Standards', pageWidth - 65, sigY + 9, { align: 'center' });
+  doc.setTextColor(...JDI_COLORS.INK_MUTED);
+  doc.text('Director of Curriculum & Standards', pageWidth - 66, sigY + 9.5, { align: 'center' });
 
-  // -------------------------------------------------------------
-  // 7. Footer Metadata & Verification Code
-  // -------------------------------------------------------------
-  const footerY = pageHeight - 16;
-
+  // 7. Verification Footer inside certificate frame
+  const footerY = pageHeight - 17;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.setTextColor(148, 163, 184);
-
-  doc.text(`Issue Date: ${issueDate}`, 20, footerY);
+  doc.setTextColor(...JDI_COLORS.INK_MUTED);
+  doc.text(`Issue Date: ${issueDate}`, 22, footerY);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...JDI_COLORS.NAVY_PRIMARY);
   doc.text(`Credential ID: ${credentialId}`, centerX, footerY, { align: 'center' });
-  doc.text('Verify at: jaystarbliss-studios.name.ng/verify', pageWidth - 20, footerY, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...JDI_COLORS.INK_MUTED);
+  doc.text(`Verify at: ${JDI_CONTACTS.verifyUrl}  |  ${JDI_CONTACTS.website}`, pageWidth - 22, footerY, {
+    align: 'right',
+  });
 
-  // -------------------------------------------------------------
-  // 8. Download Document
-  // -------------------------------------------------------------
-  const safeStudent = studentName.replace(/[^a-zA-Z0-9]/g, '_');
-  const safeModule = moduleTitle.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 24);
-  const filename = `Jaystarbliss_Certificate_${safeStudent}_${safeModule}.pdf`;
+  return doc;
+}
 
-  doc.save(filename);
+export async function generateModuleCertificatePdf(data: ModuleCertificateData): Promise<void> {
+  const doc = await createModuleCertificatePdfDocument(data);
+  const safeStudent = (data.studentName?.trim() || 'Scholar').replace(/[^a-zA-Z0-9]/g, '_');
+  const safeModule = (data.moduleTitle?.trim() || 'Module')
+    .replace(/[^a-zA-Z0-9]/g, '_')
+    .substring(0, 24);
+  doc.save(`Jaystarbliss_Certificate_${safeStudent}_${safeModule}.pdf`);
 }

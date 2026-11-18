@@ -95,7 +95,7 @@ export const WizardActionFooter: React.FC<WizardActionFooterProps> = ({
       {/* Center Area: Step Indicator (when provided) */}
       {totalSteps && totalSteps > 1 && (
         <div className="text-center sm:text-left order-first sm:order-none py-1">
-          <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+          <p className="text-xs font-bold text-slate-500 dark:text-slate-400 tabular-nums">
             {stepLabel ? `${stepLabel} · ` : ''}Step{' '}
             <span className="text-slate-900 dark:text-white font-black">
               {currentStep || 1}
@@ -113,7 +113,7 @@ export const WizardActionFooter: React.FC<WizardActionFooterProps> = ({
           disabled={!canProceed || isSubmitting}
           title={!canProceed && disabledReason ? disabledReason : undefined}
           aria-disabled={!canProceed || isSubmitting}
-          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-brand-red px-6 py-2.5 text-sm font-black text-white hover:bg-red-700 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all cursor-pointer"
+          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-[#B91C1C] px-6 py-2.5 text-sm font-black text-white hover:bg-red-800 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all cursor-pointer"
         >
           {isSubmitting ? (
             <>
@@ -129,7 +129,7 @@ export const WizardActionFooter: React.FC<WizardActionFooterProps> = ({
         </button>
 
         {!canProceed && disabledReason && (
-          <span className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 text-center sm:text-right">
+          <span className="mt-1 text-[11px] text-[#B91C1C] dark:text-red-400 text-center sm:text-right">
             {disabledReason}
           </span>
         )}

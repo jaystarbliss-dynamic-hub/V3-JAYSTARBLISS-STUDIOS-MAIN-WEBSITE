@@ -2958,7 +2958,8 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
             role: 'admin',
             planId: 'treasury_topup',
             planName: 'Platform Treasury Funding',
-            amount: amt
+            amount: amt,
+            paymentPolicyAccepted: true
           });
           if (result?.authorizationUrl) {
             window.location.assign(result.authorizationUrl);
@@ -2972,7 +2973,7 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
 };
 
 const PolicyCard = ({ title, policy, setPolicy, saving, onSave }: { title: string; policy: Policy; setPolicy: (p: Policy) => void; saving: boolean; onSave: () => void }) => (
-  <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
+  <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
     <h2 className="font-black text-base text-slate-900 dark:text-white">{title}</h2>
     <p className="text-xs text-slate-500 mt-0.5">Passed through to customer at Paystack checkout.</p>
     <div className="grid grid-cols-2 gap-3 mt-4">
@@ -2981,7 +2982,7 @@ const PolicyCard = ({ title, policy, setPolicy, saving, onSave }: { title: strin
       <input type="number" value={policy.cap} onChange={e => setPolicy({ ...policy, cap: e.target.value })} placeholder="Fee Cap (₦)" className={inputClass} />
       <input type="number" value={policy.waiveFlatBelow || ''} onChange={e => setPolicy({ ...policy, waiveFlatBelow: e.target.value })} placeholder="Waive Below (₦)" className={inputClass} />
     </div>
-    <button disabled={saving} type="button" onClick={onSave} className="min-h-11 mt-4 rounded-2xl bg-sky-600 hover:bg-sky-500 text-white px-5 text-xs font-black inline-flex items-center gap-2 shadow-sm">
+    <button disabled={saving} type="button" onClick={onSave} className="min-h-11 mt-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-brand-red dark:hover:bg-red-800 text-white px-5 text-xs font-black inline-flex items-center gap-2 shadow-sm cursor-pointer">
       <Save size={14} /> {saving ? 'Saving…' : 'Save Fee Policy'}
     </button>
   </div>

@@ -836,7 +836,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-900/50">
               <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400 tabular-nums">
                   Step {setupStep} of 3
                 </span>
                 <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
@@ -893,7 +893,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       onClick={() => setWorkType(item.type)}
                       className={`p-4 rounded-2xl border flex items-start gap-3.5 cursor-pointer transition-all ${
                         workType === item.type
-                          ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/30 ring-2 ring-blue-600/20'
+                          ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-2 ring-[#1E293B]/15 dark:ring-white/15'
                           : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900/40'
                       }`}
                     >
@@ -902,7 +902,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         name="initWorkType"
                         checked={workType === item.type}
                         onChange={() => setWorkType(item.type)}
-                        className="mt-1 w-4 h-4 text-blue-600 focus:ring-blue-500"
+                        className="mt-1 w-4 h-4 accent-[#B91C1C]"
                       />
                       <div className="min-w-0 flex-1">
                         <span className="font-bold text-sm text-slate-900 dark:text-white block">
@@ -927,7 +927,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     onClick={() => setDeliveryMode('NATIVE')}
                     className={`p-4 rounded-2xl border flex items-start gap-3.5 cursor-pointer transition-all ${
                       deliveryMode === 'NATIVE'
-                        ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/30 ring-2 ring-blue-600/20'
+                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-2 ring-[#1E293B]/15 dark:ring-white/15'
                         : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900/40'
                     }`}
                   >
@@ -936,17 +936,17 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       name="initFormat"
                       checked={deliveryMode === 'NATIVE'}
                       onChange={() => setDeliveryMode('NATIVE')}
-                      className="mt-1 w-4 h-4 text-blue-600"
+                      className="mt-1 w-4 h-4 accent-[#B91C1C]"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <FileText size={16} className="text-blue-600" />
+                        <FileText size={16} className="text-[#B91C1C] dark:text-red-400" />
                         <span className="font-bold text-sm text-slate-900 dark:text-white">
                           Option A: Native Assessment (Recommended)
                         </span>
                       </div>
                       <span className="text-xs text-slate-500 mt-1 block leading-relaxed">
-                        Create questions directly in Jaystarbliss Studios with Google Forms-inspired authoring,
+                        Create questions directly in Jaystarbliss Studios with structured authoring,
                         automatic scoring, live candidate proctoring, and question bank importing.
                       </span>
                     </div>
@@ -956,7 +956,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     onClick={() => setDeliveryMode('EXTERNAL_LINK')}
                     className={`p-4 rounded-2xl border flex items-start gap-3.5 cursor-pointer transition-all ${
                       deliveryMode === 'EXTERNAL_LINK'
-                        ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/30 ring-2 ring-blue-600/20'
+                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-2 ring-[#1E293B]/15 dark:ring-white/15'
                         : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900/40'
                     }`}
                   >
@@ -965,11 +965,11 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       name="initFormat"
                       checked={deliveryMode === 'EXTERNAL_LINK'}
                       onChange={() => setDeliveryMode('EXTERNAL_LINK')}
-                      className="mt-1 w-4 h-4 text-blue-600"
+                      className="mt-1 w-4 h-4 accent-[#B91C1C]"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <ExternalLink size={16} className="text-indigo-600" />
+                        <ExternalLink size={16} className="text-[#1E293B] dark:text-slate-300" />
                         <span className="font-bold text-sm text-slate-900 dark:text-white">
                           Option B: External Third-Party Link
                         </span>
@@ -991,13 +991,13 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
 
                   <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 tabular-nums">
                         Selected Cohorts ({recipientSummary.totalCount})
                       </span>
                       <button
                         type="button"
                         onClick={() => setShowRecipientModal(true)}
-                        className="text-xs font-bold text-blue-600 hover:underline inline-flex items-center gap-1"
+                        className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline inline-flex items-center gap-1"
                       >
                         <Users size={13} /> {recipientSummary.totalCount > 0 ? 'Edit Recipients' : '+ Choose Recipients'}
                       </button>
@@ -1015,7 +1015,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         <button
                           type="button"
                           onClick={() => setShowRecipientModal(true)}
-                          className="mt-3 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700"
+                          className="mt-3 px-4 py-2 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] dark:bg-white dark:text-[#1E293B] text-white text-xs font-bold transition-colors"
                         >
                           Select Target Recipients
                         </button>
@@ -1025,17 +1025,17 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         {recipientSummary.schools.map((name) => (
                           <span
                             key={name}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-[11px] font-bold text-blue-700 dark:text-blue-300"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-[#1E293B] dark:text-slate-200"
                           >
-                            <School size={11} /> {name}
+                            <School size={11} className="text-[#B91C1C] dark:text-red-400" /> {name}
                           </span>
                         ))}
                         {recipientSummary.students.map((name) => (
                           <span
                             key={name}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold text-emerald-700 dark:text-emerald-300"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-300"
                           >
-                            <User size={11} /> {name}
+                            <User size={11} className="text-slate-500" /> {name}
                           </span>
                         ))}
                       </div>
@@ -1069,7 +1069,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 <button
                   type="button"
                   onClick={() => setSetupStep((prev) => (prev + 1) as 1 | 2 | 3)}
-                  className="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700"
+                  className="px-5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold transition-colors"
                 >
                   Continue →
                 </button>
@@ -1080,7 +1080,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     setShowInitialSetupModal(false);
                     setActiveTab('questions');
                   }}
-                  className="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 flex items-center gap-1.5"
+                  className="px-5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
                 >
                   Launch Assessment Workspace →
                 </button>
@@ -1116,34 +1116,34 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     markDirty();
                   }}
                   placeholder="Untitled Assessment"
-                  className="font-black text-[11px] sm:text-xs md:text-sm text-slate-900 dark:text-white bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-blue-600 focus:outline-none transition-colors truncate w-full py-0.5"
+                  className="font-black text-[11px] sm:text-xs md:text-sm text-slate-900 dark:text-white bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-[#1E293B] dark:focus:border-slate-300 focus:outline-none transition-colors truncate w-full py-0.5"
                 />
-                <span className="hidden md:inline-flex px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 border border-red-200/60 dark:border-red-900/40 whitespace-nowrap shrink-0">
+                <span className="hidden md:inline-block text-[10px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400 whitespace-nowrap shrink-0">
                   {workType}
                 </span>
                 {isDirty && (
-                  <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] text-amber-600 dark:text-amber-400 font-bold whitespace-nowrap shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                    <span className="hidden sm:inline">Unsaved</span>
+                  <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] text-[#B91C1C] dark:text-red-400 font-bold whitespace-nowrap shrink-0">
+                    <span aria-hidden="true">·</span>
+                    <span>Unsaved</span>
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Center: Google Forms 3 Tabs (Questions | Responses | Settings) */}
+            {/* Center: 3 Tabs (Questions | Responses | Settings) */}
             <nav className="flex items-center justify-center gap-0.5 sm:gap-1.5 md:gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveTab('questions')}
                 className={`relative px-1.5 sm:px-3 py-2 sm:py-3 text-[10px] sm:text-xs md:text-sm font-bold transition-colors whitespace-nowrap shrink-0 ${
                   activeTab === 'questions'
-                    ? 'text-blue-600 dark:text-blue-400'
+                    ? 'text-[#1E293B] dark:text-white'
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
                 Questions
                 {activeTab === 'questions' && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 sm:h-0.75 bg-blue-600 rounded-t-full" />
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 sm:h-0.75 bg-[#B91C1C] rounded-t-full" />
                 )}
               </button>
 
@@ -1152,18 +1152,18 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 onClick={() => setActiveTab('responses')}
                 className={`relative px-1.5 sm:px-3 py-2 sm:py-3 text-[10px] sm:text-xs md:text-sm font-bold transition-colors inline-flex items-center gap-1 sm:gap-1.5 whitespace-nowrap shrink-0 ${
                   activeTab === 'responses'
-                    ? 'text-blue-600 dark:text-blue-400'
+                    ? 'text-[#1E293B] dark:text-white'
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
-                Responses
+                <span>Responses</span>
                 {examAttempts.length > 0 && (
-                  <span className="px-1 py-0.2 rounded-full text-[8px] sm:text-[10px] font-black bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
-                    {examAttempts.length}
+                  <span className="text-[9px] sm:text-xs font-black text-[#B91C1C] dark:text-red-400 tabular-nums">
+                    ({examAttempts.length})
                   </span>
                 )}
                 {activeTab === 'responses' && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 sm:h-0.75 bg-blue-600 rounded-t-full" />
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 sm:h-0.75 bg-[#B91C1C] rounded-t-full" />
                 )}
               </button>
 
@@ -1172,14 +1172,14 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 onClick={() => setActiveTab('settings')}
                 className={`relative px-1.5 sm:px-3 py-2 sm:py-3 text-[10px] sm:text-xs md:text-sm font-bold transition-colors inline-flex items-center gap-1 sm:gap-1.5 whitespace-nowrap shrink-0 ${
                   activeTab === 'settings'
-                    ? 'text-blue-600 dark:text-blue-400'
+                    ? 'text-[#1E293B] dark:text-white'
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
                 <SettingsIcon size={12} className="hidden sm:inline shrink-0" />
                 <span>Settings</span>
                 {activeTab === 'settings' && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 sm:h-0.75 bg-blue-600 rounded-t-full" />
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 sm:h-0.75 bg-[#B91C1C] rounded-t-full" />
                 )}
               </button>
             </nav>
@@ -1189,10 +1189,10 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               <button
                 type="button"
                 onClick={() => setShowRecipientModal(true)}
-                className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap shrink-0"
+                className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap shrink-0 tabular-nums"
                 title="Target Cohort Configuration"
               >
-                <Users size={12} className="text-blue-600 shrink-0" />
+                <Users size={12} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
                 <span>{recipientSummary.totalCount} Cohorts</span>
               </button>
 
@@ -1206,10 +1206,10 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     onPreviewStudent({ title, questions, passcode, workType });
                   }
                 }}
-                className="p-1 sm:px-2.5 sm:py-1 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                className="p-1 sm:px-2.5 sm:py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                 title="Interactive Student Preview"
               >
-                <Eye size={12} className="shrink-0" />
+                <Eye size={12} className="shrink-0 text-[#B91C1C] dark:text-red-400" />
                 <span className="hidden sm:inline">Preview</span>
               </button>
 
@@ -1232,7 +1232,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     activationMode === 'scheduled' ? 'scheduled' : 'active'
                   )
                 }
-                className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 shadow-xs disabled:opacity-50 whitespace-nowrap shrink-0"
+                className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 shadow-xs disabled:opacity-50 whitespace-nowrap shrink-0 transition-colors"
                 title={
                   activationMode === 'scheduled'
                     ? 'Schedule Assessment for Later'
@@ -1263,12 +1263,12 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
 
       {/* Banner Notifications */}
       {saveBannerMessage && (
-        <div className="bg-emerald-600 text-white px-4 py-2 text-xs font-bold text-center flex items-center justify-center gap-2">
-          <CheckCircle2 size={15} /> {saveBannerMessage}
+        <div className="bg-[#1E293B] text-white px-4 py-2 text-xs font-bold text-center flex items-center justify-center gap-2">
+          <CheckCircle2 size={15} className="text-red-400" /> {saveBannerMessage}
         </div>
       )}
       {saveErrorMessage && (
-        <div className="bg-red-600 text-white px-4 py-2 text-xs font-bold text-center flex items-center justify-center gap-2">
+        <div className="bg-[#B91C1C] text-white px-4 py-2 text-xs font-bold text-center flex items-center justify-center gap-2">
           <AlertCircle size={15} /> {saveErrorMessage}
         </div>
       )}
@@ -1283,7 +1283,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         {activeTab === 'questions' && (
           <div className="space-y-4">
             {/* Assessment Details Top Header Card */}
-            <div className="rounded-2xl border-t-8 border-t-blue-600 border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#121620] p-5 sm:p-7 shadow-xs space-y-4">
+            <div className="rounded-2xl border-t-8 border-t-[#1E293B] border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#121620] p-5 sm:p-7 shadow-xs space-y-4">
               <div className="space-y-2">
                 <input
                   type="text"
@@ -1293,7 +1293,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     markDirty();
                   }}
                   placeholder="Assessment Title (e.g. Term 1 Web Development Exam)"
-                  className="w-full text-xl sm:text-2xl font-black text-slate-900 dark:text-white bg-transparent border-b border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-blue-600 focus:outline-none py-1"
+                  className="w-full text-xl sm:text-2xl font-black text-slate-900 dark:text-white bg-transparent border-b border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-[#1E293B] dark:focus:border-slate-300 focus:outline-none py-1"
                 />
                 <textarea
                   rows={2}
@@ -1303,7 +1303,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     markDirty();
                   }}
                   placeholder="Detailed instructions / assessment brief for students..."
-                  className="w-full text-xs text-slate-600 dark:text-slate-400 bg-transparent border-b border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-blue-600 focus:outline-none resize-none py-1"
+                  className="w-full text-xs text-slate-600 dark:text-slate-400 bg-transparent border-b border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-[#1E293B] dark:focus:border-slate-300 focus:outline-none resize-none py-1"
                 />
               </div>
 
@@ -1477,7 +1477,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       }}
                       className={`h-9 rounded-xl text-[11px] font-bold border transition-all ${
                         activationMode === 'now'
-                          ? 'border-blue-600 bg-blue-600 text-white'
+                          ? 'border-[#1E293B] bg-[#1E293B] text-white dark:bg-white dark:text-[#1E293B] dark:border-white'
                           : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300'
                       }`}
                     >
@@ -1491,7 +1491,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       }}
                       className={`h-9 rounded-xl text-[11px] font-bold border transition-all ${
                         activationMode === 'scheduled'
-                          ? 'border-blue-600 bg-blue-600 text-white'
+                          ? 'border-[#1E293B] bg-[#1E293B] text-white dark:bg-white dark:text-[#1E293B] dark:border-white'
                           : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300'
                       }`}
                     >
@@ -1502,10 +1502,10 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               </div>
 
               {activationMode === 'scheduled' && (
-                <div className="p-3.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
-                      <Calendar size={14} className="text-blue-600" /> Scheduled Activation Date &amp; Time
+                    <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <Calendar size={14} className="text-[#B91C1C] dark:text-red-400" /> Scheduled Activation Date &amp; Time
                     </p>
                     <p className="text-[11px] text-slate-600 dark:text-slate-400">
                       Students will not be able to unlock or view the passcode until this scheduled time arrives.
@@ -1518,7 +1518,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       setAvailableFrom(e.target.value);
                       markDirty();
                     }}
-                    className="h-9 rounded-xl border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold shrink-0"
+                    className="h-9 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold shrink-0 tabular-nums focus:border-[#1E293B] focus:outline-none"
                   />
                 </div>
               )}
@@ -1527,8 +1527,8 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                      <BookOpen size={13} className="text-blue-600" /> Learning Resources &amp; Reference Materials ({learningResources.length})
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5 tabular-nums">
+                      <BookOpen size={13} className="text-[#B91C1C] dark:text-red-400" /> Learning Resources &amp; Reference Materials ({learningResources.length})
                     </span>
                     <p className="text-[11px] text-slate-500">
                       Attach lesson documents, Google Drive PDFs, slides, or YouTube tutorial videos for students to review inside the assessment.
@@ -1549,9 +1549,9 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       ]);
                       markDirty();
                     }}
-                    className="px-3 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 text-xs font-bold hover:bg-blue-100 inline-flex items-center gap-1 shrink-0"
+                    className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 inline-flex items-center gap-1 shrink-0 transition-colors"
                   >
-                    <Plus size={13} /> Add Resource
+                    <Plus size={13} className="text-[#B91C1C] dark:text-red-400" /> Add Resource
                   </button>
                 </div>
 
@@ -1649,9 +1649,9 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
 
               {/* External Link Setup Banner (If External Link delivery mode) */}
               {deliveryMode === 'EXTERNAL_LINK' && (
-                <div className="p-4 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
-                    <ExternalLink size={13} /> External Third-Party Assessment URL
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#1E293B] dark:text-slate-200 flex items-center gap-1.5">
+                    <ExternalLink size={13} className="text-[#B91C1C] dark:text-red-400" /> External Third-Party Assessment URL
                   </span>
                   <input
                     type="url"
@@ -1661,7 +1661,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       markDirty();
                     }}
                     placeholder="https://docs.google.com/forms/d/e/... or https://forms.office.com/..."
-                    className="w-full h-10 rounded-xl border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
+                    className="w-full h-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold focus:border-[#1E293B] focus:outline-none"
                   />
                   <p className="text-[11px] text-slate-500">
                     Students will click to launch this external test. Their participation will be marked when they submit.
@@ -1675,11 +1675,12 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               <div className="space-y-4">
                 {/* Floating/Top Controls: Add Question & Import Questions */}
                 <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-[#121620] border border-slate-200/90 dark:border-slate-800 shadow-2xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-500">
+                  <div className="flex items-center gap-2 text-xs tabular-nums">
+                    <span className="font-bold text-slate-500">
                       {questions.length} Question(s)
                     </span>
-                    <span className="text-xs font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded-md">
+                    <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+                    <span className="font-black text-[#1E293B] dark:text-white">
                       {totalMarks} Total Marks
                     </span>
                   </div>
@@ -1688,15 +1689,15 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     <button
                       type="button"
                       onClick={() => setShowImportModal(true)}
-                      className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 inline-flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-[#1E293B] dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 inline-flex items-center gap-1.5"
                     >
-                      <Sparkles size={13} className="text-blue-600" />
+                      <Sparkles size={13} className="text-[#B91C1C] dark:text-red-400" />
                       <span>Import Questions</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleAddQuestion()}
-                      className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs"
+                      className="px-3.5 py-1.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs transition-colors"
                     >
                       <Plus size={14} />
                       <span>Add Question</span>
@@ -1728,7 +1729,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   <button
                     type="button"
                     onClick={() => handleAddQuestion()}
-                    className="px-5 py-2.5 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-600 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 transition-colors inline-flex items-center gap-2"
+                    className="px-5 py-2.5 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-[#B91C1C] text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-[#B91C1C] dark:hover:text-red-400 transition-colors inline-flex items-center gap-2"
                   >
                     <Plus size={15} /> Add Another Question
                   </button>
@@ -1750,7 +1751,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
             {/* Responses Top Action Bar */}
             <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#121620] p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tabular-nums">
                   {examAttempts.length} Response(s)
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -1768,7 +1769,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       setStatus(e.target.checked ? 'active' : 'draft');
                       markDirty();
                     }}
-                    className="w-4 h-4 text-blue-600 rounded"
+                    className="w-4 h-4 accent-[#B91C1C] rounded"
                   />
                 </label>
 
@@ -1790,7 +1791,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                           setBulkReleasingResults(false);
                         }
                       }}
-                      className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs"
+                      className="px-3.5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs tabular-nums transition-colors"
                     >
                       <CheckCircle2 size={14} />
                       <span>
@@ -1812,60 +1813,62 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     type="button"
                     onClick={onExportCsv}
                     disabled={!examAttempts.length}
-                    className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 inline-flex items-center gap-1.5 disabled:opacity-50"
+                    className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-[#1E293B] dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 inline-flex items-center gap-1.5 disabled:opacity-50"
                   >
-                    <Download size={14} className="text-emerald-600" /> Export CSV
+                    <Download size={14} className="text-[#B91C1C] dark:text-red-400" /> Export CSV
                   </button>
                 )}
               </div>
             </div>
 
-            {/* 4 Summary Stat Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 dark:bg-emerald-950/30 p-3.5 sm:p-4">
+            {/* 4 Summary Stat Strip */}
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#121620] grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 overflow-hidden shadow-2xs">
+              <div className="p-3.5 sm:p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Taking Exam
                   </span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                  {proctorMetrics.onlineActiveCount > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-[#B91C1C] animate-ping" />
+                  )}
                 </div>
-                <p className="text-2xl font-black text-emerald-900 dark:text-white mt-1">
+                <p className="text-2xl font-black text-[#1E293B] dark:text-white mt-1 tabular-nums">
                   {proctorMetrics.onlineActiveCount}
                 </p>
-                <p className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
                   Online &amp; Active
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/70 dark:bg-amber-950/30 p-3.5 sm:p-4">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+              <div className="p-3.5 sm:p-4">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Offline / Stalled
                 </span>
-                <p className="text-2xl font-black text-amber-900 dark:text-white mt-1">
+                <p className="text-2xl font-black text-[#B91C1C] dark:text-red-400 mt-1 tabular-nums">
                   {proctorMetrics.offlineInProgressCount}
                 </p>
-                <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5">
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
                   Disconnected &gt; 2m
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-blue-200 bg-blue-50/70 dark:bg-blue-950/30 p-3.5 sm:p-4">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-blue-800 dark:text-blue-300">
+              <div className="p-3.5 sm:p-4">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Completed
                 </span>
-                <p className="text-2xl font-black text-blue-900 dark:text-white mt-1">
+                <p className="text-2xl font-black text-[#1E293B] dark:text-white mt-1 tabular-nums">
                   {proctorMetrics.submittedCompletedCount}
                 </p>
-                <p className="text-[10px] text-blue-700 dark:text-blue-400 mt-0.5">
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
                   Submitted final answers
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 dark:bg-slate-900/40 p-3.5 sm:p-4">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              <div className="p-3.5 sm:p-4">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Not Started
                 </span>
-                <p className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                <p className="text-2xl font-black text-slate-700 dark:text-slate-200 mt-1 tabular-nums">
                   {proctorMetrics.notStartedCount}
                 </p>
                 <p className="text-[10px] text-slate-500 mt-0.5">Eligible candidates</p>
@@ -1873,7 +1876,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
             </div>
 
             {/* Responses Sub-Tabs Bar */}
-            <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
               {(
                 [
                   { id: 'live', label: `Live Roster (${proctorMetrics.onlineActiveCount})`, icon: Activity },
@@ -1889,13 +1892,13 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     key={sub.id}
                     type="button"
                     onClick={() => setResponsesSubTab(sub.id)}
-                    className={`px-3 sm:px-4 py-2 text-xs font-bold rounded-xl transition-all inline-flex items-center gap-1.5 ${
+                    className={`px-3 sm:px-4 py-2 text-xs font-bold rounded-xl transition-all inline-flex items-center gap-1.5 tabular-nums ${
                       isCur
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+                        ? 'bg-[#1E293B] dark:bg-white text-white dark:text-[#1E293B] shadow-xs'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
                   >
-                    <Icon size={13} />
+                    <Icon size={13} className={isCur ? 'text-red-400 dark:text-[#B91C1C]' : ''} />
                     <span>{sub.label}</span>
                   </button>
                 );
@@ -1908,7 +1911,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 {examAttempts.length === 0 ? (
                   <div className="p-10 text-center text-xs text-slate-500">
                     No student has started this assessment yet. Share the access code{' '}
-                    <strong>{passcode}</strong> with eligible learners.
+                    <strong className="font-mono">{passcode}</strong> with eligible learners.
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -1942,25 +1945,25 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                               <td className="px-4 py-3">
                                 {isSubmitted ? (
                                   <span
-                                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                    className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider ${
                                       at.resultReleased
-                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                        : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                                        ? 'text-[#1E293B] dark:text-white'
+                                        : 'text-[#B91C1C] dark:text-red-400'
                                     }`}
                                   >
                                     <CheckCircle2 size={11} />
                                     {at.resultReleased ? 'Released' : 'Submitted'}
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                                    <Activity size={11} /> In Progress
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                    <Activity size={11} className="text-[#B91C1C] dark:text-red-400" /> In Progress
                                   </span>
                                 )}
                               </td>
-                              <td className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-300">
+                              <td className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
                                 {answeredCount} / {questions.length} answered
                               </td>
-                              <td className="px-4 py-3 font-bold">
+                              <td className="px-4 py-3 font-bold tabular-nums">
                                 {isSubmitted
                                   ? `${at.score ?? 0} / ${at.maxScore ?? totalMarks} (${at.percentage ?? 0}%)`
                                   : '—'}
@@ -1981,8 +1984,8 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                                       }}
                                       className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
                                         at.resultReleased
-                                          ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                                          ? 'border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                          : 'bg-[#B91C1C] text-white hover:bg-red-800'
                                       }`}
                                     >
                                       {at.resultReleased ? 'Released' : 'Release Result'}
@@ -2015,30 +2018,30 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               <div className="space-y-4">
                 <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#121620] p-5 shadow-xs space-y-4">
                   <h4 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                    <BarChart3 size={16} className="text-blue-600" /> Performance Insights
+                    <BarChart3 size={16} className="text-[#B91C1C] dark:text-red-400" /> Performance Insights
                   </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 text-center">
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 overflow-hidden">
+                    <div className="p-4 text-center">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                         Average
                       </span>
-                      <p className="text-xl font-black text-slate-900 dark:text-white mt-1">
+                      <p className="text-xl font-black text-slate-900 dark:text-white mt-1 tabular-nums">
                         {summaryInsights.avgScore} / {totalMarks} pts
                       </p>
                     </div>
-                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 text-center">
+                    <div className="p-4 text-center">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                         Median
                       </span>
-                      <p className="text-xl font-black text-slate-900 dark:text-white mt-1">
+                      <p className="text-xl font-black text-slate-900 dark:text-white mt-1 tabular-nums">
                         {summaryInsights.medianScore} / {totalMarks} pts
                       </p>
                     </div>
-                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 text-center">
+                    <div className="p-4 text-center">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                         Score Range
                       </span>
-                      <p className="text-xl font-black text-slate-900 dark:text-white mt-1">
+                      <p className="text-xl font-black text-slate-900 dark:text-white mt-1 tabular-nums">
                         {summaryInsights.rangeMin} - {summaryInsights.rangeMax} pts
                       </p>
                     </div>
@@ -2047,7 +2050,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   {/* Frequently Missed Questions */}
                   {summaryInsights.frequentlyMissed.length > 0 && (
                     <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                      <span className="text-xs font-bold text-amber-700 dark:text-amber-400">
+                      <span className="text-xs font-bold text-[#B91C1C] dark:text-red-400">
                         Frequently Missed Questions (&lt; 60% accuracy)
                       </span>
                       <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2056,7 +2059,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                             <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
                               {item.prompt}
                             </span>
-                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold shrink-0">
+                            <span className="text-[11px] font-black text-[#B91C1C] dark:text-red-400 shrink-0 tabular-nums">
                               {item.correctRate}% correct
                             </span>
                           </div>
@@ -2081,7 +2084,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     >
                       <ArrowLeft size={14} />
                     </button>
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 tabular-nums">
                       Question {selectedQuestionIndex + 1} of {questions.length}
                     </span>
                     <button
@@ -2110,7 +2113,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                             key={opt.id}
                             className={`p-3 rounded-xl border flex items-center justify-between gap-2 text-xs font-semibold ${
                               isCorrect
-                                ? 'border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-200'
+                                ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 text-[#1E293B] dark:text-white'
                                 : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40'
                             }`}
                           >
@@ -2118,7 +2121,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                               {opt.id}. {opt.text}
                             </span>
                             {isCorrect && (
-                              <span className="text-[10px] uppercase font-bold text-emerald-700 shrink-0">
+                              <span className="text-[10px] uppercase font-black tracking-wider text-[#B91C1C] dark:text-red-400 shrink-0">
                                 Correct Answer
                               </span>
                             )}
@@ -2140,7 +2143,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     <select
                       value={selectedAttemptId || examAttempts[0]?.id || ''}
                       onChange={(e) => setSelectedAttemptId(e.target.value)}
-                      className="h-9 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold"
+                      className="h-9 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold focus:border-[#1E293B] focus:outline-none tabular-nums"
                     >
                       {examAttempts.map((at, i) => (
                         <option key={at.id} value={at.id}>
@@ -2187,17 +2190,17 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                           <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
                             Total Score:
                           </span>
-                          <span className="font-black text-base text-blue-600 dark:text-blue-400">
+                          <span className="font-black text-base text-[#1E293B] dark:text-white tabular-nums">
                             {targetAttempt.score ?? 0} / {attemptMax} pts ({targetAttempt.percentage ?? 0}%)
                           </span>
                         </div>
                       </div>
 
                       {/* Tutor Feedback Panel */}
-                      <div className="p-4 rounded-xl border border-blue-200/80 dark:border-blue-900/60 bg-blue-50/30 dark:bg-blue-950/20 space-y-3">
+                      <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                            <MessageSquare size={14} className="text-blue-600" /> Tutor Feedback &amp; Remarks
+                            <MessageSquare size={14} className="text-[#B91C1C] dark:text-red-400" /> Tutor Feedback &amp; Remarks
                           </span>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
@@ -2211,7 +2214,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                                   [targetAttempt.id]: pre.text,
                                 }));
                               }}
-                              className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px] font-semibold hover:border-blue-500"
+                              className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px] font-semibold hover:border-[#1E293B] dark:hover:border-slate-400 transition-colors"
                             >
                               {pre.label}
                             </button>
@@ -2227,14 +2230,14 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                             }));
                           }}
                           placeholder="Constructive feedback for this student's result..."
-                          className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs"
+                          className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs focus:border-[#1E293B] focus:outline-none"
                         />
                         {onSaveTutorRemark && (
                           <div className="text-right">
                             <button
                               type="button"
                               onClick={() => void onSaveTutorRemark(targetAttempt, currentRemark)}
-                              className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700"
+                              className="px-3 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#0F172A] dark:bg-white dark:text-[#1E293B] text-white text-xs font-bold transition-colors"
                             >
                               Save Feedback Only
                             </button>
@@ -2265,7 +2268,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                                 <span className="font-bold text-slate-900 dark:text-white">
                                   {idx + 1}. {q.prompt}
                                 </span>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 tabular-nums">
                                   <span className="font-semibold text-slate-500">Marks:</span>
                                   <input
                                     type="number"
@@ -2283,7 +2286,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                                         },
                                       }));
                                     }}
-                                    className="w-16 h-8 rounded-lg border border-slate-300 dark:border-slate-700 px-2 text-center font-bold"
+                                    className="w-16 h-8 rounded-lg border border-slate-300 dark:border-slate-700 px-2 text-center font-bold tabular-nums focus:border-[#1E293B] focus:outline-none"
                                   />
                                   <span>/ {q.points} pts</span>
                                 </div>
@@ -2360,92 +2363,92 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                                       )}
                                       {linkUrl && (
                                         <div className="flex flex-wrap items-center gap-2 pt-1">
-                                          <a
-                                            href={linkUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-700"
-                                          >
-                                            <ExternalLink size={12} />
-                                            Open Submitted Link
-                                          </a>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              navigator.clipboard?.writeText(linkUrl);
-                                              setSaveBannerMessage('Submitted link copied to clipboard!');
-                                            }}
-                                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
-                                          >
-                                            <Copy size={12} />
-                                            Copy Link
-                                          </button>
-                                        </div>
-                                      )}
-                                      {fileDataUrl && (
-                                        <div className="pt-1">
-                                          <a
-                                            href={fileDataUrl}
-                                            download={fileName || 'submitted-file'}
-                                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700"
-                                          >
-                                            <Download size={12} />
-                                            Download Attached File ({fileName || 'Deliverable'})
-                                          </a>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })()}
+                                            <a
+                                              href={linkUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="inline-flex items-center gap-1.5 rounded-lg bg-[#1E293B] hover:bg-[#0F172A] dark:bg-white dark:text-[#1E293B] px-3 py-1.5 text-[11px] font-bold text-white transition-colors"
+                                            >
+                                              <ExternalLink size={12} />
+                                              Open Submitted Link
+                                            </a>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                navigator.clipboard?.writeText(linkUrl);
+                                                setSaveBannerMessage('Submitted link copied to clipboard!');
+                                              }}
+                                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
+                                            >
+                                              <Copy size={12} />
+                                              Copy Link
+                                            </button>
+                                          </div>
+                                        )}
+                                        {fileDataUrl && (
+                                          <div className="pt-1">
+                                            <a
+                                              href={fileDataUrl}
+                                              download={fileName || 'submitted-file'}
+                                              className="inline-flex items-center gap-1.5 rounded-lg bg-[#1E293B] hover:bg-[#0F172A] dark:bg-white dark:text-[#1E293B] px-3 py-1.5 text-[11px] font-bold text-white transition-colors"
+                                            >
+                                              <Download size={12} />
+                                              Download Attached File ({fileName || 'Deliverable'})
+                                            </a>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Grade Save Action Footer */}
-                      {onSaveManualGrade && (
-                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
-                          <button
-                            type="button"
-                            disabled={savingGradeId === targetAttempt.id}
-                            onClick={async () => {
-                              setSavingGradeId(targetAttempt.id);
-                              try {
-                                await onSaveManualGrade(targetAttempt, false, {
-                                  itemScores,
-                                  remark: currentRemark,
-                                });
-                                setSaveBannerMessage(`Saved grade for ${targetAttempt.studentName}.`);
-                              } finally {
-                                setSavingGradeId(null);
-                              }
-                            }}
-                            className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold hover:bg-slate-50"
-                          >
-                            Save Grade
-                          </button>
-                          <button
-                            type="button"
-                            disabled={savingGradeId === targetAttempt.id}
-                            onClick={async () => {
-                              setSavingGradeId(targetAttempt.id);
-                              try {
-                                await onSaveManualGrade(targetAttempt, true, {
-                                  itemScores,
-                                  remark: currentRemark,
-                                });
-                                setSaveBannerMessage(`Saved and released result to ${targetAttempt.studentName}.`);
-                              } finally {
-                                setSavingGradeId(null);
-                              }
-                            }}
-                            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold"
-                          >
-                            Save Grade &amp; Release Result
-                          </button>
+                            );
+                          })}
                         </div>
-                      )}
+
+                        {/* Grade Save Action Footer */}
+                        {onSaveManualGrade && (
+                          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+                            <button
+                              type="button"
+                              disabled={savingGradeId === targetAttempt.id}
+                              onClick={async () => {
+                                setSavingGradeId(targetAttempt.id);
+                                try {
+                                  await onSaveManualGrade(targetAttempt, false, {
+                                    itemScores,
+                                    remark: currentRemark,
+                                  });
+                                  setSaveBannerMessage(`Saved grade for ${targetAttempt.studentName}.`);
+                                } finally {
+                                  setSavingGradeId(null);
+                                }
+                              }}
+                              className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold hover:bg-slate-50"
+                            >
+                              Save Grade
+                            </button>
+                            <button
+                              type="button"
+                              disabled={savingGradeId === targetAttempt.id}
+                              onClick={async () => {
+                                setSavingGradeId(targetAttempt.id);
+                                try {
+                                  await onSaveManualGrade(targetAttempt, true, {
+                                    itemScores,
+                                    remark: currentRemark,
+                                  });
+                                  setSaveBannerMessage(`Saved and released result to ${targetAttempt.studentName}.`);
+                                } finally {
+                                  setSavingGradeId(null);
+                                }
+                              }}
+                              className="px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold transition-colors"
+                            >
+                              Save Grade &amp; Release Result
+                            </button>
+                          </div>
+                        )}
                     </div>
                   );
                 })()}
@@ -2477,7 +2480,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     setMakeQuiz(e.target.checked);
                     markDirty();
                   }}
-                  className="w-5 h-5 text-blue-600 rounded"
+                  className="w-5 h-5 accent-[#B91C1C] rounded cursor-pointer"
                 />
               </div>
 
@@ -2495,7 +2498,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     }}
                     className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
                       gradingMode === 'automatic'
-                        ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30 ring-1 ring-blue-600/30'
+                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-1 ring-[#1E293B]/20 dark:ring-white/15'
                         : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
                     }`}
                   >
@@ -2507,7 +2510,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         setGradingMode('automatic');
                         setReleaseGradesPolicy('immediate');
                       }}
-                      className="mt-1 text-blue-600"
+                      className="mt-1 accent-[#B91C1C]"
                     />
                     <div>
                       <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
@@ -2527,7 +2530,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     }}
                     className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
                       gradingMode === 'manual'
-                        ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30 ring-1 ring-blue-600/30'
+                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-1 ring-[#1E293B]/20 dark:ring-white/15'
                         : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
                     }`}
                   >
@@ -2539,7 +2542,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         setGradingMode('manual');
                         setReleaseGradesPolicy('manual');
                       }}
-                      className="mt-1 text-blue-600"
+                      className="mt-1 accent-[#B91C1C]"
                     />
                     <div>
                       <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
@@ -2569,7 +2572,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         setGradingMode('automatic');
                         markDirty();
                       }}
-                      className="text-blue-600"
+                      className="accent-[#B91C1C]"
                     />
                     <span>Immediately after each student submission (Automatic Grading)</span>
                   </label>
@@ -2582,7 +2585,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         setReleaseGradesPolicy('manual');
                         markDirty();
                       }}
-                      className="text-blue-600"
+                      className="accent-[#B91C1C]"
                     />
                     <span>Later, after manual review (requires explicit tutor result release)</span>
                   </label>
@@ -2609,7 +2612,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         setShowMissedQuestions(e.target.checked);
                         markDirty();
                       }}
-                      className="w-4 h-4 text-blue-600 rounded"
+                      className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
                     />
                   </label>
 
@@ -2627,7 +2630,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         setShowCorrectAnswers(e.target.checked);
                         markDirty();
                       }}
-                      className="w-4 h-4 text-blue-600 rounded"
+                      className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
                     />
                   </label>
 
@@ -2645,7 +2648,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         setShowPointValues(e.target.checked);
                         markDirty();
                       }}
-                      className="w-4 h-4 text-blue-600 rounded"
+                      className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
                     />
                   </label>
                 </div>
@@ -2659,7 +2662,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     Initial point value allocated to newly added questions.
                   </p>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0 tabular-nums">
                   <input
                     type="number"
                     min={0.5}
@@ -2669,7 +2672,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       setDefaultPointValue(Math.max(0.5, Number(e.target.value) || 2));
                       markDirty();
                     }}
-                    className="w-16 h-9 rounded-xl border border-slate-200 dark:border-slate-700 text-center font-bold bg-white dark:bg-slate-900"
+                    className="w-16 h-9 rounded-xl border border-slate-200 dark:border-slate-700 text-center font-bold bg-white dark:bg-slate-900 tabular-nums focus:border-[#1E293B] focus:outline-none"
                   />
                   <span>points</span>
                 </div>
@@ -2691,7 +2694,8 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         Passcode Protection
                       </span>
                       {isPasscodeMandatory && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 px-2.5 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-300">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
+                          <span aria-hidden="true">·</span>
                           <Lock size={10} /> Mandatory for {workType === 'TEST' ? 'Tests' : 'Examinations'}
                         </span>
                       )}
@@ -2713,7 +2717,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       setHasPasscode(e.target.checked);
                       markDirty();
                     }}
-                    className={`w-4 h-4 text-blue-600 rounded ${
+                    className={`w-4 h-4 accent-[#B91C1C] rounded ${
                       isPasscodeMandatory ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
                     }`}
                   />
@@ -2728,7 +2732,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         setPasscode(e.target.value.toUpperCase());
                         markDirty();
                       }}
-                      className="h-10 flex-1 max-w-xs rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-mono font-bold uppercase bg-white dark:bg-slate-900"
+                      className="h-10 flex-1 max-w-xs rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-mono font-bold uppercase bg-white dark:bg-slate-900 focus:border-[#1E293B] focus:outline-none"
                     />
                     <button
                       type="button"
@@ -2762,7 +2766,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                       Set a Time Limit (Optional)
                     </span>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-[11px] text-slate-500 tabular-nums">
                       {hasTimeLimit
                         ? `Students will see a ${durationMinutes}-minute countdown timer and the assessment will auto-submit when time expires.`
                         : 'No time limit is set. No countdown timer will be shown to students.'}
@@ -2775,7 +2779,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       setHasTimeLimit(e.target.checked);
                       markDirty();
                     }}
-                    className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                    className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
                   />
                 </div>
 
@@ -2790,7 +2794,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         setDurationMinutes(Math.max(1, Number(e.target.value) || 30));
                         markDirty();
                       }}
-                      className="w-28 h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold text-center bg-white dark:bg-slate-900"
+                      className="w-28 h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold text-center bg-white dark:bg-slate-900 tabular-nums focus:border-[#1E293B] focus:outline-none"
                     />
                     <span className="text-xs font-semibold text-slate-500">minutes</span>
                   </div>
@@ -2810,7 +2814,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     }}
                     className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
                       activationMode === 'now'
-                        ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30 ring-1 ring-blue-600/30'
+                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-1 ring-[#1E293B]/20 dark:ring-white/15'
                         : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
                     }`}
                   >
@@ -2819,7 +2823,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       name="settingsActivationMode"
                       checked={activationMode === 'now'}
                       onChange={() => setActivationMode('now')}
-                      className="mt-1 text-blue-600"
+                      className="mt-1 accent-[#B91C1C]"
                     />
                     <div>
                       <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
@@ -2838,7 +2842,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     }}
                     className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
                       activationMode === 'scheduled'
-                        ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30 ring-1 ring-blue-600/30'
+                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-1 ring-[#1E293B]/20 dark:ring-white/15'
                         : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
                     }`}
                   >
@@ -2847,7 +2851,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       name="settingsActivationMode"
                       checked={activationMode === 'scheduled'}
                       onChange={() => setActivationMode('scheduled')}
-                      className="mt-1 text-blue-600"
+                      className="mt-1 accent-[#B91C1C]"
                     />
                     <div>
                       <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
@@ -2863,7 +2867,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                   {activationMode === 'scheduled' && (
                     <label className="block">
-                      <span className="text-[11px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                         Scheduled Activation Date &amp; Time *
                       </span>
                       <input
@@ -2873,7 +2877,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                           setAvailableFrom(e.target.value);
                           markDirty();
                         }}
-                        className="w-full mt-1 h-10 rounded-xl border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold"
+                        className="w-full mt-1 h-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold tabular-nums focus:border-[#1E293B] focus:outline-none"
                       />
                     </label>
                   )}
@@ -2889,7 +2893,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                         setAvailableUntil(e.target.value);
                         markDirty();
                       }}
-                      className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs"
+                      className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs tabular-nums focus:border-[#1E293B] focus:outline-none"
                     />
                   </label>
                 </div>
@@ -2902,12 +2906,13 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     <div className="flex flex-wrap items-center gap-2">
                       <p>Limit to 1 attempt</p>
                       <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        className={`text-[10px] font-black uppercase tracking-wider ${
                           limitOneAttempt
-                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                            : 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                            ? 'text-slate-500 dark:text-slate-400'
+                            : 'text-[#B91C1C] dark:text-red-400'
                         }`}
                       >
+                        <span aria-hidden="true">· </span>
                         {limitOneAttempt ? '1 Attempt Only' : 'Retakes Enabled'}
                       </span>
                     </div>
@@ -2924,7 +2929,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       setLimitOneAttempt(e.target.checked);
                       markDirty();
                     }}
-                    className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                    className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
                   />
                 </label>
 
@@ -2937,7 +2942,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       setShuffleQuestions(e.target.checked);
                       markDirty();
                     }}
-                    className="w-4 h-4 text-blue-600 rounded"
+                    className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
                   />
                 </label>
 
@@ -2950,7 +2955,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       setShuffleOptions(e.target.checked);
                       markDirty();
                     }}
-                    className="w-4 h-4 text-blue-600 rounded"
+                    className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
                   />
                 </label>
 
@@ -2966,7 +2971,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       markDirty();
                     }}
                     placeholder="e.g. Your response has been recorded. Good job!"
-                    className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs bg-white dark:bg-slate-900"
+                    className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs bg-white dark:bg-slate-900 focus:border-[#1E293B] focus:outline-none"
                   />
                 </div>
               </div>
@@ -2980,16 +2985,18 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
           <div className="bg-white dark:bg-[#11151F] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]">
             {/* Top Preview Bar */}
-            <div className="bg-slate-900 text-white px-4 py-3.5 sm:px-6 sm:py-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-800">
+            <div className="bg-[#1E293B] text-white px-4 py-3.5 sm:px-6 sm:py-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/80">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-blue-200">
+                <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider">
+                  <span className="inline-flex items-center gap-1 text-red-400">
                     <Eye size={11} /> Student View Preview · {workType}
                   </span>
-                  <span className="inline-flex items-center rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-200">
+                  <span aria-hidden="true" className="text-slate-500">·</span>
+                  <span className="text-slate-300">
                     {limitOneAttempt ? '1 Attempt Max' : 'Retakes Allowed'}
                   </span>
-                  <span className="inline-flex items-center rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-200">
+                  <span aria-hidden="true" className="text-slate-500">·</span>
+                  <span className="text-slate-300">
                     {gradingMode === 'automatic' && releaseGradesPolicy === 'immediate'
                       ? 'Auto-Graded (Immediate Score)'
                       : 'Manual Tutor Review'}
@@ -2998,20 +3005,20 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 <h3 className="text-base sm:text-lg font-black text-white mt-1 break-words">
                   {title.trim() || 'Untitled Assessment'}
                 </h3>
-                <p className="text-xs text-slate-300">
+                <p className="text-xs text-slate-300 tabular-nums">
                   {programTitle} · {subject} · Target: {targetClass} · Total Marks: {totalMarks}
                 </p>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
                 {hasTimeLimit ? (
-                  <div className="rounded-xl border border-amber-400/30 bg-white/10 px-3 py-1.5 flex items-center gap-2">
-                    <Clock size={15} className="text-amber-400 shrink-0" />
+                  <div className="rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 flex items-center gap-2">
+                    <Clock size={15} className="text-red-400 shrink-0" />
                     <div>
                       <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-300 leading-none">
                         Time Limit
                       </span>
-                      <span className="font-mono text-sm font-black text-amber-300 leading-none">
+                      <span className="font-mono text-sm font-black text-white leading-none tabular-nums">
                         {String(durationMinutes).padStart(2, '0')}:00
                       </span>
                     </div>
@@ -3027,8 +3034,8 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   onClick={() => setPreviewShowKey((prev) => !prev)}
                   className={`px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-colors ${
                     previewShowKey
-                      ? 'border-emerald-400 bg-emerald-500/20 text-emerald-200'
-                      : 'border-white/15 bg-white/5 text-slate-300 hover:bg-white/10'
+                      ? 'border-[#B91C1C] bg-[#B91C1C] text-white'
+                      : 'border-white/15 bg-white/5 text-slate-200 hover:bg-white/10'
                   }`}
                 >
                   {previewShowKey ? 'Hide Answer Key' : 'Show Answer Key'}
@@ -3048,28 +3055,28 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
             {/* Preview Body */}
             <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 bg-slate-50 dark:bg-[#0D111A]">
               {/* Security & Schedule Summary Strip */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-3">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 overflow-hidden text-xs">
+                <div className="p-3">
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
                     Passcode Gate
                   </span>
-                  <p className="font-bold text-slate-900 dark:text-white mt-0.5">
+                  <p className="font-bold text-slate-900 dark:text-white mt-0.5 tabular-nums">
                     {isPasscodeMandatory || hasPasscode
                       ? `Required (${passcode || 'Auto-Generated'})`
                       : 'No Passcode Required'}
                   </p>
                 </div>
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-3">
+                <div className="p-3">
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
                     Due Date / Closing
                   </span>
-                  <p className="font-bold text-slate-900 dark:text-white mt-0.5">
+                  <p className="font-bold text-slate-900 dark:text-white mt-0.5 tabular-nums">
                     {dueDate || availableUntil
                       ? new Date(dueDate || availableUntil).toLocaleDateString()
                       : 'Open (No Closing Date Set)'}
                   </p>
                 </div>
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-3">
+                <div className="p-3">
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
                     Target Recipients
                   </span>
@@ -3084,7 +3091,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-3">
                   {description.trim() && (
                     <div>
-                      <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 block">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[#1E293B] dark:text-white block">
                         Instructions
                       </span>
                       <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap mt-1">
@@ -3094,7 +3101,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   )}
                   {deliverables.trim() && (
                     <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400 block">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400 block">
                         Expected Deliverables
                       </span>
                       <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap mt-1">
@@ -3119,7 +3126,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               {/* External Link Delivery Mode Preview */}
               {deliveryMode === 'EXTERNAL_LINK' ? (
                 <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-center space-y-3">
-                  <ExternalLink size={32} className="mx-auto text-blue-600" />
+                  <ExternalLink size={32} className="mx-auto text-[#B91C1C] dark:text-red-400" />
                   <h4 className="font-bold text-base text-slate-900 dark:text-white">
                     External Link {workType}
                   </h4>
@@ -3131,12 +3138,12 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       href={externalUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 text-xs font-bold"
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] dark:bg-white dark:text-[#1E293B] text-white px-5 py-2.5 text-xs font-bold transition-colors"
                     >
                       Test External Link <ExternalLink size={14} />
                     </a>
                   ) : (
-                    <p className="text-xs font-semibold text-amber-600">
+                    <p className="text-xs font-semibold text-[#B91C1C] dark:text-red-400">
                       No external URL entered yet.
                     </p>
                   )}
@@ -3145,16 +3152,16 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 /* Native Questions Interactive Try-Out */
                 <div className="space-y-4">
                   {previewSubmitted && (
-                    <div className="rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="rounded-2xl border border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/60 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div className="space-y-1">
-                        <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                           <CheckCircle2 size={15} /> Simulated Student Submission Result
                         </span>
                         <p className="text-sm font-bold text-slate-900 dark:text-white">
                           {confirmationMessage || 'Your response has been recorded. Good job!'}
                         </p>
                         {gradingMode === 'automatic' && releaseGradesPolicy === 'immediate' ? (
-                          <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                          <p className="text-xs font-bold text-[#1E293B] dark:text-white tabular-nums">
                             Immediate Score Displayed to Student:{' '}
                             {questions.reduce((acc, q) => {
                               const ans = previewAnswers[q.id];
@@ -3169,7 +3176,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                             / {totalMarks} pts
                           </p>
                         ) : (
-                          <p className="text-xs text-amber-700 dark:text-amber-300 font-semibold">
+                          <p className="text-xs text-slate-600 dark:text-slate-300 font-semibold">
                             Score is held for Tutor Review before release (as configured in Settings).
                           </p>
                         )}
@@ -3182,7 +3189,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                               setPreviewAnswers({});
                               setPreviewSubmitted(false);
                             }}
-                            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer"
+                            className="px-4 py-2 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] dark:bg-white dark:text-[#1E293B] text-white text-xs font-bold cursor-pointer transition-colors"
                           >
                             Retake {workType.charAt(0) + workType.slice(1).toLowerCase()} (Student Retake Button)
                           </button>
@@ -3208,13 +3215,13 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       >
                         <div className="flex items-start justify-between gap-3">
                           <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
-                            <span className="text-blue-600 dark:text-blue-400 mr-1.5">
+                            <span className="text-[#B91C1C] dark:text-red-400 mr-1.5 tabular-nums">
                               Q{qIdx + 1}.
                             </span>
                             {q.prompt || <span className="italic text-slate-400">Untitled question prompt</span>}
                           </h4>
                           {showPointValues && (
-                            <span className="shrink-0 rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                            <span className="shrink-0 text-[11px] font-bold text-slate-500 dark:text-slate-400 tabular-nums">
                               {q.points} {q.points === 1 ? 'mark' : 'marks'}
                             </span>
                           )}
@@ -3249,7 +3256,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                                   }}
                                   className={`flex items-center justify-between gap-3 p-3 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
                                     isSelected
-                                      ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200'
+                                      ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 text-[#1E293B] dark:text-white'
                                       : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                                   }`}
                                 >
@@ -3261,7 +3268,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                                   </div>
                                   {(previewShowKey || (previewSubmitted && showCorrectAnswers)) &&
                                     isCorrectOpt && (
-                                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                                         <Check size={11} /> Correct Key
                                       </span>
                                     )}
@@ -3279,12 +3286,12 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                                 setPreviewAnswers((p) => ({ ...p, [q.id]: e.target.value }))
                               }
                               placeholder="Student types response or pastes deliverable link here..."
-                              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 text-xs"
+                              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 text-xs focus:border-[#1E293B] focus:outline-none"
                             />
                             {(previewShowKey || (previewSubmitted && showCorrectAnswers)) &&
                               Array.isArray(q.acceptedAnswers) &&
                               q.acceptedAnswers.length > 0 && (
-                                <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                                <p className="text-[11px] font-bold text-[#1E293B] dark:text-white">
                                   Accepted Answer Key: {q.acceptedAnswers.join(', ')}
                                 </p>
                               )}
@@ -3299,7 +3306,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
 
             {/* Preview Footer */}
             <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-wrap items-center justify-between gap-3">
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-500 tabular-nums">
                 Previewing exact student layout · {questions.length} question(s) · {totalMarks} total marks
               </span>
               <div className="flex items-center gap-2">
@@ -3307,7 +3314,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   <button
                     type="button"
                     onClick={() => setPreviewSubmitted(true)}
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer"
+                    className="px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold cursor-pointer transition-colors"
                   >
                     Simulate Student Submit
                   </button>

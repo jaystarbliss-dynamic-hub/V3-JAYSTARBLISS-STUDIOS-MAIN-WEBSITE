@@ -39,25 +39,38 @@ const FeaturedPortfolio: React.FC = () => {
         ]);
 
         const byId = new Map<string, any>();
+        const kidsById = new Map<string, any>();
+
         portfolioSnaps.forEach((snap) => {
           if (!snap) return;
           snap.docs.forEach((docSnap) => {
-            if (!byId.has(docSnap.id)) {
-              byId.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+            const raw = docSnap.data();
+            if (raw.portfolioType === 'STUDENT_WORK' || raw.portfolioType === 'KIDS_CORNER') {
+              if (!kidsById.has(docSnap.id)) {
+                kidsById.set(docSnap.id, {
+                  ...raw,
+                  id: docSnap.id,
+                  portfolioType: 'STUDENT_WORK',
+                  studentName: raw.creator || raw.creatorName || raw.studentName || 'Academy Student',
+                  featuredImage: raw.imageUrl || raw.featuredImage || '',
+                  isFeatured: Boolean(raw.isFeatured || raw.featured)
+                });
+              }
+            } else if (!byId.has(docSnap.id)) {
+              byId.set(docSnap.id, { ...raw, id: docSnap.id });
             }
           });
         });
 
-        const kidsById = new Map<string, any>();
         kidsSnaps.forEach((snap) => {
           if (!snap) return;
           snap.docs.forEach((docSnap) => {
             const raw = docSnap.data();
             if (raw.status === 'DRAFT') return;
-            if (!kidsById.has(docSnap.id)) {
+            if (!kidsById.has(docSnap.id) && !byId.has(docSnap.id)) {
               kidsById.set(docSnap.id, {
-                id: docSnap.id,
                 ...raw,
+                id: docSnap.id,
                 portfolioType: 'STUDENT_WORK',
                 studentName: raw.creator || raw.creatorName || raw.studentName || 'Academy Student',
                 featuredImage: raw.imageUrl || raw.featuredImage || '',
@@ -75,11 +88,18 @@ const FeaturedPortfolio: React.FC = () => {
         );
 
         const combined: any[] = [];
-        if (orgList.length > 0) combined.push(orgList[0]);
-        if (kidsList.length > 0) combined.push(kidsList[0]);
+        const seenIds = new Set<string>();
+        const pushUnique = (item: any) => {
+          if (!item || !item.id || seenIds.has(item.id)) return;
+          seenIds.add(item.id);
+          combined.push(item);
+        };
+
+        if (orgList.length > 0) pushUnique(orgList[0]);
+        if (kidsList.length > 0) pushUnique(kidsList[0]);
         for (const item of [...orgList.slice(1), ...kidsList.slice(1)]) {
           if (combined.length >= 2) break;
-          combined.push(item);
+          pushUnique(item);
         }
 
         setProjects(combined.slice(0, 2));

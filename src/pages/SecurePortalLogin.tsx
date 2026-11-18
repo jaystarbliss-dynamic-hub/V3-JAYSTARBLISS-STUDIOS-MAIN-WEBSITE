@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { School, GraduationCap, Users, Mail, Lock, Eye, EyeOff, UserCheck, ShieldCheck } from 'lucide-react';
+import { School, GraduationCap, Users, Mail, Lock, Eye, EyeOff, UserCheck, ShieldCheck, ArrowLeft } from 'lucide-react';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
@@ -17,6 +17,8 @@ import { useTheme } from '../hooks/useTheme';
 import SEO from '../components/ui/SEO';
 import { useToast } from '../contexts/ToastContext';
 import { JaystarblissIcon } from '../components/common/JaystarblissLogo';
+import PWAInstallButton from '../components/ui/PWAInstallButton';
+import { useStandalonePWA } from '../utils/pwa';
 import portalWallpaper from '../assets/jdi login bg.png';
 import { getFriendlyErrorMessage, logInternalDiagnostic } from '../utils/friendlyErrors';
 import { reconcileParentAndChildrenAccount } from '../lib/usernameRegistry';
@@ -56,6 +58,7 @@ const SecurePortalLogin: React.FC = () => {
   const navigate = useNavigate(); 
   const { theme } = useTheme(); 
   const { toast } = useToast();
+  const isStandalone = useStandalonePWA();
   const [portalMode, setPortalMode] = useState<PortalMode>('institute');
   const [instituteTab, setInstituteTab] = useState<InstituteRole>('student');
   const [identifier, setIdentifier] = useState(''); 
@@ -1196,9 +1199,20 @@ const SecurePortalLogin: React.FC = () => {
       <div className="card glass-modal-card">
         <div className="glass-header text-center pt-1 pb-2">
           <div className="flex items-center justify-center gap-2.5">
-            <Link to="/" className="inline-flex items-center">
-              <JaystarblissIcon className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg" />
-            </Link>
+            {isStandalone ? (
+              <span className="inline-flex items-center">
+                <JaystarblissIcon className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg" />
+              </span>
+            ) : (
+              <Link
+                to="/"
+                title="Back to main website"
+                aria-label="Back to main website"
+                className="inline-flex items-center cursor-pointer hover:opacity-85 transition-opacity"
+              >
+                <JaystarblissIcon className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg" />
+              </Link>
+            )}
             <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight m-0">Welcome Back</h1>
           </div>
         </div>
@@ -1208,7 +1222,7 @@ const SecurePortalLogin: React.FC = () => {
             type="button" 
             onClick={() => { setPortalMode('institute'); resetFields(); }} 
             className={`py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
-              portalMode === 'institute' ? 'bg-gradient-to-r from-brand-red to-red-600 text-white shadow-md' : 'text-slate-300 hover:bg-white/5'
+              portalMode === 'institute' ? 'bg-[#B91C1C] hover:bg-[#991B1B] text-white shadow-md' : 'text-slate-300 hover:bg-white/5'
             }`}
           >
             <School size={14} />Login to Institute
@@ -1217,7 +1231,7 @@ const SecurePortalLogin: React.FC = () => {
             type="button" 
             onClick={() => { setPortalMode('client'); resetFields(); }} 
             className={`py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
-              portalMode === 'client' ? 'bg-gradient-to-r from-brand-red to-red-600 text-white shadow-md' : 'text-slate-300 hover:bg-white/5'
+              portalMode === 'client' ? 'bg-[#B91C1C] hover:bg-[#991B1B] text-white shadow-md' : 'text-slate-300 hover:bg-white/5'
             }`}
           >
             <UserCheck size={14} />Login as Client
@@ -1382,6 +1396,18 @@ const SecurePortalLogin: React.FC = () => {
         <div className="text-center pt-2.5 pb-0.5 text-xs text-slate-200">
           Are You New Member? <Link to="/register" className="text-white font-bold hover:underline ml-1">Sign UP</Link>
         </div>
+        {!isStandalone && (
+          <div className="text-center pt-1.5 pb-0.5">
+            <Link
+              to="/"
+              className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-300 hover:text-white hover:underline transition-colors"
+            >
+              <ArrowLeft size={13} />
+              <span>Back to main website</span>
+            </Link>
+          </div>
+        )}
+        <PWAInstallButton variant="portal-auth" />
         <div className="mt-3 flex items-center justify-center gap-1.5 text-[9px] text-slate-300/80">
           <ShieldCheck size={11} />Secure portal authentication
         </div>

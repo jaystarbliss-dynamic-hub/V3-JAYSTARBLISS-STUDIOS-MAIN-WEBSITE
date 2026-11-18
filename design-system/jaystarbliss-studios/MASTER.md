@@ -20,7 +20,7 @@ Premium education + creative services platform. The UI should feel modern, trust
 - `--jb-text`: `#0F172A`
 - `--jb-text-muted`: `#64748B`
 - `--jb-border`: `#E2E8F0`
-- `--jb-focus`: `#0284C7`
+- `--jb-focus`: `#B91C1C`
 
 Dark mode should use lighter/desaturated tonal variants rather than inversion.
 

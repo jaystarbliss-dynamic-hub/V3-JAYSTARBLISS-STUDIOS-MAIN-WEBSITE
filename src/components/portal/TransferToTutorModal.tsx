@@ -68,7 +68,7 @@ export const TransferToTutorModal: React.FC<TransferToTutorModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-white flex items-center justify-center">
               <Send size={20} />
             </div>
             <div>
@@ -83,7 +83,7 @@ export const TransferToTutorModal: React.FC<TransferToTutorModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             <X size={18} />
           </button>
@@ -92,18 +92,18 @@ export const TransferToTutorModal: React.FC<TransferToTutorModalProps> = ({
         {/* Treasury Available Notice */}
         <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ShieldCheck size={16} className="text-sky-600 dark:text-sky-400" />
+            <ShieldCheck size={16} className="text-[#1E293B] dark:text-slate-300" />
             <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
               Platform Treasury Available:
             </span>
           </div>
-          <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
+          <span className="font-mono tabular-nums font-black text-sm text-slate-900 dark:text-white">
             {formatCurrency(availableTreasuryBalance)}
           </span>
         </div>
 
         {error && (
-          <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+          <div className="p-3 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-[#B91C1C] dark:text-red-400 text-xs flex items-center gap-2">
             <AlertCircle size={15} className="shrink-0" />
             <span>{error}</span>
           </div>
@@ -112,13 +112,13 @@ export const TransferToTutorModal: React.FC<TransferToTutorModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              Select Instructor / Tutor <span className="text-brand-red">*</span>
+              Select Instructor / Tutor <span className="text-[#B91C1C]">*</span>
             </label>
             <select
               required
               value={selectedTutorId}
               onChange={e => setSelectedTutorId(e.target.value)}
-              className="w-full min-h-11 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="w-full min-h-11 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1E293B] dark:focus:ring-slate-400"
             >
               <option value="">-- Choose Instructor --</option>
               {tutors.map(t => (
@@ -131,7 +131,7 @@ export const TransferToTutorModal: React.FC<TransferToTutorModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              Transfer Amount (₦ NGN) <span className="text-brand-red">*</span>
+              Transfer Amount (₦ NGN) <span className="text-[#B91C1C]">*</span>
             </label>
             <div className="relative">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono font-bold text-xs text-slate-400">
@@ -145,7 +145,7 @@ export const TransferToTutorModal: React.FC<TransferToTutorModalProps> = ({
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
                 placeholder="e.g. 50000"
-                className="w-full min-h-11 pl-8 pr-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="w-full min-h-11 pl-8 pr-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono tabular-nums font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1E293B] dark:focus:ring-slate-400"
               />
             </div>
           </div>
@@ -157,7 +157,7 @@ export const TransferToTutorModal: React.FC<TransferToTutorModalProps> = ({
                 key={val}
                 type="button"
                 onClick={() => setAmount(String(val))}
-                className="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-sky-50 dark:hover:bg-sky-950/40 hover:text-sky-600 transition-colors"
+                className="px-2.5 py-1 rounded-lg text-[11px] font-mono tabular-nums font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-[#1E293B] hover:text-white dark:hover:bg-[#B91C1C] transition-colors"
               >
                 +₦{val.toLocaleString()}
               </button>
@@ -173,7 +173,7 @@ export const TransferToTutorModal: React.FC<TransferToTutorModalProps> = ({
               value={notes}
               onChange={e => setNotes(e.target.value)}
               placeholder="e.g. Term 1 Robotics lab instruction stipend"
-              className="w-full min-h-11 px-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="w-full min-h-11 px-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1E293B] dark:focus:ring-slate-400"
             />
           </div>
 
@@ -188,7 +188,7 @@ export const TransferToTutorModal: React.FC<TransferToTutorModalProps> = ({
             <button
               type="submit"
               disabled={submitting || !selectedTutorId || numericAmount <= 0}
-              className="min-h-11 px-6 rounded-2xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-black transition-all flex items-center gap-2 shadow-md shadow-sky-600/20"
+              className="min-h-11 px-6 rounded-2xl bg-[#1E293B] hover:bg-[#0F172A] dark:bg-[#B91C1C] dark:hover:bg-[#991B1B] disabled:opacity-50 text-white text-xs font-black transition-all flex items-center gap-2 shadow-sm tabular-nums"
             >
               {submitting ? (
                 <>

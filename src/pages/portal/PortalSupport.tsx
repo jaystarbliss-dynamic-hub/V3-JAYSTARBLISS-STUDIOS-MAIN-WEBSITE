@@ -201,14 +201,14 @@ const PortalSupport: React.FC = () => {
             href="https://wa.me/2348123456789?text=Hello%20Jaystarbliss%20Support,%20I%20need%20assistance"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#B91C1C] hover:bg-[#991B1B] text-white text-xs font-bold transition-all shadow-xs"
           >
             <MessageCircle size={15} />
             <span>WhatsApp Live Help</span>
           </a>
           <a
             href="tel:+2348123456789"
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold transition-all"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold transition-all"
           >
             <Phone size={14} />
             <span>Call Helpline</span>
@@ -216,21 +216,21 @@ const PortalSupport: React.FC = () => {
         </div>
       </div>
 
-      {/* 4 Multi-Channel Contact Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="pro-surface rounded-2xl p-5 border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#161B26] shadow-xs">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-3">
-            <Phone size={20} />
+      {/* 4 Multi-Channel Contact Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#161B26] shadow-xs overflow-hidden">
+        <div className="p-5">
+          <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 flex items-center justify-center mb-3">
+            <Phone size={18} />
           </div>
           <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Direct Phone Lines</h3>
-          <p className="text-xs text-slate-500 mt-1 font-mono">+234 812 345 6789</p>
-          <p className="text-xs text-slate-500 font-mono">+234 901 234 5678</p>
-          <span className="inline-block mt-2 text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Mon – Sat: 8:00 AM – 6:00 PM</span>
+          <p className="text-xs text-slate-500 mt-1 font-mono tabular-nums">+234 812 345 6789</p>
+          <p className="text-xs text-slate-500 font-mono tabular-nums">+234 901 234 5678</p>
+          <span className="inline-block mt-2 text-[10px] text-slate-600 dark:text-slate-300 font-bold">Mon – Sat: 8:00 AM – 6:00 PM</span>
         </div>
 
-        <div className="pro-surface rounded-2xl p-5 border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#161B26] shadow-xs">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-3">
-            <MessageCircle size={20} />
+        <div className="p-5">
+          <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 flex items-center justify-center mb-3">
+            <MessageCircle size={18} />
           </div>
           <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Instant WhatsApp</h3>
           <p className="text-xs text-slate-500 mt-1">Chat directly with an academic advisor in seconds.</p>
@@ -238,15 +238,15 @@ const PortalSupport: React.FC = () => {
             href="https://wa.me/2348123456789"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline mt-2"
+            className="inline-flex items-center gap-1 text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline mt-2"
           >
             Start Chat <ExternalLink size={12} />
           </a>
         </div>
 
-        <div className="pro-surface rounded-2xl p-5 border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#161B26] shadow-xs">
-          <div className="w-10 h-10 rounded-xl bg-brand-red/10 text-brand-red flex items-center justify-center mb-3">
-            <Mail size={20} />
+        <div className="p-5">
+          <div className="w-9 h-9 rounded-xl bg-red-50 dark:bg-red-950/30 text-[#B91C1C] dark:text-red-400 flex items-center justify-center mb-3">
+            <Mail size={18} />
           </div>
           <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Support Emails</h3>
           <p className="text-xs text-slate-500 mt-1">General: support@jaystarbliss.com</p>
@@ -254,14 +254,14 @@ const PortalSupport: React.FC = () => {
           <span className="inline-block mt-2 text-[10px] text-slate-400 font-medium">Average response time: &lt; 2 hrs</span>
         </div>
 
-        <div className="pro-surface rounded-2xl p-5 border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#161B26] shadow-xs">
-          <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center mb-3">
-            <MapPin size={20} />
+        <div className="p-5">
+          <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 flex items-center justify-center mb-3">
+            <MapPin size={18} />
           </div>
           <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Tech Studios & Hub</h3>
           <p className="text-xs text-slate-500 mt-1">Lekki Phase 1 Innovation Hub</p>
           <p className="text-xs text-slate-500">Ikeja Coding & Robotics Studio</p>
-          <span className="inline-block mt-2 text-[10px] text-purple-600 dark:text-purple-400 font-bold">Lagos, Nigeria</span>
+          <span className="inline-block mt-2 text-[10px] text-[#1E293B] dark:text-slate-300 font-bold">Lagos, Nigeria</span>
         </div>
       </div>
 
@@ -335,21 +335,18 @@ const PortalSupport: React.FC = () => {
           {/* Chat Header */}
           <div className="p-4 border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="relative">
-                <div className="w-9 h-9 rounded-full bg-brand-red text-white flex items-center justify-center text-xs font-bold">
-                  JS
-                </div>
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
+              <div className="w-9 h-9 rounded-full bg-[#B91C1C] text-white flex items-center justify-center text-xs font-bold">
+                JS
               </div>
               <div>
                 <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                  Jaystar Support Desk
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 font-bold">Online</span>
+                  <span>Jaystar Support Desk</span>
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">· Desk Active</span>
                 </h3>
                 <p className="text-[10px] text-slate-500">Live chat assistance for scholars, parents & schools</p>
               </div>
             </div>
-            <span className="text-[10px] font-mono text-slate-400">24/7 Desk</span>
+            <span className="text-[10px] font-mono text-slate-400">Support Desk</span>
           </div>
 
           {/* Chat Stream Window */}

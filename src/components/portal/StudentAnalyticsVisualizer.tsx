@@ -1,46 +1,76 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  TrendingUp, 
-  CheckCircle2, 
-  Clock, 
-  Award, 
-  BarChart3, 
-  PieChart as PieChartIcon, 
-  LineChart as LineChartIcon,
-  Layers,
+import React, { useMemo, useState } from 'react';
+import {
   ArrowUpRight,
+  Award,
+  BarChart3,
   BookOpen,
+  CheckCircle2,
+  CheckSquare,
+  Clock,
   Filter,
-  CheckSquare
+  Layers,
+  LineChart as LineChartIcon,
+  PieChart as PieChartIcon,
 } from 'lucide-react';
 import {
-  ResponsiveContainer,
-  AreaChart,
   Area,
-  BarChart,
+  AreaChart,
   Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
+  BarChart,
+  CartesianGrid,
   Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-  Legend,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar
 } from 'recharts';
 
-interface LearningProgressItem { subject: string; progress: number; modulesDone: number; modulesTotal: number; hours: number; }
-interface CompetencyItem { skill: string; score: number; classAvg: number; }
-interface AssignmentWeeklyItem { week: string; completed: number; submittedLate: number; pending: number; }
-interface AssignmentStatusItem { name: string; value: number; color: string; }
-interface GradeTrendItem { id: string; date: string; assessment: string; subject: string; classAvg: number; grade: number; tier: string; }
+const BRAND_NAVY = '#1E293B';
+const BRAND_CRIMSON = '#B91C1C';
+const BRAND_SLATE = '#64748B';
+const BRAND_SLATE_MUTED = '#94A3B8';
+
+export interface LearningProgressItem {
+  subject: string;
+  progress: number;
+  modulesDone: number;
+  modulesTotal: number;
+  hours?: number;
+}
+
+export interface StudentAssignmentRecord {
+  id: string;
+  title: string;
+  subject?: string;
+  status?: string;
+  reviewStatus?: string;
+  dueDate?: string;
+  submittedAt?: string;
+  grade?: number;
+}
+
+export interface StudentGradeRecord {
+  id: string;
+  date: string;
+  assessment: string;
+  subject: string;
+  grade: number;
+  score?: number;
+  maxScore?: number;
+  tier?: string;
+  workType?: string;
+}
+
+export interface StudentMilestoneRecord {
+  id: string;
+  title: string;
+  status: string;
+  dueDate?: string;
+  completedAt?: string;
+}
 
 export interface StudentAnalyticsProps {
   studentName?: string;
@@ -49,8 +79,44 @@ export interface StudentAnalyticsProps {
   completedModulesCount?: number;
   totalModulesCount?: number;
   className?: string;
-  learningTracks?: Array<{ subject: string; progress: number; modulesDone: number; modulesTotal: number; hours?: number }>;
+  learningTracks?: LearningProgressItem[];
+  assignments?: StudentAssignmentRecord[];
+  gradeRecords?: StudentGradeRecord[];
+  milestones?: StudentMilestoneRecord[];
 }
+
+interface AssignmentWeeklyItem {
+  weekKey: string;
+  week: string;
+  completed: number;
+  inProgress: number;
+  pending: number;
+}
+
+interface AssignmentStatusItem {
+  name: string;
+  value: number;
+  color: string;
+}
+
+const parseValidDate = (raw?: string): Date | null => {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const formatShortDate = (raw?: string): string => {
+  const d = parseValidDate(raw);
+  if (!d) return raw || 'Recorded';
+  return d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
+};
+
+const resolveGradeBand = (pct: number): string => {
+  if (pct >= 85) return 'Distinction';
+  if (pct >= 70) return 'Merit';
+  if (pct >= 50) return 'Pass';
+  return 'Needs Review';
+};
 
 export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
   studentName = 'Student',
@@ -59,87 +125,251 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
   completedModulesCount = 0,
   totalModulesCount = 0,
   className = '',
-  learningTracks = []
+  learningTracks = [],
+  assignments = [],
+  gradeRecords = [],
+  milestones = [],
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'progress' | 'assignments' | 'grades'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'progress' | 'assignments' | 'grades'>(
+    'overview'
+  );
   const [selectedSubject, setSelectedSubject] = useState<string>('ALL');
-  const [timeRange, setTimeRange] = useState<'30days' | 'term' | 'all'>('term');
+  const [timeRange, setTimeRange] = useState<'30days' | 'term' | 'all'>('all');
 
-  // Dynamic list of subjects for filter
   const filterSubjectList = useMemo(() => {
-    const combined = Array.from(new Set(enrolledSubjects || []));
-    return ['ALL', ...combined];
-  }, [enrolledSubjects]);
+    const combined = new Set<string>(enrolledSubjects.filter(Boolean));
+    gradeRecords.forEach((g) => {
+      if (g.subject) combined.add(g.subject);
+    });
+    return ['ALL', ...Array.from(combined)];
+  }, [enrolledSubjects, gradeRecords]);
 
-  // 1. Learning Progress Data across Course Tracks
-  const learningProgressData = useMemo<LearningProgressItem[]>(() => learningTracks.map(track => ({ ...track, hours: track.hours ?? 0 })), [learningTracks]);
+  // 1. Learning Progress across real tracks / modules / milestones
+  const learningProgressData = useMemo<LearningProgressItem[]>(() => {
+    return (learningTracks || []).map((track) => ({
+      ...track,
+      hours: track.hours ?? 0,
+    }));
+  }, [learningTracks]);
 
-  // 2. Skill Competency Radar Data
-  const competencyRadarData = useMemo<CompetencyItem[]>(() => [], []);
+  // 2. Assignment Status Distribution (strictly from real assignment records)
+  const assignmentBreakdown = useMemo(() => {
+    let completed = 0;
+    let inProgress = 0;
+    let pending = 0;
 
-  // 3. Assignment Completion Rate Timeline (Weekly Velocity)
-  const assignmentWeeklyData = useMemo<AssignmentWeeklyItem[]>(() => [], []);
+    (assignments || []).forEach((a) => {
+      const s = String(a.status || a.reviewStatus || '').toUpperCase();
+      if (s === 'COMPLETED' || s === 'REVIEWED' || s === 'GRADED') {
+        completed++;
+      } else if (
+        ['SUBMITTED', 'IN_PROGRESS', 'AWAITING_REVIEW', 'RESUBMISSION_REQUIRED'].includes(s)
+      ) {
+        inProgress++;
+      } else {
+        pending++;
+      }
+    });
 
-  // 4. Assignment Completion Breakdown (Status Donut)
-  const assignmentStatusPie = useMemo<AssignmentStatusItem[]>(() => [], []);
+    const pieData: AssignmentStatusItem[] = [
+      { name: 'Completed', value: completed, color: BRAND_NAVY },
+      { name: 'In Review / Progress', value: inProgress, color: BRAND_CRIMSON },
+      { name: 'Pending', value: pending, color: BRAND_SLATE_MUTED },
+    ].filter((item) => item.value > 0);
 
-  // 5. Recent Grade Trends over time (Quizzes, Exams & Capstones)
-  const gradeTrendsData = useMemo<GradeTrendItem[]>(() => [], []);
+    return {
+      completed,
+      inProgress,
+      pending,
+      total: assignments.length,
+      pieData,
+    };
+  }, [assignments]);
 
-  // Filtered Grade Trends based on subject selector
+  // 3. Weekly Assignment Velocity (strictly from dated assignments)
+  const assignmentWeeklyData = useMemo<AssignmentWeeklyItem[]>(() => {
+    const bucketMap = new Map<string, AssignmentWeeklyItem>();
+
+    (assignments || []).forEach((a) => {
+      const dt = parseValidDate(a.submittedAt || a.dueDate);
+      if (!dt) return;
+
+      const monday = new Date(dt);
+      const day = monday.getDay();
+      monday.setDate(monday.getDate() + (day === 0 ? -6 : 1 - day));
+      const weekKey = monday.toISOString().slice(0, 10);
+      const label = monday.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
+
+      if (!bucketMap.has(weekKey)) {
+        bucketMap.set(weekKey, {
+          weekKey,
+          week: label,
+          completed: 0,
+          inProgress: 0,
+          pending: 0,
+        });
+      }
+      const bucket = bucketMap.get(weekKey)!;
+      const s = String(a.status || a.reviewStatus || '').toUpperCase();
+      if (s === 'COMPLETED' || s === 'REVIEWED' || s === 'GRADED') {
+        bucket.completed += 1;
+      } else if (
+        ['SUBMITTED', 'IN_PROGRESS', 'AWAITING_REVIEW', 'RESUBMISSION_REQUIRED'].includes(s)
+      ) {
+        bucket.inProgress += 1;
+      } else {
+        bucket.pending += 1;
+      }
+    });
+
+    return Array.from(bucketMap.values())
+      .sort((a, b) => a.weekKey.localeCompare(b.weekKey))
+      .slice(-8);
+  }, [assignments]);
+
+  // 4. Real Released Grade Trends
+  const sortedGradeRecords = useMemo(() => {
+    return [...(gradeRecords || [])]
+      .filter((g) => Number.isFinite(g.grade))
+      .sort((a, b) => {
+        const da = parseValidDate(a.date)?.getTime() || 0;
+        const dbTime = parseValidDate(b.date)?.getTime() || 0;
+        return da - dbTime;
+      })
+      .map((g) => ({
+        ...g,
+        dateLabel: formatShortDate(g.date),
+        tierLabel: g.tier || resolveGradeBand(g.grade),
+      }));
+  }, [gradeRecords]);
+
   const filteredGradeTrends = useMemo(() => {
-    if (selectedSubject === 'ALL') return gradeTrendsData;
-    return gradeTrendsData.filter(item => item.subject.toLowerCase() === selectedSubject.toLowerCase());
-  }, [gradeTrendsData, selectedSubject]);
+    const now = Date.now();
+    const cutoffMs =
+      timeRange === '30days'
+        ? now - 30 * 24 * 60 * 60 * 1000
+        : timeRange === 'term'
+        ? now - 120 * 24 * 60 * 60 * 1000
+        : 0;
 
-  // Overall Computed Stats
+    return sortedGradeRecords.filter((item) => {
+      if (
+        selectedSubject !== 'ALL' &&
+        item.subject.toLowerCase().trim() !== selectedSubject.toLowerCase().trim()
+      ) {
+        return false;
+      }
+      if (cutoffMs > 0) {
+        const dt = parseValidDate(item.date)?.getTime();
+        if (dt && dt < cutoffMs) return false;
+      }
+      return true;
+    });
+  }, [sortedGradeRecords, selectedSubject, timeRange]);
+
+  // 5. Real Subject Average Breakdown (for Learning Progress view)
+  const subjectPerformanceData = useMemo(() => {
+    const map = new Map<string, { subject: string; total: number; count: number }>();
+    sortedGradeRecords.forEach((g) => {
+      const key = g.subject || 'General';
+      const entry = map.get(key) || { subject: key, total: 0, count: 0 };
+      entry.total += g.grade;
+      entry.count += 1;
+      map.set(key, entry);
+    });
+    return Array.from(map.values()).map((entry) => ({
+      subject: entry.subject,
+      averageGrade: Math.round(entry.total / Math.max(entry.count, 1)),
+      assessmentsCount: entry.count,
+    }));
+  }, [sortedGradeRecords]);
+
+  // Overall Computed Stats (100% real)
   const stats = useMemo(() => {
-    const totalAssignments = assignmentStatusPie.reduce((acc, curr) => acc + curr.value, 0);
-    const completedAssignments = assignmentStatusPie.find(p => p.name.includes('On-Time'))?.value || 0;
-    const completedLate = assignmentStatusPie.find(p => p.name.includes('Late'))?.value || 0;
-    const completionRate = totalAssignments ? Math.round(((completedAssignments + completedLate) / totalAssignments) * 100) : 0;
+    const completionRate =
+      assignmentBreakdown.total > 0
+        ? Math.round((assignmentBreakdown.completed / assignmentBreakdown.total) * 100)
+        : 0;
 
-    const avgGrade = gradeTrendsData.length ? Math.round(
-      gradeTrendsData.reduce((acc, curr) => acc + curr.grade, 0) / gradeTrendsData.length
-    ) : 0;
+    const avgGrade = sortedGradeRecords.length
+      ? Math.round(
+          sortedGradeRecords.reduce((acc, curr) => acc + curr.grade, 0) / sortedGradeRecords.length
+        )
+      : 0;
 
-    const latestGrade = gradeTrendsData[gradeTrendsData.length - 1]?.grade || 0;
-    const previousGrade = gradeTrendsData[gradeTrendsData.length - 2]?.grade || 0;
-    const gradeDelta = latestGrade - previousGrade;
+    const latestGrade = sortedGradeRecords[sortedGradeRecords.length - 1]?.grade ?? 0;
+    const previousGrade =
+      sortedGradeRecords.length >= 2
+        ? sortedGradeRecords[sortedGradeRecords.length - 2].grade
+        : latestGrade;
+    const gradeDelta = sortedGradeRecords.length >= 2 ? latestGrade - previousGrade : 0;
 
-    const totalLearningHours = learningProgressData.reduce((acc, curr) => acc + curr.hours, 0);
-    const overallSyllabusProgress = learningProgressData.length ? Math.round(
-      learningProgressData.reduce((acc, curr) => acc + curr.progress, 0) / learningProgressData.length
-    ) : 0;
+    const completedMilestones = milestones.filter(
+      (m) => String(m.status || '').toUpperCase() === 'COMPLETED'
+    ).length;
+
+    const overallSyllabusProgress =
+      learningProgressData.length > 0
+        ? Math.round(
+            learningProgressData.reduce((acc, curr) => acc + curr.progress, 0) /
+              learningProgressData.length
+          )
+        : milestones.length > 0
+        ? Math.round((completedMilestones / milestones.length) * 100)
+        : totalModulesCount > 0
+        ? Math.round((completedModulesCount / totalModulesCount) * 100)
+        : 0;
 
     return {
       completionRate,
-      totalAssignments,
-      completedAssignments: completedAssignments + completedLate,
+      totalAssignments: assignmentBreakdown.total,
+      completedAssignments: assignmentBreakdown.completed,
+      inProgressAssignments: assignmentBreakdown.inProgress,
+      pendingAssignments: assignmentBreakdown.pending,
       avgGrade,
-      latestGrade,
       gradeDelta,
-      totalLearningHours,
       overallSyllabusProgress,
-      hasGradeData: gradeTrendsData.length > 0,
-      hasAssignmentData: assignmentStatusPie.length > 0,
-      hasLearningData: learningProgressData.length > 0
+      completedMilestones,
+      totalMilestones: milestones.length,
+      hasGradeData: sortedGradeRecords.length > 0,
+      hasAssignmentData: assignmentBreakdown.total > 0,
+      hasLearningData:
+        learningProgressData.length > 0 || milestones.length > 0 || totalModulesCount > 0,
     };
-  }, [assignmentStatusPie, gradeTrendsData, learningProgressData]);
+  }, [
+    assignmentBreakdown,
+    sortedGradeRecords,
+    learningProgressData,
+    milestones,
+    completedModulesCount,
+    totalModulesCount,
+  ]);
 
-  // Custom Chart Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-slate-950/95 dark:bg-[#0b101b]/95 border border-slate-700/60 dark:border-white/10 rounded-xl p-3 shadow-xl backdrop-blur-md text-xs z-50">
-          <p className="font-bold text-white mb-1.5">{label}</p>
+        <div className="bg-[#1E293B] border border-slate-700 rounded-lg p-3 shadow-lg text-xs text-white z-50">
+          <p className="font-bold text-white mb-1">{label}</p>
           {payload.map((entry: any, index: number) => (
-            <div key={`item-${index}`} className="flex items-center justify-between gap-3 text-slate-300 py-0.5">
+            <div
+              key={`item-${index}`}
+              className="flex items-center justify-between gap-4 text-slate-200 py-0.5"
+            >
               <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: entry.color || entry.fill || entry.stroke }} />
-                <span className="capitalize">{entry.name}:</span>
+                <span
+                  className="w-2.5 h-2.5 rounded-xs inline-block shrink-0"
+                  style={{ backgroundColor: entry.color || entry.fill || entry.stroke }}
+                />
+                <span>{entry.name}:</span>
               </span>
-              <span className="font-bold text-white font-mono">{entry.value}{entry.unit || (entry.dataKey?.toLowerCase().includes('rate') || entry.dataKey?.toLowerCase().includes('grade') || entry.dataKey?.toLowerCase().includes('progress') || entry.dataKey?.toLowerCase().includes('score') ? '%' : '')}</span>
+              <span className="font-bold text-white font-mono tabular-nums">
+                {entry.value}
+                {String(entry.dataKey || '')
+                  .toLowerCase()
+                  .match(/grade|progress|average/)
+                  ? '%'
+                  : ''}
+              </span>
             </div>
           ))}
         </div>
@@ -149,614 +379,786 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
   };
 
   return (
-    <div className={`bg-white dark:bg-[#121622] rounded-2xl border border-gray-200/80 dark:border-white/5 p-6 md:p-8 shadow-sm ${className}`}>
-      
+    <section
+      className={`bg-white dark:bg-[#111827] rounded-xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 ${className}`}
+    >
       {/* Header & Section Navigation */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 mb-6 border-b border-gray-100 dark:border-white/5">
-        <div className="flex items-start sm:items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-red-50 dark:bg-red-500/15 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0 border border-red-200/60 dark:border-red-500/20">
-            <BarChart3 size={22} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
-                Academic Analytics & Progress Visualizer
-              </h2>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-50 dark:bg-red-500/15 text-red-600 dark:text-red-400 text-[11px] font-bold border border-red-200/60 dark:border-red-500/20">
-                Live Analytics
-              </span>
-            </div>
-            <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-              Comprehensive telemetry for {studentName} • {studentClass}
-            </p>
-          </div>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 mb-6 border-b border-slate-200 dark:border-slate-800">
+        <div>
+          <h2 className="text-base sm:text-lg font-bold text-[#1E293B] dark:text-white tracking-tight flex items-center gap-2">
+            <BarChart3 size={18} className="text-[#B91C1C]" aria-hidden="true" />
+            <span>Academic Analytics &amp; Progress</span>
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            {studentName} · {studentClass || 'Standard Track'} · {sortedGradeRecords.length} released
+            score{sortedGradeRecords.length === 1 ? '' : 's'} · {stats.totalAssignments} deliverable
+            {stats.totalAssignments === 1 ? '' : 's'}
+          </p>
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex items-center flex-wrap gap-1 p-1 bg-gray-100 dark:bg-slate-900/80 rounded-xl border border-gray-200/60 dark:border-white/5 self-start lg:self-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('overview')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'overview'
-                ? 'bg-red-600 text-white shadow-xs'
-                : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            <Layers size={14} /> Overview
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('progress')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'progress'
-                ? 'bg-red-600 text-white shadow-xs'
-                : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            <BookOpen size={14} /> Learning Progress
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('assignments')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'assignments'
-                ? 'bg-red-600 text-white shadow-xs'
-                : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            <CheckSquare size={14} /> Completion Rates
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('grades')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'grades'
-                ? 'bg-red-600 text-white shadow-xs'
-                : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            <LineChartIcon size={14} /> Grade Trends
-          </button>
+        <div className="flex items-center flex-wrap gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 self-start lg:self-auto">
+          {(
+            [
+              { id: 'overview', label: 'Overview', icon: Layers },
+              { id: 'progress', label: 'Curriculum Progress', icon: BookOpen },
+              { id: 'assignments', label: 'Completion Rates', icon: CheckSquare },
+              { id: 'grades', label: 'Grade Trends', icon: LineChartIcon },
+            ] as const
+          ).map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveTab(item.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  isActive
+                    ? 'bg-[#1E293B] dark:bg-[#B91C1C] text-white'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-[#1E293B] dark:hover:text-white'
+                }`}
+              >
+                <Icon size={13} aria-hidden="true" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Top Level Metric Summary Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        
-        {/* Metric 1: Overall Grade Average */}
-        <div className="p-4 rounded-xl bg-gray-50 dark:bg-slate-900/60 border border-gray-100 dark:border-white/5 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-gray-500 dark:text-slate-400 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Average Grade</span>
-            <div className="w-7 h-7 rounded-lg bg-red-50 dark:bg-red-500/15 text-red-600 dark:text-red-400 flex items-center justify-center">
-              <Award size={15} />
-            </div>
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
+      {/* Institutional 4-Column Divided Summary Strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 mb-6">
+        <div className="p-4">
+          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <Award size={13} className="text-[#B91C1C]" aria-hidden="true" />
+            <span>Average Released Grade</span>
+          </p>
+          <div className="mt-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-2xl font-bold text-[#1E293B] dark:text-white tabular-nums">
               {stats.hasGradeData ? `${stats.avgGrade}%` : '—'}
             </span>
-            <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-              <TrendingUp size={12} /> {stats.hasGradeData ? `${stats.gradeDelta >= 0 ? '+' : ''}${stats.gradeDelta}%` : 'No change yet'}
-            </span>
+            {sortedGradeRecords.length >= 2 && (
+              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
+                {stats.gradeDelta >= 0 ? `+${stats.gradeDelta}%` : `${stats.gradeDelta}%`} vs prev
+              </span>
+            )}
           </div>
-          <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">{stats.hasGradeData ? (stats.avgGrade >= 70 ? 'Current performance band' : 'Performance data recorded') : 'No assessments recorded yet'}</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+            {stats.hasGradeData
+              ? `Across ${sortedGradeRecords.length} released assessment${
+                  sortedGradeRecords.length === 1 ? '' : 's'
+                }`
+              : 'No released assessments yet'}
+          </p>
         </div>
 
-        {/* Metric 2: Assignment Completion Rate */}
-        <div className="p-4 rounded-xl bg-gray-50 dark:bg-slate-900/60 border border-gray-100 dark:border-white/5 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-gray-500 dark:text-slate-400 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Assignment Rate</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <CheckCircle2 size={15} />
-            </div>
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
+        <div className="p-4">
+          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <CheckCircle2 size={13} className="text-[#1E293B] dark:text-slate-300" aria-hidden="true" />
+            <span>Assignment Completion</span>
+          </p>
+          <div className="mt-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-2xl font-bold text-[#1E293B] dark:text-white tabular-nums">
               {stats.hasAssignmentData ? `${stats.completionRate}%` : '—'}
             </span>
-            <span className="text-[11px] font-bold text-gray-500 dark:text-slate-400">
-              {stats.hasAssignmentData ? `${stats.completedAssignments}/${stats.totalAssignments} Tasks` : 'No tasks recorded'}
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+              {stats.hasAssignmentData
+                ? `${stats.completedAssignments}/${stats.totalAssignments}`
+                : '0 tasks'}
             </span>
           </div>
-          <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">{stats.hasAssignmentData ? `${Math.max(stats.totalAssignments - stats.completedAssignments, 0)} Pending Tasks` : 'No assignment data yet'}</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+            {stats.hasAssignmentData
+              ? `${stats.inProgressAssignments} in review · ${stats.pendingAssignments} pending`
+              : 'No assignments issued yet'}
+          </p>
         </div>
 
-        {/* Metric 3: Syllabus Progression */}
-        <div className="p-4 rounded-xl bg-gray-50 dark:bg-slate-900/60 border border-gray-100 dark:border-white/5 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-gray-500 dark:text-slate-400 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Syllabus Progress</span>
-            <div className="w-7 h-7 rounded-lg bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center">
-              <BookOpen size={15} />
-            </div>
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
-              {stats.overallSyllabusProgress}%
+        <div className="p-4">
+          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <BookOpen size={13} className="text-[#B91C1C]" aria-hidden="true" />
+            <span>Syllabus &amp; Modules</span>
+          </p>
+          <div className="mt-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-2xl font-bold text-[#1E293B] dark:text-white tabular-nums">
+              {stats.hasLearningData ? `${stats.overallSyllabusProgress}%` : '—'}
             </span>
-            <span className="text-[11px] font-bold text-sky-600 dark:text-sky-400">
-              {stats.hasLearningData ? 'Tracking' : 'Awaiting data'}
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+              {totalModulesCount > 0
+                ? `${completedModulesCount}/${totalModulesCount} modules`
+                : `${stats.completedMilestones}/${stats.totalMilestones} milestones`}
             </span>
           </div>
-          <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">{completedModulesCount} of {totalModulesCount} Modules Mastered</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+            {stats.hasLearningData ? 'Verified curriculum progression' : 'Awaiting module records'}
+          </p>
         </div>
 
-        {/* Metric 4: Total Lab & Coding Hours */}
-        <div className="p-4 rounded-xl bg-gray-50 dark:bg-slate-900/60 border border-gray-100 dark:border-white/5 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-gray-500 dark:text-slate-400 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Learning Time</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <Clock size={15} />
-            </div>
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
-              {stats.totalLearningHours} <span className="text-sm font-semibold">hrs</span>
+        <div className="p-4">
+          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <Clock size={13} className="text-[#1E293B] dark:text-slate-300" aria-hidden="true" />
+            <span>Milestones Completed</span>
+          </p>
+          <div className="mt-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-2xl font-bold text-[#1E293B] dark:text-white tabular-nums">
+              {stats.totalMilestones > 0 ? stats.completedMilestones : '—'}
             </span>
-            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
-              Recorded learning time
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+              {stats.totalMilestones > 0 ? `of ${stats.totalMilestones}` : 'None set'}
             </span>
           </div>
-          <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">{stats.hasLearningData && learningProgressData.length ? `${(stats.totalLearningHours / learningProgressData.length).toFixed(1)} hrs / track average` : 'No learning-time data yet'}</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+            {stats.totalMilestones > 0
+              ? 'Tutor-verified term milestones'
+              : 'No milestones published yet'}
+          </p>
         </div>
-
       </div>
 
-      {/* ========================================================================= */}
-      {/* TAB 1: OVERVIEW COMPOSITE VIEW (Combined Highlights)                      */}
-      {/* ========================================================================= */}
+      {/* TAB 1: OVERVIEW */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
-            {/* Recent Grade Trajectory Area Chart (7 Cols) */}
-            <div className="lg:col-span-7 bg-gray-50/50 dark:bg-slate-900/40 rounded-2xl border border-gray-100 dark:border-white/5 p-5 flex flex-col justify-between">
+            {/* Recent Grade Trajectory Area Chart */}
+            <div className="lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <LineChartIcon size={18} className="text-red-500" /> Recent Grade Trajectory
+                  <h3 className="text-sm font-bold text-[#1E293B] dark:text-white flex items-center gap-2">
+                    <LineChartIcon size={16} className="text-[#B91C1C]" aria-hidden="true" />
+                    <span>Released Grade Trajectory</span>
                   </h3>
-                  <p className="text-xs text-gray-500 dark:text-slate-400">Chronological score trend with class average benchmarks</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Chronological scores across released tests and examinations
+                  </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setActiveTab('grades')}
-                  className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline flex items-center gap-0.5"
+                  className="text-xs font-semibold text-[#B91C1C] hover:underline flex items-center gap-0.5 cursor-pointer"
                 >
-                  View Details <ArrowUpRight size={13} />
+                  Details <ArrowUpRight size={13} aria-hidden="true" />
                 </button>
               </div>
 
-              <div className="h-64 w-full pt-1">
+              {sortedGradeRecords.length === 0 ? (
+                <div className="h-56 flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center">
+                  <LineChartIcon size={24} className="text-slate-400 mb-2" aria-hidden="true" />
+                  <p className="text-xs font-bold text-[#1E293B] dark:text-white">
+                    No released assessment grades yet
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
+                    Your grade trajectory chart will populate once completed assessments are graded and
+                    released by your tutor.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="h-56 w-full pt-1">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={sortedGradeRecords}
+                        margin={{ top: 10, right: 12, left: -18, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="jdiStudentGradeGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={BRAND_CRIMSON} stopOpacity={0.28} />
+                            <stop offset="95%" stopColor={BRAND_CRIMSON} stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          vertical={false}
+                          stroke="rgba(148, 163, 184, 0.2)"
+                        />
+                        <XAxis
+                          dataKey="dateLabel"
+                          tick={{ fill: BRAND_SLATE, fontSize: 11 }}
+                          axisLine={{ stroke: 'rgba(148, 163, 184, 0.25)' }}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          domain={[0, 100]}
+                          tick={{ fill: BRAND_SLATE, fontSize: 11 }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <RechartsTooltip content={<CustomTooltip />} />
+                        <Area
+                          type="monotone"
+                          dataKey="grade"
+                          name="Released Score"
+                          stroke={BRAND_CRIMSON}
+                          strokeWidth={2.5}
+                          fillOpacity={1}
+                          fill="url(#jdiStudentGradeGrad)"
+                          activeDot={{ r: 5, fill: BRAND_CRIMSON, stroke: '#fff', strokeWidth: 2 }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex items-center justify-center gap-5 pt-3 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <span className="w-3 h-0.5 bg-[#B91C1C] inline-block" /> Released Score (%)
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Assignment Status Breakdown Donut */}
+            <div className="lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E293B] dark:text-white flex items-center gap-2">
+                    <PieChartIcon size={16} className="text-[#1E293B] dark:text-slate-300" aria-hidden="true" />
+                    <span>Deliverables Status</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                    {stats.totalAssignments} assigned deliverable
+                    {stats.totalAssignments === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('assignments')}
+                  className="text-xs font-semibold text-[#B91C1C] hover:underline flex items-center gap-0.5 cursor-pointer"
+                >
+                  Breakdown <ArrowUpRight size={13} aria-hidden="true" />
+                </button>
+              </div>
+
+              {assignmentBreakdown.pieData.length === 0 ? (
+                <div className="h-52 flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 dark:border-slate-800 p-5 text-center">
+                  <CheckSquare size={24} className="text-slate-400 mb-2" aria-hidden="true" />
+                  <p className="text-xs font-bold text-[#1E293B] dark:text-white">
+                    No deliverables recorded yet
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Assigned coursework and completion statuses will appear here.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="h-48 w-full relative flex items-center justify-center">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={assignmentBreakdown.pieData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={52}
+                          outerRadius={74}
+                          paddingAngle={3}
+                          dataKey="value"
+                        >
+                          {assignmentBreakdown.pieData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} stroke="transparent" />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip content={<CustomTooltip />} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-xl font-bold text-[#1E293B] dark:text-white tabular-nums leading-none">
+                        {stats.completionRate}%
+                      </span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mt-1">
+                        Completed
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800 pt-2 text-xs">
+                    {assignmentBreakdown.pieData.map((item) => (
+                      <div
+                        key={item.name}
+                        className="py-1.5 flex items-center justify-between text-slate-700 dark:text-slate-300"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="w-2.5 h-2.5 rounded-xs shrink-0"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <span>{item.name}</span>
+                        </span>
+                        <span className="font-bold text-[#1E293B] dark:text-white font-mono tabular-nums">
+                          {item.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Syllabus Progression Rows */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-[#1E293B] dark:text-white flex items-center gap-2">
+                  <BookOpen size={16} className="text-[#B91C1C]" aria-hidden="true" />
+                  <span>Curriculum Track Progression</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Verified module completion across your enrolled tracks
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('progress')}
+                className="text-xs font-semibold text-[#B91C1C] hover:underline flex items-center gap-0.5 cursor-pointer"
+              >
+                Track View <ArrowUpRight size={13} aria-hidden="true" />
+              </button>
+            </div>
+
+            {learningProgressData.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-xs text-slate-500 dark:text-slate-400">
+                No module progress tracks recorded yet. Completed modules verified by your tutor will appear here.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {learningProgressData.map((item) => (
+                  <div key={item.subject} className="py-3 first:pt-0 last:pb-0 space-y-1.5">
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span className="font-bold text-[#1E293B] dark:text-white">
+                        {item.subject}
+                      </span>
+                      <span className="text-slate-500 dark:text-slate-400 tabular-nums">
+                        {item.modulesDone}/{item.modulesTotal} units ·{' '}
+                        <strong className="text-[#B91C1C]">{item.progress}%</strong>
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                      <div
+                        className="h-full bg-[#B91C1C] transition-all duration-500"
+                        style={{ width: `${Math.min(100, Math.max(0, item.progress))}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: CURRICULUM PROGRESS */}
+      {activeTab === 'progress' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-[#1E293B] dark:text-white">
+                  Track Completion Percentage
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Percentage of assigned modules or milestones completed per track
+                </p>
+              </div>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                {learningProgressData.length} Track{learningProgressData.length === 1 ? '' : 's'}
+              </span>
+            </div>
+
+            {learningProgressData.length === 0 ? (
+              <div className="h-64 flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center">
+                <BookOpen size={24} className="text-slate-400 mb-2" aria-hidden="true" />
+                <p className="text-xs font-bold text-[#1E293B] dark:text-white">
+                  No track progress data recorded yet
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                  Once modules or milestones are assigned, track completion percentages appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="h-64 w-full pt-2">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={gradeTrendsData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <BarChart
+                    data={learningProgressData}
+                    margin={{ top: 10, right: 12, left: -18, bottom: 16 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="rgba(148, 163, 184, 0.2)"
+                    />
+                    <XAxis
+                      dataKey="subject"
+                      tick={{ fill: BRAND_SLATE, fontSize: 11 }}
+                      axisLine={{ stroke: 'rgba(148, 163, 184, 0.25)' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      domain={[0, 100]}
+                      tick={{ fill: BRAND_SLATE, fontSize: 11 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <RechartsTooltip content={<CustomTooltip />} />
+                    <Bar
+                      dataKey="progress"
+                      name="Completion %"
+                      fill={BRAND_NAVY}
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={48}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          <div className="lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+            <div className="mb-4">
+              <h3 className="text-sm font-bold text-[#1E293B] dark:text-white">
+                Average Score by Subject
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Computed strictly from released test and exam results
+              </p>
+            </div>
+
+            {subjectPerformanceData.length === 0 ? (
+              <div className="h-64 flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center">
+                <Award size={24} className="text-slate-400 mb-2" aria-hidden="true" />
+                <p className="text-xs font-bold text-[#1E293B] dark:text-white">
+                  No subject averages yet
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                  Subject averages unlock after at least one released assessment result.
+                </p>
+              </div>
+            ) : (
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={subjectPerformanceData}
+                    layout="vertical"
+                    margin={{ top: 5, right: 16, left: 10, bottom: 5 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      horizontal={false}
+                      stroke="rgba(148, 163, 184, 0.2)"
+                    />
+                    <XAxis
+                      type="number"
+                      domain={[0, 100]}
+                      tick={{ fill: BRAND_SLATE, fontSize: 11 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="subject"
+                      width={110}
+                      tick={{ fill: BRAND_SLATE, fontSize: 11 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <RechartsTooltip content={<CustomTooltip />} />
+                    <Bar
+                      dataKey="averageGrade"
+                      name="Average Score %"
+                      fill={BRAND_CRIMSON}
+                      radius={[0, 4, 4, 0]}
+                      maxBarSize={24}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: ASSIGNMENT COMPLETION RATES */}
+      {activeTab === 'assignments' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-8 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-[#1E293B] dark:text-white">
+                  Weekly Deliverable Activity
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Assignments grouped by submission or due week
+                </p>
+              </div>
+              <span className="text-xs font-semibold text-[#1E293B] dark:text-slate-200 tabular-nums">
+                {stats.hasAssignmentData
+                  ? `${stats.completionRate}% Completion Rate`
+                  : 'No assignment history'}
+              </span>
+            </div>
+
+            {assignmentWeeklyData.length === 0 ? (
+              <div className="h-64 flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center">
+                <CheckSquare size={24} className="text-slate-400 mb-2" aria-hidden="true" />
+                <p className="text-xs font-bold text-[#1E293B] dark:text-white">
+                  No dated assignments to chart yet
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                  Weekly activity appears once assignments have a due date or submission date.
+                </p>
+              </div>
+            ) : (
+              <div className="h-64 w-full pt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={assignmentWeeklyData}
+                    margin={{ top: 10, right: 10, left: -18, bottom: 0 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="rgba(148, 163, 184, 0.2)"
+                    />
+                    <XAxis
+                      dataKey="week"
+                      tick={{ fill: BRAND_SLATE, fontSize: 11 }}
+                      axisLine={{ stroke: 'rgba(148, 163, 184, 0.25)' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fill: BRAND_SLATE, fontSize: 11 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <RechartsTooltip content={<CustomTooltip />} />
+                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                    <Bar dataKey="completed" name="Completed" fill={BRAND_NAVY} stackId="a" />
+                    <Bar
+                      dataKey="inProgress"
+                      name="Submitted / In Review"
+                      fill={BRAND_CRIMSON}
+                      stackId="a"
+                    />
+                    <Bar
+                      dataKey="pending"
+                      name="Pending"
+                      fill={BRAND_SLATE_MUTED}
+                      stackId="a"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          <div className="lg:col-span-4 rounded-xl border border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-[#1E293B] dark:text-white">
+                Deliverable Summary
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Breakdown across assigned tasks
+              </p>
+            </div>
+
+            <div className="my-5 py-4 border-y border-slate-100 dark:border-slate-800 text-center">
+              <span className="text-3xl font-bold text-[#1E293B] dark:text-white tabular-nums">
+                {stats.hasAssignmentData ? `${stats.completionRate}%` : '—'}
+              </span>
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mt-1">
+                {stats.hasAssignmentData
+                  ? `${stats.completedAssignments} of ${stats.totalAssignments} Verified Complete`
+                  : 'No assignments assigned'}
+              </p>
+            </div>
+
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+              <div className="py-2 flex items-center justify-between">
+                <span className="text-slate-600 dark:text-slate-300">Verified Complete</span>
+                <span className="font-bold text-[#1E293B] dark:text-white font-mono tabular-nums">
+                  {stats.completedAssignments}
+                </span>
+              </div>
+              <div className="py-2 flex items-center justify-between">
+                <span className="text-slate-600 dark:text-slate-300">Submitted / Under Review</span>
+                <span className="font-bold text-[#B91C1C] font-mono tabular-nums">
+                  {stats.inProgressAssignments}
+                </span>
+              </div>
+              <div className="py-2 flex items-center justify-between">
+                <span className="text-slate-600 dark:text-slate-300">Awaiting Submission</span>
+                <span className="font-bold text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                  {stats.pendingAssignments}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: GRADE TRENDS */}
+      {activeTab === 'grades' && (
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
+            <div>
+              <h3 className="text-sm font-bold text-[#1E293B] dark:text-white flex items-center gap-2">
+                <LineChartIcon size={16} className="text-[#B91C1C]" aria-hidden="true" />
+                <span>Assessment Score Progression</span>
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Filter released results by subject track or timeframe
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1 mr-1">
+                <Filter size={12} aria-hidden="true" /> Subject:
+              </span>
+              {filterSubjectList.map((subj) => (
+                <button
+                  key={subj}
+                  type="button"
+                  onClick={() => setSelectedSubject(subj)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                    selectedSubject === subj
+                      ? 'bg-[#1E293B] dark:bg-[#B91C1C] text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-[#1E293B] dark:hover:text-white'
+                  }`}
+                >
+                  {subj === 'ALL' ? 'All Subjects' : subj}
+                </button>
+              ))}
+
+              <span className="text-slate-300 dark:text-slate-700 mx-1">|</span>
+
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
+                {(['30days', 'term', 'all'] as const).map((rng) => (
+                  <button
+                    key={rng}
+                    type="button"
+                    onClick={() => setTimeRange(rng)}
+                    className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                      timeRange === rng
+                        ? 'bg-[#1E293B] dark:bg-[#B91C1C] text-white'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-[#1E293B] dark:hover:text-white'
+                    }`}
+                  >
+                    {rng === '30days' ? '30D' : rng === 'term' ? 'Term' : 'All'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {filteredGradeTrends.length === 0 ? (
+            <div className="py-12 flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center">
+              <Award size={24} className="text-slate-400 mb-2" aria-hidden="true" />
+              <p className="text-xs font-bold text-[#1E293B] dark:text-white">
+                No released scores match this filter
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                Only released assessment scores appear in this history.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="h-64 w-full pt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={filteredGradeTrends}
+                    margin={{ top: 10, right: 16, left: -18, bottom: 5 }}
+                  >
                     <defs>
-                      <linearGradient id="gradeGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#e63946" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#e63946" stopOpacity={0.0} />
+                      <linearGradient id="jdiStudentGradeDetailGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={BRAND_CRIMSON} stopOpacity={0.25} />
+                        <stop offset="95%" stopColor={BRAND_CRIMSON} stopOpacity={0.02} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, 0.15)" />
-                    <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(148, 163, 184, 0.2)' }} tickLine={false} />
-                    <YAxis domain={[60, 100]} tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <RechartsTooltip content={<CustomTooltip />} />
-                    <Area 
-                      type="monotone" 
-                      dataKey="grade" 
-                      name="Cadet Grade" 
-                      stroke="#e63946" 
-                      strokeWidth={3} 
-                      fillOpacity={1} 
-                      fill="url(#gradeGradient)" 
-                      activeDot={{ r: 6, fill: '#e63946', stroke: '#fff', strokeWidth: 2 }}
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="rgba(148, 163, 184, 0.2)"
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="classAvg" 
-                      name="Class Average" 
-                      stroke="#94a3b8" 
-                      strokeDasharray="4 4" 
-                      strokeWidth={2} 
-                      dot={false}
+                    <XAxis
+                      dataKey="dateLabel"
+                      tick={{ fill: BRAND_SLATE, fontSize: 11 }}
+                      axisLine={{ stroke: 'rgba(148, 163, 184, 0.25)' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      domain={[0, 100]}
+                      tick={{ fill: BRAND_SLATE, fontSize: 11 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <RechartsTooltip content={<CustomTooltip />} />
+                    <Area
+                      type="monotone"
+                      dataKey="grade"
+                      name="Score %"
+                      stroke={BRAND_CRIMSON}
+                      strokeWidth={2.5}
+                      fillOpacity={1}
+                      fill="url(#jdiStudentGradeDetailGrad)"
+                      dot={{ r: 4, fill: BRAND_CRIMSON, stroke: '#fff', strokeWidth: 1.5 }}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
 
-              <div className="flex items-center justify-center gap-6 pt-3 text-xs text-gray-500 dark:text-slate-400">
-                <span className="flex items-center gap-1.5 font-medium">
-                  <span className="w-3 h-1 bg-red-600 rounded-full inline-block" /> Student Grade Score
-                </span>
-                <span className="flex items-center gap-1.5 font-medium">
-                  <span className="w-3 h-0.5 bg-slate-400 rounded-full inline-block border-b border-dashed border-slate-400" /> Class Benchmark Average
-                </span>
-              </div>
-            </div>
-
-            {/* Assignment Status Breakdown Donut (5 Cols) */}
-            <div className="lg:col-span-5 bg-gray-50/50 dark:bg-slate-900/40 rounded-2xl border border-gray-100 dark:border-white/5 p-5 flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <PieChartIcon size={18} className="text-emerald-500" /> Assignment Status Distribution
-                  </h3>
-                  <p className="text-xs text-gray-500 dark:text-slate-400">{stats.totalAssignments} Total registered deliverables</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('assignments')}
-                  className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline flex items-center gap-0.5"
-                >
-                  Breakdown <ArrowUpRight size={13} />
-                </button>
-              </div>
-
-              <div className="h-52 w-full relative flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={assignmentStatusPie}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={80}
-                      paddingAngle={4}
-                      dataKey="value"
-                    >
-                      {assignmentStatusPie.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} stroke="transparent" />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip content={<CustomTooltip />} />
-                  </PieChart>
-                </ResponsiveContainer>
-                {/* Center Stat in Donut */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-xl font-black text-gray-900 dark:text-white leading-none">
-                    {stats.completionRate}%
-                  </span>
-                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-0.5">
-                    Completed
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
-                {assignmentStatusPie.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-1.5 rounded-lg bg-white/60 dark:bg-slate-950/40 border border-gray-100 dark:border-white/5">
-                    <span className="flex items-center gap-1.5 text-[11px] text-gray-600 dark:text-slate-300 truncate">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                      <span className="truncate">{item.name}</span>
-                    </span>
-                    <span className="font-bold text-gray-900 dark:text-white font-mono text-[11px]">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-          </div>
-
-          {/* Bottom Subject Progress Bars Grid */}
-          <div className="bg-gray-50/50 dark:bg-slate-900/40 rounded-2xl border border-gray-100 dark:border-white/5 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <BookOpen size={18} className="text-sky-500" /> Syllabus Progression by Course Track
-                </h3>
-                <p className="text-xs text-gray-500 dark:text-slate-400">Milestone completion across active enrolled subjects</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab('progress')}
-                className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline flex items-center gap-0.5"
-              >
-                Track Radar <ArrowUpRight size={13} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {learningProgressData.map((item, idx) => (
-                <div key={idx} className="p-3.5 bg-white dark:bg-[#121622] rounded-xl border border-gray-100 dark:border-white/5 shadow-xs">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-gray-900 dark:text-white">{item.subject}</span>
-                    <span className="text-xs font-black text-red-600 dark:text-red-400">{item.progress}%</span>
-                  </div>
-                  <div className="w-full h-2 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden mb-2">
-                    <div 
-                      className="h-full bg-gradient-to-r from-red-600 to-amber-500 rounded-full transition-all duration-1000"
-                      style={{ width: `${item.progress}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-slate-400">
-                    <span>{item.modulesDone}/{item.modulesTotal} Modules</span>
-                    <span>{item.hours}h invested</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 2: LEARNING PROGRESS & COMPETENCIES (Bar & Radar Visuals)              */}
-      {/* ========================================================================= */}
-      {activeTab === 'progress' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
-            {/* Learning Hours & Module Progress Bar Chart (7 Cols) */}
-            <div className="lg:col-span-7 bg-gray-50/50 dark:bg-slate-900/40 rounded-2xl border border-gray-100 dark:border-white/5 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white">Subject Mastery & Hours Invested</h3>
-                  <p className="text-xs text-gray-500 dark:text-slate-400">Comparative progress score vs hands-on lab hours</p>
-                </div>
-                <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300">
-                  {enrolledSubjects.length} Active Disciplines
-                </span>
-              </div>
-
-              <div className="h-72 w-full pt-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={learningProgressData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, 0.15)" />
-                    <XAxis 
-                      dataKey="subject" 
-                      tick={{ fill: '#94a3b8', fontSize: 10 }} 
-                      axisLine={{ stroke: 'rgba(148, 163, 184, 0.2)' }}
-                      interval={0}
-                      angle={-15}
-                      textAnchor="end"
-                    />
-                    <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <RechartsTooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
-                    <Bar dataKey="progress" name="Syllabus Progress %" fill="#e63946" radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="hours" name="Lab Hours" fill="#38bdf8" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Radar Skill Competency Matrix (5 Cols) */}
-            <div className="lg:col-span-5 bg-gray-50/50 dark:bg-slate-900/40 rounded-2xl border border-gray-100 dark:border-white/5 p-5 flex flex-col justify-between">
-              <div className="mb-2">
-                <h3 className="text-base font-bold text-gray-900 dark:text-white">Competency Radar Matrix</h3>
-                <p className="text-xs text-gray-500 dark:text-slate-400">Core engineering skills compared to class baseline</p>
-              </div>
-
-              <div className="h-64 w-full flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius="75%" data={competencyRadarData}>
-                    <PolarGrid stroke="rgba(148, 163, 184, 0.2)" />
-                    <PolarAngleAxis dataKey="skill" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 9 }} />
-                    <Radar name="Cadet Rating" dataKey="score" stroke="#e63946" fill="#e63946" fillOpacity={0.45} />
-                    <Radar name="Class Benchmark" dataKey="classAvg" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.15} />
-                    <RechartsTooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: '11px' }} />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <p className="text-[11px] text-center text-gray-500 dark:text-slate-400 mt-2">
-                Strongest domain: <strong className="text-gray-900 dark:text-white">{competencyRadarData.length ? competencyRadarData.reduce((best, item) => item.score > best.score ? item : best, competencyRadarData[0]).skill : 'Not enough competency data'}</strong>
-              </p>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 3: ASSIGNMENT COMPLETION RATES (Timeline & Velocity)                  */}
-      {/* ========================================================================= */}
-      {activeTab === 'assignments' && (
-        <div className="space-y-6">
-          
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
-            {/* Weekly Submission Velocity Bar Chart (8 Cols) */}
-            <div className="lg:col-span-8 bg-gray-50/50 dark:bg-slate-900/40 rounded-2xl border border-gray-100 dark:border-white/5 p-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-                <div>
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white">Weekly Assignment Submission Velocity</h3>
-                  <p className="text-xs text-gray-500 dark:text-slate-400">Total tasks completed vs pending deliverables per week</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-200/60 dark:border-emerald-900/40">
-                    {stats.hasAssignmentData ? `${stats.completionRate}% Completion Rate` : 'No assignment history'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="h-64 w-full pt-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={assignmentWeeklyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, 0.15)" />
-                    <XAxis dataKey="week" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(148, 163, 184, 0.2)' }} tickLine={false} />
-                    <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <RechartsTooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
-                    <Bar dataKey="completed" name="Completed On-Time" fill="#10b981" stackId="a" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="submittedLate" name="Late Submission" fill="#f59e0b" stackId="a" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="pending" name="Pending" fill="#e63946" stackId="a" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Completion Rate Gauge & Breakdown (4 Cols) */}
-            <div className="lg:col-span-4 bg-gray-50/50 dark:bg-slate-900/40 rounded-2xl border border-gray-100 dark:border-white/5 p-5 flex flex-col justify-between">
-              <div>
-                <h3 className="text-base font-bold text-gray-900 dark:text-white">Completion Health</h3>
-                <p className="text-xs text-gray-500 dark:text-slate-400">Quality and punctuality scoring</p>
-              </div>
-
-              <div className="my-4 p-4 rounded-xl bg-white dark:bg-[#121622] border border-gray-100 dark:border-white/5 text-center">
-                <span className="text-4xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">
-                  {stats.completionRate}%
-                </span>
-                <p className="text-xs font-bold text-gray-800 dark:text-gray-200 mt-1">Excellent Punctuality Band</p>
-                <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{stats.hasAssignmentData ? `${stats.completedAssignments} of ${stats.totalAssignments} Total Assignments Recorded` : 'No assignment records available'}</p>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-white/60 dark:bg-slate-950/40 border border-gray-100 dark:border-white/5">
-                  <span className="text-gray-600 dark:text-slate-300">On-Time Submissions</span>
-                  <span className="font-bold text-emerald-600 font-mono">{stats.hasAssignmentData ? `${Math.round((assignmentStatusPie.find(p => p.name.includes('On-Time'))?.value || 0) / Math.max(stats.totalAssignments, 1) * 100)}%` : '—'}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-white/60 dark:bg-slate-950/40 border border-gray-100 dark:border-white/5">
-                  <span className="text-gray-600 dark:text-slate-300">Tutor Re-submissions</span>
-                  <span className="font-bold text-amber-600 font-mono">{stats.hasAssignmentData ? `${Math.round((assignmentStatusPie.find(p => p.name.includes('Late'))?.value || 0) / Math.max(stats.totalAssignments, 1) * 100)}%` : '—'}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-white/60 dark:bg-slate-950/40 border border-gray-100 dark:border-white/5">
-                  <span className="text-gray-600 dark:text-slate-300">Unsubmitted Overdue</span>
-                  <span className="font-bold text-red-600 font-mono">{stats.hasAssignmentData ? `${Math.round(Math.max(stats.totalAssignments - stats.completedAssignments, 0) / Math.max(stats.totalAssignments, 1) * 100)}%` : '—'}</span>
-                </div>
-              </div>
-            </div>
-
-          </div>
-
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 4: RECENT GRADE TRENDS (Detailed Multi-line & Filters)                */}
-      {/* ========================================================================= */}
-      {activeTab === 'grades' && (
-        <div className="space-y-6">
-          
-          <div className="bg-gray-50/50 dark:bg-slate-900/40 rounded-2xl border border-gray-100 dark:border-white/5 p-5">
-            
-            {/* Subject Filter Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-gray-200/60 dark:border-white/5">
-              <div>
-                <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <LineChartIcon size={18} className="text-red-500" /> Assessment Score Progression
-                </h3>
-                <p className="text-xs text-gray-500 dark:text-slate-400">Filter by academic track to analyze subject-specific performance</p>
-              </div>
-
-              {/* Subject Dropdown / Pills */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-xs font-bold text-gray-500 dark:text-slate-400 flex items-center gap-1 mr-1">
-                  <Filter size={12} /> Subject:
-                </span>
-                {filterSubjectList.map((subj) => (
-                  <button
-                    key={subj}
-                    type="button"
-                    onClick={() => setSelectedSubject(subj)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                      selectedSubject === subj
-                        ? 'bg-red-600 text-white shadow-xs'
-                        : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200/60 dark:border-white/5'
-                    }`}
-                  >
-                    {subj === 'ALL' ? 'All Subjects' : subj}
-                  </button>
-                ))}
-
-                <span className="text-gray-300 dark:text-white/10 mx-1">|</span>
-
-                <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800/80 p-0.5 rounded-lg">
-                  {(['30days', 'term', 'all'] as const).map((rng) => (
-                    <button
-                      key={rng}
-                      type="button"
-                      onClick={() => setTimeRange(rng)}
-                      className={`px-2 py-0.5 rounded-md text-[11px] font-bold capitalize transition-all ${
-                        timeRange === rng
-                          ? 'bg-red-600 text-white shadow-xs'
-                          : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
-                      }`}
-                    >
-                      {rng === '30days' ? 'Last 30D' : rng === 'term' ? 'Current Term' : 'All Time'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Grade Trajectory LineChart with Points and Tier Badges */}
-            <div className="h-72 w-full pt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={filteredGradeTrends} margin={{ top: 15, right: 20, left: -20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, 0.15)" />
-                  <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(148, 163, 184, 0.2)' }} tickLine={false} />
-                  <YAxis domain={[65, 100]} tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <RechartsTooltip content={<CustomTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
-                  
-                  <Line 
-                    type="monotone" 
-                    dataKey="grade" 
-                    name="Student Score %" 
-                    stroke="#e63946" 
-                    strokeWidth={3} 
-                    dot={{ r: 5, fill: '#e63946', stroke: '#fff', strokeWidth: 2 }}
-                    activeDot={{ r: 7, fill: '#e63946', stroke: '#fff', strokeWidth: 2 }}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="classAvg" 
-                    name="Cohort Average" 
-                    stroke="#94a3b8" 
-                    strokeDasharray="4 4" 
-                    strokeWidth={2} 
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Assessment History Table */}
-            <div className="mt-6 pt-4 border-t border-gray-200/60 dark:border-white/5">
-              <h4 className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">
-                Recorded Assessment Logs ({filteredGradeTrends.length})
-              </h4>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-100 dark:border-white/5 text-gray-500 dark:text-slate-400">
-                      <th className="pb-2 font-bold">Date</th>
-                      <th className="pb-2 font-bold">Assessment Title</th>
-                      <th className="pb-2 font-bold">Subject</th>
-                      <th className="pb-2 font-bold text-center">Cohort Avg</th>
-                      <th className="pb-2 font-bold text-right">Score & Tier</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                    {filteredGradeTrends.map((row) => (
-                      <tr key={row.id} className="hover:bg-white/60 dark:hover:bg-slate-800/40 transition-colors">
-                        <td className="py-2.5 font-mono text-gray-500">{row.date}</td>
-                        <td className="py-2.5 font-bold text-gray-900 dark:text-white">{row.assessment}</td>
-                        <td className="py-2.5 text-gray-600 dark:text-slate-400">{row.subject}</td>
-                        <td className="py-2.5 text-center font-mono text-gray-500">{row.classAvg}%</td>
-                        <td className="py-2.5 text-right">
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="font-bold text-red-600 dark:text-red-400 font-mono text-sm">{row.grade}%</span>
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300">
-                              {row.tier}
-                            </span>
-                          </span>
-                        </td>
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+                <h4 className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-3">
+                  Released Assessment Log ({filteredGradeTrends.length})
+                </h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
+                        <th className="pb-2 font-semibold">Date</th>
+                        <th className="pb-2 font-semibold">Assessment Title</th>
+                        <th className="pb-2 font-semibold">Subject</th>
+                        <th className="pb-2 font-semibold text-right">Raw Score</th>
+                        <th className="pb-2 font-semibold text-right">Percentage · Standing</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredGradeTrends.map((row) => (
+                        <tr
+                          key={row.id}
+                          className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                        >
+                          <td className="py-2.5 font-mono text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap pr-3">
+                            {row.dateLabel}
+                          </td>
+                          <td className="py-2.5 font-semibold text-[#1E293B] dark:text-white pr-3">
+                            {row.assessment}
+                          </td>
+                          <td className="py-2.5 text-slate-600 dark:text-slate-300 pr-3">
+                            {row.subject}
+                          </td>
+                          <td className="py-2.5 text-right font-mono tabular-nums text-slate-600 dark:text-slate-300 pr-3">
+                            {row.score !== undefined && row.maxScore
+                              ? `${row.score}/${row.maxScore}`
+                              : '—'}
+                          </td>
+                          <td className="py-2.5 text-right font-mono tabular-nums whitespace-nowrap">
+                            <span className="font-bold text-[#B91C1C]">{row.grade}%</span>
+                            <span className="text-slate-400 mx-1.5">·</span>
+                            <span className="text-slate-600 dark:text-slate-300 font-sans font-semibold">
+                              {row.tierLabel}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-
-          </div>
-
+            </>
+          )}
         </div>
       )}
-
-    </div>
+    </section>
   );
 };
 

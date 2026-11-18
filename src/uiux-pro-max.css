@@ -8,17 +8,17 @@
   --jb-text: #0f172a;
   --jb-text-muted: #64748b;
   --jb-border: #e2e8f0;
-  --jb-focus: #0284c7;
+  --jb-focus: #b91c1c;
 
-  /* Semantic Status Tokens */
-  --jb-status-success: #16a34a;
-  --jb-status-success-bg: #dcfce7;
-  --jb-status-warning: #d97706;
-  --jb-status-warning-bg: #fef3c7;
-  --jb-status-danger: #dc2626;
-  --jb-status-danger-bg: #fee2e2;
-  --jb-status-info: #2563eb;
-  --jb-status-info-bg: #dbeafe;
+  /* Semantic Status Tokens (Strictly scoped to Navy, Crimson & Neutrals) */
+  --jb-status-success: #1e293b;
+  --jb-status-success-bg: #f1f5f9;
+  --jb-status-warning: #334155;
+  --jb-status-warning-bg: #f1f5f9;
+  --jb-status-danger: #b91c1c;
+  --jb-status-danger-bg: #fef2f2;
+  --jb-status-info: #14284b;
+  --jb-status-info-bg: #f1f5f9;
 
   /* Elevation & Shadows */
   --jb-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);

@@ -102,11 +102,28 @@ class RootErrorBoundary extends Component<RootErrorBoundaryProps, RootErrorBound
 
 // Window-level safety interceptors
 window.addEventListener('error', (event) => {
-  console.error('[Global Error Listener]', event.error || event.message);
+  const msg = String(event.error?.message || event.message || '');
+  if (
+    msg.includes('Could not reach Cloud Firestore backend') ||
+    msg.includes('client is offline')
+  ) {
+    event.preventDefault();
+    return;
+  }
+  console.warn('[Global Error Listener]', event.error || event.message);
 });
 
 window.addEventListener('unhandledrejection', (event) => {
-  console.error('[Global Unhandled Rejection]', event.reason);
+  const reasonStr = String(event.reason?.message || event.reason || '');
+  if (
+    reasonStr.includes('Could not reach Cloud Firestore backend') ||
+    reasonStr.includes('client is offline') ||
+    reasonStr.includes('Failed to get document because the client is offline')
+  ) {
+    event.preventDefault();
+    return;
+  }
+  console.warn('[Global Unhandled Rejection]', event.reason);
 });
 
 const rootElement = document.getElementById('root');

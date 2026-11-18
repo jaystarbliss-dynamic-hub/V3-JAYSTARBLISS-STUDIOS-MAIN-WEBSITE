@@ -249,14 +249,14 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-500/30 shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-white flex items-center justify-center border border-slate-200 dark:border-slate-700 shrink-0">
               <UserCheck size={18} />
             </div>
             <div className="min-w-0">
               <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2 truncate">
                 <span>Direct Dashboard Impersonation</span>
-                <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                  Instant View-As
+                <span className="hidden sm:inline text-xs font-semibold text-slate-400">
+                  · Instant View-As
                 </span>
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
@@ -285,7 +285,7 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search student, tutor, school, email, or class..."
-              className="w-full pl-9 pr-9 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-slate-400"
+              className="w-full pl-9 pr-9 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#1E293B] dark:focus:ring-slate-400 placeholder:text-slate-400"
             />
             {searchQuery && (
               <button
@@ -314,9 +314,9 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
                   key={tab.id}
                   type="button"
                   onClick={() => setRoleFilter(tab.id)}
-                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1.5 shrink-0 tabular-nums ${
                     roleFilter === tab.id
-                      ? 'bg-amber-500 text-white shadow-xs font-black'
+                      ? 'bg-[#1E293B] dark:bg-[#B91C1C] text-white shadow-xs font-black'
                       : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-800'
                   }`}
                 >
@@ -332,7 +332,7 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-2 pr-1">
           {loading ? (
             <div className="py-12 text-center space-y-2">
-              <RefreshCw size={22} className="mx-auto text-amber-500 animate-spin" />
+              <RefreshCw size={22} className="mx-auto text-[#1E293B] dark:text-slate-300 animate-spin" />
               <p className="text-xs text-slate-400 font-mono">Scanning user directory &amp; rosters...</p>
             </div>
           ) : filteredUsers.length === 0 ? (
@@ -344,46 +344,38 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
           ) : (
             filteredUsers.map((item, idx) => {
               const uRole = String(item.role).toUpperCase();
+              const RoleIcon =
+                uRole === 'STUDENT'
+                  ? GraduationCap
+                  : uRole === 'SCHOOL'
+                  ? School
+                  : uRole === 'TUTOR' || uRole === 'STAFF'
+                  ? Briefcase
+                  : UserCheck;
               return (
                 <div
                   key={`${item.role}-${item.id}-${idx}`}
-                  className="p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#111726] hover:border-amber-500/60 dark:hover:border-amber-500/60 transition-all flex items-center justify-between gap-2.5 group"
+                  className="p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#111726] hover:border-[#1E293B]/50 dark:hover:border-slate-600 transition-all flex items-center justify-between gap-2.5 group"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                      uRole === 'STUDENT'
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-                        : uRole === 'SCHOOL'
-                        ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
-                        : uRole === 'TUTOR' || uRole === 'STAFF'
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                        : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                    }`}>
-                      {uRole === 'STUDENT' ? '🎓' : uRole === 'SCHOOL' ? '🏫' : uRole === 'TUTOR' ? '👨‍🏫' : '👤'}
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-200/80 text-[#1E293B] dark:bg-slate-800 dark:text-slate-200 shrink-0">
+                      <RoleIcon size={16} />
                     </div>
 
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
                         <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
                           {item.name}
                         </h4>
-                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase shrink-0 ${
-                          uRole === 'STUDENT'
-                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300'
-                            : uRole === 'SCHOOL'
-                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300'
-                            : uRole === 'TUTOR' || uRole === 'STAFF'
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
-                            : 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-300'
-                        }`}>
-                          {uRole}
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0">
+                          · {uRole}
                         </span>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500 dark:text-slate-300 mt-0.5">
                         <span className="truncate max-w-[170px] sm:max-w-xs">{item.email || 'No email registered'}</span>
                         {item.class && <span className="font-medium text-slate-600 dark:text-slate-300 font-mono">Class: {item.class}</span>}
-                        {item.schoolName && <span className="font-semibold text-purple-600 dark:text-purple-400 truncate max-w-[120px]">{item.schoolName}</span>}
+                        {item.schoolName && <span className="font-semibold text-[#1E293B] dark:text-slate-200 truncate max-w-[120px]">{item.schoolName}</span>}
                       </div>
                     </div>
                   </div>
@@ -391,7 +383,7 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleSelectUser(item)}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs inline-flex items-center gap-1 shadow-xs transition-transform active:scale-95 shrink-0"
+                    className="px-3 py-1.5 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] dark:bg-[#B91C1C] dark:hover:bg-[#991B1B] text-white font-black text-xs inline-flex items-center gap-1 shadow-xs transition-transform active:scale-95 shrink-0"
                     title={`Log in directly as ${item.name}`}
                   >
                     <span>Log In</span>

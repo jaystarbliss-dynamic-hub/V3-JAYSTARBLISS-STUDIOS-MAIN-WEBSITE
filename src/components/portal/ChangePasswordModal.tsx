@@ -82,7 +82,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
   const strength = calculateStrength(newPassword);
   const strengthLabels = ['Weak', 'Fair', 'Good', 'Strong'];
-  const strengthColors = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500'];
+  const strengthColors = ['bg-[#B91C1C]', 'bg-slate-400', 'bg-slate-600', 'bg-[#1E293B]'];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -346,7 +346,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
         {success ? (
           <div className="py-6 text-center space-y-2">
-            <CheckCircle2 size={48} className="mx-auto text-green-500 animate-bounce" />
+            <CheckCircle2 size={48} className="mx-auto text-[#1E293B] dark:text-slate-200" />
             <h3 className="text-base font-bold text-gray-900 dark:text-white">Password Updated!</h3>
             <p className="text-xs text-gray-500">Your new credentials have been secured.</p>
           </div>

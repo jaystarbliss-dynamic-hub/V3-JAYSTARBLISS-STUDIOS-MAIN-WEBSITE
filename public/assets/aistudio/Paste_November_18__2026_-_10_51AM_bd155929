@@ -1,0 +1,885 @@
+# ADDENDUM: PAYSTACK CHECKOUT UX, NO-REFUND POLICY & FINANCIAL ANALYTICS REDESIGN
+
+## PROJECT CONTEXT
+
+This is an additional requirement for the ongoing Jaystarbliss Studios dashboard and brand redesign.
+
+Inspect the latest repository before implementation and integrate these requirements into the existing payment, billing and transaction systems.
+
+The relevant implementation files include:
+
+- `src/pages/portal/BillingCenter.tsx`
+- `src/pages/portal/PortalPayments.tsx`
+- `src/components/portal/FintechTransactionHistory.tsx`
+- `src/components/portal/FintechTransactionDetailsModal.tsx`
+- `src/lib/billing.ts`
+- `netlify/functions/paystack-initialize.ts`
+- `netlify/functions/paystack-verify.ts`
+- `netlify/functions/paystack-webhook.ts`
+- `api/_lib/payment-reconciliation.ts`
+
+Search the entire repository for every other payment initialization and transaction-history entry point.
+
+---
+
+# PART 1: PAYSTACK MUST BE THE ONLY CUSTOMER-FACING PAYMENT PROVIDER
+
+I want the payment section to present one clear payment option:
+
+**Pay through Paystack.**
+
+Do not present individual payment methods inside our application's payment section.
+
+Remove the following customer-facing payment selectors:
+
+- Card.
+- Bank Transfer.
+- OPay.
+- Mobile Money.
+- Any other individual payment-channel selection.
+
+The customer should not have to decide which payment channel to use before reaching Paystack.
+
+### Expected payment experience
+
+1. The customer selects the programme, tuition item, invoice or renewal they want to pay for.
+2. The customer clicks the appropriate Review & Pay button.
+3. Our application opens a properly structured payment-review modal.
+4. The customer reviews the transaction and accepts the Payment Policy.
+5. The customer clicks **Pay through Paystack**.
+6. Our backend securely initializes the transaction.
+7. The customer is redirected to Paystack's hosted checkout.
+8. Paystack presents the available payment methods enabled for our integration.
+9. The customer selects their preferred method directly on Paystack.
+10. After payment, the customer returns to our application and the existing verification and reconciliation process continues.
+
+The application should not attempt to imitate Paystack's payment-method selection interface.
+
+### Backend changes required
+
+Inspect:
+
+`netlify/functions/paystack-initialize.ts`
+
+The current implementation maps a frontend-selected payment method into a Paystack channel and sends:
+
+`channels: [channel]`
+
+This restricts the hosted checkout to a specific method.
+
+Remove this restrictive channel-selection behaviour.
+
+Do not send a fixed `channels` array when initializing ordinary customer payments. Allow Paystack to present the channels enabled for the merchant's integration.
+
+Also remove the frontend dependency on `paymentMethod` for initiating customer checkout.
+
+Do not default new transactions to Card.
+
+The actual payment method should be obtained from the verified Paystack transaction information, such as `tx.channel`, and stored in the transaction record.
+
+**Important:** Do not remove Bank or OPay as destination options in the separate Staff Wallet Withdrawal process. Those are payout destinations, not customer tuition-payment methods. Preserve that functionality.
+
+### Preserve
+
+- Paystack secret-key security.
+- Server-side payment initialization.
+- Authenticated user validation.
+- Transaction references.
+- Callback URLs.
+- Payment verification.
+- Paystack webhook processing.
+- Idempotent payment reconciliation.
+- Existing student, parent and school ownership checks.
+
+Never expose the Paystack secret key in browser code.
+
+---
+
+# PART 2: REDESIGN THE PAYMENT REVIEW MODAL
+
+This is a very important part of the change.
+
+Whenever a customer clicks Review & Pay, they must see an attractive, professional and properly structured modal explaining exactly what they are about to purchase or pay for.
+
+The modal should not simply display a payment-method selector and an amount.
+
+It should serve as a final transaction confirmation and policy-acceptance interface.
+
+## 1. Modal structure
+
+Use a premium institutional financial-interface design consistent with Jaystarbliss Studios branding.
+
+Suggested hierarchy:
+
+### A. Header
+
+Title:
+
+**Review Your Payment**
+
+Supporting text:
+
+Please review the payment details below before proceeding to secure checkout.
+
+Include a clear close button.
+
+### B. Payment description
+
+Dynamically identify exactly what the customer is paying for.
+
+Depending on the payment type, display:
+
+- School or institution name.
+- Student or learner name.
+- Parent or payer name where applicable.
+- Programme or curriculum track.
+- Selected sub-programmes.
+- Assigned tutor where relevant.
+- Tuition period or billing cycle.
+- Teaching delivery mode.
+- Invoice or payment description.
+
+For multi-child payments, clearly identify each child and the programmes selected for each child.
+
+For school subscriptions, identify the institutional subscription and the selected programme tracks.
+
+For individual learners, identify the actual learner and selected programme.
+
+Do not show irrelevant or empty fields.
+
+### C. Itemized financial breakdown
+
+Present a clear financial summary.
+
+Where applicable, include:
+
+| Description | Amount |
+|---|---:|
+| Programme / Tuition Subtotal | ₦XX,XXX |
+| Processing Fee | ₦X,XXX |
+| Outstanding Balance | ₦X,XXX |
+| Total Payable | ₦XX,XXX |
+
+Only display applicable rows.
+
+Make the final payable amount visually prominent.
+
+For installment payments, clearly identify:
+
+- Full contract or programme fee.
+- Current installment percentage.
+- Amount currently being paid.
+- Remaining balance.
+
+### D. Paystack explanation
+
+Add a concise payment-provider notice:
+
+"Your payment will be processed securely through Paystack. You will be redirected to Paystack's hosted checkout, where you can select an available payment method."
+
+Do not list Card, Bank Transfer, OPay or Mobile Money as selectable options in our modal.
+
+### E. Payment Policy acceptance
+
+This section is mandatory.
+
+Include a clearly identifiable section titled:
+
+**PAYMENT POLICY — NO REFUNDS**
+
+Display the following policy statement:
+
+"No refund of fees paid to the other party will be made after payment has been successfully completed."
+
+The wording must be clearly visible and readable.
+
+Directly below it, display a small, unchecked checkbox:
+
+**I have read and agree to the Payment Policy.**
+
+The checkbox must:
+
+- Be unchecked by default.
+- Require an explicit customer action.
+- Be accessible and properly labelled.
+- Retain its checked state while the customer completes the current review.
+- Reset appropriately when a different payment is being prepared.
+
+The customer must not be able to proceed to payment without checking this box.
+
+### F. Final payment action
+
+The primary button should say:
+
+**Pay through Paystack**
+
+Do not include a payment-channel name in the button.
+
+The button must remain disabled until the customer accepts the Payment Policy.
+
+Display a helpful explanation when the checkbox has not been selected.
+
+When the customer clicks the button:
+
+- Validate the consent.
+- Validate the selected payment details.
+- Prevent accidental duplicate submissions.
+- Initialize the transaction through our authenticated backend.
+- Redirect to the returned Paystack authorization URL.
+
+Display an appropriate loading state while the transaction is being initialized.
+
+Provide a secondary Cancel or Go Back action.
+
+---
+
+# PART 3: ENFORCE AND RECORD PAYMENT POLICY ACCEPTANCE
+
+Do not implement the no-refund policy as a purely decorative checkbox.
+
+It must be part of the actual payment initialization workflow.
+
+### Frontend enforcement
+
+All customer payment initialization requests should include an explicit acceptance value, for example:
+
+`paymentPolicyAccepted: true`
+
+This must be sent only after the customer has actively selected the checkbox and clicked the payment action.
+
+### Backend enforcement
+
+Update:
+
+`netlify/functions/paystack-initialize.ts`
+
+The server must independently validate that the authenticated payment request includes valid Payment Policy acceptance.
+
+If acceptance is missing or false, reject the request and do not initialize a Paystack transaction.
+
+Do not rely exclusively on frontend button disabling.
+
+### Acceptance audit information
+
+Preserve the acceptance in Paystack transaction metadata and in the final verified payment record.
+
+Record appropriate information such as:
+
+- `paymentPolicyAccepted`
+- `paymentPolicyVersion`
+- `paymentPolicyText`
+- `paymentPolicyAcceptedAt`
+- `paymentPolicyAcceptedBy`
+
+The acceptance timestamp should be generated by the trusted server rather than blindly trusting a browser-supplied timestamp.
+
+Use the authenticated user ID.
+
+Update:
+
+`api/_lib/payment-reconciliation.ts`
+
+Ensure the relevant acceptance metadata is transferred into the final payment document when Paystack successfully reconciles the transaction.
+
+This should provide an auditable record of the policy version the customer accepted.
+
+If the policy is updated in the future, introduce a new policy version and require fresh acceptance.
+
+### Important safeguards
+
+Do not:
+
+- Pre-check the checkbox.
+- Automatically accept on behalf of the customer.
+- Allow a direct API request to bypass acceptance.
+- Initialize payment when policy acceptance is missing.
+- Mark failed or abandoned transactions as successfully paid.
+- Change the existing payment verification or reconciliation rules.
+
+Treat the checkbox as an explicit policy acknowledgment, not as a claim that it overrides any mandatory legal rights.
+
+---
+
+# PART 4: APPLY THE SAME CHECKOUT EXPERIENCE EVERYWHERE
+
+Do not redesign just one payment modal.
+
+There are multiple existing payment paths.
+
+Inspect and unify all relevant experiences.
+
+### A. School billing
+
+File:
+
+`src/pages/portal/BillingCenter.tsx`
+
+Redesign the existing school Paystack Checkout Review modal.
+
+Show the school, selected programme tracks, subscription period, payment percentage and itemized amount.
+
+Include the mandatory no-refund policy checkbox.
+
+Replace the existing channel selector with the single Pay through Paystack action.
+
+### B. Parent multi-child and multi-programme payments
+
+File:
+
+`src/pages/portal/BillingCenter.tsx`
+
+Redesign the existing Parent Itemized Checkout Modal that opens after clicking:
+
+**Review & Pay**
+
+Keep its excellent itemized breakdown approach, but improve the overall hierarchy and presentation.
+
+Clearly show:
+
+- Each learner.
+- Each selected programme.
+- Assigned instructor where available.
+- Individual amounts.
+- Subtotal.
+- Processing fee.
+- Total payable.
+
+Add the no-refund policy acceptance section.
+
+Replace the payment-method selector and channel-specific action with Pay through Paystack.
+
+The modal must reflect the exact selection that the parent is confirming.
+
+Do not allow the selection to change silently after consent has been accepted.
+
+### C. Parent and independent student checkout
+
+Redesign the corresponding checkout modal in `BillingCenter.tsx`.
+
+Display the learner, programme, teaching mode, relevant billing period and financial breakdown.
+
+Apply the same no-refund acceptance requirement.
+
+### D. Membership and tuition renewals
+
+File:
+
+`src/pages/portal/PortalPayments.tsx`
+
+The existing renewal interface also has its own payment-method selector.
+
+Bring it into the same system.
+
+Ensure renewal customers see a proper payment review, understand the selected plan and accept the policy before being redirected to Paystack.
+
+### E. Other payment initialization paths
+
+Search the entire repository for:
+
+- `paystack-initialize`
+- `billingPost('paystack-initialize'`
+- Direct calls to the Paystack transaction initialization endpoint.
+- Any other customer payment initiation function.
+
+Ensure no customer checkout can bypass the new review and acceptance process.
+
+---
+
+# PART 5: TRANSACTION HISTORY — STRICT BRAND REDESIGN
+
+Relevant files:
+
+- `src/components/portal/FintechTransactionHistory.tsx`
+- `src/components/portal/FintechTransactionDetailsModal.tsx`
+
+The current transaction section does not consistently reflect the Jaystarbliss brand.
+
+It uses unrelated blue, cyan, emerald, amber, purple and rose styling.
+
+I want a thorough redesign using the same approved brand system established in the main dashboard redesign.
+
+### Approved palette
+
+Primary Navy:
+
+`#1E293B`
+
+Secondary Crimson:
+
+`#B91C1C`
+
+Neutral:
+
+`#F8FAFC`
+
+Supporting neutrals:
+
+`#FFFFFF`, `#F1F5F9`, `#E2E8F0`
+
+Dark surfaces:
+
+`#0B1120`, `#111827`, `#1E293B`
+
+Use light tints of the brand colours in light mode and suitable darker navy/slate surfaces with lighter brand-coloured typography in dark mode.
+
+Remove unrelated colour families from the transaction interface.
+
+### Redesign the transaction history
+
+Improve:
+
+- Transaction header.
+- Transaction filters.
+- Search.
+- Monthly selector.
+- Inflow/outflow summary.
+- Transaction rows.
+- Status indicators.
+- Download Statement button.
+- Analysis button.
+- Transaction detail modal.
+
+Use clear typography, well-aligned financial figures and subtle dividers.
+
+Do not wrap every piece of transaction metadata in rounded capsules.
+
+Transaction entries should be presented as clean financial records, not decorative fintech cards.
+
+Use appropriate visual emphasis to distinguish successful, partially paid, pending, failed and reversed transactions.
+
+Retain accurate status wording.
+
+Do not use colour alone to communicate a payment status.
+
+### Transaction details modal
+
+Make sure the expanded transaction details also follow the same institutional brand.
+
+Preserve:
+
+- Payment reference.
+- Transaction number.
+- Payer.
+- Beneficiary.
+- Programme.
+- Amount.
+- Payment method as actually reported by Paystack.
+- Transaction date.
+- Receipt download.
+- Existing support/report-issue functionality.
+
+Do not invent the payment method or assume that a particular channel was used.
+
+---
+
+# PART 6: COMPREHENSIVE FINANCIAL ANALYSIS WORKSPACE
+
+This is another major requirement.
+
+Currently, clicking the Analysis button opens a small modal containing only two financial totals and a few summary statements.
+
+I want this replaced with a comprehensive financial analysis experience.
+
+**Do not just enlarge the old modal. Build a meaningful financial analytics workspace.**
+
+You may use a large responsive modal, full-screen overlay or dedicated analytics workspace, whichever integrates best with the existing application.
+
+It must feel like a professional institutional financial analytics system.
+
+Use Recharts, which is already installed in the project.
+
+Do not install a new charting library.
+
+## 1. Analysis overview
+
+At the top, provide a concise financial overview.
+
+Depending on the user's role and the available records, consider:
+
+- Total transaction volume.
+- Total verified payments.
+- Total inflow.
+- Total outflow.
+- Total processing fees.
+- Total successful transactions.
+- Partially paid transactions.
+- Pending transactions.
+- Failed or reversed transactions.
+- Outstanding tuition balance where authoritative records support it.
+- Average transaction value.
+
+Do not display irrelevant metrics for a particular account type.
+
+Use accurate labels based on the account's financial perspective.
+
+For example, tuition payments are expenses from a parent's or school's perspective, whereas a staff wallet credit may represent incoming funds.
+
+Do not classify every transaction as an inflow simply because of the user's role.
+
+Use the actual transaction type and account context to determine transaction direction.
+
+## 2. Payment trends over time
+
+Introduce a Recharts chart showing transaction volume over time.
+
+A monthly line or area chart would be appropriate.
+
+Allow the user to switch between suitable date ranges, such as:
+
+- All available records.
+- Last 12 months.
+- Current year.
+- Selected month.
+
+Show actual totals and transaction counts.
+
+Tooltips should identify the period, amount and number of transactions.
+
+## 3. Transaction status distribution
+
+Add an appropriate donut or pie chart showing the distribution of:
+
+- Successful.
+- Partially paid.
+- Pending.
+- Failed.
+- Reversed or cancelled, where recorded.
+
+Do not count failed or pending transactions as successful income.
+
+Where unknown statuses exist, represent them as unknown rather than silently treating them as successful.
+
+## 4. Payment breakdown by programme or service
+
+Show how payment activity is distributed across available programmes, tuition tracks, subscriptions and other service categories.
+
+Use an appropriate horizontal bar chart or equivalent visualization.
+
+This should help the user understand which programmes or service categories account for the greatest payment activity.
+
+## 5. Payment-channel analysis
+
+Use the actual verified Paystack channel information stored in transaction records.
+
+Where historical records identify:
+
+- Card.
+- Bank Transfer.
+- Mobile Money.
+- Other Paystack-supported channels.
+
+Show the actual historical distribution.
+
+Do not invent channel information for transactions where the channel was not recorded.
+
+In those cases, use an Unknown/Not Recorded category.
+
+Do not introduce channel selection back into the payment interface just because payment-channel analytics exist.
+
+## 6. Learner, payer and beneficiary breakdowns
+
+Where the account's permissions and available data allow, provide breakdowns such as:
+
+- Payments by learner.
+- Payments by programme.
+- Payments by school.
+- Payments by beneficiary.
+- Payments by payer.
+
+For parents, show relevant payment activity associated with their own linked children.
+
+For schools, show transactions associated with their institution only.
+
+For staff, ensure financial analytics respect their authorized wallet and transaction scope.
+
+Never expose another user's payment records.
+
+## 7. Transaction statistics
+
+Include useful supplementary information such as:
+
+- Highest transaction.
+- Lowest transaction.
+- Average transaction value.
+- Most active payment period.
+- Transaction count per month.
+- Actual collected processing fees where recorded.
+- Outstanding balance where verified.
+
+Avoid presenting estimated gateway fees as verified fees.
+
+Clearly distinguish estimated amounts from actual recorded amounts.
+
+## 8. Detailed transaction analysis table
+
+Include a structured table beneath the charts.
+
+Suggested columns:
+
+- Transaction Date.
+- Reference.
+- Payer.
+- Beneficiary.
+- Programme / Description.
+- Transaction Status.
+- Payment Channel.
+- Amount.
+
+Allow the user to search, filter and review the relevant records.
+
+The analysis should be easy to understand without overwhelming the user.
+
+## 9. Analytics controls
+
+Include appropriate filters:
+
+- Date range.
+- Transaction status.
+- Programme/category.
+- Payment direction where relevant.
+- Learner or school where permitted.
+
+Allow the user to reset filters.
+
+Clearly display the selected analysis period and the number of records being analysed.
+
+Include an option to export the relevant statement using the existing PDF-generation functionality.
+
+---
+
+# PART 7: CRITICAL TRANSACTION DATA AUDIT
+
+This section is especially important.
+
+Inspect the current flow between:
+
+`BillingCenter.tsx`
+
+`FintechTransactionHistory.tsx`
+
+`src/lib/billing.ts`
+
+The current BillingCenter implementation maintains:
+
+- `allTransactions`
+- `payments`
+
+The `payments` collection is filtered to verified successful payments, while `allTransactions` retains pending, failed, partial and other records.
+
+Do not accidentally restrict comprehensive transaction analysis to only successful payments.
+
+Ensure that the transaction-history component and its analytics receive the full authorized transaction dataset.
+
+At the same time, preserve the existing success-only calculations where they are required for determining paid tuition and payment due dates.
+
+Use the correct data for each calculation.
+
+### Amount normalization
+
+The repository already contains financial normalization utilities:
+
+- `extractPaymentAmountNaira`
+- `extractPaymentBaseAmountNaira`
+- `isSuccessfulPaymentStatus`
+- `isPartiallyPaidStatus`
+
+Inspect and reuse these helpers where appropriate.
+
+Do not calculate financial analytics using inconsistent raw `Number(amount)` conversions.
+
+Some historical payment records may contain legacy Kobo-denominated values.
+
+Prevent double-counting, currency conversion errors and incorrect financial summaries.
+
+### Processing fees
+
+Inspect the relationship between:
+
+- `calculateCustomerCharge`
+- `chargePreview`
+- The amount sent to Paystack.
+- The actual verified transaction amount.
+- The actual Paystack gateway fees.
+- The final `customerTotal`.
+
+Ensure the amount presented in the payment-review modal accurately corresponds to what the customer will actually be charged.
+
+Do not display an estimated total as an actual charged total.
+
+Clearly identify estimated gateway fees and actual verified fees.
+
+Do not change the existing financial fee policy without understanding how the current calculation and reconciliation work.
+
+### Remove unsupported financial claims
+
+The current Analysis modal contains a hardcoded claim:
+
+"100% Escrow Reconciled"
+
+Remove this and similar unsupported statements.
+
+Only show financial verification percentages or reconciliation claims when they can be calculated from actual verified records.
+
+No synthetic statistics, fabricated percentages or assumed financial balances.
+
+---
+
+# PART 8: DESIGN REQUIREMENTS FOR FINANCIAL ANALYTICS
+
+The financial analytics workspace must follow the same brand restrictions as the previous dashboard redesign.
+
+Charts should primarily use:
+
+- Jaystarbliss Navy.
+- Jaystarbliss Crimson.
+- Approved lighter tints.
+- Neutral backgrounds.
+
+Do not revert to the previous blue/emerald/amber/purple fintech colour scheme.
+
+Use the appropriate brand tone to distinguish chart series.
+
+Keep charts clean and professional.
+
+Avoid excessive gradients, decorative effects, animated number counters that delay understanding, or unnecessary rounded containers.
+
+The analytics workspace should work properly in light and dark modes.
+
+On smaller screens:
+
+- Stack charts logically.
+- Keep KPI figures readable.
+- Make tables usable through responsive layouts.
+- Prevent horizontal overflow.
+- Ensure modal scrolling works correctly.
+
+Use clear chart titles, axes, legends, tooltips and textual summaries.
+
+---
+
+# PART 9: PRESERVE ALL EXISTING PAYMENT AND FINANCIAL WORKFLOWS
+
+Do not compromise the actual payment system while implementing these changes.
+
+Preserve:
+
+- Parent multi-child tuition payments.
+- Parent multi-programme payments.
+- Individual student payments.
+- School subscriptions.
+- Installment payments.
+- Payment percentage calculations.
+- Remaining balances.
+- Fee-policy calculations.
+- Enrolment-linked payments.
+- Staff wallet withdrawals.
+- Bank account verification for withdrawals.
+- OPay withdrawal support where currently available.
+- Paystack callback handling.
+- Paystack webhooks.
+- Server-side transaction verification.
+- Transaction idempotency.
+- Receipt generation.
+- Financial statements.
+- Billing history.
+- Existing account ownership validation.
+- Impersonation-mode payment restrictions.
+
+Ensure the new no-refund checkbox is applied to all relevant customer payments without interfering with staff wallet withdrawals or other non-customer-purchase operations.
+
+Do not change the security rules to bypass payment authorization.
+
+Do not generate fake payment records or successful statuses for demonstration.
+
+---
+
+# PART 10: TESTING AND ACCEPTANCE CRITERIA
+
+Test the actual workflows, not just the visual interface.
+
+### Checkout tests
+
+1. School customer can review an institutional subscription.
+2. Parent can review a single child's tuition.
+3. Parent can review multiple children's selected programmes.
+4. Individual student can review their payment.
+5. Membership renewal follows the same design.
+6. Payment-review details accurately identify the selected items.
+7. The no-refund checkbox is unchecked by default.
+8. The Pay through Paystack button remains disabled until consent is provided.
+9. An unaccepted payment request is rejected by the backend.
+10. Accepted policy information is recorded in transaction metadata and the verified payment record.
+11. No payment-channel selector appears in the customer-facing application.
+12. Paystack hosted checkout receives no restrictive fixed channel list.
+13. Paystack verification and webhooks still work correctly.
+14. Duplicate submissions are prevented.
+15. Staff withdrawal methods remain functional.
+
+### Analytics tests
+
+1. Analysis receives all authorized transaction statuses.
+2. Successful payments are calculated correctly.
+3. Pending and failed payments are not included in verified paid totals.
+4. Legacy Kobo amounts are normalized correctly.
+5. Transaction fees are not double-counted.
+6. Monthly charts use actual transaction dates.
+7. Status distribution uses actual records.
+8. Payment-channel analysis uses verified channel information.
+9. Parent and school data isolation remains intact.
+10. Empty datasets produce proper empty states rather than fabricated charts.
+11. PDF statement exports continue to work.
+
+### Visual tests
+
+Test the payment and transaction interfaces at:
+
+- 375px mobile.
+- 768px tablet.
+- 1024px laptop.
+- 1440px desktop.
+
+Test light and dark modes.
+
+Ensure the final design consistently follows the Jaystarbliss brand palette.
+
+Run:
+
+`npm run build`
+
+`npm run lint`
+
+Run relevant existing tests and any additional payment-flow tests you introduce.
+
+Do not deploy automatically.
+
+Do not merge into main automatically.
+
+---
+
+# FINAL EXPECTATION
+
+I want the payment experience to feel like a proper institutional financial process.
+
+Customers should not be confronted with a long list of payment methods inside our platform.
+
+They should understand what they are paying for, review the total, explicitly acknowledge the no-refund policy and then proceed to Paystack's secure checkout.
+
+The transaction-history interface should feel like a professional financial records system.
+
+Clicking Analysis should open a genuinely comprehensive analytical experience, not another small popup containing two figures.
+
+Everything must remain consistent with the Jaystarbliss Studios visual identity.
+
+Implement these requirements across all relevant payment entry points, not just the most obvious component.
+
+At completion, report:
+
+- All checkout components updated.
+- Customer-facing payment selectors removed.
+- Backend Paystack initialization changes.
+- Payment-policy enforcement and audit implementation.
+- Financial analysis visualizations introduced.
+- Transaction data sources and calculations used.
+- Existing payment workflows preserved.
+- Tests performed and their results.
+- Any remaining issues.

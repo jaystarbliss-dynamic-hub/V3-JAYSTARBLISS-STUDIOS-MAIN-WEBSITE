@@ -279,21 +279,21 @@ const StudentLiveClassrooms: React.FC = () => {
           <button
             type="button"
             onClick={() => setFilterTab('LIVE')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5 tabular-nums ${
               filterTab === 'LIVE'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100'
+                ? 'bg-[#B91C1C] text-white'
+                : 'bg-red-50 dark:bg-red-950/30 text-[#B91C1C] dark:text-red-400 hover:bg-red-100'
             }`}
           >
-            <Radio size={12} className={liveCount > 0 ? 'animate-pulse' : ''} /> Live Now ({liveCount})
+            <Radio size={12} /> Live Now ({liveCount})
           </button>
           <button
             type="button"
             onClick={() => setFilterTab('UPCOMING')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5 tabular-nums ${
               filterTab === 'UPCOMING'
-                ? 'bg-brand-red text-white'
-                : 'bg-red-50 dark:bg-red-950/40 text-brand-red hover:bg-red-100'
+                ? 'bg-[#1E293B] text-white dark:bg-white dark:text-[#1E293B]'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
             }`}
           >
             <Calendar size={12} /> Upcoming ({upcomingCount})
@@ -318,7 +318,7 @@ const StudentLiveClassrooms: React.FC = () => {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search sessions or tutors..."
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 pl-9 pr-3 py-2 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:border-brand-red"
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 pl-9 pr-3 py-2 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:border-[#B91C1C]"
             />
           </div>
         </div>
@@ -327,7 +327,7 @@ const StudentLiveClassrooms: React.FC = () => {
       {/* Loading state */}
       {loading ? (
         <div className="pro-surface rounded-2xl p-12 text-center text-sm text-slate-500">
-          <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-brand-red border-t-transparent" />
+          <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-[#B91C1C] border-t-transparent" />
           <p className="mt-3">Loading your live sessions and classroom schedule…</p>
         </div>
       ) : filteredSessions.length === 0 ? (
@@ -353,46 +353,47 @@ const StudentLiveClassrooms: React.FC = () => {
                 key={s.id}
                 className={`pro-surface rounded-2xl p-5 border transition flex flex-col justify-between ${
                   isLive
-                    ? 'border-emerald-500/60 bg-gradient-to-br from-emerald-950/20 via-slate-900/40 to-slate-900 ring-2 ring-emerald-500/20'
+                    ? 'border-[#B91C1C]/60 bg-slate-50 dark:bg-slate-900/80'
                     : 'border-slate-200 dark:border-slate-800'
                 }`}
               >
                 <div>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                       {isLive ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-[10px] font-black uppercase text-white shadow-xs">
-                          <Radio size={12} className="animate-spin" /> LIVE NOW
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase text-[#B91C1C] dark:text-red-400">
+                          <Radio size={12} /> LIVE NOW
                         </span>
                       ) : isUpcoming ? (
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-brand-red/10 px-2.5 py-1 text-[10px] font-black uppercase text-brand-red">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase text-[#1E293B] dark:text-slate-200">
                           <Calendar size={11} /> UPCOMING
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-slate-200 dark:bg-slate-800 px-2.5 py-1 text-[10px] font-black uppercase text-slate-600 dark:text-slate-400">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">
                           <CheckCircle2 size={11} /> COMPLETED
                         </span>
                       )}
 
-                      <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                      <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                         {s.platform || 'Virtual Room'}
                       </span>
                     </div>
 
                     {s.meetingTime && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
                         <Clock size={11} />
                         {s.meetingTime}
                       </span>
                     )}
                   </div>
 
-                  <h2 className="mt-3 text-base font-black text-slate-900 dark:text-white">
+                  <h2 className="mt-2.5 text-base font-black text-slate-900 dark:text-white">
                     {s.title}
                   </h2>
 
                   {s.formattedDate && (
-                    <p className="mt-1 text-xs font-bold text-brand-red dark:text-red-400 flex items-center gap-1">
+                    <p className="mt-1 text-xs font-bold text-[#B91C1C] dark:text-red-400 flex items-center gap-1">
                       <Calendar size={12} />
                       {s.formattedDate}
                     </p>
@@ -406,7 +407,7 @@ const StudentLiveClassrooms: React.FC = () => {
 
                   {s.tutorName && (
                     <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                      <UserCheck size={12} className="text-brand-red" />
+                      <UserCheck size={12} className="text-[#B91C1C]" />
                       Assigned Faculty: <span className="font-bold text-slate-800 dark:text-slate-200">{s.tutorName}</span>
                     </p>
                   )}
@@ -414,7 +415,7 @@ const StudentLiveClassrooms: React.FC = () => {
 
                 <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
                   <span className="text-[11px] text-slate-500 font-medium">
-                    {isLive ? '🟢 Room is active right now' : isUpcoming ? '⏳ Scheduled session' : 'Completed session'}
+                    {isLive ? 'Room is active right now' : isUpcoming ? 'Scheduled session' : 'Completed session'}
                   </span>
 
                   {(() => {
@@ -426,8 +427,8 @@ const StudentLiveClassrooms: React.FC = () => {
                         rel="noopener noreferrer"
                         className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl px-4 text-xs font-bold text-white transition ${
                           isLive
-                            ? 'bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-900/30'
-                            : 'bg-brand-red hover:bg-red-700'
+                            ? 'bg-[#B91C1C] hover:bg-[#991B1B]'
+                            : 'bg-[#1E293B] hover:bg-[#0F172A] dark:bg-[#B91C1C] dark:hover:bg-[#991B1B]'
                         }`}
                       >
                         {isLive ? 'Join Live Class Now' : 'Join Class'} <ExternalLink size={13} />

@@ -144,45 +144,45 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
     }
   };
 
-  const renderStatusPill = (node: ComputedProgramNodeProgress) => {
+  const renderStatusLabel = (node: ComputedProgramNodeProgress) => {
     const status = node.children.length > 0 && !node.isHybrid ? node.status : node.selfStatus;
     if (status === 'PRIOR_LEARNING_APPROVED') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
-          <Award size={11} /> Prior Learning Approved
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-800 dark:text-slate-200">
+          <Award size={12} className="text-brand-red shrink-0" aria-hidden="true" /> Prior Learning Approved
         </span>
       );
     }
     if (status === 'COMPLETED') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-green-100 text-green-800">
-          <CheckCircle2 size={11} /> Completed
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-800 dark:text-slate-200">
+          <CheckCircle2 size={12} className="text-slate-900 dark:text-white shrink-0" aria-hidden="true" /> Completed
         </span>
       );
     }
     if (status === 'CURRENT') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-100 text-indigo-800">
-          <Clock size={11} /> Currently Learning
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-red">
+          <Clock size={12} className="shrink-0" aria-hidden="true" /> Currently Learning
         </span>
       );
     }
     if (status === 'LOCKED') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-800">
-          <Lock size={11} /> Locked (Prerequisite Required)
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+          <Lock size={12} className="shrink-0" aria-hidden="true" /> Locked (Prerequisite Required)
         </span>
       );
     }
     if (status === 'OPTIONAL') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">
+        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
           Optional Unit
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">
+      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
         Upcoming
       </span>
     );
@@ -202,11 +202,11 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
     return (
       <div key={p.id} className="select-none">
         <div
-          className={`p-3.5 rounded-xl border mb-2 transition-all ${
+          className={`p-3.5 rounded-xl border mb-2 transition-colors ${
             node.selfStatus === 'PRIOR_LEARNING_APPROVED' || node.status === 'COMPLETED'
-              ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/50'
+              ? 'bg-slate-50 dark:bg-slate-900/70 border-slate-300 dark:border-slate-700'
               : node.status === 'CURRENT'
-              ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800'
+              ? 'bg-red-50/40 dark:bg-red-950/15 border-red-200 dark:border-red-900/50'
               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
           }`}
           style={{ marginLeft: `${Math.min(node.depth, 8) * 18}px` }}
@@ -217,7 +217,7 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
                 <button
                   type="button"
                   onClick={() => toggleExpand(expandKey)}
-                  className="mt-0.5 p-1 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 text-slate-600"
+                  className="mt-0.5 p-1 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 text-slate-600 cursor-pointer"
                 >
                   {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                 </button>
@@ -233,28 +233,24 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
                     <Folder size={17} className="text-brand-red" />
                   )
                 ) : (
-                  <BookOpen size={16} className="text-indigo-600" />
+                  <BookOpen size={16} className="text-slate-700 dark:text-slate-300" />
                 )}
               </div>
 
               <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                   <span className="font-bold text-sm text-slate-900 dark:text-white">
                     {p.title}
                   </span>
                   {hasChildren && (
-                    <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 tabular-nums">
                       — {pct}% complete
                     </span>
                   )}
-                  {renderStatusPill(node)}
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                      node.isRequiredForStudent
-                        ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                        : 'bg-amber-50 text-amber-800'
-                    }`}
-                  >
+                  <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                  {renderStatusLabel(node)}
+                  <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                     {node.isRequiredForStudent ? 'Required' : 'Optional'}
                   </span>
                 </div>
@@ -270,7 +266,7 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
                 )}
 
                 {node.priorLearningRecord?.status === 'PENDING' && (
-                  <div className="text-[11px] text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg font-medium">
+                  <div className="text-[11px] text-brand-red dark:text-red-300 bg-red-50/60 dark:bg-red-950/20 px-2.5 py-1 rounded-lg font-medium">
                     Prior-Learning Recognition Request Pending Tutor Verification
                   </div>
                 )}
@@ -281,12 +277,12 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
               <div className="w-28">
                 <div className="flex justify-between text-[10px] font-bold text-slate-500 mb-1">
                   <span>{hasChildren && !countsOwnUnit ? 'Branch' : 'Unit'}</span>
-                  <span className="text-slate-900 dark:text-white">{pct}%</span>
+                  <span className="text-slate-900 dark:text-white tabular-nums">{pct}%</span>
                 </div>
-                <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 overflow-hidden">
                   <div
                     className={`h-full transition-all ${
-                      pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-600'
+                      pct >= 100 ? 'bg-slate-900 dark:bg-white' : 'bg-brand-red'
                     }`}
                     style={{ width: `${pct}%` }}
                   />
@@ -304,7 +300,7 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
                       setReqEvidence('');
                       setReqNotes('');
                     }}
-                    className="px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50/70 text-emerald-800 text-[10px] font-bold hover:bg-emerald-100"
+                    className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[10px] font-bold hover:border-brand-red hover:text-brand-red cursor-pointer"
                     title="Request Prior-Learning Recognition if your child already completed this module"
                   >
                     Request Prior Credit
@@ -335,20 +331,20 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <GraduationCap className="w-6 h-6 text-indigo-600" />
-          <h3 className="text-xl font-black text-slate-900 dark:text-white">
+          <GraduationCap className="w-5 h-5 text-brand-red" aria-hidden="true" />
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">
             Children&apos;s Enrolled Programmes &amp; Learning Progress
           </h3>
         </div>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-slate-500 dark:text-slate-400">
           Expand any programme folder to inspect nested modules, current focus, and verified prior-learning credits.
         </p>
       </div>
 
       {feedbackMsg && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center justify-between">
+        <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold flex items-center justify-between">
           <span>{feedbackMsg}</span>
-          <button onClick={() => setFeedbackMsg(null)} className="font-bold underline">
+          <button onClick={() => setFeedbackMsg(null)} className="font-bold underline cursor-pointer">
             Dismiss
           </button>
         </div>
@@ -366,19 +362,19 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
           return (
             <div
               key={student.id}
-              className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-5"
+              className="border-t border-slate-200 dark:border-slate-800 pt-5 space-y-4"
             >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                 <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="font-black text-lg text-slate-900 dark:text-white">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h4 className="font-bold text-base text-slate-900 dark:text-white">
                       {student.fullName || student.studentName || student.name}
                     </h4>
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                    <span className="text-xs font-semibold text-brand-red tabular-nums">
                       Overall Pathway: {summary.overallProgress}% Complete
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
                     {summary.completedRequiredUnits} of {summary.totalRequiredUnits} required learning units completed
                     {summary.priorLearningApprovedUnits > 0
                       ? ` (${summary.priorLearningApprovedUnits} via verified Prior-Learning Recognition)`
@@ -386,28 +382,25 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
                   </p>
                 </div>
 
-                {/* Current Focus Highlights */}
                 {summary.currentUnits.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-semibold text-slate-500 dark:text-slate-400">
                       Current Focus:
                     </span>
-                    {summary.currentUnits.slice(0, 2).map((u) => (
-                      <span
-                        key={u.program.id}
-                        className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold"
-                      >
-                        {u.program.title} ({u.selfProgress}%)
-                      </span>
-                    ))}
+                    <span className="font-bold text-slate-900 dark:text-white tabular-nums">
+                      {summary.currentUnits
+                        .slice(0, 2)
+                        .map((u) => `${u.program.title} (${u.selfProgress}%)`)
+                        .join(' · ')}
+                    </span>
                   </div>
                 )}
               </div>
 
               {summary.rootBranches.length === 0 ? (
-                <div className="p-6 rounded-xl bg-amber-50/50 border border-amber-200 text-center space-y-1">
-                  <AlertCircle className="w-6 h-6 text-amber-600 mx-auto" />
-                  <div className="text-xs font-bold text-slate-800">
+                <div className="p-5 rounded-lg border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-center space-y-1">
+                  <AlertCircle className="w-5 h-5 text-brand-red mx-auto" aria-hidden="true" />
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
                     Pending Programme Pathway Confirmation
                   </div>
                   <p className="text-xs text-slate-500">
@@ -433,8 +426,8 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
           >
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <Award size={18} className="text-emerald-600" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Award size={18} className="text-brand-red" />
                   <span>Request Prior-Learning Recognition</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -511,7 +504,7 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
               <button
                 type="submit"
                 disabled={submittingReq}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-brand-red text-white text-xs font-bold hover:bg-red-800 disabled:opacity-50 cursor-pointer"
               >
                 <Send size={13} />
                 <span>{submittingReq ? 'Submitting...' : 'Submit Request for Verification'}</span>

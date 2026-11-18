@@ -167,12 +167,12 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
       {/* ============================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 dark:border-slate-800 pb-5">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-baseline gap-2.5">
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
               Assessment Overview
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-              {assessments.length} Total
+            <span className="text-xs font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400 tabular-nums">
+              · {assessments.length} Total
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
@@ -194,7 +194,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
           <button
             type="button"
             onClick={onCreateAssessment}
-            className="min-h-[42px] px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md hover:shadow-lg transition-all cursor-pointer inline-flex items-center gap-2"
+            className="min-h-[42px] px-5 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white font-bold text-xs sm:text-sm shadow-sm transition-all cursor-pointer inline-flex items-center gap-2"
           >
             <PlusCircle size={17} />
             <span>Create Assessment</span>
@@ -251,7 +251,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by title, subject, school..."
-            className="w-full pl-9 pr-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            className="w-full pl-9 pr-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1E293B]/20 focus:border-[#1E293B]"
           />
         </div>
       </div>
@@ -266,7 +266,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
+          className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold focus:outline-none focus:border-[#1E293B] cursor-pointer"
         >
           <option value="ALL">All Programme Categories</option>
           <option value="technology">Technology</option>
@@ -279,7 +279,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
+          className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold focus:outline-none focus:border-[#1E293B] cursor-pointer"
         >
           <option value="ALL">All Statuses</option>
           <option value="active">Active (Published)</option>
@@ -292,7 +292,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
         <select
           value={workTypeFilter}
           onChange={(e) => setWorkTypeFilter(e.target.value)}
-          className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
+          className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold focus:outline-none focus:border-[#1E293B] cursor-pointer"
         >
           <option value="ALL">All Assessment Types</option>
           <option value="ASSIGNMENT">Assignment</option>
@@ -305,7 +305,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
         <select
           value={deliveryFilter}
           onChange={(e) => setDeliveryFilter(e.target.value)}
-          className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
+          className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold focus:outline-none focus:border-[#1E293B] cursor-pointer"
         >
           <option value="ALL">All Formats</option>
           <option value="NATIVE">Native Studio</option>
@@ -322,7 +322,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
               setDeliveryFilter('ALL');
               setSearchQuery('');
             }}
-            className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer ml-auto"
+            className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline cursor-pointer ml-auto"
           >
             Reset Filters
           </button>
@@ -333,13 +333,13 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
       {/* 3. ASSESSMENTS TABLE / LIST PRESENTATION                       */}
       {/* ============================================================== */}
       {isLoading ? (
-        <div className="p-12 text-center rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161B26] space-y-3">
-          <RefreshCw size={24} className="mx-auto text-blue-600 animate-spin" />
+        <div className="p-12 text-center rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161B26] space-y-3">
+          <RefreshCw size={24} className="mx-auto text-[#1E293B] dark:text-slate-300 animate-spin" />
           <p className="text-xs font-bold text-slate-500">Loading authorized assessments...</p>
         </div>
       ) : filteredAssessments.length === 0 ? (
-        <div className="p-12 text-center rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161B26] space-y-4">
-          <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
+        <div className="p-12 text-center rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161B26] space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 flex items-center justify-center mx-auto">
             <BookOpen size={28} />
           </div>
           <div className="space-y-1">
@@ -355,7 +355,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
           <button
             type="button"
             onClick={onCreateAssessment}
-            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs cursor-pointer inline-flex items-center gap-2"
+            className="px-5 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white font-bold text-xs shadow-xs cursor-pointer inline-flex items-center gap-2"
           >
             <PlusCircle size={15} /> Create Assessment
           </button>
@@ -399,32 +399,15 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                     >
                       {/* 1. Assessment Title & Format */}
                       <td className="py-4 px-4 sm:px-6">
-                        <div className="space-y-1.5 min-w-[180px]">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${
-                                wt === 'ASSIGNMENT'
-                                  ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
-                                  : wt === 'TEST'
-                                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
-                                  : wt === 'ACTIVITY'
-                                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                  : 'bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300'
-                              }`}
-                            >
+                        <div className="space-y-1 min-w-[180px]">
+                          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            <span className={wt === 'EXAMINATION' ? 'text-[#B91C1C] dark:text-red-400' : 'text-[#1E293B] dark:text-slate-200'}>
                               {wt}
                             </span>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                                isExternal
-                                  ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
-                                  : 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-                              }`}
-                            >
-                              {isExternal ? 'External Link' : 'Native'}
-                            </span>
-                          </div>
-                          <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                            <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
+                            <span>{isExternal ? 'External Link' : 'Native Studio'}</span>
+                          </p>
+                          <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm group-hover:text-[#B91C1C] dark:group-hover:text-red-400 transition-colors">
                             {exam.title || 'Untitled Assessment'}
                           </p>
                         </div>
@@ -436,19 +419,17 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                           <p className="font-bold text-slate-800 dark:text-slate-200">
                             {exam.subject || 'General Studies'}
                           </p>
-                          <p className="text-[11px] text-slate-400">
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
                             {exam.targetClass || exam.className || 'All Grades'}
                           </p>
                           {(exam.programTitle || exam.programBreadcrumbs) && (
-                            <div className="pt-0.5">
-                              <span
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 text-[10px] font-bold max-w-[200px] truncate"
-                                title={exam.programBreadcrumbs || exam.programTitle}
-                              >
-                                <Tag size={9} className="shrink-0 text-blue-500" />
-                                <span className="truncate">{exam.programBreadcrumbs || exam.programTitle}</span>
-                              </span>
-                            </div>
+                            <p
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-[#1E293B] dark:text-slate-300 max-w-[200px] truncate"
+                              title={exam.programBreadcrumbs || exam.programTitle}
+                            >
+                              <Tag size={9} className="shrink-0 text-[#B91C1C] dark:text-red-400" />
+                              <span className="truncate">{exam.programBreadcrumbs || exam.programTitle}</span>
+                            </p>
                           )}
                         </div>
                       </td>
@@ -457,13 +438,13 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                       <td className="py-4 px-4">
                         <div className="space-y-1">
                           {isMultiTarget ? (
-                            <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-bold">
-                              <Users size={13} />
+                            <div className="flex items-center gap-1.5 text-[#1E293B] dark:text-slate-200 font-bold tabular-nums">
+                              <Users size={13} className="text-[#B91C1C] dark:text-red-400" />
                               <span>Multi-Target ({exam.targetSchoolIds?.length || 0} Schools, {exam.targetStudentIds?.length || 0} Private)</span>
                             </div>
                           ) : isPriv ? (
-                            <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
-                              <User size={13} />
+                            <div className="flex items-center gap-1.5 text-[#1E293B] dark:text-slate-200 font-bold tabular-nums">
+                              <User size={13} className="text-slate-500 dark:text-slate-400" />
                               <span>Private Learners ({exam.targetStudentIds?.length || 1})</span>
                             </div>
                           ) : (
@@ -477,7 +458,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
 
                       {/* 4. Questions & Marks */}
                       <td className="py-4 px-4 whitespace-nowrap">
-                        <div className="space-y-0.5 text-[11px] text-slate-500">
+                        <div className="space-y-0.5 text-[11px] text-slate-500 tabular-nums">
                           {isExternal ? (
                             <span className="font-semibold text-slate-400">External Form</span>
                           ) : (
@@ -497,27 +478,18 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                       <td className="py-4 px-4 whitespace-nowrap">
                         <div className="space-y-1">
                           <span
-                            className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                            className={`text-[11px] font-black uppercase tracking-wider ${
                               statusLower === 'active'
-                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                ? 'text-[#B91C1C] dark:text-red-400'
                                 : statusLower === 'scheduled'
-                                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                ? 'text-[#1E293B] dark:text-slate-200'
+                                : 'text-slate-500 dark:text-slate-400'
                             }`}
                           >
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                statusLower === 'active'
-                                  ? 'bg-emerald-500'
-                                  : statusLower === 'scheduled'
-                                  ? 'bg-blue-500'
-                                  : 'bg-slate-400'
-                              }`}
-                            />
                             {statusLower === 'active' ? 'Active' : statusLower === 'scheduled' ? 'Scheduled' : 'Draft'}
                           </span>
                           {exam.passcode && (
-                            <p className="text-[10px] font-mono text-slate-400">
+                            <p className="text-[10px] font-mono text-slate-400 tabular-nums">
                               Passcode: <strong>{exam.passcode}</strong>
                             </p>
                           )}
@@ -540,7 +512,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                             <button
                               type="button"
                               onClick={() => onMonitorAssessment(exam)}
-                              className="p-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 transition-colors cursor-pointer"
+                              className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 hover:border-[#B91C1C] hover:text-[#B91C1C] dark:hover:text-red-400 transition-colors cursor-pointer"
                               title="Monitor Responses & Submissions"
                             >
                               <Activity size={14} />

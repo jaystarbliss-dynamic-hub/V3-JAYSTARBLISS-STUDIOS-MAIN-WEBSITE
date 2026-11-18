@@ -361,9 +361,9 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white dark:bg-[#161B26] border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="p-5 sm:p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/60 dark:to-[#161B26]">
+        <div className="p-5 sm:p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-900/60">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-slate-200/70 dark:bg-slate-800 text-[#1E293B] dark:text-white flex items-center justify-center shrink-0">
               <Upload size={20} />
             </div>
             <div>
@@ -431,9 +431,9 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
           {/* METHOD A: TEXT PARSER */}
           {activeTab === 'text' && (
             <div className="space-y-3">
-              <div className="p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 flex items-start gap-2.5">
-                <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                <div className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start gap-2.5">
+                <AlertTriangle size={16} className="text-[#B91C1C] dark:text-red-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
                   <strong>Question parsing and CSV/Excel importing currently support Multiple Choice Questions (MCQs) only.</strong>{' '}
                   Numbered questions (1, 2, 3...) with option letters (A, B, C, D) and an optional ANSWER KEY block will be automatically converted into native quiz units.
                 </div>
@@ -447,12 +447,12 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                   <button
                     type="button"
                     onClick={copySampleFormat}
-                    className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                    className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
                   >
                     {hasCopiedSample ? <Check size={13} /> : <Copy size={13} />}
                     {hasCopiedSample ? 'Copied Sample!' : 'Copy Sample Format'}
                   </button>
-                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                  <span className="text-slate-300 dark:text-slate-700">·</span>
                   <button
                     type="button"
                     onClick={() => setRawText(SAMPLE_SCRIPT_TEMPLATE)}
@@ -468,26 +468,26 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
                 placeholder="Paste formatted questions here..."
-                className="w-full font-mono text-xs p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 leading-relaxed"
+                className="w-full font-mono text-xs p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1E293B]/20 focus:border-[#1E293B] leading-relaxed"
               />
 
               <div className="flex items-center justify-between gap-3 pt-1">
                 <button
                   type="button"
                   onClick={handleParseScript}
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5"
                 >
                   <Sparkles size={14} /> Parse Questions
                 </button>
                 {parsedTextQuestions.length > 0 && (
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 size={14} /> {parsedTextQuestions.length} MCQ Question(s) Parsed & Ready
+                  <span className="text-xs font-bold text-[#1E293B] dark:text-white flex items-center gap-1 tabular-nums">
+                    <CheckCircle2 size={14} className="text-[#B91C1C] dark:text-red-400" /> {parsedTextQuestions.length} MCQ Question(s) Parsed &amp; Ready
                   </span>
                 )}
               </div>
 
               {textWarnings.length > 0 && (
-                <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                <div className="p-3 rounded-2xl bg-red-50/70 dark:bg-red-950/30 border border-red-200 dark:border-red-900/60 text-xs text-red-800 dark:text-red-200 space-y-1">
                   {textWarnings.map((w, idx) => (
                     <p key={idx}>• {w}</p>
                   ))}
@@ -499,9 +499,9 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
           {/* METHOD B: CSV / EXCEL UPLOAD */}
           {activeTab === 'csv' && (
             <div className="space-y-4">
-              <div className="p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 flex items-start gap-2.5">
-                <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                <div className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start gap-2.5">
+                <AlertTriangle size={16} className="text-[#B91C1C] dark:text-red-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
                   <strong>Question parsing and CSV/Excel importing currently support Multiple Choice Questions (MCQs) only.</strong>{' '}
                   Format your spreadsheet columns as instructed below.
                 </div>
@@ -516,7 +516,7 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                   <button
                     type="button"
                     onClick={handleDownloadSampleCsv}
-                    className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                    className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
                   >
                     <Download size={13} /> Download Sample CSV Template
                   </button>
@@ -547,8 +547,8 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
               </div>
 
               {/* Upload Dropzone */}
-              <div className="p-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl text-center space-y-3 bg-white dark:bg-slate-900/60">
-                <Upload size={36} className="mx-auto text-blue-600 dark:text-blue-400" />
+              <div className="p-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl text-center space-y-3 bg-white dark:bg-slate-900/60">
+                <Upload size={36} className="mx-auto text-[#1E293B] dark:text-slate-300" />
                 <div>
                   <p className="text-sm font-black text-slate-800 dark:text-white">
                     Choose a CSV Question File
@@ -557,7 +557,7 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                     Select a comma-separated values (.csv) file formatted according to the template above.
                   </p>
                 </div>
-                <label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-xs">
+                <label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] text-white text-xs font-bold cursor-pointer transition-colors shadow-xs">
                   <span>Browse .CSV File</span>
                   <input
                     type="file"
@@ -577,15 +577,15 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
               </div>
 
               {parsedCsvQuestions.length > 0 && (
-                <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#1E293B] dark:text-white tabular-nums">
                     ✓ Successfully parsed {parsedCsvQuestions.length} MCQ questions from file!
                   </span>
                 </div>
               )}
 
               {csvWarnings.length > 0 && (
-                <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                <div className="p-3 rounded-2xl bg-red-50/70 dark:bg-red-950/30 border border-red-200 dark:border-red-900/60 text-xs text-red-800 dark:text-red-200 space-y-1">
                   {csvWarnings.map((w, idx) => (
                     <p key={idx}>• {w}</p>
                   ))}
@@ -609,9 +609,9 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                       setBankCategoryFilter('ALL');
                       setBankProgramFilter('ALL');
                     }}
-                    className={`px-2.5 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-colors ${
+                    className={`px-2.5 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                       bankCategoryFilter === 'ALL'
-                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                        ? 'bg-[#1E293B] text-white dark:bg-white dark:text-slate-900'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
                     }`}
                   >
@@ -625,9 +625,9 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                         setBankCategoryFilter(root.key);
                         setBankProgramFilter('ALL');
                       }}
-                      className={`px-2.5 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-colors ${
+                      className={`px-2.5 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                         bankCategoryFilter === root.key
-                          ? 'bg-blue-600 text-white shadow-2xs'
+                          ? 'bg-[#B91C1C] text-white shadow-2xs'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
                       }`}
                     >
@@ -646,14 +646,14 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                     value={bankSearch}
                     onChange={(e) => setBankSearch(e.target.value)}
                     placeholder="Search bank questions by keyword..."
-                    className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                    className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#1E293B]"
                   />
                 </div>
                 <div>
                   <select
                     value={bankSubjectFilter}
                     onChange={(e) => setBankSubjectFilter(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:border-[#1E293B]"
                   >
                     <option value="ALL">All Subjects</option>
                     {bankSubjects.map((sub) => (
@@ -667,7 +667,7 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                   <select
                     value={bankProgramFilter}
                     onChange={(e) => setBankProgramFilter(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:border-[#1E293B]"
                   >
                     <option value="ALL">All Specific Sub-Programmes</option>
                     {bankPrograms.map((prg) => (
@@ -688,17 +688,17 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                   <button
                     type="button"
                     onClick={selectAllBankItems}
-                    className="text-blue-600 dark:text-blue-400 font-bold hover:underline cursor-pointer"
+                    className="text-[#1E293B] dark:text-slate-200 font-bold hover:underline cursor-pointer"
                   >
                     Select Visible
                   </button>
                   {selectedBankIds.size > 0 && (
                     <>
-                      <span className="text-slate-300">•</span>
+                      <span className="text-slate-300">·</span>
                       <button
                         type="button"
                         onClick={() => setSelectedBankIds(new Set())}
-                        className="text-red-600 font-bold hover:underline cursor-pointer"
+                        className="text-[#B91C1C] dark:text-red-400 font-bold hover:underline cursor-pointer"
                       >
                         Clear Selection ({selectedBankIds.size})
                       </button>
@@ -709,7 +709,7 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
 
               {/* Question list */}
               {filteredBankQuestions.length === 0 ? (
-                <div className="p-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl text-center space-y-2">
+                <div className="p-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-center space-y-2">
                   <BookOpen size={28} className="mx-auto text-slate-400" />
                   <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
                     No matching questions found in the Question Bank.
@@ -728,29 +728,32 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                         onClick={() => toggleBankItem(item.id)}
                         className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
                           isSelected
-                            ? 'bg-blue-50/80 border-blue-300 dark:bg-blue-950/40 dark:border-blue-700 shadow-xs'
+                            ? 'bg-slate-100/80 border-[#1E293B] dark:bg-slate-800/80 dark:border-slate-400 shadow-xs'
                             : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                         }`}
                       >
                         <div className="space-y-1.5 flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            <span className="font-black text-[#1E293B] dark:text-slate-200">
                               {item.type.replace('_', ' ')}
                             </span>
                             {item.subject && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
-                                {item.subject}
-                              </span>
+                              <>
+                                <span className="text-slate-300 dark:text-slate-600">·</span>
+                                <span className="text-[#B91C1C] dark:text-red-400">{item.subject}</span>
+                              </>
                             )}
                             {(item.breadcrumbPath || item.programTitle) && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 inline-flex items-center gap-1 max-w-[220px] truncate">
-                                <Tag size={9} className="shrink-0" />
-                                <span className="truncate">{item.breadcrumbPath || item.programTitle}</span>
-                              </span>
+                              <>
+                                <span className="text-slate-300 dark:text-slate-600">·</span>
+                                <span className="inline-flex items-center gap-1 max-w-[220px] truncate normal-case">
+                                  <Tag size={9} className="shrink-0" />
+                                  <span className="truncate">{item.breadcrumbPath || item.programTitle}</span>
+                                </span>
+                              </>
                             )}
-                            <span className="text-[10px] font-bold text-slate-400">
-                              {item.points} Mark(s)
-                            </span>
+                            <span className="text-slate-300 dark:text-slate-600">·</span>
+                            <span className="tabular-nums">{item.points} Mark(s)</span>
                           </div>
                           <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
                             {item.prompt}
@@ -768,7 +771,7 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                         <div
                           className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 border transition-colors mt-1 ${
                             isSelected
-                              ? 'bg-blue-600 border-blue-600 text-white'
+                              ? 'bg-[#1E293B] border-[#1E293B] dark:bg-white dark:border-white text-white dark:text-[#1E293B]'
                               : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800'
                           }`}
                         >
@@ -785,7 +788,7 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
 
         {/* Footer */}
         <div className="p-4 sm:p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex items-center justify-between gap-3">
-          <div className="text-xs text-slate-500">
+          <div className="text-xs text-slate-500 tabular-nums">
             {activeTab === 'text' && `${parsedTextQuestions.length} question(s) parsed`}
             {activeTab === 'csv' && `${parsedCsvQuestions.length} question(s) parsed`}
             {activeTab === 'bank' && `${selectedBankIds.size} question(s) selected`}
@@ -806,7 +809,7 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                 (activeTab === 'bank' && selectedBankIds.size === 0)
               }
               onClick={handleFinalImport}
-              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+              className="px-5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 disabled:opacity-50 text-white text-xs font-bold shadow-xs cursor-pointer inline-flex items-center gap-1.5"
             >
               <Check size={14} />
               Add Questions to Assessment

@@ -188,7 +188,7 @@ export const StudentEnrollmentApprovalModal: React.FC<Props> = ({
                 {student?.name || student?.fullName || student?.studentName}
               </strong>
               {student?.chosenProgram || student?.selectedPlan || student?.programName ? (
-                <span className="ml-2 text-indigo-600 dark:text-indigo-400 font-semibold">
+                <span className="ml-2 text-[#B91C1C] dark:text-red-400 font-semibold">
                   (Requested: {student.chosenProgram || student.selectedPlan || student.programName})
                 </span>
               ) : null}
@@ -259,8 +259,8 @@ export const StudentEnrollmentApprovalModal: React.FC<Props> = ({
           </div>
 
           {selectedProgramIds.length === 0 && (
-            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
-              <AlertTriangle size={16} className="shrink-0 text-amber-600" />
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs flex items-center gap-2">
+              <AlertTriangle size={16} className="shrink-0 text-[#B91C1C] dark:text-red-400" />
               <span>
                 No specific programme is selected yet. Approving now will mark this student as{' '}
                 <strong>Pending Programme Confirmation</strong> instead of assigning a random fallback.
@@ -272,14 +272,14 @@ export const StudentEnrollmentApprovalModal: React.FC<Props> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 text-xs font-bold disabled:opacity-50"
+              className="px-5 py-2.5 bg-[#1E293B] hover:bg-[#0F172A] dark:bg-[#B91C1C] dark:hover:bg-[#991B1B] text-white rounded-xl flex items-center gap-2 text-xs font-bold disabled:opacity-50"
             >
               <CheckCircle className="w-4 h-4" />
               <span>

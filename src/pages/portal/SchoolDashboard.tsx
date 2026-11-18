@@ -1,13 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
-import { Award, Building2, BookOpen, Calendar, ChevronRight, Copy, CreditCard, ExternalLink, Eye, Key, Link2, Loader2, Search, Users, X, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Award, Building2, BookOpen, Calendar, ChevronDown, ChevronRight, Copy, CreditCard, ExternalLink, Eye, Key, Link2, Loader2, Search, Users, X, ArrowRight, CheckCircle2, AlertCircle, BarChart3, Clock } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+} from 'recharts';
 import SEO from '../../components/ui/SEO';
-import DashboardGreeting from '../../components/portal/DashboardGreeting';
 import ResourceLibrary from './ResourceLibrary';
 import SchoolClassScheduleTimeline from '../../components/portal/SchoolClassScheduleTimeline';
 import { auth, db } from '../../lib/firebase';
-import { formatNaira } from '../../lib/billing';
+import { formatNormalizedClassDisplay } from '../../lib/classes';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
 
@@ -68,6 +76,8 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
   const [tab, setTab] = useState<SchoolDashboardTab>(initialTab || 'overview');
   const [school, setSchool] = useState<SchoolRecord | null>(null);
   const [studentCount, setStudentCount] = useState(0);
+  const [studentBreakdowns, setStudentBreakdowns] = useState<Array<{ className: string; tracks: string[]; active: boolean }>>([]);
+  const [expandedExamId, setExpandedExamId] = useState<string | null>(null);
   const [passcodes, setPasscodes] = useState<Passcode[]>([]);
   const [classSchedules, setClassSchedules] = useState<ClassSchedule[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
@@ -208,6 +218,44 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
       if (cachedSchoolId) validSchoolIds.add(cachedSchoolId);
 
       let fetchedStudentCount = 0;
+      const breakdownMap = new Map<string, { className: string; tracks: string[]; active: boolean }>();
+      const breakdownSeenKeys = new Set<string>();
+
+      const recordStudentBreakdown = (canonicalId: string, data: Record<string, any>) => {
+        const uname = String(data.username || '').toLowerCase().trim();
+        const email = String(data.email || '').toLowerCase().trim();
+        const uid = String(data.firebaseUid || data.userId || '').trim();
+        const name = String(data.fullName || data.studentName || data.name || '').toLowerCase().trim();
+
+        if (
+          (canonicalId && breakdownSeenKeys.has(`id:${canonicalId}`)) ||
+          (uid && breakdownSeenKeys.has(`uid:${uid}`)) ||
+          (uname && breakdownSeenKeys.has(`u:${uname}`)) ||
+          (email && !email.endsWith('.local') && breakdownSeenKeys.has(`e:${email}`)) ||
+          (name && name !== 'student' && breakdownSeenKeys.has(`name:${name}`))
+        ) {
+          return false;
+        }
+        if (canonicalId) breakdownSeenKeys.add(`id:${canonicalId}`);
+        if (uid) breakdownSeenKeys.add(`uid:${uid}`);
+        if (uname) breakdownSeenKeys.add(`u:${uname}`);
+        if (email && !email.endsWith('.local')) breakdownSeenKeys.add(`e:${email}`);
+        if (name && name !== 'student') breakdownSeenKeys.add(`name:${name}`);
+
+        const className = formatNormalizedClassDisplay(data.class || data.grade || data.classLevel, 'Unassigned');
+        const rawTracks = Array.isArray(data.enrolledPrograms) && data.enrolledPrograms.length > 0
+          ? data.enrolledPrograms
+          : Array.isArray(data.subjects) && data.subjects.length > 0
+          ? data.subjects
+          : data.track || data.programName || data.plan
+          ? String(data.track || data.programName || data.plan).split(',').map((s: string) => s.trim()).filter(Boolean)
+          : [];
+        const tracks = rawTracks.map((t: any) => String(t || '').trim()).filter(Boolean);
+        const active = data.portalAccessEnabled !== false && String(data.accountStatus || data.status || 'ACTIVE').toUpperCase() === 'ACTIVE';
+
+        breakdownMap.set(canonicalId || `row-${breakdownMap.size}`, { className, tracks, active });
+        return true;
+      };
 
       // Try server-side scoped endpoint first
       try {
@@ -216,6 +264,12 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
             '/.netlify/functions/school-students' + (activeSchoolId ? `?schoolId=${encodeURIComponent(activeSchoolId)}` : '')
           );
           fetchedStudentCount = Number(studentsResult.count || studentsResult.students?.length || 0);
+          if (Array.isArray(studentsResult.students)) {
+            studentsResult.students.forEach((s: any, idx: number) => {
+              const cid = String(s.id || s.studentId || `srv-${idx}`).trim();
+              recordStudentBreakdown(cid, s);
+            });
+          }
           if (studentsResult.schoolName && studentsResult.schoolName !== 'School Portal') {
             sessionStorage.setItem('schoolName', studentsResult.schoolName);
             setSchool(prev => prev ? { ...prev, name: studentsResult.schoolName } : prev);
@@ -244,8 +298,6 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
         }
 
         const querySnapshots = await Promise.all(queries);
-        const seenKeys = new Set<string>();
-        let uniqueCount = 0;
 
         querySnapshots.forEach(({ collName, docs }) => {
           docs.forEach((d: any) => {
@@ -263,36 +315,17 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
             if (!isMatch) return;
 
             const canonicalId = String((collName === 'users' && data.studentDocId) ? data.studentDocId : d.id).trim();
-            const uname = String(data.username || '').toLowerCase().trim();
-            const email = String(data.email || '').toLowerCase().trim();
-            const uid = String(data.firebaseUid || data.userId || '').trim();
-            const name = String(data.fullName || data.studentName || data.name || '').toLowerCase().trim();
-
-            if (
-              (canonicalId && seenKeys.has(`id:${canonicalId}`)) ||
-              (uid && seenKeys.has(`uid:${uid}`)) ||
-              (uname && seenKeys.has(`u:${uname}`)) ||
-              (email && !email.endsWith('.local') && seenKeys.has(`e:${email}`)) ||
-              (name && name !== 'student' && seenKeys.has(`name:${name}`))
-            ) {
-              return;
-            }
-
-            if (canonicalId) seenKeys.add(`id:${canonicalId}`);
-            if (uid) seenKeys.add(`uid:${uid}`);
-            if (uname) seenKeys.add(`u:${uname}`);
-            if (email && !email.endsWith('.local')) seenKeys.add(`e:${email}`);
-            if (name && name !== 'student') seenKeys.add(`name:${name}`);
-            uniqueCount += 1;
+            recordStudentBreakdown(canonicalId, data);
           });
         });
 
-        if (uniqueCount > fetchedStudentCount) {
-          fetchedStudentCount = uniqueCount;
+        if (breakdownMap.size > fetchedStudentCount) {
+          fetchedStudentCount = breakdownMap.size;
         }
       } catch (fsErr) {
         console.warn('Firestore fallback student count error:', fsErr);
       }
+      setStudentBreakdowns(Array.from(breakdownMap.values()));
 
       try {
         const scheduleResult = await jsonFetch<{ schedules: ClassSchedule[] }>('/.netlify/functions/class-schedules');
@@ -324,11 +357,51 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
       setLinks(linkSnap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<SchoolLink,'id'>) })));
       setPasscodes(passSnap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Passcode,'id'>) })));
     } catch (error) {
-      setSchool(null); setStudentCount(0); setExams([]); setLinks([]); setPasscodes([]); setClassSchedules([]);
+      setSchool(null); setStudentCount(0); setStudentBreakdowns([]); setExams([]); setLinks([]); setPasscodes([]); setClassSchedules([]);
       toast.error(error instanceof Error ? error.message : 'Unable to load school operations.');
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+
+  const classDistribution = useMemo(() => {
+    const counts = new Map<string, number>();
+    studentBreakdowns.forEach(s => {
+      counts.set(s.className, (counts.get(s.className) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([className, learners]) => ({ className, learners }))
+      .sort((a, b) => a.className.localeCompare(b.className, undefined, { numeric: true }));
+  }, [studentBreakdowns]);
+
+  const programmeDistribution = useMemo(() => {
+    const counts = new Map<string, number>();
+    const activeProgs = (Array.isArray(school?.programs) ? school.programs : []).filter((p: any) => p.status !== 'COMPLETED' && p.status !== 'HISTORICAL');
+    const fallbackProg = activeProgs[0]?.name || '';
+    studentBreakdowns.forEach(s => {
+      const list = s.tracks.length > 0 ? s.tracks : fallbackProg ? [fallbackProg] : [];
+      list.forEach(track => {
+        counts.set(track, (counts.get(track) || 0) + 1);
+      });
+    });
+    return Array.from(counts.entries())
+      .map(([programme, learners]) => ({ programme, learners }))
+      .sort((a, b) => b.learners - a.learners)
+      .slice(0, 8);
+  }, [studentBreakdowns, school?.programs]);
+
+  const upcomingSessionsPreview = useMemo(() => {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return classSchedules
+      .filter(s => s.date >= todayStr && s.status !== 'CANCELLED' && s.status !== 'COMPLETED')
+      .sort((a, b) => `${a.date}T${a.startTime}`.localeCompare(`${b.date}T${b.startTime}`))
+      .slice(0, 4);
+  }, [classSchedules]);
+
+  const activeProgramsCount = useMemo(() => {
+    const programsList: any[] = Array.isArray(school?.programs) ? school.programs : [];
+    return programsList.filter(p => p.status !== 'COMPLETED' && p.status !== 'HISTORICAL').length;
+  }, [school?.programs]);
 
   const filteredExams = useMemo(() => { const q = search.trim().toLowerCase(); return q ? exams.filter(e => [e.title,e.subject,e.term,e.targetClass].some(v => String(v || '').toLowerCase().includes(q))) : exams; }, [exams, search]);
   const filteredLinks = useMemo(() => { const q = search.trim().toLowerCase(); return q ? links.filter(l => [l.title,l.description,l.url].some(v => String(v || '').toLowerCase().includes(q))) : links; }, [links, search]);
@@ -355,103 +428,349 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
   if (loading) return <div className="min-h-[360px] flex items-center justify-center gap-3 text-sm text-slate-500"><Loader2 className="animate-spin" size={22}/> Loading secure school operations…</div>;
   const schoolName = school?.name || 'School Portal';
 
+  const billingStatusLabel = String(school?.billing?.status || 'ACTIVE PARTNERSHIP').replace(/_/g, ' ');
+  const isBillingAttention = ['OVERDUE', 'DUE', 'UNPAID'].includes(String(school?.billing?.status || '').toUpperCase());
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       <SEO title={`School Operations | ${schoolName}`} description="Secure school operations workspace." noindex />
 
       {tab === 'overview' && (
         <div className="space-y-6">
-          <DashboardGreeting
-            name={schoolName.split(' ')[0] || schoolName}
-            role="Partner Institution"
-            subtitle="Manage student enrollment, assessment overview, class schedules, and billing."
-          />
+          {/* Concise institutional heading & quick actions */}
+          <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-[#B91C1C]">
+                Partner Institution Portal
+              </p>
+              <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] dark:text-white tracking-tight mt-0.5">
+                {schoolName}
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Coordinator: {school?.coordinator || 'School Administrator'} · Lab Days: {school?.labDays || 'Scheduled weekly'}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => navigate('/portal/school/roster')}
+                className="min-h-9 px-3.5 rounded-lg bg-[#1E293B] hover:bg-[#14284B] dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Users size={14} /> Open Roster
+              </button>
+              <button
+                type="button"
+                onClick={() => changeTab('schedules')}
+                className="min-h-9 px-3.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-[#1E293B] dark:hover:border-slate-500 text-slate-700 dark:text-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Calendar size={14} className="text-[#B91C1C]" /> Class Timetable
+              </button>
+              <button
+                type="button"
+                onClick={() => changeTab('partnership')}
+                className="min-h-9 px-3.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <CreditCard size={14} /> Invoices &amp; Billing
+              </button>
+            </div>
+          </header>
 
-          {/* Focused school overview: operational metrics and shortcuts only. Detailed programmes,
-              schedules, roster, resources, exams and billing live in their dedicated tabs. */}
-          {(() => {
-            const programsList: any[] = Array.isArray(school?.programs) ? school.programs : [];
-            const activeProgs = programsList.filter(p => p.status !== 'COMPLETED' && p.status !== 'HISTORICAL');
-            return (
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="pro-surface rounded-2xl p-4"><p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Total Students</p><p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{studentCount}</p><p className="text-[10px] text-slate-500 mt-0.5">Onboarded learners</p></div>
-                  <div className="pro-surface rounded-2xl p-4"><p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Active Programmes</p><p className="mt-1 text-2xl font-black text-brand-red">{activeProgs.length}</p><p className="text-[10px] text-slate-500 mt-0.5">Configured for this school</p></div>
-                  <div className="pro-surface rounded-2xl p-4"><p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Billing Status</p><p className="mt-1 text-lg font-black text-slate-900 dark:text-white">{school?.billing?.status || 'Not configured'}</p><p className="text-[10px] text-slate-500 mt-0.5">Institutional account</p></div>
+          {/* Compact divided metrics summary strip */}
+          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
+            <div className="p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Onboarded Learners</p>
+              <p className="mt-1 text-2xl font-bold text-[#1E293B] dark:text-white tabular-nums">{studentCount}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Verified for this school</p>
+            </div>
+            <div className="p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Active Programmes</p>
+              <p className="mt-1 text-2xl font-bold text-[#B91C1C] dark:text-red-400 tabular-nums">{activeProgramsCount}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Curriculum tracks running</p>
+            </div>
+            <div className="p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Upcoming Sessions</p>
+              <p className="mt-1 text-2xl font-bold text-[#1E293B] dark:text-white tabular-nums">{upcomingSessionsPreview.length}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Scheduled next slots</p>
+            </div>
+            <div className="p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Account Billing</p>
+              <p className={`mt-1 text-base font-bold inline-flex items-center gap-1.5 ${isBillingAttention ? 'text-[#B91C1C] dark:text-red-400' : 'text-[#1E293B] dark:text-white'}`}>
+                {isBillingAttention ? <AlertCircle size={15} /> : <CheckCircle2 size={15} className="text-[#1E293B] dark:text-slate-300" />}
+                <span>{billingStatusLabel}</span>
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Institutional account</p>
+            </div>
+          </section>
+
+          {/* School-scoped analytical visualizations */}
+          <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] p-5">
+              <div className="flex items-start justify-between gap-2 mb-4">
+                <div>
+                  <h2 className="text-sm font-bold text-[#1E293B] dark:text-white flex items-center gap-2">
+                    <BarChart3 size={16} className="text-[#B91C1C]" />
+                    <span>Learners per Class Cohort</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Distribution of your school&apos;s enrolled students across class levels.
+                  </p>
                 </div>
-                <section className="pro-surface rounded-3xl p-5 md:p-6">
-                  <div className="flex items-start justify-between gap-4 mb-4"><div><h2 className="text-base font-black text-slate-900 dark:text-white">School Operations</h2><p className="text-xs text-slate-500 mt-1">Open the dedicated workspace for the task you need to complete.</p></div><Building2 size={18} className="text-brand-red" /></div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {[
-                      ['roster','Student Roster','Manage learners and class groups',Users],
-                      ['schedules','Class Schedules','View programmes, tutors and sessions',Calendar],
-                      ['resources','Resources','Review school learning materials',BookOpen],
-                      ['partnership','Programme & Billing','View institutional programme settings',CreditCard]
-                    ].map(([id,title,description,Icon]: any) => <button key={id} type="button" onClick={() => changeTab(id)} className="text-left p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 hover:border-brand-red/40 transition-all"><Icon className="text-brand-red mb-2" size={19}/><p className="text-xs font-black text-slate-900 dark:text-white">{title}</p><p className="text-[11px] text-slate-500 mt-1 leading-4">{description}</p></button>)}
-                  </div>
-                </section>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                  {classDistribution.length} classes
+                </span>
               </div>
-            );
-          })()}
+
+              {classDistribution.length === 0 ? (
+                <div className="h-56 flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 dark:border-slate-800 text-center px-4">
+                  <Users size={22} className="text-slate-400 mb-2" />
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">No class breakdown available yet</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Class metrics appear automatically as students are onboarded into your roster.
+                  </p>
+                </div>
+              ) : (
+                <div className="h-56 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={classDistribution} margin={{ top: 8, right: 12, left: -16, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" strokeOpacity={0.6} />
+                      <XAxis dataKey="className" tick={{ fill: '#64748B', fontSize: 11 }} axisLine={{ stroke: '#CBD5E1' }} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fill: '#64748B', fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <RechartsTooltip
+                        contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '8px', color: '#F8FAFC', fontSize: '12px' }}
+                        itemStyle={{ color: '#F8FAFC' }}
+                        formatter={(val: any) => [`${val} learners`, 'Cohort Size']}
+                      />
+                      <Bar dataKey="learners" name="Learners" fill="#1E293B" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] p-5">
+              <div className="flex items-start justify-between gap-2 mb-4">
+                <div>
+                  <h2 className="text-sm font-bold text-[#1E293B] dark:text-white flex items-center gap-2">
+                    <BookOpen size={16} className="text-[#B91C1C]" />
+                    <span>Programme Track Distribution</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Active learner participation by assigned curriculum track.
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                  {programmeDistribution.length} tracks
+                </span>
+              </div>
+
+              {programmeDistribution.length === 0 ? (
+                <div className="h-56 flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 dark:border-slate-800 text-center px-4">
+                  <BookOpen size={22} className="text-slate-400 mb-2" />
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">No programme allocations recorded yet</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Assign students to curriculum tracks in the roster to view programme distribution.
+                  </p>
+                </div>
+              ) : (
+                <div className="h-56 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={programmeDistribution} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" strokeOpacity={0.6} />
+                      <XAxis type="number" allowDecimals={false} tick={{ fill: '#64748B', fontSize: 11 }} axisLine={{ stroke: '#CBD5E1' }} tickLine={false} />
+                      <YAxis type="category" dataKey="programme" width={130} tick={{ fill: '#475569', fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <RechartsTooltip
+                        contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '8px', color: '#F8FAFC', fontSize: '12px' }}
+                        itemStyle={{ color: '#F8FAFC' }}
+                        formatter={(val: any) => [`${val} learners`, 'Assigned']}
+                      />
+                      <Bar dataKey="learners" name="Learners" fill="#B91C1C" radius={[0, 4, 4, 0]} maxBarSize={22} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Two-column operational workspace: Navigation directory + Next Scheduled Classes */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            <section className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <h2 className="text-sm font-bold text-[#1E293B] dark:text-white flex items-center gap-2">
+                  <Building2 size={15} className="text-[#B91C1C]" />
+                  <span>School Operations Directory</span>
+                </h2>
+                <span className="text-[11px] text-slate-500">Workspaces</span>
+              </div>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {[
+                  { id: 'roster' as SchoolDashboardTab, title: 'Student Roster & Access', description: 'Manage enrolled learners, class assignments, and portal access codes.', Icon: Users },
+                  { id: 'schedules' as SchoolDashboardTab, title: 'Class Schedules & Faculty', description: 'Inspect daily cohort timetables, assigned tutors, and session records.', Icon: Calendar },
+                  { id: 'resources' as SchoolDashboardTab, title: 'School Learning Resources', description: 'Access curriculum workbooks, slides, and approved portals.', Icon: BookOpen },
+                  { id: 'partnership' as SchoolDashboardTab, title: 'Programmes & Institutional Billing', description: 'Review subscribed tracks, fee calculations, and invoice settlements.', Icon: CreditCard }
+                ].map(({ id, title, description, Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => (id === 'roster' ? navigate('/portal/school/roster') : changeTab(id))}
+                    className="w-full px-5 py-3.5 text-left flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-start gap-3 min-w-0">
+                      <Icon size={16} className="text-[#B91C1C] shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-[#1E293B] dark:text-white">{title}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{description}</p>
+                      </div>
+                    </div>
+                    <ChevronRight size={15} className="text-slate-400 shrink-0" />
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <h2 className="text-sm font-bold text-[#1E293B] dark:text-white flex items-center gap-2">
+                  <Clock size={15} className="text-[#B91C1C]" />
+                  <span>Next Scheduled Sessions</span>
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => changeTab('schedules')}
+                  className="text-xs font-semibold text-[#B91C1C] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                >
+                  Full Timetable <ArrowRight size={12} />
+                </button>
+              </div>
+              {upcomingSessionsPreview.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-500 dark:text-slate-400">
+                  No upcoming class sessions currently scheduled for this school.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {upcomingSessionsPreview.map(sess => (
+                    <div key={sess.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-[#1E293B] dark:text-white truncate">{sess.title}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          {sess.classLevel || 'All Classes'} · {sess.tutorName || 'Assigned Faculty'}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xs font-semibold text-[#B91C1C] tabular-nums">{sess.date}</p>
+                        <p className="text-[11px] text-slate-500 font-mono tabular-nums">{sess.startTime} – {sess.endTime}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       )}
 
       {tab === 'roster' && (
-        <div className="bg-white dark:bg-[#161B26] rounded-2xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
-          <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">Student Roster</h2>
-          <p className="text-xs text-slate-500 mt-1">Roster management has moved to the secure student operations page. Student portal credentials are never exposed in this workspace.</p>
-          <button onClick={() => navigate('/portal/school/roster')} className="mt-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 text-xs font-semibold inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer">
-            <Users size={14}/> Open secure roster <ChevronRight size={14}/>
+        <div className="bg-white dark:bg-[#111827] rounded-xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800">
+          <h2 className="text-base font-bold text-[#1E293B] dark:text-white tracking-tight">Student Roster</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Roster management and student credentials reside in the dedicated secure student operations workspace.</p>
+          <button onClick={() => navigate('/portal/school/roster')} className="mt-4 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white px-4 py-2 text-xs font-semibold inline-flex items-center gap-2 transition-colors cursor-pointer">
+            <Users size={14}/> Open Secure Roster <ChevronRight size={14}/>
           </button>
         </div>
       )}
 
       {tab === 'exams' && (
-        <div className="bg-white dark:bg-[#161B26] rounded-2xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="bg-white dark:bg-[#111827] rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="p-5 sm:px-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                <Award size={18} className="text-brand-red"/> CBT Assessments
+              <h2 className="text-base font-bold text-[#1E293B] dark:text-white tracking-tight flex items-center gap-2">
+                <Award size={18} className="text-[#B91C1C]"/> CBT Assessments ({filteredExams.length})
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Only assessments belonging to your linked school are loaded.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Only assessments scoped to your institution are listed. Select any row to inspect details.</p>
             </div>
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
-              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search title, subject..." className="w-full min-h-9 rounded-xl border border-slate-200 dark:border-slate-800 pl-9 pr-3 text-xs bg-white dark:bg-slate-900"/>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search title, subject, class..." className="w-full min-h-9 rounded-lg border border-slate-200 dark:border-slate-700 pl-9 pr-3 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white"/>
             </div>
           </div>
 
           {filteredExams.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-xs text-slate-500">
+            <div className="p-8 text-center text-xs text-slate-500">
               No school assessments found.
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredExams.map(exam => {
                 const url = exam.link || exam.url || exam.fileUrl || '';
+                const isExpanded = expandedExamId === exam.id;
+                const statusStr = String(exam.status || 'SCHEDULED').toUpperCase();
                 return (
-                  <div key={exam.id} className="rounded-xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/40">
-                    <div className="flex justify-between items-center gap-2">
-                      <span className="rounded-md px-2 py-0.5 text-[10px] font-bold bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                        {exam.status || 'SCHEDULED'}
-                      </span>
-                      <span className="text-[11px] text-slate-500">{exam.duration || 'Duration not set'}</span>
+                  <div key={exam.id}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isExpanded}
+                      onClick={() => setExpandedExamId(isExpanded ? null : exam.id)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setExpandedExamId(isExpanded ? null : exam.id);
+                        }
+                      }}
+                      className="px-5 py-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]"
+                    >
+                      <div className="min-w-0 flex items-start gap-2.5">
+                        <span className="mt-0.5 text-slate-400">
+                          {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                            <h3 className="text-xs sm:text-sm font-bold text-[#1E293B] dark:text-white truncate">{exam.title}</h3>
+                            <span className="text-slate-300 dark:text-slate-700">·</span>
+                            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${statusStr === 'ACTIVE' || statusStr === 'LIVE' ? 'text-[#B91C1C]' : 'text-[#1E293B] dark:text-slate-300'}`}>
+                              <CheckCircle2 size={11} /> {statusStr}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            Subject: {exam.subject || 'General'} · Class: {exam.targetClass || 'All eligible learners'} · Duration: <span className="tabular-nums">{exam.duration || 'Not set'}</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pl-6 lg:pl-0 shrink-0" onClick={e => e.stopPropagation()}>
+                        {url && (
+                          <button
+                            type="button"
+                            onClick={() => openReader(url, exam.title)}
+                            className="min-h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-3 text-xs font-semibold inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                          >
+                            <Eye size={13}/> Preview
+                          </button>
+                        )}
+                        {url ? (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="min-h-8 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white px-3 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors"
+                          >
+                            <ExternalLink size={13}/> Launch
+                          </a>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">No external link</span>
+                        )}
+                      </div>
                     </div>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">{exam.title}</h3>
-                    <div className="text-[11px] text-slate-500 space-y-0.5">
-                      <div>Subject: {exam.subject || 'Subject not configured'}</div>
-                      <div>Class: {exam.targetClass || 'All eligible learners'}</div>
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      {url && (
-                        <button onClick={() => openReader(url, exam.title)} className="min-h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-3 text-xs font-semibold inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                          <Eye size={13}/> Preview
-                        </button>
-                      )}
-                      <a href={url || undefined} target="_blank" rel="noopener noreferrer" className="min-h-8 flex-1 rounded-lg bg-brand-red text-white px-3 text-xs font-bold inline-flex items-center justify-center gap-1.5">
-                        <ExternalLink size={13}/> Launch
-                      </a>
-                    </div>
+
+                    {isExpanded && (
+                      <div className="px-5 py-3.5 pl-11 bg-slate-50/70 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 space-y-1.5">
+                        {exam.description && <p>{exam.description}</p>}
+                        <div className="flex flex-wrap gap-x-6 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          <span>Term: <strong className="text-slate-800 dark:text-slate-200">{exam.term || 'Current Term'}</strong></span>
+                          <span>Scheduled Date: <strong className="text-slate-800 dark:text-slate-200 tabular-nums">{exam.date || 'Flexible'}</strong></span>
+                          <span>Passcode Required: <strong className="text-slate-800 dark:text-slate-200">{exam.passcodeProtected ? 'Yes' : 'No'}</strong></span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -461,44 +780,47 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
       )}
 
       {tab === 'passcodes' && (
-        <div className="bg-white dark:bg-[#161B26] rounded-2xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="bg-white dark:bg-[#111827] rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="p-5 sm:px-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                <Key size={18} className="text-brand-red"/> Assessment Passcodes
+              <h2 className="text-base font-bold text-[#1E293B] dark:text-white tracking-tight flex items-center gap-2">
+                <Key size={18} className="text-[#B91C1C]"/> Assessment Passcodes
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Assessment keys for CBT invigilation.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Assessment keys for CBT invigilation.</p>
             </div>
-            <button onClick={() => setPasscodeForm({ classLevel: '', subject: '', examTitle: '', passcode: generatePasscode(), isActive: true, validUntil: '' })} className="min-h-9 rounded-xl bg-brand-red text-white px-3 text-xs font-bold inline-flex items-center gap-1.5">
-              <Key size={14}/> New passcode
+            <button onClick={() => setPasscodeForm({ classLevel: '', subject: '', examTitle: '', passcode: generatePasscode(), isActive: true, validUntil: '' })} className="min-h-9 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white px-3.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer">
+              <Key size={14}/> New Passcode
             </button>
           </div>
 
           {passcodes.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-xs text-slate-500">
+            <div className="p-8 text-center text-xs text-slate-500">
               No assessment passcodes configured.
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {passcodes.map(pc => (
-                <div key={pc.id} className="rounded-xl border border-slate-200/80 dark:border-slate-800 p-3.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 bg-slate-50/50 dark:bg-slate-900/40">
+                <div key={pc.id} className="px-5 py-3.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                   <div>
-                    <div className="flex flex-wrap gap-1.5 items-center">
-                      <span className="text-[10px] uppercase font-bold rounded-md px-2 py-0.5 bg-slate-200 dark:bg-slate-800">{pc.classLevel}</span>
-                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{pc.subject}</span>
-                      <span className={`text-[10px] font-bold rounded-md px-2 py-0.5 ${pc.isActive ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-slate-100 text-slate-500'}`}>
+                    <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 items-center text-xs">
+                      <span className="font-bold text-[#B91C1C]">{pc.classLevel || 'All Classes'}</span>
+                      <span className="text-slate-300 dark:text-slate-700">·</span>
+                      <span className="font-semibold text-[#1E293B] dark:text-slate-200">{pc.subject || 'General'}</span>
+                      <span className="text-slate-300 dark:text-slate-700">·</span>
+                      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${pc.isActive ? 'text-[#1E293B] dark:text-slate-200' : 'text-slate-500'}`}>
+                        {pc.isActive ? <CheckCircle2 size={12} className="text-[#1E293B] dark:text-slate-300" /> : <AlertCircle size={12} className="text-[#B91C1C]" />}
                         {pc.isActive ? 'ACTIVE' : 'DISABLED'}
                       </span>
                     </div>
-                    <h3 className="text-xs font-bold text-slate-900 dark:text-white mt-1.5">{pc.examTitle}</h3>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Valid: {pc.validUntil || 'Not configured'} • Invigilator: {pc.invigilatorName || 'School'}</p>
+                    <h3 className="text-xs font-bold text-[#1E293B] dark:text-white mt-1">{pc.examTitle}</h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Valid: {pc.validUntil || 'Not configured'} · Invigilator: {pc.invigilatorName || 'School'}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <code className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-1 font-mono font-bold text-xs">{pc.passcode}</code>
-                    <button onClick={() => { navigator.clipboard.writeText(pc.passcode); toast.success('Exam passcode copied.'); }} className="min-h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 text-xs font-semibold inline-flex items-center gap-1">
+                    <code className="rounded bg-slate-100 dark:bg-slate-800 px-2.5 py-1 font-mono font-bold text-xs text-[#1E293B] dark:text-white">{pc.passcode}</code>
+                    <button onClick={() => { navigator.clipboard.writeText(pc.passcode); toast.success('Exam passcode copied.'); }} className="min-h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 text-xs font-semibold inline-flex items-center gap-1 text-slate-700 dark:text-slate-200 cursor-pointer">
                       <Copy size={12}/> Copy
                     </button>
-                    <button onClick={() => void togglePasscode(pc)} className="min-h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 text-xs font-semibold">
+                    <button onClick={() => void togglePasscode(pc)} className="min-h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
                       {pc.isActive ? 'Deactivate' : 'Activate'}
                     </button>
                   </div>
@@ -516,42 +838,40 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
       )}
 
       {tab === 'links' && (
-        <div id="school-links-section" className="bg-white dark:bg-[#161B26] rounded-2xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-4">
+        <div id="school-links-section" className="bg-white dark:bg-[#111827] rounded-xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                <Link2 size={18} className="text-brand-red"/> School Links & Educational Portals
+              <h2 className="text-base font-bold text-[#1E293B] dark:text-white tracking-tight flex items-center gap-2">
+                <Link2 size={18} className="text-[#B91C1C]"/> School Links &amp; Educational Portals
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Quick access to institutional platforms, portals, and materials restricted to your school.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Quick access to institutional platforms, portals, and materials restricted to your school.</p>
             </div>
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
-              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search links..." className="w-full min-h-9 rounded-xl border border-slate-200 dark:border-slate-800 pl-9 pr-3 text-xs bg-white dark:bg-slate-900"/>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search links..." className="w-full min-h-9 rounded-lg border border-slate-200 dark:border-slate-800 pl-9 pr-3 text-xs bg-white dark:bg-slate-900"/>
             </div>
           </div>
 
           {filteredLinks.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-xs text-slate-500">
+            <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-xs text-slate-500">
               No school links found matching your search.
             </div>
           ) : (
-            <div className="border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900/40">
+            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900/40">
               {filteredLinks.map(link => (
                 <div key={link.id} className="p-3.5 sm:p-4 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-xl bg-brand-red/10 text-brand-red flex items-center justify-center shrink-0">
-                      <Link2 size={16} />
-                    </div>
+                    <Link2 size={16} className="text-[#B91C1C] shrink-0" />
                     <div className="min-w-0">
-                      <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">{link.title}</h3>
+                      <h3 className="text-xs sm:text-sm font-bold text-[#1E293B] dark:text-white truncate">{link.title}</h3>
                       <p className="text-[11px] text-slate-500 truncate max-w-xl">{link.description || link.url}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                    <button onClick={() => openReader(link.url, link.title)} className="min-h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-3 text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                    <button onClick={() => openReader(link.url, link.title)} className="min-h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-3 text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
                       <Eye size={12}/> Preview
                     </button>
-                    <a href={link.url} target="_blank" rel="noopener noreferrer" className="min-h-8 rounded-lg bg-brand-red text-white px-3 text-xs font-bold inline-flex items-center justify-center gap-1.5 hover:bg-brand-red/90 transition-colors">
+                    <a href={link.url} target="_blank" rel="noopener noreferrer" className="min-h-8 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white px-3 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors">
                       <ExternalLink size={12}/> Open
                     </a>
                   </div>
@@ -574,23 +894,23 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
       )}
 
       {tab === 'partnership' && (
-        <div className="bg-white dark:bg-[#161B26] rounded-2xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="bg-white dark:bg-[#111827] rounded-xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                <CreditCard size={18} className="text-brand-red"/> Institutional Subscription &amp; Fees
+              <h2 className="text-base font-bold text-[#1E293B] dark:text-white tracking-tight flex items-center gap-2">
+                <CreditCard size={18} className="text-[#B91C1C]"/> Institutional Subscription &amp; Fees
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Admin-configured institutional curriculum billing and payment schedule.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Admin-configured institutional curriculum billing and payment schedule.</p>
             </div>
             {effective.isMasquerading ? (
-              <div className="px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs font-bold flex items-center gap-2">
+              <div className="px-3.5 py-2 rounded-lg bg-red-50/70 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-[#B91C1C] dark:text-red-300 text-xs font-semibold flex items-center gap-2">
                 <AlertCircle size={14} />
                 <span>Payment execution disabled during Impersonation Mode</span>
               </div>
             ) : (
-              <button 
-                onClick={() => navigate('/portal/school/payments')} 
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+              <button
+                onClick={() => navigate('/portal/school/payments')}
+                className="px-4 py-2 rounded-lg bg-[#1E293B] hover:bg-[#14284B] text-white text-xs font-semibold inline-flex items-center gap-2 transition-colors cursor-pointer"
               >
                 <CreditCard size={14}/> Complete Payment / Invoices
               </button>
@@ -621,94 +941,90 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
             const earliestDue = progsWithFee.find((p: any) => p.nextBillingDueDate)?.nextBillingDueDate || school?.billing?.nextDueDate;
 
             return (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="rounded-2xl bg-slate-900 text-white p-5 sm:p-6 border border-slate-800 space-y-4 md:col-span-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] uppercase tracking-widest font-black text-slate-400">Undergoing Curriculum Tracks</span>
-                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
-                        school?.billing?.status === 'OVERDUE' 
-                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' 
-                          : school?.billing?.status === 'DUE' 
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
-                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                      }`}>
-                        {school?.billing?.status || 'ACTIVE PARTNERSHIP'}
-                      </span>
-                    </div>
-
-                    {progsWithFee.length === 0 ? (
-                      <div>
-                        <h3 className="text-base font-black text-white">{school?.plan || 'General Technology Curriculum'}</h3>
-                        <p className="text-xs text-slate-300 mt-1">Covers hands-on computer science lab instructions, STEM curriculum kits, and learner CBT assessment portals.</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2.5">
-                        {progsWithFee.map((p: any, idx: number) => (
-                          <div key={p.id || idx} className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between gap-3">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${p.billingModel === 'per_head' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'}`}>
-                                  {p.billingModel === 'per_head' ? 'Per-Head' : 'Package'}
-                                </span>
-                                <span className="text-xs font-black text-white">{p.name}</span>
-                              </div>
-                              <p className="text-[11px] text-slate-400 font-mono mt-0.5">
-                                {p.calculationNote} {p.level ? `• ${p.level}` : ''}
-                              </p>
-                            </div>
-                            <span className="text-sm font-black font-mono text-emerald-400 shrink-0">
-                              ₦{p.computedFee.toLocaleString()}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {school?.billing?.notes && (
-                      <div className="text-[11px] text-slate-400 bg-slate-800/60 p-2.5 rounded-lg border border-slate-700">
-                        <strong className="text-slate-300">Administrative Note:</strong> {school.billing.notes}
-                      </div>
-                    )}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="rounded-xl bg-[#1E293B] text-white p-5 sm:p-6 border border-slate-800 space-y-4 md:col-span-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] uppercase tracking-widest font-semibold text-slate-300">Active Curriculum Tracks</span>
+                    <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold ${
+                      isBillingAttention ? 'text-red-300' : 'text-slate-200'
+                    }`}>
+                      {isBillingAttention ? <AlertCircle size={13} /> : <CheckCircle2 size={13} />}
+                      {billingStatusLabel}
+                    </span>
                   </div>
 
-                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-900/60 p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800 space-y-4 flex flex-col justify-between">
+                  {progsWithFee.length === 0 ? (
                     <div>
-                      <span className="text-[10px] uppercase tracking-wider font-black text-slate-500">Total Invoiced Amount</span>
-                      <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono mt-1">
-                        ₦{totalInvoiceAmount.toLocaleString()}
-                      </div>
-                      <div className="text-xs text-slate-500 space-y-1.5 pt-3 mt-3 border-t border-slate-200 dark:border-slate-800">
-                        <div className="flex justify-between">
-                          <span>Billing Cycle:</span>
-                          <span className="font-bold text-slate-700 dark:text-slate-300 capitalize">{school?.billing?.cycle || 'Termly'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Default Mode:</span>
-                          <span className="font-bold text-slate-700 dark:text-slate-300 capitalize">
-                            {(school?.billing?.mode || 'advance_termly').replace(/_/g, ' ')}
+                      <h3 className="text-base font-bold text-white">{school?.plan || 'General Technology Curriculum'}</h3>
+                      <p className="text-xs text-slate-300 mt-1">Covers hands-on computer science lab instructions, STEM curriculum kits, and learner CBT assessment portals.</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-800 border-t border-b border-slate-800">
+                      {progsWithFee.map((p: any, idx: number) => (
+                        <div key={p.id || idx} className="py-3 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="font-bold text-white">{p.name}</span>
+                              <span className="text-slate-500">·</span>
+                              <span className="text-[11px] font-semibold uppercase text-red-300">
+                                {p.billingModel === 'per_head' ? 'Per-Head' : 'Package'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 font-mono tabular-nums mt-0.5">
+                              {p.calculationNote} {p.level ? `· ${p.level}` : ''}
+                            </p>
+                          </div>
+                          <span className="text-sm font-bold font-mono tabular-nums text-white shrink-0">
+                            ₦{p.computedFee.toLocaleString()}
                           </span>
                         </div>
-                        {earliestDue && (
-                          <div className="flex justify-between">
-                            <span>Next Due Date:</span>
-                            <span className="font-bold text-brand-red">
-                              {new Date(earliestDue).toLocaleDateString('en-NG', { dateStyle: 'medium' })}
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                      ))}
                     </div>
+                  )}
 
-                    {!effective.isMasquerading && (
-                      <button 
-                        onClick={() => navigate('/portal/school/payments')} 
-                        className="w-full min-h-10 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-black inline-flex items-center justify-center gap-2 shadow-xs transition-colors mt-2"
-                      >
-                        <CreditCard size={14}/> Pay Tuition &amp; Invoices
-                      </button>
-                    )}
+                  {school?.billing?.notes && (
+                    <div className="text-[11px] text-slate-300 bg-slate-900/70 p-3 rounded-lg border border-slate-700">
+                      <strong className="text-white">Administrative Note:</strong> {school.billing.notes}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl bg-[#F8FAFC] dark:bg-slate-900/60 p-5 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-4 flex flex-col justify-between">
+                  <div>
+                    <span className="text-[11px] uppercase tracking-wider font-semibold text-slate-500">Total Invoiced Amount</span>
+                    <div className="text-2xl sm:text-3xl font-bold text-[#1E293B] dark:text-white font-mono tabular-nums mt-1">
+                      ₦{totalInvoiceAmount.toLocaleString()}
+                    </div>
+                    <div className="text-xs text-slate-500 space-y-1.5 pt-3 mt-3 border-t border-slate-200 dark:border-slate-800">
+                      <div className="flex justify-between">
+                        <span>Billing Cycle:</span>
+                        <span className="font-semibold text-[#1E293B] dark:text-slate-300 capitalize">{school?.billing?.cycle || 'Termly'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Default Mode:</span>
+                        <span className="font-semibold text-[#1E293B] dark:text-slate-300 capitalize">
+                          {(school?.billing?.mode || 'advance_termly').replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      {earliestDue && (
+                        <div className="flex justify-between">
+                          <span>Next Due Date:</span>
+                          <span className="font-semibold text-[#B91C1C] tabular-nums">
+                            {new Date(earliestDue).toLocaleDateString('en-NG', { dateStyle: 'medium' })}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
+
+                  {!effective.isMasquerading && (
+                    <button
+                      onClick={() => navigate('/portal/school/payments')}
+                      className="w-full min-h-10 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors mt-2 cursor-pointer"
+                    >
+                      <CreditCard size={14}/> Pay Tuition &amp; Invoices
+                    </button>
+                  )}
                 </div>
               </div>
             );

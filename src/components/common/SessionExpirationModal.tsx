@@ -91,10 +91,10 @@ export const SessionExpirationModal: React.FC<SessionExpirationModalProps> = ({
             className="relative w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-gray-200/90 dark:border-slate-800 shadow-2xl overflow-hidden z-10"
           >
             {/* Top Accent Strip with dynamic progress */}
-            <div className="w-full h-1.5 bg-gray-100 dark:bg-slate-800">
+            <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800">
               <div 
                 className={`h-full transition-all duration-1000 ease-linear ${
-                  isUrgent ? 'bg-red-600 animate-pulse' : 'bg-brand-red'
+                  isUrgent ? 'bg-[#B91C1C] animate-pulse' : 'bg-[#1E293B] dark:bg-white'
                 }`}
                 style={{ width: `${progressPercent}%` }}
               />
@@ -109,7 +109,7 @@ export const SessionExpirationModal: React.FC<SessionExpirationModalProps> = ({
                     cx="50"
                     cy="50"
                     r="42"
-                    className="stroke-gray-100 dark:stroke-slate-800"
+                    className="stroke-slate-100 dark:stroke-slate-800"
                     strokeWidth="6"
                     fill="transparent"
                   />
@@ -118,7 +118,7 @@ export const SessionExpirationModal: React.FC<SessionExpirationModalProps> = ({
                     cy="50"
                     r="42"
                     className={`transition-all duration-1000 ease-linear ${
-                      isUrgent ? 'stroke-red-600' : 'stroke-brand-red'
+                      isUrgent ? 'stroke-[#B91C1C]' : 'stroke-[#1E293B] dark:stroke-white'
                     }`}
                     strokeWidth="6"
                     strokeDasharray={264}
@@ -130,8 +130,8 @@ export const SessionExpirationModal: React.FC<SessionExpirationModalProps> = ({
 
                 {/* Center Content */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                  <Clock className={`w-5 h-5 mb-0.5 ${isUrgent ? 'text-red-600 animate-bounce' : 'text-brand-red'}`} />
-                  <span className={`text-sm font-black font-mono tracking-tight ${isUrgent ? 'text-red-600' : 'text-gray-900 dark:text-white'}`}>
+                  <Clock className={`w-5 h-5 mb-0.5 ${isUrgent ? 'text-[#B91C1C] animate-bounce' : 'text-[#B91C1C] dark:text-red-400'}`} />
+                  <span className={`text-sm font-black font-mono tracking-tight tabular-nums ${isUrgent ? 'text-[#B91C1C]' : 'text-slate-900 dark:text-white'}`}>
                     {formatTime(secondsRemaining)}
                   </span>
                 </div>
@@ -139,29 +139,29 @@ export const SessionExpirationModal: React.FC<SessionExpirationModalProps> = ({
 
               {/* Text Header & Warning details */}
               <div className="space-y-2">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50">
+                <div className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                   <ShieldAlert size={13} />
                   <span>Session Inactivity Notice</span>
                 </div>
 
                 <h3 
                   id="session-modal-title"
-                  className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight"
+                  className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight"
                 >
                   Are you still there{userName ? `, ${userName}` : ''}?
                 </h3>
 
-                <p className="text-xs sm:text-sm text-gray-600 dark:text-slate-300 leading-relaxed max-w-xs mx-auto">
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-xs mx-auto">
                   For your institutional account security, you will be automatically logged out in{' '}
-                  <span className="font-bold text-brand-red underline decoration-brand-red/30">
+                  <span className="font-bold text-[#B91C1C] dark:text-red-400 underline decoration-[#B91C1C]/30 tabular-nums">
                     {formatTime(secondsRemaining)}
                   </span>{' '}
                   due to inactivity.
                 </p>
 
                 {userRole && (
-                  <p className="text-[11px] text-gray-400 dark:text-slate-500">
-                    Active Profile: <span className="font-semibold text-gray-600 dark:text-slate-400 uppercase">{userRole}</span>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                    Active Profile: <span className="font-semibold text-slate-600 dark:text-slate-400 uppercase">{userRole}</span>
                   </p>
                 )}
               </div>
@@ -173,7 +173,7 @@ export const SessionExpirationModal: React.FC<SessionExpirationModalProps> = ({
                   type="button"
                   onClick={handleExtendClick}
                   disabled={isExtending}
-                  className="w-full py-3.5 px-5 rounded-2xl bg-brand-red hover:bg-red-700 active:scale-[0.99] text-white text-sm font-black tracking-wide shadow-lg shadow-red-600/20 transition-all flex items-center justify-center gap-2 focus:outline-none focus:ring-4 focus:ring-red-500/20"
+                  className="w-full py-3.5 px-5 rounded-2xl bg-[#B91C1C] hover:bg-red-800 active:scale-[0.99] text-white text-sm font-black tracking-wide shadow-lg shadow-red-900/15 transition-all flex items-center justify-center gap-2 focus:outline-none focus:ring-4 focus:ring-red-500/20"
                 >
                   {isExtending ? (
                     <>

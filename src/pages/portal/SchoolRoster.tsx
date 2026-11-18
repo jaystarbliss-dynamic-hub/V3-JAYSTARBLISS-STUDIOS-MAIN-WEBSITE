@@ -11,11 +11,13 @@ import {
   UserRound, 
   UserX, 
   UserCheck, 
+  ChevronDown,
   ChevronRight, 
   Users, 
   KeyRound, 
   Copy, 
   Check, 
+  CheckCircle2,
   Download, 
   FileText, 
   X,
@@ -23,8 +25,8 @@ import {
   BookOpen
 } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, updateDoc, setDoc, query as fsQuery, where } from 'firebase/firestore';
-import jsPDF from 'jspdf';
 import SEO from '../../components/ui/SEO';
+import { generateAccessPassPdf } from '../../lib/pdf/accessPassPdfGenerator';
 import { auth, db, getClientDatabases, getStandbyFirestore } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
@@ -69,6 +71,7 @@ const SchoolRoster: React.FC = () => {
   const [filterTab, setFilterTab] = useState<'all' | 'classes' | 'tracks'>('all');
   const [selectedClass, setSelectedClass] = useState('All Classes');
   const [selectedTrack, setSelectedTrack] = useState('All Tracks');
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   
   // Credential issuance state
   const [issuingStudent, setIssuingStudent] = useState<Student | null>(null);
@@ -643,63 +646,32 @@ Important Security Notice:
   };
 
   const exportPdf = (cred: IssuedCredential) => {
-    const pdf = new jsPDF();
-    pdf.setFillColor(239, 68, 68);
-    pdf.rect(0, 0, 210, 24, 'F');
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(16);
-    pdf.text('JAYSTARBLISS STUDIOS', 20, 16);
-    
-    pdf.setTextColor(30, 41, 59);
-    pdf.setFontSize(18);
-    pdf.text('Student Portal Access Pass', 20, 45);
-    
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(100, 116, 139);
-    pdf.text('Official student authentication credential for the Jaystarbliss Learning Portal.', 20, 54);
-    
-    pdf.setDrawColor(226, 232, 240);
-    pdf.setFillColor(248, 250, 252);
-    pdf.roundedRect(20, 64, 170, 75, 4, 4, 'FD');
-    
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(11);
-    pdf.setTextColor(71, 85, 105);
-    pdf.text('STUDENT NAME:', 30, 80);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(cred.studentName, 75, 80);
-    
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(71, 85, 105);
-    pdf.text('PORTAL USERNAME:', 30, 95);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(cred.username, 75, 95);
-    
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(239, 68, 68);
-    pdf.text('ACCESS CODE:', 30, 110);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(14);
-    pdf.setTextColor(220, 38, 38);
-    pdf.text(cred.accessCode, 75, 110);
-    
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(71, 85, 105);
-    pdf.text('LOGIN URL:', 30, 125);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(37, 99, 235);
-    pdf.text(cred.portal, 75, 125);
-    
-    pdf.setFontSize(9);
-    pdf.setTextColor(148, 163, 184);
-    pdf.text(`Generated on ${new Date().toLocaleDateString('en-US', { dateStyle: 'full' })}. Keep this document secure.`, 20, 155);
-    
-    pdf.save(`${cred.studentName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-access-pass.pdf`);
+    const matchedStudent = students.find((s) => s.id === cred.studentId);
+    const schoolId =
+      String(
+        matchedStudent?.schoolId ||
+          sessionStorage.getItem('schoolId') ||
+          localStorage.getItem('jaystar_cached_school_id') ||
+          ''
+      ).trim();
+    const schoolName =
+      String(
+        matchedStudent?.schoolName ||
+          sessionStorage.getItem('schoolName') ||
+          localStorage.getItem('jaystar_cached_school_name') ||
+          ''
+      ).trim();
+
+    void generateAccessPassPdf({
+      studentId: cred.studentId,
+      studentName: cred.studentName,
+      username: cred.username,
+      accessCode: cred.accessCode,
+      portalUrl: cred.portal,
+      className: matchedStudent?.class || '',
+      schoolId,
+      schoolName,
+    });
   };
 
   useEffect(() => { void load(); }, [load]);
@@ -784,21 +756,31 @@ Important Security Notice:
       <SEO title="Students Roster & Credentials | Jaystarbliss Studios" description="Secure school learner roster and portal access management." noindex />
       
       {/* Action Toolbar */}
-      <div className="flex flex-wrap items-center justify-end gap-2.5">
-        <button 
-          type="button" 
-          onClick={() => void load(true)} 
-          disabled={loading || refreshing} 
-          className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
-        >
-          {refreshing ? <Loader2 size={14} className="animate-spin"/> : <RefreshCw size={14}/>} Refresh Records
-        </button>
-        <Link 
-          to="/portal/school/onboard-student" 
-          className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 inline-flex items-center gap-2 shadow-xs transition-colors"
-        >
-          <Plus size={15}/> Onboard Student
-        </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
+        <div>
+          <h1 className="text-lg sm:text-xl font-bold text-[#1E293B] dark:text-white tracking-tight">
+            School Student Directory
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Select any student row to expand details, or use quick actions to manage access and tracks.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button 
+            type="button" 
+            onClick={() => void load(true)} 
+            disabled={loading || refreshing} 
+            className="rounded-lg bg-[#1E293B] hover:bg-[#14284B] dark:bg-slate-800 dark:hover:bg-slate-700 px-3.5 py-2 text-xs font-semibold text-white disabled:opacity-50 inline-flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            {refreshing ? <Loader2 size={14} className="animate-spin"/> : <RefreshCw size={14}/>} Refresh Records
+          </button>
+          <Link 
+            to="/portal/school/onboard-student" 
+            className="rounded-lg bg-[#B91C1C] hover:bg-red-800 px-3.5 py-2 text-xs font-semibold text-white inline-flex items-center gap-2 transition-colors"
+          >
+            <Plus size={15}/> Onboard Student
+          </Link>
+        </div>
       </div>
 
       {/* 3 Dedicated Filter Tabs */}
@@ -963,134 +945,186 @@ Important Security Notice:
           </p>
           <Link 
             to="/portal/school/onboard-student" 
-            className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white shadow-xs hover:bg-blue-700 transition-colors"
+            className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#B91C1C] px-5 py-2.5 font-semibold text-white hover:bg-red-800 transition-colors"
           >
             <Plus size={15}/> Onboard First Student
           </Link>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="pro-surface rounded-2xl p-12 text-center bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800">
+        <div className="pro-surface rounded-xl p-12 text-center bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800">
           <Search size={26} className="mx-auto text-slate-400"/>
-          <h2 className="font-bold text-sm mt-3 text-slate-900 dark:text-white">No matching students found</h2>
+          <h2 className="font-bold text-sm mt-3 text-[#1E293B] dark:text-white">No matching students found</h2>
           <p className="text-xs text-slate-500 mt-1">Try a different keyword or switch the class filter tab above.</p>
         </div>
       ) : (
-        <div className="pro-surface rounded-2xl overflow-hidden shadow-xs border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <div className="hidden md:grid grid-cols-[1.5fr_1fr_1.2fr_0.9fr_1.8fr] gap-4 px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 text-[11px] uppercase tracking-wider font-bold text-slate-400 bg-slate-50/70 dark:bg-slate-950">
+        <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827]">
+          <div className="hidden md:grid grid-cols-[1.5fr_0.9fr_1.2fr_0.85fr_1.9fr] gap-4 px-5 py-3 border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/70">
             <span>Student &amp; Account</span>
             <span>Class Level</span>
             <span>Curriculum Track</span>
             <span>Portal Status</span>
             <span className="text-right">Actions</span>
           </div>
-          <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-            {filtered.map(student => (
-              <div 
-                key={`${student.collection}-${student.id}`} 
-                className="grid grid-cols-1 md:grid-cols-[1.5fr_1fr_1.2fr_0.9fr_1.8fr] gap-3 md:gap-4 px-5 py-3.5 items-center hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
-              >
-                {/* Student Info */}
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-slate-900 text-white dark:bg-slate-800 flex items-center justify-center shrink-0 font-black text-xs">
-                    {student.fullName ? student.fullName.charAt(0).toUpperCase() : <UserRound size={16}/>}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-bold text-xs sm:text-sm truncate text-slate-900 dark:text-white">
-                      {student.fullName || 'Unnamed Student'}
-                    </div>
-                    <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5 mt-0.5">
-                      <span className="font-mono text-brand-red">@{student.username || 'pending'}</span>
-                      {student.email && <span className="text-slate-400">• {student.email}</span>}
-                    </div>
-                  </div>
-                </div>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {filtered.map(student => {
+              const rowKey = `${student.collection}-${student.id}`;
+              const isExpanded = expandedStudentId === rowKey;
+              const isActive = student.portalAccessEnabled && String(student.accountStatus).toUpperCase() === 'ACTIVE';
+              const progList = Array.isArray((student as any).enrolledPrograms) && (student as any).enrolledPrograms.length > 0
+                ? (student as any).enrolledPrograms
+                : Array.isArray(student.subjects) && student.subjects.length > 0
+                ? student.subjects
+                : student.track
+                ? student.track.split(',').map((s: string) => s.trim()).filter(Boolean)
+                : [schoolPrograms[0]?.name || 'Digital Literacy Junior'];
+              const resolvedClass = formatNormalizedClassDisplay(student.class || student.grade, 'Grade 1');
+              const tutorDisplay = (student as any).tutorName || (student as any).assignedTutor || student.tutorId || 'Not assigned';
+              const parentDisplay = (student as any).parentName || (student as any).parentEmail || student.parentId || 'Institutional enrollment';
 
-                {/* Class */}
-                <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  <span className="md:hidden text-[10px] uppercase text-slate-400 mr-2 font-normal">Class:</span>
-                  {formatNormalizedClassDisplay(student.class || student.grade, 'Grade 1')}
-                </div>
-
-                {/* Track / Programs */}
-                <div className="text-xs text-slate-600 dark:text-slate-300">
-                  <span className="md:hidden text-[10px] uppercase text-slate-400 mr-2 font-normal">Track:</span>
-                  {(() => {
-                    const progList = Array.isArray((student as any).enrolledPrograms) && (student as any).enrolledPrograms.length > 0
-                      ? (student as any).enrolledPrograms
-                      : Array.isArray(student.subjects) && student.subjects.length > 0
-                      ? student.subjects
-                      : student.track
-                      ? student.track.split(',').map((s: string) => s.trim()).filter(Boolean)
-                      : [schoolPrograms[0]?.name || 'Digital Literacy Junior'];
-
-                    return (
-                      <span className="font-medium truncate block max-w-xs" title={progList.join(', ')}>
-                        {progList.join(' • ')}
+              return (
+                <div key={rowKey} className={isExpanded ? 'bg-slate-50/70 dark:bg-slate-900/40' : ''}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    aria-controls={`student-detail-${rowKey}`}
+                    onClick={() => setExpandedStudentId(isExpanded ? null : rowKey)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setExpandedStudentId(isExpanded ? null : rowKey);
+                      }
+                    }}
+                    className="grid grid-cols-1 md:grid-cols-[1.5fr_0.9fr_1.2fr_0.85fr_1.9fr] gap-3 md:gap-4 px-5 py-3.5 items-center hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#B91C1C]"
+                  >
+                    {/* Student Info + Expand Indicator */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-slate-400 shrink-0" aria-hidden="true">
+                        {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                       </span>
-                    );
-                  })()}
+                      <div className="w-8 h-8 rounded-full bg-[#1E293B] text-white dark:bg-slate-800 flex items-center justify-center shrink-0 font-bold text-xs">
+                        {student.fullName ? student.fullName.charAt(0).toUpperCase() : <UserRound size={15}/>}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs sm:text-sm truncate text-[#1E293B] dark:text-white">
+                          {student.fullName || 'Unnamed Student'}
+                        </div>
+                        <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5 mt-0.5">
+                          <span className="font-mono text-[#B91C1C] font-semibold">@{student.username || 'pending'}</span>
+                          <span className="md:hidden text-slate-400">· {resolvedClass}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Class */}
+                    <div className="hidden md:block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {resolvedClass}
+                    </div>
+
+                    {/* Track / Programs */}
+                    <div className="text-xs text-slate-600 dark:text-slate-300 pl-7 md:pl-0">
+                      <span className="md:hidden text-[10px] uppercase text-slate-400 mr-1.5 font-normal">Track:</span>
+                      <span className="font-medium truncate block max-w-xs" title={progList.join(', ')}>
+                        {progList.join(' · ')}
+                      </span>
+                    </div>
+
+                    {/* Status (icon + text, no rounded pill) */}
+                    <div className="pl-7 md:pl-0">
+                      <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
+                        isActive
+                          ? 'text-[#1E293B] dark:text-slate-200'
+                          : 'text-[#B91C1C] dark:text-red-400'
+                      }`}>
+                        {isActive ? <CheckCircle2 size={13} className="text-[#1E293B] dark:text-slate-300" /> : <AlertCircle size={13} className="text-[#B91C1C]" />}
+                        {isActive ? 'Active' : 'Restricted'}
+                      </span>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-start md:justify-end gap-2 flex-wrap pl-7 md:pl-0" onClick={e => e.stopPropagation()}>
+                      <button 
+                        type="button" 
+                        onClick={() => openEditModal(student)} 
+                        className="min-h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs font-semibold inline-flex items-center gap-1 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                        title="Edit student details & assign track"
+                      >
+                        <Edit3 size={12}/> Edit
+                      </button>
+
+                      <button 
+                        type="button" 
+                        onClick={() => void handleIssueCredentials(student)} 
+                        disabled={isIssuing && issuingStudent?.id === student.id}
+                        className="min-h-8 rounded-lg bg-[#1E293B] hover:bg-[#14284B] text-white px-2.5 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50 transition-colors cursor-pointer"
+                        title="Generate and issue new login access code"
+                      >
+                        {isIssuing && issuingStudent?.id === student.id ? (
+                          <Loader2 size={12} className="animate-spin"/>
+                        ) : (
+                          <KeyRound size={12}/>
+                        )}
+                        Issue Code
+                      </button>
+
+                      <button 
+                        type="button" 
+                        onClick={() => void updateAccess(student, student.portalAccessEnabled ? 'disable' : 'enable')} 
+                        className={`min-h-8 rounded-lg border px-2.5 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                          isActive
+                            ? 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-[#B91C1C] hover:border-red-300'
+                            : 'border-[#B91C1C]/40 text-[#B91C1C] dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30'
+                        }`}
+                      >
+                        {isActive ? (
+                          <><UserX size={12}/> Disable</>
+                        ) : (
+                          <><UserCheck size={12}/> Enable</>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Expanded Student Record Detail Panel (strictly structured rows, no second card grid) */}
+                  {isExpanded && (
+                    <div
+                      id={`student-detail-${rowKey}`}
+                      className="px-5 py-4 pl-12 border-t border-slate-200/80 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/60 text-xs space-y-2.5"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-y-2 gap-x-6">
+                        <div>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Student Email</span>
+                          <span className="font-semibold text-[#1E293B] dark:text-slate-200 break-all">{student.email || 'Not provided'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Parent / Guardian</span>
+                          <span className="font-semibold text-[#1E293B] dark:text-slate-200 break-all">{parentDisplay}</span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Assigned Faculty / Tutor</span>
+                          <span className="font-semibold text-[#1E293B] dark:text-slate-200">{tutorDisplay}</span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Portal Account Status</span>
+                          <span className="font-semibold text-[#1E293B] dark:text-slate-200">
+                            {isActive ? 'Enabled · Active' : 'Restricted'} ({student.credentialIssuedAt ? `Code issued ${new Date(student.credentialIssuedAt).toLocaleDateString()}` : 'Credentials hashed & protected'})
+                          </span>
+                        </div>
+                      </div>
+                      <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400 mr-1.5">Enrolled Curriculum Tracks:</span>
+                          <span className="font-semibold text-[#1E293B] dark:text-slate-200">{progList.join(', ')}</span>
+                        </div>
+                        <span className="font-mono text-slate-500 dark:text-slate-400">
+                          Record ID: {student.id} · Source: {student.source}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-
-                {/* Status */}
-                <div>
-                  <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${
-                    student.portalAccessEnabled && String(student.accountStatus).toUpperCase() === 'ACTIVE'
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-amber-600 dark:text-amber-400'
-                  }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${
-                      student.portalAccessEnabled && String(student.accountStatus).toUpperCase() === 'ACTIVE'
-                        ? 'bg-emerald-500'
-                        : 'bg-amber-500'
-                    }`} />
-                    {student.portalAccessEnabled && String(student.accountStatus).toUpperCase() === 'ACTIVE' ? 'Active' : 'Restricted'}
-                  </span>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center justify-start md:justify-end gap-2 flex-wrap">
-                  <button 
-                    type="button" 
-                    onClick={() => openEditModal(student)} 
-                    className="min-h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs font-bold inline-flex items-center gap-1 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                    title="Edit student details & assign track"
-                  >
-                    <Edit3 size={12}/> Edit
-                  </button>
-
-                  <button 
-                    type="button" 
-                    onClick={() => void handleIssueCredentials(student)} 
-                    disabled={isIssuing && issuingStudent?.id === student.id}
-                    className="min-h-8 rounded-xl bg-blue-600 text-white px-3 text-xs font-semibold inline-flex items-center gap-1 hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer shadow-xs"
-                    title="Generate and issue new login access code"
-                  >
-                    {isIssuing && issuingStudent?.id === student.id ? (
-                      <Loader2 size={12} className="animate-spin"/>
-                    ) : (
-                      <KeyRound size={12}/>
-                    )}
-                    Issue Code
-                  </button>
-
-                  <button 
-                    type="button" 
-                    onClick={() => void updateAccess(student, student.portalAccessEnabled ? 'disable' : 'enable')} 
-                    className={`min-h-8 rounded-lg border px-2 text-xs font-bold inline-flex items-center gap-1 transition-colors cursor-pointer ${
-                      student.portalAccessEnabled && String(student.accountStatus).toUpperCase() === 'ACTIVE'
-                        ? 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-red-600'
-                        : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
-                    }`}
-                  >
-                    {student.portalAccessEnabled && String(student.accountStatus).toUpperCase() === 'ACTIVE' ? (
-                      <><UserX size={12}/> Disable</>
-                    ) : (
-                      <><UserCheck size={12}/> Enable</>
-                    )}
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1286,7 +1320,7 @@ Important Security Notice:
               <button
                 type="submit"
                 disabled={savingStudent}
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 shadow-xs active:scale-95 disabled:opacity-50 transition-colors"
+                className="px-5 py-2.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 active:scale-95 disabled:opacity-50 transition-colors cursor-pointer"
               >
                 {savingStudent ? <Loader2 size={13} className="animate-spin"/> : <Check size={13}/>}
                 <span>Save Changes &amp; Assign</span>
@@ -1299,22 +1333,22 @@ Important Security Notice:
       {/* Credential Modal Popup */}
       {revealedCredential && (
         <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-[#161B26] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
-            <div className="bg-brand-red text-white p-6 flex items-center justify-between">
+            <div className="bg-[#1E293B] text-white p-6 flex items-center justify-between border-b border-slate-800">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                  <KeyRound size={22} className="text-white"/>
+                <div className="w-10 h-10 rounded-lg bg-[#B91C1C] flex items-center justify-center">
+                  <KeyRound size={20} className="text-white"/>
                 </div>
                 <div>
-                  <div className="text-[10px] font-black uppercase tracking-widest text-white/80">Security Credential</div>
-                  <h3 className="text-lg font-black">{revealedCredential.studentName}</h3>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Security Credential</div>
+                  <h3 className="text-lg font-bold">{revealedCredential.studentName}</h3>
                 </div>
               </div>
               <button 
                 type="button" 
                 onClick={() => setRevealedCredential(null)} 
-                className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
               >
                 <X size={18}/>
               </button>
@@ -1322,17 +1356,17 @@ Important Security Notice:
 
             {/* Modal Body */}
             <div className="p-6 space-y-5">
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20 p-4 text-xs text-amber-900 dark:text-amber-300 flex items-start gap-3">
-                
+              <div className="rounded-xl border border-red-200 bg-red-50/70 dark:border-red-900/50 dark:bg-red-950/25 p-4 text-xs text-slate-800 dark:text-slate-200 flex items-start gap-3">
+                <AlertCircle size={16} className="text-[#B91C1C] shrink-0 mt-0.5" />
                 <div>
                   <strong>Write-Once Access Code:</strong> This fresh access code has been securely hashed and stored. Provide these credentials to the student now; the code is not visible again after closing this window.
                 </div>
               </div>
 
-              <div className="space-y-3 bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+              <div className="space-y-3 bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
                 <div>
                   <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Portal Username</div>
-                  <div className="font-mono text-sm font-bold text-slate-900 dark:text-white mt-0.5 select-all">
+                  <div className="font-mono text-sm font-bold text-[#1E293B] dark:text-white mt-0.5 select-all">
                     {revealedCredential.username}
                   </div>
                 </div>
@@ -1340,15 +1374,15 @@ Important Security Notice:
                 <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Fresh Access Code</div>
                   <div className="flex items-center justify-between gap-3 mt-1">
-                    <span className="font-mono text-xl font-black text-brand-red tracking-wider select-all">
+                    <span className="font-mono text-xl font-black text-[#B91C1C] tracking-wider select-all">
                       {revealedCredential.accessCode}
                     </span>
                     <button
                       type="button"
                       onClick={() => copyToClipboard(revealedCredential.accessCode)}
-                      className="min-h-9 px-3 rounded-xl bg-slate-900 dark:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-1.5 hover:bg-slate-800"
+                      className="min-h-9 px-3 rounded-lg bg-[#1E293B] dark:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-1.5 hover:bg-[#14284B] cursor-pointer"
                     >
-                      {copied ? <Check size={14} className="text-emerald-400"/> : <Copy size={14}/>}
+                      {copied ? <Check size={14} className="text-white"/> : <Copy size={14}/>}
                       {copied ? 'Copied' : 'Copy'}
                     </button>
                   </div>
@@ -1356,7 +1390,7 @@ Important Security Notice:
 
                 <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Login Portal URL</div>
-                  <div className="font-mono text-xs text-blue-600 dark:text-blue-400 mt-0.5 select-all">
+                  <div className="font-mono text-xs text-[#1E293B] dark:text-slate-200 mt-0.5 select-all">
                     {revealedCredential.portal}
                   </div>
                 </div>
@@ -1367,14 +1401,14 @@ Important Security Notice:
                 <button
                   type="button"
                   onClick={() => exportPdf(revealedCredential)}
-                  className="flex-1 min-h-11 rounded-xl bg-slate-900 dark:bg-white dark:text-slate-900 text-white px-4 text-xs font-black inline-flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+                  className="flex-1 min-h-11 rounded-lg bg-[#1E293B] dark:bg-white dark:text-[#1E293B] text-white px-4 text-xs font-bold inline-flex items-center justify-center gap-2 hover:opacity-90 transition-opacity cursor-pointer"
                 >
                   <FileText size={15}/> Download PDF Pass
                 </button>
                 <button
                   type="button"
                   onClick={() => exportTxt(revealedCredential)}
-                  className="flex-1 min-h-11 rounded-xl border border-slate-200 dark:border-slate-800 px-4 text-xs font-black inline-flex items-center justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors"
+                  className="flex-1 min-h-11 rounded-lg border border-slate-200 dark:border-slate-700 px-4 text-xs font-bold inline-flex items-center justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer"
                 >
                   <Download size={15}/> Download TXT File
                 </button>
@@ -1390,16 +1424,16 @@ Important Security Notice:
                   const target = students.find(s => s.id === revealedCredential.studentId) || { id: revealedCredential.studentId, fullName: revealedCredential.studentName, username: revealedCredential.username, collection: 'individualStudents', class: 'General', track: '', parentId: null, tutorId: null, staffId: null, portalAccessEnabled: true, accountStatus: 'ACTIVE', source: 'individualStudents' };
                   void handleIssueCredentials(target as Student);
                 }}
-                className="min-h-10 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 cursor-pointer"
+                className="min-h-10 px-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 cursor-pointer"
               >
-                {isIssuing ? <Loader2 size={14} className="animate-spin text-brand-red"/> : <RefreshCw size={14} className="text-brand-red"/>}
+                {isIssuing ? <Loader2 size={14} className="animate-spin text-[#B91C1C]"/> : <RefreshCw size={14} className="text-[#B91C1C]"/>}
                 <span>Rotate Access Code</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setRevealedCredential(null)}
-                className="min-h-10 px-6 rounded-xl bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 cursor-pointer shadow-xs active:scale-95 transition-colors"
+                className="min-h-10 px-6 rounded-lg bg-[#B91C1C] text-white text-xs font-semibold hover:bg-red-800 cursor-pointer transition-colors"
               >
                 Done
               </button>

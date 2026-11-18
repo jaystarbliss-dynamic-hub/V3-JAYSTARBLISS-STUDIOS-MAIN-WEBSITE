@@ -365,7 +365,7 @@ const SchoolStudentOnboarding: React.FC = () => {
               onClick={copyCredentials}
               className="min-h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3.5 text-xs font-bold inline-flex items-center gap-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-100"
             >
-              {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+              {copied ? <Check size={14} className="text-[#1E293B] dark:text-white" /> : <Copy size={14} />}
               <span>{copied ? 'Copied!' : 'Copy Info'}</span>
             </button>
             <button

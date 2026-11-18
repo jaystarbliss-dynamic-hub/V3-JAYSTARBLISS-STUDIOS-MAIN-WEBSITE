@@ -89,9 +89,9 @@ export const CMS_PAGES: EditablePageConfig[] = [
         name: 'Featured Programs Section',
         description: 'Section header and call-to-action for programs preview.',
         defaultData: {
-          title: 'LEARN SOMETHING YOU CAN USE.',
-          subtitle: 'Our programs are designed around practical learning. You don\'t just learn the theory — you get opportunities to practise, create and apply what you\'ve learned.',
-          ctaText: 'VIEW ALL PROGRAMS',
+          title: 'THE LEARNING ECOSYSTEM',
+          subtitle: 'Explore our four core programmes: Technology, Music, Academics, and Design and Graphics.',
+          ctaText: 'EXPLORE ALL FOUR PROGRAMS',
           ctaLink: '/programs'
         },
         fields: [

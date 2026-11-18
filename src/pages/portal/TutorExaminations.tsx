@@ -66,15 +66,9 @@ import {
   X,
   Link2,
   Layers,
-  LayoutTemplate,
   MessageSquare,
 } from "lucide-react";
 import { ExamListSkeleton } from "../../components/ui/Skeleton";
-import {
-  TUTOR_REMARK_PRESETS,
-  getSuggestedTutorRemark,
-} from "../../lib/documentHeaderTemplates";
-import DocumentHeaderCustomizerModal from "../../components/portal/DocumentHeaderCustomizerModal";
 import { EmbeddedLearningMedia } from "../../components/portal/EmbeddedLearningMedia";
 import { getEffectiveAuth } from "../../utils/impersonation";
 import {
@@ -89,6 +83,7 @@ import {
   type RecipientSelectionResult,
 } from "../../components/assessment/RecipientSelectorModal";
 import type { QuestionBankItem } from "../../components/assessment/ImportQuestionsModal";
+import { ReferenceLookupPanel } from "../../components/academic-reporting/ReferenceLookupPanel";
 
 type ExistingExamItem = {
   id: string;
@@ -361,7 +356,6 @@ export default function TutorExaminations() {
   const [tutorRemarksByAttempt, setTutorRemarksByAttempt] = useState<Record<string, string>>({});
   const [manualScoresByAttempt, setManualScoresByAttempt] = useState<Record<string, Record<string, number>>>({});
   const [manualTotalScoreByAttempt, setManualTotalScoreByAttempt] = useState<Record<string, string>>({});
-  const [showHeaderCustomizer, setShowHeaderCustomizer] = useState(false);
 
   // Existing Examinations List & Management State
   const [existingExams, setExistingExams] = useState<ExistingExamItem[]>([]);
@@ -2932,16 +2926,16 @@ ANSWER KEY
       {message && (
         <div
           role="status"
-          className="rounded-xl border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 dark:border-emerald-800 p-3.5 sm:p-4 text-xs font-semibold text-emerald-900 dark:text-emerald-200 flex items-start sm:items-center justify-between gap-3 shadow-xs"
+          className="rounded-xl border border-slate-200 bg-slate-50 dark:bg-slate-900 dark:border-slate-700 p-3.5 sm:p-4 text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-start sm:items-center justify-between gap-3 shadow-xs"
         >
           <div className="flex items-start sm:items-center gap-2 min-w-0">
-            <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5 sm:mt-0" />
+            <CheckCircle2 size={16} className="text-[#1E293B] dark:text-slate-200 shrink-0 mt-0.5 sm:mt-0" />
             <span className="break-words">{message}</span>
           </div>
           <button
             type="button"
             onClick={() => setMessage("")}
-            className="text-emerald-700 dark:text-emerald-300 hover:text-emerald-900 p-1 shrink-0"
+            className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 shrink-0"
             aria-label="Dismiss message"
           >
             <X size={16} />
@@ -2973,7 +2967,9 @@ ANSWER KEY
       {/* 1. ASSESSMENT OVERVIEW (PRIMARY INITIAL LANDING PAGE)          */}
       {/* ============================================================== */}
       {viewMode === "overview" && (
-        <AssessmentOverview
+        <div className="space-y-5">
+          <ReferenceLookupPanel compact />
+          <AssessmentOverview
           assessments={overviewAssessments}
           isLoading={existingBusy}
           onRefresh={() => {
@@ -3026,6 +3022,7 @@ ANSWER KEY
           }}
           isTutor={!isAdminWorkspace}
         />
+        </div>
       )}
 
       {/* ============================================================== */}
@@ -3149,9 +3146,9 @@ ANSWER KEY
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]">
             <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
               <div>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                <p className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                   <Link2 size={12} /> Duplicated Link Assessment · Final Review
-                </span>
+                </p>
                 <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-white mt-1">
                   Review &amp; Publish External Link Assessment
                 </h3>
@@ -3323,7 +3320,7 @@ ANSWER KEY
                     type="button"
                     disabled={savingLinkDuplicate}
                     onClick={() => void handleSaveOrPublishDuplicatedLinkExam("scheduled")}
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer"
+                    className="px-4 py-2 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] text-white text-xs font-bold cursor-pointer"
                   >
                     Schedule for Later
                   </button>
@@ -3351,7 +3348,7 @@ ANSWER KEY
             <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-black text-base text-slate-900 dark:text-white flex items-center gap-2">
-                  <PlusCircle size={18} className="text-blue-600 shrink-0" />
+                  <PlusCircle size={18} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
                   Create New Assessment
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -3435,9 +3432,9 @@ ANSWER KEY
                   <button
                     type="button"
                     onClick={() => handleStartNewExamination("NATIVE", workType)}
-                    className="w-full p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 hover:border-blue-600 dark:hover:border-blue-500 bg-white dark:bg-slate-900/60 text-left transition-all cursor-pointer flex items-start gap-3.5 group"
+                    className="w-full p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 hover:border-[#1E293B] dark:hover:border-slate-500 bg-white dark:bg-slate-900/60 text-left transition-all cursor-pointer flex items-start gap-3.5 group"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 flex items-center justify-center shrink-0 group-hover:bg-[#1E293B] group-hover:text-white transition-colors">
                       <Layers size={18} />
                     </div>
                     <div className="space-y-1 min-w-0">
@@ -3453,9 +3450,9 @@ ANSWER KEY
                   <button
                     type="button"
                     onClick={() => handleStartNewExamination("EXTERNAL_LINK", workType)}
-                    className="w-full p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 hover:border-blue-600 dark:hover:border-blue-500 bg-white dark:bg-slate-900/60 text-left transition-all cursor-pointer flex items-start gap-3.5 group"
+                    className="w-full p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 hover:border-[#B91C1C] dark:hover:border-red-500 bg-white dark:bg-slate-900/60 text-left transition-all cursor-pointer flex items-start gap-3.5 group"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/40 text-[#B91C1C] dark:text-red-400 flex items-center justify-center shrink-0 group-hover:bg-[#B91C1C] group-hover:text-white transition-colors">
                       <ExternalLink size={18} />
                     </div>
                     <div className="space-y-1 min-w-0">
@@ -3493,7 +3490,7 @@ ANSWER KEY
             <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                  <Upload size={18} className="text-blue-600 shrink-0" /> Import Questions to Assessment
+                  <Upload size={18} className="text-[#B91C1C] dark:text-red-400 shrink-0" /> Import Questions to Assessment
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Paste formatted questions and answer keys or upload a structured CSV file.
@@ -3515,7 +3512,7 @@ ANSWER KEY
                   onClick={() => setImportSourceTab("text")}
                   className={`px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer ${
                     importSourceTab === "text"
-                      ? "bg-blue-600 text-white"
+                      ? "bg-[#1E293B] dark:bg-[#B91C1C] text-white"
                       : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                   }`}
                 >
@@ -3526,7 +3523,7 @@ ANSWER KEY
                   onClick={() => setImportSourceTab("csv")}
                   className={`px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer ${
                     importSourceTab === "csv"
-                      ? "bg-blue-600 text-white"
+                      ? "bg-[#1E293B] dark:bg-[#B91C1C] text-white"
                       : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                   }`}
                 >
@@ -3543,7 +3540,7 @@ ANSWER KEY
                     <button
                       type="button"
                       onClick={handleInsertSampleTemplate}
-                      className="text-xs font-semibold text-blue-600 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                      className="text-xs font-semibold text-[#B91C1C] dark:text-red-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
                     >
                       <Sparkles size={13} /> Insert Format Example
                     </button>
@@ -3556,7 +3553,7 @@ ANSWER KEY
                     placeholder={
                       "1. What is 2 + 2? [2 marks]\nA. 3\nB. 4\nC. 5\n\nANSWER KEY\n1. B"
                     }
-                    className="w-full font-mono text-xs p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 focus:outline-none focus:border-blue-600"
+                    className="w-full font-mono text-xs p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 focus:outline-none focus:border-[#1E293B]"
                   />
 
                   <div className="flex flex-wrap justify-between items-center gap-2 pt-1">
@@ -3568,14 +3565,14 @@ ANSWER KEY
                       Parse &amp; Validate Script
                     </button>
                     {parsedImportQuestions.length > 0 && (
-                      <span className="text-xs font-bold text-emerald-600">
+                      <span className="text-xs font-bold text-slate-900 dark:text-white tabular-nums">
                         {parsedImportQuestions.length} valid question(s) ready!
                       </span>
                     )}
                   </div>
 
                   {importWarnings.length > 0 && (
-                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-1">
+                    <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-xs text-red-800 dark:text-red-200 space-y-1">
                       {importWarnings.map((w, idx) => (
                         <p key={idx}>• {w}</p>
                       ))}
@@ -3587,7 +3584,7 @@ ANSWER KEY
               {importSourceTab === "csv" && (
                 <div className="space-y-4 py-3">
                   <div className="p-6 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl text-center space-y-3">
-                    <Upload size={32} className="mx-auto text-blue-600" />
+                    <Upload size={32} className="mx-auto text-[#1E293B] dark:text-slate-300" />
                     <div>
                       <p className="text-xs font-bold text-slate-800 dark:text-white">
                         Upload CSV Question File
@@ -3596,7 +3593,7 @@ ANSWER KEY
                         Columns: Question, Option A, Option B, Option C, Option D, Correct, Points
                       </p>
                     </div>
-                    <label className="inline-flex px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer">
+                    <label className="inline-flex px-4 py-2.5 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] text-white text-xs font-semibold cursor-pointer">
                       <span>Choose .CSV File</span>
                       <input
                         type="file"
@@ -3655,7 +3652,7 @@ ANSWER KEY
                 type="button"
                 disabled={!parsedImportQuestions.length}
                 onClick={handleAppendImportedQuestions}
-                className="min-h-[40px] rounded-xl bg-blue-600 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer shadow-xs"
+                className="min-h-[40px] rounded-xl bg-[#B91C1C] px-5 py-2 text-xs font-semibold text-white hover:bg-red-800 disabled:opacity-50 cursor-pointer shadow-xs"
               >
                 Import {parsedImportQuestions.length} Question(s)
               </button>
@@ -3664,19 +3661,6 @@ ANSWER KEY
         </div>
       )}
 
-      <DocumentHeaderCustomizerModal
-        isOpen={showHeaderCustomizer}
-        onClose={() => setShowHeaderCustomizer(false)}
-        scopeKey={schoolId || "default"}
-        schoolId={schoolId}
-        fallbackSchoolName={
-          assignedSchools.find((s) => s.id === schoolId)?.name ||
-          assignedSchools[0]?.name ||
-          ""
-        }
-        userUid={auth.currentUser?.uid || ""}
-        canUpdateSchoolProfile={isAdminWorkspace}
-      />
     </main>
   );
 }

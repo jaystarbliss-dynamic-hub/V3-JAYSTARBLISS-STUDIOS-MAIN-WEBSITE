@@ -184,7 +184,7 @@ const PortalLiveClasses: React.FC = () => {
       />
 
       {message && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs font-bold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 text-xs font-bold text-[#B91C1C] dark:text-red-400">
           {message}
         </div>
       )}

@@ -1165,6 +1165,7 @@ export default function StudentExamAttempt() {
           id: data.exam.id,
           title: data.exam.title,
           subject: data.exam.subject,
+          schoolId: data.exam.schoolId || data.attempt.schoolId,
           schoolName: data.exam.schoolName || data.attempt.schoolName,
           maxScore: data.exam.maxScore || data.attempt.maxScore,
           durationMinutes: data.exam.durationMinutes,
@@ -1204,12 +1205,12 @@ export default function StudentExamAttempt() {
     return (
       <main className="mx-auto max-w-3xl space-y-6 p-4 sm:p-8">
         <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm text-center space-y-4">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200">
             <ExternalLink size={28} />
           </div>
-          <span className="inline-block rounded-md bg-blue-50 dark:bg-blue-950/60 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300">
+          <p className="text-xs font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
             {typeLabels.singular}
-          </span>
+          </p>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
             {data.exam.title}
           </h1>
@@ -1231,7 +1232,7 @@ export default function StudentExamAttempt() {
               href={data.exam.externalUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 shadow-sm"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] px-6 py-3 text-sm font-bold text-white hover:bg-red-800 shadow-sm"
             >
               Open {typeLabels.singular}
               <ExternalLink size={16} />
@@ -1239,7 +1240,7 @@ export default function StudentExamAttempt() {
             <button
               type="button"
               onClick={() => nav("/portal/student/exams")}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
             >
               <ArrowLeft size={16} />
               Return to Assessments
@@ -1328,45 +1329,48 @@ export default function StudentExamAttempt() {
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2 mb-0.5">
-              <span className="inline-flex items-center rounded-md bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-200">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mb-0.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-red-300">
                 {typeLabels.singular}
               </span>
+              <span aria-hidden="true" className="text-slate-500">·</span>
               <h2 className="text-base sm:text-xl font-bold text-white truncate sm:whitespace-normal sm:break-words">
                 {data.exam.title}
               </h2>
             </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-slate-300 mt-0.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-slate-300 mt-0.5 tabular-nums">
               <span>{data.exam.subject}</span>
               {!closed && answerableQuestions.length > 0 && !isSingleDeliverableTask && (
-                <span className="inline-flex items-center rounded-md bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-slate-200">
-                  {answeredCount} / {answerableQuestions.length} Answered
-                </span>
+                <>
+                  <span aria-hidden="true" className="text-slate-500">·</span>
+                  <span className="text-xs font-semibold text-slate-200">
+                    {answeredCount} / {answerableQuestions.length} Answered
+                  </span>
+                </>
               )}
             </div>
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
-            {/* View Mode Toggle: Focused Quiz Player vs All Questions List */}
             {!closed && data.questions.length > 1 && !isSingleDeliverableTask && (
               <div className="flex items-center gap-1 p-1 bg-black/40 rounded-xl border border-white/10 shrink-0">
                 <button
                   type="button"
                   onClick={() => setViewMode("focused")}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     viewMode === "focused"
-                      ? "bg-red-600 text-white shadow-sm shadow-red-600/40"
+                      ? "bg-[#B91C1C] text-white shadow-sm"
                       : "text-slate-400 hover:text-white"
                   }`}
                   title="Focused Quiz Player (single question step-by-step format)"
                 >
-                  <Flame size={13} className={viewMode === "focused" ? "text-amber-200" : ""} />
+                  <Flame size={13} className={viewMode === "focused" ? "text-red-200" : ""} />
                   <span className="hidden xs:inline">Quiz Player</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setViewMode("all")}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     viewMode === "all"
                       ? "bg-white/20 text-white shadow-sm"
                       : "text-slate-400 hover:text-white"
@@ -1391,7 +1395,7 @@ export default function StudentExamAttempt() {
                     ? "border-white/10 bg-white/5"
                     : isLowTime
                     ? "border-red-400/50 bg-red-500/20 animate-pulse"
-                    : "border-amber-400/30 bg-white/10"
+                    : "border-white/20 bg-white/10"
                 }`}
               >
                 {isExpiredAttempt ? (
@@ -1401,19 +1405,19 @@ export default function StudentExamAttempt() {
                       <span className="block text-[9px] uppercase tracking-wider font-bold text-red-300 leading-none mb-0.5">
                         Time Expired
                       </span>
-                      <span className="font-mono text-base sm:text-xl font-black leading-none text-red-200">
+                      <span className="font-mono text-base sm:text-xl font-black leading-none text-red-200 tabular-nums">
                         00:00 · Closed
                       </span>
                     </div>
                   </div>
                 ) : closed ? (
-                  <span className="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider">
+                  <span className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
                     {isReleased ? "Released" : data.attempt.status}
                   </span>
                 ) : (
                   <div className="flex items-center gap-2">
                     <Clock
-                      className={isLowTime ? "text-red-300 shrink-0" : "text-amber-400 shrink-0"}
+                      className={isLowTime ? "text-red-300 shrink-0" : "text-slate-200 shrink-0"}
                       size={18}
                     />
                     <div className="text-left">
@@ -1421,8 +1425,8 @@ export default function StudentExamAttempt() {
                         Time Left
                       </span>
                       <span
-                        className={`font-mono text-lg sm:text-2xl font-black leading-none ${
-                          isLowTime ? "text-red-200" : "text-amber-300"
+                        className={`font-mono text-lg sm:text-2xl font-black leading-none tabular-nums ${
+                          isLowTime ? "text-red-200" : "text-white"
                         }`}
                       >
                         {formattedTime}
@@ -1461,7 +1465,7 @@ export default function StudentExamAttempt() {
               type="button"
               disabled={retakingBusy}
               onClick={() => void handleRetakeAssessment()}
-              className="w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-xs cursor-pointer disabled:opacity-50"
+              className="w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-xs cursor-pointer disabled:opacity-50"
             >
               <RotateCcw size={15} />
               {retakingBusy ? "Starting Retake…" : `Retake ${typeLabels.singular}`}
@@ -1481,7 +1485,7 @@ export default function StudentExamAttempt() {
       {notice && (
         <p
           role="status"
-          className="rounded-xl bg-blue-50 dark:bg-blue-950/50 p-4 text-xs sm:text-sm font-semibold text-blue-900 dark:text-blue-200 border border-blue-200 dark:border-blue-800"
+          className="rounded-xl bg-slate-100 dark:bg-slate-800/80 p-4 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700"
         >
           {notice}
         </p>
@@ -1495,10 +1499,10 @@ export default function StudentExamAttempt() {
               {/* UNIFIED OFFICIAL REPORT HEADER */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
                 <div className="min-w-0">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 px-3 py-1 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                  <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                     <CheckCircle2 size={14} /> Official Released Performance Report
-                  </span>
-                  <h2 className="mt-2 text-xl sm:text-2xl font-bold text-slate-900 dark:text-white break-words">
+                  </p>
+                  <h2 className="mt-1.5 text-xl sm:text-2xl font-bold text-slate-900 dark:text-white break-words">
                     {reportVm.examTitle}
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
@@ -1521,14 +1525,14 @@ export default function StudentExamAttempt() {
                   <button
                     onClick={handleDownloadReport}
                     disabled={downloadingPdf}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[#1E293B] dark:bg-slate-800 px-5 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-[#0F172A] dark:hover:bg-slate-700 disabled:opacity-50 cursor-pointer"
                   >
                     <Download size={16} />
                     {downloadingPdf ? "Generating PDF…" : "Download Official Result PDF"}
                   </button>
                   <button
                     onClick={() => nav("/portal/student/exams")}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
                   >
                     <ArrowLeft size={16} />
                     Return to Assessments
@@ -1539,7 +1543,7 @@ export default function StudentExamAttempt() {
               {/* CANDIDATE & PARTNER SCHOOL METADATA */}
               <div className="grid gap-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-4 sm:grid-cols-3">
                 <div className="flex items-start gap-3">
-                  <User className="mt-0.5 text-blue-600 dark:text-blue-400 shrink-0" size={18} />
+                  <User className="mt-0.5 text-[#1E293B] dark:text-slate-300 shrink-0" size={18} />
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Candidate
@@ -1553,7 +1557,7 @@ export default function StudentExamAttempt() {
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <School className="mt-0.5 text-blue-600 dark:text-blue-400 shrink-0" size={18} />
+                  <School className="mt-0.5 text-[#1E293B] dark:text-slate-300 shrink-0" size={18} />
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       {isPrivateStudentReport ? "Enrolment Category" : "Partner School"}
@@ -1569,7 +1573,7 @@ export default function StudentExamAttempt() {
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <Award className="mt-0.5 text-blue-600 dark:text-blue-400 shrink-0" size={18} />
+                  <Award className="mt-0.5 text-[#B91C1C] dark:text-red-400 shrink-0" size={18} />
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Evaluation Mode
@@ -1577,36 +1581,36 @@ export default function StudentExamAttempt() {
                     <p className="text-sm font-bold text-slate-900 dark:text-white">
                       {reportVm.evaluationMode}
                     </p>
-                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 font-mono">
                       Ref: {reportVm.attemptId.slice(-8)}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* SCORE & GRADE SUMMARY CARDS */}
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
-                <div className="rounded-2xl border border-blue-200 dark:border-blue-800/70 bg-blue-50/60 dark:bg-blue-950/30 p-3.5 sm:p-4 text-center">
-                  <span className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-blue-800 dark:text-blue-300">
+              {/* SCORE & GRADE SUMMARY DIVIDED STRIP */}
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800">
+                <div className="p-4 text-center">
+                  <span className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Score Obtained
                   </span>
-                  <span className="mt-1 block text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                  <span className="mt-1 block text-xl sm:text-2xl font-black text-slate-900 dark:text-white tabular-nums">
                     {reportVm.rawScore} / {reportVm.maxScore}
                   </span>
                 </div>
-                <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/60 dark:bg-emerald-950/30 p-3.5 sm:p-4 text-center">
-                  <span className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                <div className="p-4 text-center">
+                  <span className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Percentage
                   </span>
-                  <span className="mt-1 block text-xl sm:text-2xl font-black text-emerald-950 dark:text-emerald-200">
+                  <span className="mt-1 block text-xl sm:text-2xl font-black text-[#B91C1C] dark:text-red-400 tabular-nums">
                     {reportVm.percentage}%
                   </span>
                 </div>
-                <div className="rounded-2xl border border-indigo-200 dark:border-indigo-800/70 bg-indigo-50/60 dark:bg-indigo-950/30 p-3.5 sm:p-4 text-center col-span-2">
-                  <span className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-indigo-800 dark:text-indigo-300">
+                <div className="p-4 text-center col-span-2">
+                  <span className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Assessment Grade &amp; Standing
                   </span>
-                  <span className="mt-1 block text-lg sm:text-xl font-black text-indigo-950 dark:text-indigo-200">
+                  <span className="mt-1 block text-lg sm:text-xl font-black text-slate-900 dark:text-white">
                     {reportVm.grade}
                   </span>
                 </div>
@@ -1629,7 +1633,7 @@ export default function StudentExamAttempt() {
                     <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
                       Submission &amp; Question Review ({reportVm.questionRows.length})
                     </h3>
-                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    <span className="text-xs font-semibold tabular-nums text-slate-500 dark:text-slate-400">
                       Total Marks: {reportVm.maxScore}
                     </span>
                   </div>
@@ -1646,15 +1650,15 @@ export default function StudentExamAttempt() {
                             Q{row.index}. {row.prompt}
                           </span>
                           <span
-                            className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            className={`shrink-0 text-[11px] font-bold tabular-nums uppercase tracking-wide ${
                               row.status === "PASS"
-                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                ? "text-[#1E293B] dark:text-white"
                                 : row.status === "PART"
-                                ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
-                                : "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300"
+                                ? "text-slate-600 dark:text-slate-300"
+                                : "text-[#B91C1C] dark:text-red-400"
                             }`}
                           >
-                            {row.pointsAwarded}/{row.maxPoints} ({row.status})
+                            {row.pointsAwarded}/{row.maxPoints} · {row.status}
                           </span>
                         </div>
                         <div className="grid grid-cols-1 gap-1 pt-1 border-t border-slate-200/70 dark:border-slate-700/70">
@@ -1665,8 +1669,8 @@ export default function StudentExamAttempt() {
                             <span
                               className={`font-semibold ${
                                 row.isCorrect
-                                  ? "text-emerald-700 dark:text-emerald-400"
-                                  : "text-slate-800 dark:text-slate-200"
+                                  ? "text-[#1E293B] dark:text-white"
+                                  : "text-slate-700 dark:text-slate-300"
                               }`}
                             >
                               {row.studentAnswerText}
@@ -1688,7 +1692,7 @@ export default function StudentExamAttempt() {
                   {/* DESKTOP TABLE FOR QUESTION REVIEW */}
                   <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                     <table className="w-full text-left text-xs sm:text-sm">
-                      <thead className="bg-slate-900 text-white text-xs uppercase">
+                      <thead className="bg-[#1E293B] text-white text-xs uppercase">
                         <tr>
                           <th className="p-3 w-10 text-center">#</th>
                           <th className="p-3">Question / Task</th>
@@ -1704,7 +1708,7 @@ export default function StudentExamAttempt() {
                             key={row.questionId}
                             className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                           >
-                            <td className="p-3 text-center font-bold text-slate-700 dark:text-slate-300">
+                            <td className="p-3 text-center font-bold tabular-nums text-slate-700 dark:text-slate-300">
                               {row.index}
                             </td>
                             <td className="p-3 font-medium text-slate-900 dark:text-white">
@@ -1713,8 +1717,8 @@ export default function StudentExamAttempt() {
                             <td
                               className={`p-3 font-semibold ${
                                 row.isCorrect
-                                  ? "text-emerald-700 dark:text-emerald-400"
-                                  : "text-slate-800 dark:text-slate-200"
+                                  ? "text-[#1E293B] dark:text-white"
+                                  : "text-slate-700 dark:text-slate-300"
                               }`}
                             >
                               {row.studentAnswerText}
@@ -1722,17 +1726,17 @@ export default function StudentExamAttempt() {
                             <td className="p-3 text-slate-700 dark:text-slate-300">
                               {row.officialAnswerText}
                             </td>
-                            <td className="p-3 text-center font-bold text-slate-900 dark:text-white">
+                            <td className="p-3 text-center font-bold tabular-nums text-slate-900 dark:text-white">
                               {row.pointsAwarded} / {row.maxPoints}
                             </td>
                             <td className="p-3 text-center">
                               <span
-                                className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                                className={`text-[11px] font-bold uppercase tracking-wider ${
                                   row.status === "PASS"
-                                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                    ? "text-[#1E293B] dark:text-white"
                                     : row.status === "PART"
-                                    ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
-                                    : "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300"
+                                    ? "text-slate-600 dark:text-slate-300"
+                                    : "text-[#B91C1C] dark:text-red-400"
                                 }`}
                               >
                                 {row.status}
@@ -1749,9 +1753,9 @@ export default function StudentExamAttempt() {
           ) : (
             <div className="text-center py-6 space-y-4">
               {isExpiredAttempt ? (
-                <Clock size={48} className="mx-auto text-red-600 dark:text-red-400" />
+                <Clock size={48} className="mx-auto text-[#B91C1C] dark:text-red-400" />
               ) : (
-                <CheckCircle2 size={48} className="mx-auto text-emerald-600 dark:text-emerald-400" />
+                <CheckCircle2 size={48} className="mx-auto text-[#1E293B] dark:text-slate-200" />
               )}
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
@@ -1765,12 +1769,12 @@ export default function StudentExamAttempt() {
                     : `Your ${typeLabels.lowerSingular} submission has been securely recorded in the central academic ledger.`}
                 </p>
               </div>
-              <div className="rounded-xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 p-4 max-w-md mx-auto text-xs text-amber-900 dark:text-amber-200 space-y-1">
-                <p className="font-bold flex items-center justify-center gap-1.5">
-                  <Lock size={14} className="shrink-0" />
+              <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-4 max-w-md mx-auto text-xs text-slate-800 dark:text-slate-200 space-y-1">
+                <p className="font-bold flex items-center justify-center gap-1.5 text-slate-900 dark:text-white">
+                  <Lock size={14} className="shrink-0 text-[#B91C1C] dark:text-red-400" />
                   Awaiting Tutor Review &amp; Result Release
                 </p>
-                <p className="text-amber-800 dark:text-amber-300">
+                <p className="text-slate-600 dark:text-slate-300">
                   Official scores, tutor remarks, and your printable performance report remain locked
                   until your tutor reviews and releases the results.
                 </p>
@@ -1782,7 +1786,7 @@ export default function StudentExamAttempt() {
                     type="button"
                     disabled={retakingBusy}
                     onClick={() => void handleRetakeAssessment()}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-5 py-3 text-xs sm:text-sm font-bold text-white shadow-xs cursor-pointer disabled:opacity-50"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 px-5 py-3 text-xs sm:text-sm font-bold text-white shadow-xs cursor-pointer disabled:opacity-50"
                   >
                     <RotateCcw size={16} />
                     {retakingBusy ? "Starting Retake…" : `Retake ${typeLabels.singular}`}
@@ -1863,7 +1867,7 @@ export default function StudentExamAttempt() {
                     <div className="rounded-2xl border border-white/10 bg-[#131418] p-4 sm:p-5 space-y-3">
                       {data.exam.instructions && (
                         <div className="space-y-1">
-                          <p className="text-xs font-bold uppercase tracking-wider text-blue-400">
+                          <p className="text-xs font-bold uppercase tracking-wider text-slate-300">
                             {typeLabels.singular} Instructions &amp; Brief
                           </p>
                           <p className="text-xs sm:text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
@@ -1873,7 +1877,7 @@ export default function StudentExamAttempt() {
                       )}
                       {data.exam.deliverables && (
                         <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-1">
-                          <p className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                          <p className="text-xs font-bold uppercase tracking-wider text-red-400">
                             Deliverables &amp; Expectations
                           </p>
                           <p className="text-xs sm:text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
@@ -1968,8 +1972,8 @@ export default function StudentExamAttempt() {
 
                     {/* QUESTION OPTIONS */}
                     {currentQ.type === "learning_resource" ? (
-                      <div className="rounded-xl bg-emerald-950/30 border border-emerald-800/60 p-4 flex items-center gap-3 text-xs font-semibold text-emerald-200">
-                        <Video size={18} className="text-emerald-400 shrink-0" />
+                      <div className="rounded-xl bg-white/5 border border-white/15 p-4 flex items-center gap-3 text-xs font-semibold text-slate-200">
+                        <Video size={18} className="text-red-400 shrink-0" />
                         <span>
                           Review the learning resource above carefully. No written answer is required for this step.
                         </span>
@@ -2090,19 +2094,19 @@ export default function StudentExamAttempt() {
                                     </label>
                                     {linkValidation.hasValue && (
                                       <span
-                                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                                        className={`inline-flex items-center gap-1 text-[11px] font-bold ${
                                           linkValidation.isValid
-                                            ? "bg-emerald-950/60 border border-emerald-700 text-emerald-300"
-                                            : "bg-red-950/60 border border-red-700 text-red-300"
+                                            ? "text-slate-200"
+                                            : "text-red-400"
                                         }`}
                                       >
                                         {linkValidation.isValid ? (
                                           <>
-                                            <Check size={11} /> Valid Link Format
+                                            <Check size={12} className="text-white" /> Valid Link Format
                                           </>
                                         ) : (
                                           <>
-                                            <AlertTriangle size={11} /> Invalid URL
+                                            <AlertTriangle size={12} /> Invalid URL
                                           </>
                                         )}
                                       </span>
@@ -2122,7 +2126,7 @@ export default function StudentExamAttempt() {
                                       linkValidation.hasValue && !linkValidation.isValid
                                         ? "border-red-500 focus:border-red-400"
                                         : linkValidation.hasValue && linkValidation.isValid
-                                        ? "border-emerald-500 focus:border-emerald-400"
+                                        ? "border-white/40 focus:border-white"
                                         : "border-white/15 focus:border-red-500"
                                     }`}
                                   />
@@ -2136,11 +2140,11 @@ export default function StudentExamAttempt() {
                                     </p>
                                   )}
                                   {linkValidation.hasValue && linkValidation.isGoogleDrive && (
-                                    <div className="rounded-xl border border-amber-800/80 bg-amber-950/40 p-3 space-y-2">
+                                    <div className="rounded-xl border border-red-800/70 bg-red-950/30 p-3 space-y-2">
                                       <div className="flex items-start gap-2">
-                                        <Info size={16} className="text-amber-400 shrink-0 mt-0.5" />
-                                        <div className="text-xs text-amber-200 space-y-1">
-                                          <p className="font-bold text-amber-300">
+                                        <Info size={16} className="text-red-400 shrink-0 mt-0.5" />
+                                        <div className="text-xs text-slate-200 space-y-1">
+                                          <p className="font-bold text-white">
                                             Google Drive Sharing Permission Check
                                           </p>
                                           <p className="text-slate-300 leading-relaxed">
@@ -2152,7 +2156,7 @@ export default function StudentExamAttempt() {
                                           </p>
                                         </div>
                                       </div>
-                                      <label className="flex items-center gap-2.5 cursor-pointer pt-1 border-t border-amber-800/50">
+                                      <label className="flex items-center gap-2.5 cursor-pointer pt-1 border-t border-white/10">
                                         <input
                                           type="checkbox"
                                           checked={Boolean(drivePermissionConfirmed[currentQ.id])}
@@ -2163,9 +2167,9 @@ export default function StudentExamAttempt() {
                                             }));
                                             if (error) setError("");
                                           }}
-                                          className="h-4 w-4 rounded border-amber-700 text-red-600 focus:ring-red-500"
+                                          className="h-4 w-4 rounded border-white/30 text-red-600 focus:ring-red-500"
                                         />
-                                        <span className="text-xs font-bold text-amber-200">
+                                        <span className="text-xs font-bold text-slate-200">
                                           I confirm that this Google Drive link is set to "Anyone
                                           with the link can view"
                                         </span>
@@ -2326,10 +2330,10 @@ export default function StudentExamAttempt() {
             /* ALL QUESTIONS LIST VIEW (CLASSIC LIST) */
             <>
               {(data.exam.instructions || data.exam.deliverables) && (
-                <section className="rounded-2xl border border-blue-200 dark:border-blue-800/70 bg-blue-50/60 dark:bg-blue-950/30 p-4 sm:p-5 text-xs sm:text-sm text-slate-800 dark:text-slate-200 space-y-3">
+                <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-4 sm:p-5 text-xs sm:text-sm text-slate-800 dark:text-slate-200 space-y-3">
                   {data.exam.instructions && (
                     <div className="space-y-1">
-                      <p className="font-bold text-blue-950 dark:text-blue-200">
+                      <p className="font-bold text-[#1E293B] dark:text-white">
                         {typeLabels.singular} Instructions &amp; Brief
                       </p>
                       <p className="leading-relaxed whitespace-pre-wrap break-words">
@@ -2338,8 +2342,8 @@ export default function StudentExamAttempt() {
                     </div>
                   )}
                   {data.exam.deliverables && (
-                    <div className="pt-2 border-t border-blue-200/70 dark:border-blue-800/50 space-y-1">
-                      <p className="font-bold text-emerald-900 dark:text-emerald-300">
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1">
+                      <p className="font-bold text-[#B91C1C] dark:text-red-400">
                         Deliverables &amp; Expectations
                       </p>
                       <p className="leading-relaxed whitespace-pre-wrap break-words">
@@ -2414,24 +2418,24 @@ export default function StudentExamAttempt() {
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 sm:gap-4">
                     <div className="space-y-1 min-w-0">
                       {isSingleDeliverableTask ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                           Practical Deliverable Workspace
-                        </span>
+                        </p>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                          Item {i + 1} • {q.type.replace(/_/g, " ")}
-                        </span>
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                          Item {i + 1} · {q.type.replace(/_/g, " ")}
+                        </p>
                       )}
                       <h2 className="font-bold text-slate-900 dark:text-white text-sm sm:text-base whitespace-pre-wrap break-words">
                         {isSingleDeliverableTask ? q.prompt : `${i + 1}. ${q.prompt}`}
                       </h2>
                     </div>
                     {q.type === "learning_resource" ? (
-                      <span className="self-start rounded-lg bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
-                        Learning Material (Ungraded)
+                      <span className="self-start text-xs font-bold text-slate-600 dark:text-slate-300 shrink-0">
+                        Learning Material · Ungraded
                       </span>
                     ) : (
-                      <span className="self-start rounded-lg bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1 text-xs font-bold text-blue-700 dark:text-blue-300 shrink-0">
+                      <span className="self-start text-xs font-bold tabular-nums text-[#1E293B] dark:text-slate-200 shrink-0">
                         {q.points} mark(s)
                       </span>
                     )}
@@ -2455,8 +2459,8 @@ export default function StudentExamAttempt() {
 
                   {/* Content/Question Type Specific Inputs */}
                   {q.type === "learning_resource" ? (
-                    <div className="rounded-xl bg-emerald-50/60 dark:bg-emerald-950/25 border border-emerald-200/70 dark:border-emerald-800/60 p-3.5 flex items-center gap-2.5 text-xs font-semibold text-emerald-900 dark:text-emerald-200">
-                      <Video size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3.5 flex items-center gap-2.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      <Video size={16} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
                       <span>
                         Review the learning resource above carefully before proceeding to the next
                         section. No written answer is required for this block.
@@ -2469,14 +2473,14 @@ export default function StudentExamAttempt() {
                           key={o.id}
                           className={`flex items-start sm:items-center gap-3 rounded-xl border p-3.5 cursor-pointer text-xs sm:text-sm font-medium transition-all ${
                             answers[q.id] === o.id
-                              ? "border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 text-blue-950 dark:text-blue-100 font-semibold"
+                              ? "border-[#1E293B] bg-slate-100/80 dark:border-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold"
                               : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
                           }`}
                         >
                           <input
                             type="radio"
                             name={q.id}
-                            className="mt-0.5 sm:mt-0 h-4 w-4 shrink-0 text-blue-600 focus:ring-blue-500"
+                            className="mt-0.5 sm:mt-0 h-4 w-4 shrink-0 text-[#B91C1C] focus:ring-[#B91C1C]"
                             checked={answers[q.id] === o.id}
                             onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: o.id }))}
                           />
@@ -2490,7 +2494,7 @@ export default function StudentExamAttempt() {
                     <select
                       value={String(answers[q.id] || "")}
                       onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3.5 text-sm font-medium text-slate-900 dark:text-white outline-none focus:border-blue-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3.5 text-sm font-medium text-slate-900 dark:text-white outline-none focus:border-[#1E293B] dark:focus:border-white"
                     >
                       <option value="">Select an option…</option>
                       {(q.options || []).map((o) => (
@@ -2510,13 +2514,13 @@ export default function StudentExamAttempt() {
                             key={o.id}
                             className={`flex items-start sm:items-center gap-3 rounded-xl border p-3.5 cursor-pointer text-xs sm:text-sm font-medium transition-all ${
                               isChecked
-                                ? "border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 text-blue-950 dark:text-blue-100 font-semibold"
+                                ? "border-[#1E293B] bg-slate-100/80 dark:border-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold"
                                 : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
                             }`}
                           >
                             <input
                               type="checkbox"
-                              className="mt-0.5 sm:mt-0 h-4 w-4 shrink-0 rounded text-blue-600 focus:ring-blue-500"
+                              className="mt-0.5 sm:mt-0 h-4 w-4 shrink-0 rounded text-[#B91C1C] focus:ring-[#B91C1C]"
                               checked={isChecked}
                               onChange={(e) =>
                                 setAnswers((prev) => {
@@ -2548,27 +2552,27 @@ export default function StudentExamAttempt() {
                           {showLinkInput && (() => {
                             const linkValidation = validateSubmissionLink(structured.linkUrl);
                             return (
-                              <div className="rounded-xl border border-blue-200/80 dark:border-blue-800/60 bg-blue-50/30 dark:bg-blue-950/20 p-4 space-y-2.5">
+                              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-4 space-y-2.5">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <label className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
-                                    <Link2 size={15} className="text-blue-600 dark:text-blue-400" />
+                                    <Link2 size={15} className="text-[#1E293B] dark:text-slate-200" />
                                     Submit Project or Shared Link (Google Drive, Scratch, GitHub, Canva, etc.)
                                   </label>
                                   {linkValidation.hasValue && (
                                     <span
-                                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                                      className={`inline-flex items-center gap-1 text-[11px] font-bold ${
                                         linkValidation.isValid
-                                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-                                          : "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300"
+                                          ? "text-[#1E293B] dark:text-white"
+                                          : "text-[#B91C1C] dark:text-red-400"
                                       }`}
                                     >
                                       {linkValidation.isValid ? (
                                         <>
-                                          <Check size={11} /> Valid Link Format
+                                          <Check size={12} /> Valid Link Format
                                         </>
                                       ) : (
                                         <>
-                                          <AlertTriangle size={11} /> Invalid URL
+                                          <AlertTriangle size={12} /> Invalid URL
                                         </>
                                       )}
                                     </span>
@@ -2584,37 +2588,37 @@ export default function StudentExamAttempt() {
                                   placeholder="https://drive.google.com/... or https://scratch.mit.edu/projects/..."
                                   className={`w-full rounded-xl border bg-white dark:bg-slate-900 px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none transition-colors ${
                                     linkValidation.hasValue && !linkValidation.isValid
-                                      ? "border-red-400 dark:border-red-600 focus:border-red-500"
+                                      ? "border-[#B91C1C] dark:border-red-500 focus:border-[#B91C1C]"
                                       : linkValidation.hasValue && linkValidation.isValid
-                                      ? "border-emerald-400 dark:border-emerald-600 focus:border-emerald-500"
-                                      : "border-slate-300 dark:border-slate-700 focus:border-blue-500"
+                                      ? "border-[#1E293B] dark:border-white focus:border-[#1E293B]"
+                                      : "border-slate-300 dark:border-slate-700 focus:border-[#1E293B] dark:focus:border-white"
                                   }`}
                                 />
 
                                 {/* Inline URL Format Validation Error */}
                                 {linkValidation.hasValue && !linkValidation.isValid && (
                                   <p className="flex items-start gap-1.5 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/70 rounded-lg p-2.5">
-                                    <AlertTriangle size={14} className="mt-0.5 shrink-0 text-red-600 dark:text-red-400" />
+                                    <AlertTriangle size={14} className="mt-0.5 shrink-0 text-[#B91C1C] dark:text-red-400" />
                                     <span>{linkValidation.errorMessage}</span>
                                   </p>
                                 )}
 
                                 {/* Google Drive Sharing Permissions Reminder Prompt */}
                                 {linkValidation.hasValue && linkValidation.isValid && linkValidation.isGoogleDrive ? (
-                                  <div className="rounded-xl border border-amber-300 dark:border-amber-700/80 bg-amber-50/90 dark:bg-amber-950/40 p-3.5 space-y-2.5">
-                                    <div className="flex items-start gap-2 text-xs text-amber-950 dark:text-amber-200">
-                                      <AlertTriangle size={15} className="mt-0.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                  <div className="rounded-xl border border-red-200 dark:border-red-800/70 bg-red-50/70 dark:bg-red-950/30 p-3.5 space-y-2.5">
+                                    <div className="flex items-start gap-2 text-xs text-slate-900 dark:text-slate-100">
+                                      <AlertTriangle size={15} className="mt-0.5 text-[#B91C1C] dark:text-red-400 shrink-0" />
                                       <div className="space-y-1">
                                         <p className="font-bold">
                                           Google Drive / Google Docs Link Detected — Check Sharing Permissions
                                         </p>
-                                        <p className="text-[11px] text-amber-900 dark:text-amber-300 leading-relaxed">
+                                        <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
                                           Before submitting, open your file in Google Drive, click <strong>Share</strong>, and set General Access to{" "}
                                           <strong>&ldquo;Anyone with the link can view&rdquo;</strong> so your tutor can open and grade your submission without requesting access.
                                         </p>
                                       </div>
                                     </div>
-                                    <label className="flex items-center gap-2.5 pt-1 cursor-pointer text-xs font-bold text-amber-950 dark:text-amber-100 select-none">
+                                    <label className="flex items-center gap-2.5 pt-1 cursor-pointer text-xs font-bold text-slate-900 dark:text-slate-100 select-none">
                                       <input
                                         type="checkbox"
                                         checked={Boolean(drivePermissionConfirmed[q.id])}
@@ -2625,17 +2629,17 @@ export default function StudentExamAttempt() {
                                           }));
                                           if (e.target.checked && error) setError("");
                                         }}
-                                        className="h-4 w-4 rounded border-amber-400 text-blue-600 focus:ring-blue-500"
+                                        className="h-4 w-4 rounded border-slate-400 text-[#B91C1C] focus:ring-[#B91C1C]"
                                       />
                                       <span className="flex items-center gap-1.5">
-                                        <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                        <ShieldCheck size={14} className="text-[#1E293B] dark:text-white shrink-0" />
                                         I confirm that my Google Drive link is set to &ldquo;Anyone with the link can view&rdquo;
                                       </span>
                                     </label>
                                   </div>
                                 ) : (
                                   <p className="flex items-start gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
-                                    <Info size={13} className="mt-0.5 text-blue-600 shrink-0" />
+                                    <Info size={13} className="mt-0.5 text-slate-500 dark:text-slate-400 shrink-0" />
                                     <span>
                                       Make sure your link sharing permission is set to{" "}
                                       <strong>&ldquo;Anyone with the link can view&rdquo;</strong> so your tutor can open and grade your work.
@@ -2648,12 +2652,12 @@ export default function StudentExamAttempt() {
 
                           {/* File Upload Submission Field */}
                           {showFileInput && (
-                            <div className="rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 bg-indigo-50/30 dark:bg-indigo-950/20 p-4 space-y-3">
+                            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-4 space-y-3">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <label className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
                                   <Upload
                                     size={15}
-                                    className="text-indigo-600 dark:text-indigo-400"
+                                    className="text-[#1E293B] dark:text-slate-200"
                                   />
                                   Upload Deliverable File
                                 </label>
@@ -2665,16 +2669,16 @@ export default function StudentExamAttempt() {
                               </div>
 
                               {structured.fileName ? (
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-white dark:bg-slate-900 p-3.5">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3.5">
                                   <div className="flex items-center gap-2.5 min-w-0">
-                                    <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                                    <div className="h-9 w-9 rounded-lg bg-[#1E293B] dark:bg-white text-white dark:text-[#1E293B] flex items-center justify-center shrink-0">
                                       <Check size={18} />
                                     </div>
                                     <div className="min-w-0">
                                       <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
                                         {structured.fileName}
                                       </p>
-                                      <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">
+                                      <p className="text-[11px] text-slate-600 dark:text-slate-300 font-semibold tabular-nums">
                                         ✓ File attached{" "}
                                         {structured.fileSize
                                           ? `(${(structured.fileSize / 1024).toFixed(1)} KB)`
@@ -2692,17 +2696,17 @@ export default function StudentExamAttempt() {
                                         fileDataUrl: "",
                                       })
                                     }
-                                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-3 py-1.5 text-xs font-bold text-red-700 dark:text-red-300 hover:bg-red-100 cursor-pointer shrink-0"
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-3 py-1.5 text-xs font-bold text-[#B91C1C] dark:text-red-300 hover:bg-red-100 cursor-pointer shrink-0"
                                   >
                                     <Trash2 size={13} />
                                     Remove / Replace File
                                   </button>
                                 </div>
                               ) : (
-                                <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 text-center cursor-pointer hover:border-indigo-500 transition-colors">
+                                <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 text-center cursor-pointer hover:border-[#1E293B] dark:hover:border-white transition-colors">
                                   <FileText
                                     size={24}
-                                    className="text-indigo-600 dark:text-indigo-400"
+                                    className="text-[#1E293B] dark:text-slate-200"
                                   />
                                   <div className="space-y-0.5">
                                     <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
@@ -2747,7 +2751,7 @@ export default function StudentExamAttempt() {
                                   updateStructuredAnswer(q.id, { textResponse: e.target.value })
                                 }
                                 placeholder="Add any notes, explanation of your project, or written response here…"
-                                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3.5 text-sm text-slate-900 dark:text-white outline-none focus:border-blue-500"
+                                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3.5 text-sm text-slate-900 dark:text-white outline-none focus:border-[#1E293B] dark:focus:border-white"
                               />
                             </div>
                           )}
@@ -2758,7 +2762,7 @@ export default function StudentExamAttempt() {
                     <textarea
                       rows={q.type === "essay" || q.type === "long_answer" ? 6 : 3}
                       maxLength={10000}
-                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3.5 text-sm text-slate-900 dark:text-white outline-none focus:border-blue-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3.5 text-sm text-slate-900 dark:text-white outline-none focus:border-[#1E293B] dark:focus:border-white"
                       value={String(answers[q.id] || "")}
                       onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
                       placeholder={
@@ -2778,8 +2782,8 @@ export default function StudentExamAttempt() {
       {/* STICKY AUTOSAVE & SUBMIT FOOTER */}
       <footer className="sticky bottom-3 z-20 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-3.5 sm:p-4 shadow-lg space-y-3">
         {confirmingSubmit ? (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 p-3">
-            <p className="text-xs sm:text-sm font-semibold text-amber-950 dark:text-amber-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl bg-red-50/70 dark:bg-red-950/30 border border-red-200 dark:border-red-800/70 p-3">
+            <p className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100">
               Submit your {typeLabels.lowerSingular} now? Submissions are sent directly to your
               tutor for grading.
             </p>
@@ -2796,7 +2800,7 @@ export default function StudentExamAttempt() {
                 type="button"
                 disabled={busy}
                 onClick={() => void send("submit")}
-                className="flex-1 sm:flex-initial rounded-xl bg-red-600 px-5 py-2 text-xs sm:text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
+                className="flex-1 sm:flex-initial rounded-xl bg-[#B91C1C] px-5 py-2 text-xs sm:text-sm font-bold text-white hover:bg-red-800 disabled:opacity-50"
               >
                 {busy ? "Submitting…" : `Confirm ${typeLabels.submitLabel}`}
               </button>
@@ -2816,10 +2820,10 @@ export default function StudentExamAttempt() {
               </span>
               {hasTimeLimit && (
                 <span
-                  className={`inline-flex items-center gap-1.5 font-mono text-xs font-bold px-2.5 py-1 rounded-lg border ${
+                  className={`inline-flex items-center gap-1.5 font-mono tabular-nums text-xs font-bold px-2.5 py-1 rounded-lg border ${
                     isLowTime
-                      ? "text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/50 border-red-200 dark:border-red-800"
-                      : "text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800"
+                      ? "text-[#B91C1C] dark:text-red-300 bg-red-50 dark:bg-red-950/50 border-red-200 dark:border-red-800"
+                      : "text-[#1E293B] dark:text-slate-200 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
                   }`}
                 >
                   <Clock size={13} className="shrink-0" />
@@ -2840,7 +2844,7 @@ export default function StudentExamAttempt() {
                 <button
                   type="button"
                   onClick={() => setShowReviewModal(true)}
-                  className="flex-1 sm:flex-initial rounded-xl border border-red-300 dark:border-red-800 bg-red-50/60 dark:bg-red-950/40 px-4 py-2.5 text-xs sm:text-sm font-bold text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50"
+                  className="flex-1 sm:flex-initial rounded-xl border border-red-300 dark:border-red-800 bg-red-50/60 dark:bg-red-950/40 px-4 py-2.5 text-xs sm:text-sm font-bold text-[#B91C1C] dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 tabular-nums"
                 >
                   Review Answers ({answeredCount}/{data.questions.length})
                 </button>
@@ -2849,7 +2853,7 @@ export default function StudentExamAttempt() {
                 type="button"
                 disabled={busy}
                 onClick={handleInitiateSubmit}
-                className="flex-1 sm:flex-initial rounded-xl bg-red-600 px-5 sm:px-6 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-red-700 shadow-sm disabled:opacity-50"
+                className="flex-1 sm:flex-initial rounded-xl bg-[#B91C1C] px-5 sm:px-6 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-red-800 shadow-sm disabled:opacity-50"
               >
                 {typeLabels.submitLabel}
               </button>
@@ -2885,13 +2889,13 @@ export default function StudentExamAttempt() {
             <div className="grid grid-cols-2 gap-3 text-center">
               <div className="rounded-xl bg-white/5 border border-white/10 p-3">
                 <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Answered</p>
-                <p className="text-2xl font-black text-emerald-400 mt-1">
+                <p className="text-2xl font-black tabular-nums text-white mt-1">
                   {answeredCount} / {answerableQuestions.length}
                 </p>
               </div>
               <div className="rounded-xl bg-white/5 border border-white/10 p-3">
                 <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Unanswered</p>
-                <p className="text-2xl font-black text-amber-400 mt-1">
+                <p className="text-2xl font-black tabular-nums text-red-400 mt-1">
                   {Math.max(0, answerableQuestions.length - answeredCount)}
                 </p>
               </div>
@@ -2913,7 +2917,7 @@ export default function StudentExamAttempt() {
                         setShowReviewModal(false);
                       }}
                       title={`Go to Question ${idx + 1}`}
-                      className={`py-2 rounded-lg text-xs font-bold border transition-all ${
+                      className={`py-2 rounded-lg text-xs font-bold tabular-nums border transition-all ${
                         isAns
                           ? "bg-red-950/60 border-red-800 text-red-300 hover:bg-red-900/80"
                           : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white"
@@ -2927,8 +2931,8 @@ export default function StudentExamAttempt() {
             </div>
 
             {Math.max(0, answerableQuestions.length - answeredCount) > 0 && (
-              <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 text-xs text-amber-300">
-                <AlertTriangle size={16} className="shrink-0 text-amber-400" />
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-xs text-red-200">
+                <AlertTriangle size={16} className="shrink-0 text-red-400" />
                 <span>
                   You have {Math.max(0, answerableQuestions.length - answeredCount)} unanswered question(s). You can jump back to complete them or submit now.
                 </span>
@@ -2950,7 +2954,7 @@ export default function StudentExamAttempt() {
                   setShowReviewModal(false);
                   handleInitiateSubmit();
                 }}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-sm shadow-lg shadow-red-600/30 disabled:opacity-50"
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white font-bold text-sm shadow-lg shadow-red-600/30 disabled:opacity-50"
               >
                 {busy ? "Submitting…" : `Submit ${typeLabels.singular}`}
               </button>

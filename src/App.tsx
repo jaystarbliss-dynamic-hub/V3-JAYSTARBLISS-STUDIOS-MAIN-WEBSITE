@@ -7,13 +7,16 @@ import { SearchProvider } from "./contexts/SearchContext";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import PageLoader from "./components/ui/PageLoader";
 import AuditActivityTracker from "./components/ui/AuditActivityTracker";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import PageTransition from "./components/ui/PageTransition";
+import BrandLoader from "./components/ui/BrandLoader";
+import { isPortalAppRoute, useStandalonePWA } from "./utils/pwa";
 import Home from "./pages/Home";
 import { NotificationProvider } from "./contexts/NotificationContext";
 import { NotificationDrawer } from "./components/notifications/NotificationDrawer";
 import ScrollToTop from "./components/ScrollToTop";
 import GlassRippleListener from "./components/ui/GlassRippleListener";
+import HorizontalWheelScrollListener from "./components/ui/HorizontalWheelScrollListener";
 import MarqueeBanner from "./components/ui/MarqueeBanner";
 import AdminImpersonationBanner from "./components/common/AdminImpersonationBanner";
 import { FloatingWhatsApp } from "./components/ui/FloatingWhatsApp";
@@ -99,6 +102,7 @@ const AdminTutorSubjects = lazy(() => import("./pages/admin/AdminTutorSubjects")
 const StudentEdgeClub = lazy(() => import("./pages/portal/StudentEdgeClub"));
 const PortalWireframesShowcase = lazy(() => import("./pages/PortalWireframesShowcase"));
 const ProgramsCoursesPreviewPage = lazy(() => import("./pages/admin/ProgramsCoursesPreviewPage"));
+const AcademicReportingCenter = lazy(() => import("./pages/portal/AcademicReportingCenter"));
 
 const StudentBillingGate = () =>
   sessionStorage.getItem("studentRegistrationType") === "individual" ? (
@@ -108,19 +112,30 @@ const StudentBillingGate = () =>
   );
 
 const LazyFallback = () => {
-  return (
-    <div className="min-h-[60vh] flex flex-col items-center justify-center p-8 text-center" role="status" aria-live="polite">
-      <div className="w-9 h-9 rounded-full border-2 border-brand-red border-t-transparent animate-spin mb-3" />
-      <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Loading workspace…</span>
-    </div>
-  );
+  return <BrandLoader />;
 };
 
 function AnimatedRoutes() {
+  const location = useLocation();
+  const isStandalone = useStandalonePWA();
+
+  if (isStandalone && !isPortalAppRoute(location.pathname)) {
+    return <Navigate to="/portal" replace />;
+  }
+
   return (
     <Suspense fallback={<LazyFallback />}>
       <Routes>
-        <Route path="/" element={<PageTransition><Home /></PageTransition>} />
+        <Route
+          path="/"
+          element={
+            isStandalone ? (
+              <Navigate to="/portal" replace />
+            ) : (
+              <PageTransition><Home /></PageTransition>
+            )
+          }
+        />
         <Route path="/wireframes" element={<PortalWireframesShowcase />} />
         <Route path="/portal-preview" element={<Navigate to="/portal-preview/programs-courses" replace />} />
         <Route path="/portal-preview/programs-courses" element={<ProgramsCoursesPreviewPage />} />
@@ -181,6 +196,7 @@ function AnimatedRoutes() {
           <Route path="exams" element={<TutorExaminations />} />
           <Route path="exam-history" element={<ExaminationHistory mode="history" />} />
           <Route path="exam-authoring" element={<TutorExaminations />} />
+          <Route path="academic-reporting" element={<AcademicReportingCenter />} />
           <Route path="agreements" element={<AgreementsCenter role="staff" />} />
           <Route path="calendar" element={<PortalCalendar />} />
           <Route path="payments" element={<BillingCenter role="staff" />} />
@@ -226,12 +242,14 @@ function AnimatedRoutes() {
         </Route>
 
         <Route path="/admin/login" element={<Navigate to="/portal" replace />} />
+        <Route path="/login" element={<Navigate to="/portal" replace />} />
         <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
           <Route index element={<AdminDashboard />} />
           <Route path="schedules" element={<AdminClassSchedules />} />
           <Route path="assessments" element={<TutorExaminations />} />
           <Route path="examinations" element={<TutorExaminations />} />
           <Route path="examination-history" element={<ExaminationHistory mode="history" />} />
+          <Route path="academic-reporting" element={<AcademicReportingCenter />} />
           <Route path="agreements" element={<AgreementsCenter role="admin" />} />
           <Route path="billing" element={<AdminBilling />} />
           <Route path="reports" element={<AdminReports />} />
@@ -266,8 +284,27 @@ function AnimatedRoutes() {
           <Route path="support" element={<PortalSupport />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
+        {isStandalone && <Route path="*" element={<Navigate to="/portal" replace />} />}
       </Routes>
     </Suspense>
+  );
+}
+
+function AppContent() {
+  const isStandalone = useStandalonePWA();
+  return (
+    <>
+      <AdminImpersonationBanner />
+      <PageLoader />
+      <ScrollToTop />
+      <GlassRippleListener />
+      <HorizontalWheelScrollListener />
+      <AuditActivityTracker />
+      <AnimatedRoutes />
+      <NotificationDrawer />
+      {!isStandalone && <MarqueeBanner />}
+      {!isStandalone && <FloatingWhatsApp />}
+    </>
   );
 }
 
@@ -281,15 +318,7 @@ function App() {
               <NotificationProvider>
                 <MetaTagsProvider>
                   <SearchProvider>
-                    <AdminImpersonationBanner />
-                    <PageLoader />
-                    <ScrollToTop />
-                    <GlassRippleListener />
-                    <AuditActivityTracker />
-                    <AnimatedRoutes />
-                    <NotificationDrawer />
-                    <MarqueeBanner />
-                    <FloatingWhatsApp />
+                    <AppContent />
                   </SearchProvider>
                 </MetaTagsProvider>
               </NotificationProvider>

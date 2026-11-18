@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  CreditCard, ShieldCheck, CheckCircle2, Download, 
-  ArrowRight, FileText, AlertCircle
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  CreditCard, ShieldCheck, CheckCircle2, ArrowRight
 } from 'lucide-react';
 import { auth, db } from '../../lib/firebase';
 import { collection, getDocs, getDoc, doc, query, where, limit } from 'firebase/firestore';
-import { getClientPaymentConfig } from '../../lib/billing';
+import { getClientPaymentConfig, feeFromBase, type PaymentConfig } from '../../lib/billing';
 import { useToast } from '../../contexts/ToastContext';
 import SEO from '../../components/ui/SEO';
 import { FintechTransactionHistory } from '../../components/portal/FintechTransactionHistory';
+import { PaystackPaymentReviewModal } from '../../components/portal/PaystackPaymentReviewModal';
 import { getEffectiveAuth, isMasqueradingActive } from '../../utils/impersonation';
 
 interface PaymentRecord {
@@ -22,18 +22,29 @@ interface PaymentRecord {
   createdAt?: { toDate?: () => Date } | Date | string | null;
 }
 
+interface RenewalPlanItem {
+  id: string;
+  name: string;
+  baseAmount: number;
+  price: string;
+  period: string;
+  durationWeeks: number;
+  popular: boolean;
+  features: string[];
+  description?: string;
+}
+
 export const PortalPayments: React.FC = () => {
   const { toast } = useToast();
   const [role, setRole] = useState('student');
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [paymentConfig, setPaymentConfig] = useState<PaymentConfig | null>(null);
   const [renewing, setRenewing] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState('');
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'bank_transfer'>('card');
   const [renewalSuccess, setRenewalSuccess] = useState(false);
   const [enrollmentRequestId, setEnrollmentRequestId] = useState('');
-  const [, setEnrollmentContext] = useState<{ studentName: string; planId: string } | null>(null);
+  const [enrollmentContext, setEnrollmentContext] = useState<{ studentName: string; planId: string } | null>(null);
 
   useEffect(() => {
     const effective = getEffectiveAuth();
@@ -44,7 +55,6 @@ export const PortalPayments: React.FC = () => {
     setEnrollmentRequestId(requestId);
 
     const fetchPaymentHistory = async () => {
-      setLoading(true);
       try {
         const userUid = effective.effectiveUid || auth.currentUser?.uid;
         const schoolId = effective.effectiveSchoolId || sessionStorage.getItem('schoolId') || '';
@@ -87,8 +97,6 @@ export const PortalPayments: React.FC = () => {
         setPayments(list);
       } catch (err) {
         console.warn('Payments load error:', err);
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -123,38 +131,49 @@ export const PortalPayments: React.FC = () => {
 
   const isSchool = role.includes('school');
 
-  const [plans, setPlans] = useState<any[]>([]);
+  const [plans, setPlans] = useState<RenewalPlanItem[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     const loadDynamicPlans = async () => {
       try {
         const config = await getClientPaymentConfig();
+        if (!cancelled) setPaymentConfig(config);
         const roleKey = isSchool ? 'school' : 'student';
-        let fetchedPlans = Object.values(config.plans || {})
+        let fetchedPlans: RenewalPlanItem[] = Object.values(config.plans || {})
           .filter((p: any) => p.role === roleKey && p.active !== false)
-          .map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            price: `₦${Number(p.baseAmount || 0).toLocaleString()}`,
-            period: isSchool ? '/ Term' : '/ Term',
-            popular: p.id.includes('mentorship') || p.id.includes('cbt') || p.id.includes('ai'),
-            features: p.teachingModes?.length ? p.teachingModes : [p.description || 'Institutional technology track']
-          }));
+          .map((p: any) => {
+            const baseAmount = Number(p.baseAmount || 0);
+            return {
+              id: p.id,
+              name: p.name,
+              baseAmount,
+              price: `₦${baseAmount.toLocaleString()}`,
+              period: '/ Term',
+              durationWeeks: Number(p.durationWeeks || (isSchool ? 12 : 4)),
+              popular: p.id.includes('mentorship') || p.id.includes('cbt') || p.id.includes('ai'),
+              features: p.teachingModes?.length ? p.teachingModes : [p.description || 'Institutional technology track'],
+              description: p.description || ''
+            };
+          });
 
         if (fetchedPlans.length === 0) {
           const programsSnap = await getDocs(query(collection(db, 'programs'), where('status', '==', 'PUBLISHED'))).catch(() => getDocs(collection(db, 'programs')));
           fetchedPlans = programsSnap.docs.map((docSnap: any) => {
             const p = docSnap.data();
+            const baseAmount = Number(p.price || p.tuition || p.baseAmount || 25000);
             return {
               id: docSnap.id,
               name: p.title || p.name || 'Academy Tech Program',
-              price: `₦${Number(p.price || p.tuition || p.baseAmount || 25000).toLocaleString()}`,
+              baseAmount,
+              price: `₦${baseAmount.toLocaleString()}`,
               period: '/ Term',
+              durationWeeks: Number(p.durationWeeks || 4),
               popular: !!p.popular,
-              features: Array.isArray(p.teachingModes) && p.teachingModes.length > 0 
-                ? p.teachingModes 
-                : [p.description || p.category || 'Hands-on practical curriculum & live labs']
+              features: Array.isArray(p.teachingModes) && p.teachingModes.length > 0
+                ? p.teachingModes
+                : [p.description || p.category || 'Hands-on practical curriculum & live labs'],
+              description: p.description || p.category || ''
             };
           });
         }
@@ -180,11 +199,21 @@ export const PortalPayments: React.FC = () => {
       if (request.parentId !== user.uid) return;
       const planName = String(request.plan || '').toLowerCase();
       const planId = planName.includes('intensive') ? 'plan_mentorship' : planName.includes('robotics') || planName.includes('ai') ? 'plan_robotics' : 'plan_weekend';
-      const matched = plans.find((plan: any) => plan.id === planId);
+      const matched = plans.find((plan) => plan.id === planId);
       if (matched) setSelectedPlan(matched.name);
       setEnrollmentContext({ studentName: String(request.studentName || 'Child'), planId });
     }).catch(() => undefined);
   }, [enrollmentRequestId, role, plans]);
+
+  const activePlan = useMemo(
+    () => plans.find((p) => p.name === selectedPlan) || null,
+    [plans, selectedPlan]
+  );
+
+  const feePolicy = isSchool ? paymentConfig?.schoolFeePolicy : paymentConfig?.parentFeePolicy;
+  const activeChargePreview = useMemo(() => {
+    return feeFromBase(activePlan?.baseAmount || 0, feePolicy);
+  }, [activePlan, feePolicy]);
 
   const handleInitiateRenewal = (planName: string) => {
     if (isMasqueradingActive()) {
@@ -195,8 +224,7 @@ export const PortalPayments: React.FC = () => {
     setShowCheckoutModal(true);
   };
 
-  const handleProcessPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleProcessPayment = async () => {
     if (isMasqueradingActive()) {
       toast.error('Payment checkout is restricted in Admin Impersonation mode.');
       return;
@@ -216,7 +244,12 @@ export const PortalPayments: React.FC = () => {
       const response = await fetch('/.netlify/functions/paystack-initialize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ planId: plan.id, role, paymentMethod, ...(enrollmentRequestId ? { enrollmentRequestId } : {}) })
+        body: JSON.stringify({
+          planId: plan.id,
+          role,
+          paymentPolicyAccepted: true,
+          ...(enrollmentRequestId ? { enrollmentRequestId } : {})
+        })
       });
       const data = await response.json();
       if (!response.ok || !data.authorizationUrl) {
@@ -234,60 +267,91 @@ export const PortalPayments: React.FC = () => {
     <div className="space-y-8">
       <SEO title="Tuition Renewal & Billing Statements | Jaystarbliss Studios" description="Renew academic terms, manage institutional partnerships, and download tuition invoices." noindex={true} />
 
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-gray-200/80 dark:border-slate-800 p-6 md:p-8 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 md:p-8 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-brand-red font-bold text-xs uppercase tracking-wider mb-1"><CreditCard size={14} /> Financial Desk & Tuition</div>
-          <h1 className="text-2xl md:text-3xl font-black text-gray-900 dark:text-white">{isSchool ? 'Institutional Licensing & Term Renewal' : 'Tuition & Membership Renewal'}</h1>
-          <p className="text-xs md:text-sm text-gray-500 dark:text-gray-400 mt-1">{isSchool ? 'Manage school lab subscriptions, student seat allocations, and verified invoices.' : 'Secure term renewals, review receipts, and maintain active access codes.'}</p>
+          <div className="flex items-center gap-2 text-brand-red font-bold text-xs uppercase tracking-wider mb-1"><CreditCard size={14} /> Financial Desk &amp; Tuition</div>
+          <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white">{isSchool ? 'Institutional Licensing & Term Renewal' : 'Tuition & Membership Renewal'}</h1>
+          <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">{isSchool ? 'Manage school lab subscriptions, student seat allocations, and verified invoices.' : 'Secure term renewals, review receipts, and maintain active access codes.'}</p>
         </div>
-        <div className="flex items-center gap-3"><div className="px-4 py-2 rounded-2xl bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-900 text-green-700 dark:text-green-300 text-xs font-bold flex items-center gap-1.5"><ShieldCheck size={16} /> 256-Bit SSL Encrypted</div></div>
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-slate-50 dark:bg-slate-800/70">
+          <ShieldCheck size={16} className="text-brand-red shrink-0" />
+          <span>256-Bit SSL Encrypted</span>
+        </div>
       </div>
 
       <div>
-        <h2 className="text-lg font-black text-gray-900 dark:text-white mb-4">{isSchool ? 'School Partnership & Renewal Packages' : 'Choose Your Term Renewal Track'}</h2>
+        <h2 className="text-lg font-black text-slate-900 dark:text-white mb-4">{isSchool ? 'School Partnership & Renewal Packages' : 'Choose Your Term Renewal Track'}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {plans.map((plan: any) => (
-            <div key={plan.id} className={`rounded-3xl p-6 border transition-all flex flex-col justify-between relative ${plan.popular ? 'border-brand-red bg-white dark:bg-slate-900 shadow-lg ring-1 ring-brand-red/30' : 'border-gray-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 shadow-xs'}`}>
-              {plan.popular && <span className="absolute -top-3 right-6 px-3 py-0.5 bg-brand-red text-white text-[10px] font-black uppercase rounded-full tracking-wider shadow-sm">Recommended</span>}
+          {plans.map((plan) => (
+            <div key={plan.id} className={`rounded-2xl p-6 border transition-all flex flex-col justify-between relative ${plan.popular ? 'border-brand-red bg-white dark:bg-slate-900 shadow-md ring-1 ring-brand-red/25' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-xs'}`}>
+              {plan.popular && (
+                <span className="absolute -top-2.5 right-5 px-2.5 py-0.5 bg-brand-red text-white text-[10px] font-black uppercase rounded-md tracking-wider shadow-xs">
+                  Recommended
+                </span>
+              )}
               <div>
-                <h3 className="font-black text-lg text-gray-900 dark:text-white mb-1">{plan.name}</h3>
-                <div className="flex items-baseline gap-1 my-3"><span className="text-3xl font-black text-brand-slate dark:text-white font-mono">{plan.price}</span><span className="text-xs text-gray-500 font-medium">{plan.period}</span></div>
-                <div className="space-y-2.5 my-5 text-xs text-gray-600 dark:text-gray-300">{plan.features.map((feature: string) => <div key={feature} className="flex items-center gap-2.5"><CheckCircle2 size={15} className="text-green-500 shrink-0" /><span>{feature}</span></div>)}</div>
+                <h3 className="font-black text-lg text-slate-900 dark:text-white mb-1">{plan.name}</h3>
+                <div className="flex items-baseline gap-1 my-3"><span className="text-3xl font-black text-slate-900 dark:text-white font-mono">{plan.price}</span><span className="text-xs text-slate-500 font-medium">{plan.period}</span></div>
+                <div className="space-y-2.5 my-5 text-xs text-slate-600 dark:text-slate-300">
+                  {plan.features.map((feature: string) => (
+                    <div key={feature} className="flex items-center gap-2.5">
+                      <CheckCircle2 size={15} className="text-slate-700 dark:text-slate-300 shrink-0" />
+                      <span>{feature}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <button type="button" onClick={() => handleInitiateRenewal(plan.name)} className={`min-h-11 w-full py-3 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-2 ${plan.popular ? 'bg-brand-red hover:bg-red-700 text-white shadow-md' : 'bg-brand-slate hover:bg-slate-800 text-white'}`}><span>Renew Membership</span><ArrowRight size={14} /></button>
+              <button
+                type="button"
+                onClick={() => handleInitiateRenewal(plan.name)}
+                className={`min-h-11 w-full py-3 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer ${plan.popular ? 'bg-brand-red hover:bg-red-800 text-white shadow-sm' : 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white'}`}
+              >
+                <span>Review &amp; Pay</span><ArrowRight size={14} />
+              </button>
             </div>
           ))}
         </div>
       </div>
 
       <div className="mt-8">
-        <FintechTransactionHistory 
-          transactions={payments} 
+        <FintechTransactionHistory
+          transactions={payments}
           title="Payment Receipts & Invoices"
           role={role}
           emptyMessage="No transaction records on file"
         />
       </div>
 
-      {renewalSuccess && <div className="fixed bottom-5 right-5 z-50 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300"><div className="flex items-center gap-2"><CheckCircle2 size={18} /> Payment verified successfully.</div></div>}
-
-      {showCheckoutModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-gray-200 dark:border-slate-800 w-full max-w-md p-6 shadow-2xl">
-            <h3 id="checkout-title" className="text-lg font-black text-gray-900 dark:text-white">Confirm {selectedPlan}</h3>
-            <p className="text-xs text-gray-500 mt-1">Choose a supported Paystack payment channel. You will be redirected to the secure checkout page.</p>
-            <form onSubmit={handleProcessPayment} className="mt-6 space-y-4">
-              <div className="space-y-2">
-                <label className="flex items-center gap-3 rounded-xl border border-gray-200 dark:border-slate-700 p-3 cursor-pointer"><input type="radio" name="paymentMethod" value="card" checked={paymentMethod === 'card'} onChange={() => setPaymentMethod('card')} /><span><span className="block text-sm font-bold text-gray-900 dark:text-white">Card</span><span className="text-xs text-gray-500">Visa, Mastercard and supported cards.</span></span></label>
-                <label className="flex items-center gap-3 rounded-xl border border-gray-200 dark:border-slate-700 p-3 cursor-pointer"><input type="radio" name="paymentMethod" value="bank_transfer" checked={paymentMethod === 'bank_transfer'} onChange={() => setPaymentMethod('bank_transfer')} /><span><span className="block text-sm font-bold text-gray-900 dark:text-white">Bank Transfer</span><span className="text-xs text-gray-500">Use Paystack's generated transfer instructions.</span></span></label>
-              </div>
-              <div className="flex gap-3 border-t border-gray-100 dark:border-slate-800 pt-4"><button type="button" onClick={() => setShowCheckoutModal(false)} className="min-h-11 flex-1 rounded-xl border border-gray-300 dark:border-slate-700 text-xs font-bold text-gray-700 dark:text-gray-300">Cancel</button><button type="submit" disabled={renewing} className="min-h-11 flex-1 rounded-xl bg-brand-red text-white text-xs font-bold disabled:opacity-50">{renewing ? 'Opening Secure Checkout…' : 'Continue to Paystack'}</button></div>
-            </form>
-          </div>
+      {renewalSuccess && (
+        <div className="fixed bottom-5 right-5 z-50 rounded-xl border border-slate-300 bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-lg dark:border-slate-700">
+          <div className="flex items-center gap-2"><CheckCircle2 size={18} className="text-brand-red" /> Payment verified successfully.</div>
         </div>
       )}
+
+      <PaystackPaymentReviewModal
+        isOpen={showCheckoutModal && Boolean(activePlan)}
+        onClose={() => { if (!renewing) setShowCheckoutModal(false); }}
+        reviewKey={`renewal:${activePlan?.id || ''}:${role}:${enrollmentRequestId}`}
+        subtitle={isSchool ? 'Institutional Licensing & Renewal' : 'Tuition & Membership Renewal'}
+        title="Review Your Payment"
+        description="Please review the selected renewal plan details and confirm our Payment Policy before proceeding to Paystack."
+        contextRows={[
+          { label: 'Programme / Plan', value: activePlan?.name },
+          { label: 'Learner', value: enrollmentContext?.studentName },
+          { label: 'Account Type', value: isSchool ? 'Partner School' : role === 'parent' ? 'Parent / Guardian' : 'Student' },
+          { label: 'Billing Cycle', value: activePlan ? `${activePlan.durationWeeks} Weeks` : undefined },
+          { label: 'Summary', value: activePlan?.description || activePlan?.features.join(', ') }
+        ]}
+        subtotal={activeChargePreview.baseAmount}
+        estimatedFee={activeChargePreview.transactionFee}
+        estimatedTotal={activeChargePreview.totalAmount}
+        feeNote="Estimated gateway fee is shown for transparency. Paystack confirms the final charge dynamically at hosted checkout."
+        loading={renewing}
+        onConfirmPaystack={handleProcessPayment}
+      />
     </div>
   );
 };
 
 export default PortalPayments;
+

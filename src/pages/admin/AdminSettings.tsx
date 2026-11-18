@@ -343,7 +343,6 @@ const AdminSettings: React.FC = () => {
         'schools',
         'students',
         'individualStudents',
-        'documentHeaderConfigs',
         'settings',
         'classSchedules',
         'notifications',

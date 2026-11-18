@@ -79,20 +79,20 @@ const EdClubLaunchBanner: React.FC<Props> = ({ studentName = 'Student', studentC
   if (!allowed) return null;
 
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-indigo-900/60 bg-slate-950 text-white shadow-xl p-5 sm:p-6">
+    <section className="relative overflow-hidden rounded-3xl border border-slate-800 bg-[#0F172A] text-white shadow-sm p-5 sm:p-6">
       {bannerUrl && <img src={bannerUrl} alt="Ed Club" className="absolute inset-0 h-full w-full object-cover opacity-35 pointer-events-none" />}
-      <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/90 to-indigo-950/70 pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-r from-[#0F172A] via-[#0F172A]/90 to-[#1E293B]/80 pointer-events-none" />
       <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-5">
         <div className="flex items-start gap-3.5 min-w-0">
-          <div className="w-12 h-12 shrink-0 rounded-2xl bg-indigo-600/40 border border-indigo-400/50 flex items-center justify-center"><Keyboard size={23}/></div>
+          <div className="w-12 h-12 shrink-0 rounded-2xl bg-[#1E293B] border border-slate-700 text-white flex items-center justify-center"><Keyboard size={23}/></div>
           <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-widest font-black text-indigo-200">Ed Club</p>
+            <p className="text-[10px] uppercase tracking-widest font-black text-[#F87171]">Ed Club</p>
             <h2 className="mt-1 text-lg sm:text-xl font-black">{title}</h2>
-            <p className="mt-1 text-xs sm:text-sm text-indigo-100 font-semibold">{subtitle}</p>
-            <p className="mt-2 text-[11px] text-slate-200">Student: <strong className="text-white">{studentName}</strong>{studentClass ? <> <span className="mx-1">•</span> Class: <strong className="text-white">{studentClass}</strong></> : null}</p>
+            <p className="mt-1 text-xs sm:text-sm text-slate-300 font-semibold">{subtitle}</p>
+            <p className="mt-2 text-[11px] text-slate-300">Student: <strong className="text-white">{studentName}</strong>{studentClass ? <> <span className="mx-1">·</span> Class: <strong className="text-white">{studentClass}</strong></> : null}</p>
           </div>
         </div>
-        <a href={portalUrl} target="_blank" rel="noreferrer" className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-red px-4 py-3 text-xs font-black text-white hover:bg-red-700 transition-colors">
+        <a href={portalUrl} target="_blank" rel="noreferrer" className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] px-4 py-3 text-xs font-black text-white hover:bg-red-700 transition-colors">
           Launch Ed Club Digital Institute <ExternalLink size={14}/>
         </a>
       </div>

@@ -266,23 +266,13 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const getFormatBadgeColor = (type?: string) => {
+  const getFormatLabelClass = (type?: string) => {
     switch (type) {
-      case 'Syllabus':
-        return 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800';
-      case 'Lesson Note':
-      case 'guide':
-        return 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800';
-      case 'Practical Worksheet':
-      case 'worksheet':
-        return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
-      case 'Cheatsheet':
-        return 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800';
       case 'Past Exam':
       case 'cbt':
-        return 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+        return 'text-[#B91C1C] dark:text-red-400';
       default:
-        return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+        return 'text-[#1E293B] dark:text-slate-200';
     }
   };
 
@@ -295,8 +285,8 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
             {title}
           </h2>
           {studentClass && (
-            <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1.5 self-start sm:self-auto">
-              Class: <strong className="text-slate-700 dark:text-slate-300">{studentClass}</strong>
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 inline-flex items-center gap-1.5 self-start sm:self-auto">
+              Class: <strong className="text-slate-700 dark:text-slate-200">{studentClass}</strong>
             </span>
           )}
         </div>
@@ -346,7 +336,7 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
               <SlidersHorizontal size={14} />
               <span>Filter</span>
               {activeFilterCount > 0 && (
-                <span className="w-5 h-5 rounded-full bg-brand-red text-white text-[10px] font-black flex items-center justify-center">
+                <span className="w-5 h-5 rounded-md bg-brand-red text-white text-[10px] font-black flex items-center justify-center tabular-nums">
                   {activeFilterCount}
                 </span>
               )}
@@ -549,7 +539,7 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
                   key={item.id}
                   className={`group grid grid-cols-1 md:grid-cols-[2.2fr_1.1fr_1fr_0.9fr_1.4fr] gap-3 md:gap-4 px-4 sm:px-5 py-3.5 items-center transition-all cursor-pointer ${
                     unread
-                      ? 'bg-amber-50/30 dark:bg-amber-950/10 border-l-4 border-l-brand-red hover:bg-amber-50/50 dark:hover:bg-amber-950/20'
+                      ? 'bg-slate-50/90 dark:bg-slate-900/80 border-l-4 border-l-[#B91C1C] hover:bg-slate-100/80 dark:hover:bg-slate-800/70'
                       : 'bg-white dark:bg-[#161B26] hover:bg-slate-50/80 dark:hover:bg-slate-850/60'
                   }`}
                   onClick={() => handleOpenResource(item)}
@@ -571,20 +561,22 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                        {item.schoolName && (
-                          <span className="px-1.5 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-[10px] font-bold border border-sky-200/60 dark:border-sky-800/40 inline-flex items-center gap-1">
-                            <School size={10} />
-                            <span className="truncate max-w-[120px]">{item.schoolName}</span>
-                          </span>
-                        )}
-
-                        {item.isFeatured && (
-                          <span className="px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold">
-                            Featured
-                          </span>
-                        )}
-                      </div>
+                      {(item.schoolName || item.isFeatured) && (
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mb-0.5 text-[10px] font-bold">
+                          {item.schoolName && (
+                            <span className="text-[#1E293B] dark:text-slate-300 inline-flex items-center gap-1">
+                              <School size={10} />
+                              <span className="truncate max-w-[140px]">{item.schoolName}</span>
+                            </span>
+                          )}
+                          {item.schoolName && item.isFeatured && <span className="text-slate-300 dark:text-slate-700">·</span>}
+                          {item.isFeatured && (
+                            <span className="text-[#B91C1C] dark:text-red-400 uppercase tracking-wider font-black">
+                              Featured
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       {/* Title: Bold if unread, normal font if read */}
                       <h4 className={`text-xs sm:text-sm leading-snug line-clamp-1 ${
@@ -607,41 +599,34 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
                   </div>
 
                   {/* Column 2: Class Level / Assigned Classes */}
-                  <div className="text-xs">
+                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     <span className="md:hidden text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-2">
                       Class:
                     </span>
                     {item.assignedClasses && item.assignedClasses.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {item.assignedClasses.slice(0, 2).map(c => (
-                          <span key={c} className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[10px] font-bold">
-                            {c}
-                          </span>
-                        ))}
-                        {item.assignedClasses.length > 2 && (
-                          <span className="text-[10px] text-slate-400 font-bold self-center">
-                            +{item.assignedClasses.length - 2}
-                          </span>
-                        )}
-                      </div>
+                      <span className="text-[11px]">
+                        {item.assignedClasses.slice(0, 2).join(', ')}
+                        {item.assignedClasses.length > 2 ? ` (+${item.assignedClasses.length - 2})` : ''}
+                      </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[10px] font-bold">
+                      <span className="text-[11px]">
                         {item.classLevel || 'All Classes'}
                       </span>
                     )}
                   </div>
 
-                  {/* Column 3: Type & Subject Badges */}
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="md:hidden text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-2">
+                  {/* Column 3: Type & Subject Metadata */}
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] font-bold">
+                    <span className="md:hidden text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
                       Subject:
                     </span>
                     {item.subject && (
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold">
-                        {item.subject}
-                      </span>
+                      <>
+                        <span className="text-slate-600 dark:text-slate-300">{item.subject}</span>
+                        <span className="text-slate-300 dark:text-slate-700">·</span>
+                      </>
                     )}
-                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${getFormatBadgeColor(item.docType || item.category)}`}>
+                    <span className={getFormatLabelClass(item.docType || item.category)}>
                       {item.docType || item.category || 'Document'}
                     </span>
                   </div>
@@ -694,7 +679,7 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
                         type="button"
                         onClick={() => onEdit && onEdit(item)}
                         title="Edit resource links, details & classes"
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/40 dark:text-slate-400 dark:hover:text-sky-300 transition-colors cursor-pointer"
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-[#1E293B] hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 transition-colors cursor-pointer"
                       >
                         <Edit3 size={15} />
                       </button>
@@ -746,7 +731,7 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
                         type="button"
                         onClick={() => onDelete(item)}
                         title="Delete resource"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-[#B91C1C] hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
                       >
                         <Trash2 size={15} />
                       </button>

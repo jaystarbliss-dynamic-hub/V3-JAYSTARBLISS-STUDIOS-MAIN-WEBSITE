@@ -29,7 +29,6 @@ import {
   type AcademicWorkType,
 } from '../../lib/classes';
 import SEO from '../../components/ui/SEO';
-import { DashboardGreeting } from '../../components/portal/DashboardGreeting';
 import TutorLearningTracksManager from '../../components/portal/TutorLearningTracksManager';
 
 type Student = {
@@ -519,109 +518,141 @@ const StaffStudentWorkspace: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           to="/portal/staff/students"
-          className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-brand-red"
+          className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-[#B91C1C]"
         >
           <ArrowLeft size={15} /> Back to Assigned Learners Roster
         </Link>
-        {isSchoolAssigned ? (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-            <School size={13} />
-            <span>School-Assigned Student · {student.schoolName || 'Partner School'}</span>
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-            <UserRound size={13} />
-            <span>
-              Private Learner{student.parentName ? ` · Parent: ${student.parentName}` : ''}
-            </span>
-          </span>
-        )}
+        <div className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300">
+          {isSchoolAssigned ? (
+            <>
+              <School size={13} className="text-[#1E293B] dark:text-slate-200" />
+              <span>School-Assigned · {student.schoolName || 'Partner School'}</span>
+            </>
+          ) : (
+            <>
+              <UserRound size={13} className="text-[#B91C1C]" />
+              <span>
+                Private Learner{student.parentName ? ` · Parent: ${student.parentName}` : ''}
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
-      <DashboardGreeting
-        name={student.fullName}
-        role="Assigned Student Workspace"
-        subtitle={`${student.class ? `${student.class} • ` : ''}${
-          student.plan || 'Learning track'
-        } • Manage academic activity, assessments, attendance and learning progress.`}
-      />
+      <header className="border-b border-slate-200 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-widest text-[#B91C1C]">
+            Assigned Student Workspace
+          </p>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5">
+            {student.fullName}
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            {student.class ? `${student.class} · ` : ''}
+            {student.plan || 'Learning track'} · Academic assessments, milestones, and attendance history.
+          </p>
+        </div>
+        <Link
+          to={createAssessmentForLearnerUrl}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white px-4 py-2.5 text-xs font-black transition-colors shrink-0"
+        >
+          <Plus size={15} />
+          <span>Create Assessment for {student.fullName.split(' ')[0]}</span>
+        </Link>
+      </header>
 
       {success && (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 flex items-center gap-3">
-          <CheckCircle2 size={18} />
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-4 text-sm text-slate-800 dark:text-slate-200 flex items-center gap-3">
+          <CheckCircle2 size={18} className="text-[#1E293B] dark:text-slate-200 shrink-0" />
           {success}
         </div>
       )}
       {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 flex items-center gap-3">
-          <AlertCircle size={18} />
+        <div className="rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 p-4 text-sm text-red-800 dark:text-red-300 flex items-center gap-3">
+          <AlertCircle size={18} className="text-[#B91C1C] shrink-0" />
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="pro-surface rounded-2xl p-5">
-          <UserRound size={18} />
-          <p className="text-xs text-slate-500 mt-3">Learner Profile</p>
-          <p className="font-black text-slate-900 dark:text-white mt-1">{student.fullName}</p>
-          <p className="text-xs text-slate-500">
-            @{student.username || 'student'} {student.class ? `• ${student.class}` : ''}
-          </p>
-        </div>
-        <div className="pro-surface rounded-2xl p-5">
-          <CalendarCheck size={18} />
-          <p className="text-xs text-slate-500 mt-3">Attendance Rate</p>
-          <p className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">
-            {rate == null ? '—' : `${rate}%`}
-          </p>
-        </div>
-        <div className="pro-surface rounded-2xl p-5">
-          <ClipboardList size={18} />
-          <p className="text-xs text-slate-500 mt-3">Academic Tools</p>
-          <div className="flex flex-wrap items-center gap-2 mt-2">
-            <button
-              type="button"
-              onClick={() =>
-                assessmentsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-              }
-              className="text-xs font-bold text-brand-red hover:underline cursor-pointer"
-            >
-              Assessments ({assessments.length})
-            </button>
-            <span className="text-slate-300">•</span>
-            <Link
-              to={`/portal/staff/milestones?studentId=${student.id}`}
-              className="text-xs font-bold text-blue-600 hover:underline"
-            >
-              Milestones
-            </Link>
-            <span className="text-slate-300">•</span>
-            <Link
-              to="/portal/staff/credentials"
-              className="text-xs font-bold text-slate-700 dark:text-slate-300 hover:underline"
-            >
-              Access Pass
-            </Link>
+      {/* Divided 3-Column Learner Summary Strip */}
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
+        <div className="p-5 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Learner Profile
+            </p>
+            <p className="font-black text-slate-900 dark:text-white mt-1 truncate">{student.fullName}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+              @{student.username || 'student'} {student.class ? `· ${student.class}` : ''}
+            </p>
           </div>
+          <UserRound size={18} className="text-[#1E293B] dark:text-slate-300 shrink-0 mt-0.5" />
         </div>
-      </div>
+
+        <div className="p-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Recorded Attendance
+            </p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white tabular-nums mt-1">
+              {rate == null ? '—' : `${rate}%`}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+              {attendance.length} logged session{attendance.length === 1 ? '' : 's'}
+            </p>
+          </div>
+          <CalendarCheck size={18} className="text-[#B91C1C] shrink-0 mt-0.5" />
+        </div>
+
+        <div className="p-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Academic Tools
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() =>
+                  assessmentsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+                className="text-xs font-bold text-[#B91C1C] hover:underline cursor-pointer tabular-nums"
+              >
+                Assessments ({assessments.length})
+              </button>
+              <span className="text-slate-300 dark:text-slate-700">·</span>
+              <Link
+                to={`/portal/staff/milestones?studentId=${student.id}`}
+                className="text-xs font-bold text-[#1E293B] dark:text-slate-200 hover:text-[#B91C1C]"
+              >
+                Milestones
+              </Link>
+              <span className="text-slate-300 dark:text-slate-700">·</span>
+              <Link
+                to="/portal/staff/credentials"
+                className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-[#B91C1C]"
+              >
+                Access Pass
+              </Link>
+            </div>
+          </div>
+          <ClipboardList size={18} className="text-slate-500 shrink-0 mt-0.5" />
+        </div>
+      </section>
 
       {/* INLINE LEARNER ASSESSMENTS SECTION */}
       <section
         ref={assessmentsSectionRef}
         id="learner-assessments-section"
-        className="pro-surface rounded-3xl p-5 sm:p-6 space-y-5 border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs"
+        className="rounded-2xl p-5 sm:p-6 space-y-5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
       >
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-              <ClipboardCheck size={20} />
-            </div>
+            <ClipboardCheck size={20} className="text-[#1E293B] dark:text-slate-200 shrink-0 mt-0.5" />
             <div>
               <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
                 Learner Assessments &amp; Coursework
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 All active and completed tests, examinations, activities, and assignments for{' '}
                 <strong className="text-slate-700 dark:text-slate-200">{student.fullName}</strong>.
               </p>
@@ -631,7 +662,7 @@ const StaffStudentWorkspace: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Link
               to={createAssessmentForLearnerUrl}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-red hover:bg-red-700 text-white px-4 py-2.5 text-xs font-black shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white px-4 py-2 text-xs font-black transition-colors"
             >
               <Plus size={15} />
               <span>Create Assessment for {student.fullName.split(' ')[0]}</span>
@@ -639,13 +670,12 @@ const StaffStudentWorkspace: React.FC = () => {
           </div>
         </div>
 
-        {/* Filter Bar: Lifecycle (All / Active / Completed) + Work Type */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="inline-flex flex-wrap items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+          <div className="inline-flex flex-wrap items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
             <button
               type="button"
               onClick={() => setAssessmentLifecycleFilter('ALL')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer tabular-nums ${
                 assessmentLifecycleFilter === 'ALL'
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -656,9 +686,9 @@ const StaffStudentWorkspace: React.FC = () => {
             <button
               type="button"
               onClick={() => setAssessmentLifecycleFilter('ACTIVE')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer tabular-nums ${
                 assessmentLifecycleFilter === 'ACTIVE'
-                  ? 'bg-blue-600 text-white shadow-2xs'
+                  ? 'bg-[#1E293B] text-white shadow-2xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
@@ -667,9 +697,9 @@ const StaffStudentWorkspace: React.FC = () => {
             <button
               type="button"
               onClick={() => setAssessmentLifecycleFilter('COMPLETED')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer tabular-nums ${
                 assessmentLifecycleFilter === 'COMPLETED'
-                  ? 'bg-brand-red text-white shadow-2xs'
+                  ? 'bg-[#B91C1C] text-white shadow-2xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
@@ -693,7 +723,7 @@ const StaffStudentWorkspace: React.FC = () => {
                 onClick={() => setAssessmentTypeFilter(typeKey)}
                 className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
                   assessmentTypeFilter === typeKey
-                    ? 'border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700'
+                    ? 'border-[#1E293B] bg-[#1E293B] text-white'
                     : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`}
               >
@@ -703,10 +733,9 @@ const StaffStudentWorkspace: React.FC = () => {
           </div>
         </div>
 
-        {/* Assessments List */}
         {assessmentsLoading ? (
           <div className="py-10 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
-            <Loader2 size={16} className="animate-spin text-blue-600" />
+            <Loader2 size={16} className="animate-spin text-[#1E293B] dark:text-slate-300" />
             <span>Loading assessments for {student.fullName}…</span>
           </div>
         ) : filteredAssessments.length === 0 ? (
@@ -722,7 +751,7 @@ const StaffStudentWorkspace: React.FC = () => {
             </div>
             <Link
               to={createAssessmentForLearnerUrl}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-xs font-bold shadow-xs"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white px-4 py-2 text-xs font-bold shadow-xs"
             >
               <Plus size={14} />
               <span>Create Assessment for Learner</span>
@@ -740,14 +769,15 @@ const StaffStudentWorkspace: React.FC = () => {
                 >
                   <div className="space-y-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-brand-red/10 text-brand-red">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-[#B91C1C]">
                         {item.workType}
                       </span>
+                      <span className="text-slate-300 dark:text-slate-700">·</span>
                       <span
-                        className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                        className={`text-[11px] font-bold uppercase tracking-wider ${
                           isCompleted
-                            ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-                            : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                            ? 'text-[#1E293B] dark:text-slate-200'
+                            : 'text-slate-500 dark:text-slate-400'
                         }`}
                       >
                         {item.attemptStatus === 'graded'
@@ -765,10 +795,10 @@ const StaffStudentWorkspace: React.FC = () => {
                       </h3>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                       <span>{item.subject}</span>
                       {item.submittedAt && (
-                        <span className="inline-flex items-center gap-1">
+                        <span className="inline-flex items-center gap-1 tabular-nums">
                           <Clock size={12} />
                           {new Date(item.submittedAt).toLocaleDateString('en-NG', {
                             day: 'numeric',
@@ -804,7 +834,7 @@ const StaffStudentWorkspace: React.FC = () => {
 
                     <Link
                       to="/portal/staff/assessments"
-                      className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-blue-600 hover:text-blue-600 transition-colors"
+                      className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-[#1E293B] hover:text-[#1E293B] dark:hover:text-white transition-colors"
                     >
                       <span>Open</span>
                       <ArrowRight size={13} />
@@ -820,13 +850,11 @@ const StaffStudentWorkspace: React.FC = () => {
       <TutorLearningTracksManager studentId={student.id} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <section className="pro-surface rounded-3xl p-6">
+        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6">
           <div className="flex items-center gap-3 mb-5">
-            <div className="h-10 w-10 rounded-xl bg-brand-red/10 text-brand-red flex items-center justify-center">
-              <CalendarCheck size={19} />
-            </div>
+            <CalendarCheck size={19} className="text-[#B91C1C] shrink-0" />
             <div>
-              <h2 className="font-black">Record attendance</h2>
+              <h2 className="font-black text-slate-900 dark:text-white">Record attendance</h2>
               <p className="text-xs text-slate-500">One attendance record per learner per date.</p>
             </div>
           </div>
@@ -870,13 +898,12 @@ const StaffStudentWorkspace: React.FC = () => {
             </button>
           </form>
         </section>
-        <section className="pro-surface rounded-3xl p-6">
+
+        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6">
           <div className="flex items-center gap-3 mb-5">
-            <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <BookOpen size={19} />
-            </div>
+            <BookOpen size={19} className="text-[#1E293B] dark:text-slate-200 shrink-0" />
             <div>
-              <h2 className="font-black">Recent attendance</h2>
+              <h2 className="font-black text-slate-900 dark:text-white">Recent attendance</h2>
               <p className="text-xs text-slate-500">
                 The learner and parent can view this attendance history.
               </p>
@@ -887,32 +914,43 @@ const StaffStudentWorkspace: React.FC = () => {
               No attendance records yet.
             </div>
           ) : (
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {attendance.slice(0, 20).map((a) => (
-                <div
-                  key={a.id}
-                  className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 flex items-center justify-between gap-3"
-                >
-                  <div>
-                    <p className="text-sm font-bold text-slate-900 dark:text-white">
-                      {a.date ? new Date(a.date).toLocaleDateString('en-NG') : '—'}
-                    </p>
-                    {a.notes && <p className="text-xs text-slate-500 mt-1">{a.notes}</p>}
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-80 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+              {attendance.slice(0, 20).map((a) => {
+                const st = String(a.status || 'PRESENT').toUpperCase();
+                return (
+                  <div
+                    key={a.id}
+                    className="p-3 flex items-center justify-between gap-3"
+                  >
+                    <div>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">
+                        {a.date ? new Date(a.date).toLocaleDateString('en-NG') : '—'}
+                      </p>
+                      {a.notes && <p className="text-xs text-slate-500 mt-1">{a.notes}</p>}
+                    </div>
+                    <span
+                      className={`text-[11px] font-black uppercase tracking-wider ${
+                        st === 'ABSENT'
+                          ? 'text-[#B91C1C]'
+                          : st === 'PRESENT' || st === 'LATE'
+                          ? 'text-[#1E293B] dark:text-slate-200'
+                          : 'text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      {st}
+                    </span>
                   </div>
-                  <span className="text-[10px] font-black uppercase rounded-full border px-2 py-1">
-                    {a.status}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
       </div>
 
-      <div className="pro-surface rounded-2xl p-5 flex flex-wrap gap-3">
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-wrap gap-3">
         <Link
           to={createAssessmentForLearnerUrl}
-          className="min-h-11 rounded-xl bg-brand-red hover:bg-red-700 text-white px-4 inline-flex items-center gap-2 text-xs font-bold"
+          className="min-h-10 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white px-4 inline-flex items-center gap-2 text-xs font-bold"
         >
           <Plus size={15} /> Create Assessment for Learner
         </Link>
@@ -921,19 +959,19 @@ const StaffStudentWorkspace: React.FC = () => {
           onClick={() =>
             assessmentsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           }
-          className="min-h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 inline-flex items-center gap-2 text-xs font-bold cursor-pointer"
+          className="min-h-10 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white px-4 inline-flex items-center gap-2 text-xs font-bold cursor-pointer tabular-nums"
         >
           <ClipboardList size={15} /> Assessments ({assessments.length})
         </button>
         <Link
           to={`/portal/staff/milestones?studentId=${student.id}`}
-          className="min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 px-4 inline-flex items-center gap-2 text-xs font-bold"
+          className="min-h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-4 inline-flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200"
         >
           <Flag size={15} /> Manage milestones
         </Link>
         <Link
           to="/portal/staff/credentials"
-          className="min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 px-4 inline-flex items-center gap-2 text-xs font-bold"
+          className="min-h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-4 inline-flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200"
         >
           <KeyRound size={15} /> Student Access Code
         </Link>

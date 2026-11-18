@@ -1,0 +1,1034 @@
+# JAYSTARBLISS STUDIOS — COMPLETE DASHBOARD UX, DATA VISUALIZATION & BRAND CONSISTENCY REDESIGN
+
+## PROJECT OBJECTIVE
+
+I want a comprehensive redesign of the authenticated dashboards and their information-presentation system.
+
+The current application contains too many conventional cards, repetitive information blocks, unnecessary rounded badges, inconsistent colours and layouts that make important information harder to find than necessary.
+
+I want the application to feel like a sophisticated, modern educational management platform.
+
+The goal is not to decorate every section or simply replace existing cards with different cards.
+
+The goal is to rethink how information is organized, displayed, understood and accessed.
+
+Users should be able to understand important information quickly, navigate efficiently, and expand individual records when they need additional details.
+
+**Work directly within the existing repository. Inspect the actual implementation before making changes. Preserve all existing application functionality, data relationships, permissions and workflows.**
+
+Repository:
+https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE
+
+Use the latest state of the main branch as your baseline, but work on a separate feature branch. Do not directly commit changes to main or deploy automatically.
+
+---
+
+# PART 1: PARENT DASHBOARD REDESIGN
+
+Primary file:
+
+`src/pages/portal/ParentDashboard.tsx`
+
+## 1. Remove the existing decorative hero banner
+
+Remove the current large banner containing:
+
+- Family Learning Workspace
+- Parent & Guardian Hub
+- The associated decorative background and oversized banner presentation.
+
+The parent dashboard does not need this large introductory banner occupying so much space.
+
+However, preserve its useful actions:
+
+- Enroll New Child
+- Support Desk
+
+Relocate these into a compact, well-organized dashboard heading/action area.
+
+Do not remove their functionality.
+
+## 2. Replace the children's card grid with an expandable list
+
+This is a major requirement.
+
+The current Enrolled Students section displays children in a three-column card grid.
+
+I do not want this arrangement.
+
+Parents may have multiple children, and placing each child inside a large card creates unnecessary vertical and horizontal space.
+
+Replace the grid with a compact, professionally designed, vertically arranged list.
+
+### Collapsed row presentation
+
+Each child should have one concise, easily identifiable row.
+
+Include the most important information:
+
+- Student name.
+- Username where available.
+- Class / Grade.
+- Programme or learning track.
+- Account status.
+- A clear expand/collapse control.
+
+The row should be visually organised with clean typography, subtle dividers and appropriate spacing.
+
+It should look like an institutional student directory rather than a collection of profile cards.
+
+### Expandable details
+
+When a parent clicks a child, expand that child's row to reveal additional information.
+
+The expanded section may contain:
+
+- Student access code.
+- Username.
+- Enrolled programmes.
+- Module completion progress.
+- Class or grade.
+- Assigned tutor or mentor.
+- Class schedule.
+- Tuition information.
+- Relevant account information.
+
+Preserve the existing Copy Access Code functionality.
+
+Preserve the existing payment navigation and individual timetable navigation.
+
+Use an accordion or expandable-list pattern.
+
+Only the selected child should expand unless there is a compelling reason to support multiple expanded records.
+
+Make the entire interaction accessible through keyboard navigation, with appropriate focus states and `aria-expanded` attributes.
+
+Do not make nested action buttons trigger the parent row's expansion unintentionally.
+
+### Mobile behaviour
+
+The list must remain compact and usable on mobile.
+
+Do not turn the mobile presentation back into a grid of cards.
+
+Use properly spaced list rows with expandable details.
+
+## 3. Introduce useful Recharts visualizations
+
+Use Recharts to improve the parent's understanding of their children's learning progress.
+
+Recharts is already installed in the project. Do not install another charting package.
+
+The charts should provide meaningful information, not decorative animations.
+
+Potential visualizations include:
+
+**A. Learning progress comparison**
+
+A horizontal bar chart showing each child's actual completed modules against their total assigned modules.
+
+This should make it easy to understand which child is progressing and how far along each child is.
+
+**B. Assessment performance trends**
+
+Where accessible, show the progression of each child's released assessment results over time.
+
+Use the actual assessment records and only display results that parents are authorized to view.
+
+**C. Assignment and learning activity overview**
+
+Where actual underlying records exist, provide a useful visualization of completed, pending and in-progress activities.
+
+Do not show empty or fabricated chart series.
+
+### Chart interaction
+
+Where appropriate, provide:
+
+- Child-selection filters.
+- Useful tooltips.
+- Clear legends.
+- Appropriate time filters.
+- Helpful labels.
+- Responsive chart dimensions.
+
+Parents should be able to understand what each visualization represents without needing technical knowledge.
+
+### Data integrity
+
+The existing ParentDashboard already loads information from:
+
+- Linked student records.
+- `studentModules`.
+- `classSchedules`.
+- `payments`.
+- `enrollment_requests`.
+- Published programmes.
+
+Inspect these existing sources before deciding which charts to introduce.
+
+The current module-progress aggregation should be reused or improved rather than replaced with fabricated figures.
+
+For additional assessment or attendance analytics, inspect the existing parent examination and attendance functionality to identify the authorized sources of truth.
+
+Do not create synthetic statistics, sample grades, assumed attendance percentages or invented learning trends.
+
+When data is unavailable, explain that no records are available rather than drawing misleading graphs.
+
+Never display another parent's student information.
+
+Preserve the existing child-identification and parent-association logic, including the checks used to resolve linked learner accounts.
+
+## 4. Redesign class schedules on the parent dashboard
+
+The current parent dashboard displays assigned schedules as individual cards in a three-column grid.
+
+Replace this with a more informative agenda or chronological timeline.
+
+Possible presentation:
+
+- Today.
+- Tomorrow.
+- Upcoming this week.
+- Later sessions.
+
+Each schedule entry should display:
+
+- Learner.
+- Programme or class.
+- Date.
+- Start and end time.
+- Assigned tutor.
+- Session status.
+- Virtual classroom link where available.
+
+Use clear visual separation between dates and sessions.
+
+Make relevant session information accessible without opening a separate oversized card.
+
+Preserve the full timetable navigation and meeting-link validation.
+
+## 5. Improve enrollment requests and related information
+
+Enrollment requests should be displayed as compact records or rows.
+
+Show:
+
+- Student name.
+- Programme.
+- Class.
+- Application date where available.
+- Current application status.
+
+Use clear typographic status indicators instead of unnecessary coloured capsule backgrounds.
+
+Preserve access-code and username information where applicable.
+
+Keep the existing admission and enrollment workflows intact.
+
+---
+
+# PART 2: SCHOOL DASHBOARD AND STUDENT ROSTER REDESIGN
+
+Primary files:
+
+`src/pages/portal/SchoolDashboard.tsx`
+
+`src/pages/portal/SchoolRoster.tsx`
+
+The school portal is particularly important because administrators frequently work with large numbers of learners.
+
+## 1. Student roster: expandable directory, not cards
+
+The current SchoolRoster implementation already uses a structured row-based layout on desktop rather than a conventional multi-card grid.
+
+Do not unnecessarily discard that structure.
+
+Improve it into a more effective, expandable student directory.
+
+### Collapsed student row
+
+Display:
+
+- Student name.
+- Username.
+- Class / Level.
+- Programme or curriculum track.
+- Portal access status.
+- Expand control.
+- Essential quick actions.
+
+A school administrator should be able to scan dozens or hundreds of learners without scrolling through oversized cards.
+
+### Expanded student record
+
+Clicking a student should reveal the additional information available in that student's existing record.
+
+Depending on what is stored, this may include:
+
+- Email.
+- Parent or guardian information.
+- Assigned tutor or staff member.
+- Enrolled programmes.
+- Curriculum assignments.
+- Account and portal-access information.
+- Student credentials, subject to existing security restrictions.
+- Relevant enrolment information.
+
+Keep the additional details within the expanded row.
+
+Do not create a second grid of cards when the row expands.
+
+### Existing actions that must remain functional
+
+Preserve:
+
+- Edit Student.
+- Issue Access Code.
+- Enable Portal Access.
+- Disable Portal Access.
+- Search.
+- Class filters.
+- Programme/track filters.
+- Existing student-record loading and Firestore interactions.
+- Existing credential generation and security restrictions.
+
+Make sure that clicking an action button does not accidentally expand or collapse the student record.
+
+### Mobile layout
+
+On mobile, use expandable stacked list rows.
+
+Do not use multiple columns of student cards.
+
+The main student identity and status should remain visible while secondary information is progressively revealed.
+
+## 2. School dashboard overview
+
+The current school overview has:
+
+- Total Students.
+- Active Programmes.
+- Billing Status.
+- School Operations shortcut cards.
+
+Retain the useful metrics, but rethink how information is presented.
+
+Do not allow the dashboard to become a wall of KPI cards.
+
+Consider a balanced layout with:
+
+- A concise institutional heading.
+- A compact metrics summary.
+- One or two genuinely useful analytical visualizations.
+- An operational navigation area.
+- Relevant alerts and upcoming activities.
+
+Possible analytical views include:
+
+- Learners per class or grade.
+- Learner distribution by active programme.
+- Assessment participation or performance where legitimate source data exists.
+- Actual attendance trends where records are available.
+
+Do not invent school statistics.
+
+Charts must reflect the currently authenticated school's records only.
+
+The school must never see another institution's metrics.
+
+## 3. Assessment and programme information
+
+The SchoolDashboard currently displays assessment entries in a two-column card layout.
+
+Reconsider this presentation.
+
+Use a compact assessment list or expandable record structure where appropriate.
+
+The summary should expose:
+
+- Assessment title.
+- Subject.
+- Target class.
+- Status.
+- Duration.
+- Available actions.
+
+More information should be revealed on demand.
+
+Apply the same principle to school programme information and other operational records.
+
+## 4. Secure roster navigation
+
+The current SchoolDashboard's roster tab directs users to the secure student operations page.
+
+Preserve the separation of duties and credential security.
+
+Do not duplicate sensitive student-access functionality inside the dashboard overview.
+
+The detailed expandable student directory should remain within the appropriate secure SchoolRoster implementation.
+
+---
+
+# PART 3: CLASS SCHEDULES, ACTIVITIES AND OPERATIONAL INFORMATION
+
+Relevant files:
+
+- `src/components/portal/SchoolClassScheduleTimeline.tsx`
+- `src/components/portal/StaffClassSchedulesManager.tsx`
+- `src/pages/admin/AdminClassSchedules.tsx`
+- `src/pages/portal/ParentDashboard.tsx`
+- `src/pages/portal/SchoolDashboard.tsx`
+- `src/pages/portal/StaffDashboard.tsx`
+- `src/pages/portal/StudentDashboard.tsx`
+
+I do not want every form of information in the application represented as a rectangular card with rounded corners.
+
+Different information types should have different presentation styles.
+
+Use appropriate combinations of:
+
+- Expandable lists.
+- Chronological timelines.
+- Agenda layouts.
+- Compact tables.
+- Progress bars.
+- Charts.
+- Activity feeds.
+- Grouped records.
+- Inline summaries.
+- Expandable detail panels.
+- Calendar-style displays.
+- Split analytical views.
+
+### Class schedules
+
+Use chronological grouping and a clear visual time hierarchy.
+
+Organize sessions by day or week where useful.
+
+A session row should present its most important details at a glance.
+
+Expanding the row can reveal:
+
+- Class breakdown.
+- Assigned tutor.
+- Session link.
+- Additional session information.
+- Authorized management actions.
+
+The existing SchoolClassScheduleTimeline already groups schedules by date and supports expandable cohort information.
+
+Build on this existing functionality rather than creating an unrelated second schedule system.
+
+The expanded individual class cohorts should also be displayed as concise rows rather than another grid of decorative cards.
+
+### Student activities
+
+Inspect how student activities are currently presented.
+
+For example, the StudentDashboard already contains:
+
+- Curriculum milestones.
+- Recent learning activity.
+- Upcoming class schedules.
+- Assignment and assessment information.
+
+Present activity histories as meaningful chronological feeds or lists.
+
+Make the completion date, activity title and relevant status easy to distinguish.
+
+Do not wrap every activity entry in its own oversized card.
+
+### Staff information
+
+Inspect StaffDashboard and StaffClassSchedulesManager.
+
+Improve the presentation of assigned students, schedules, attendance information and upcoming class reminders.
+
+Staff should be able to distinguish school assignments from private learners easily.
+
+Use the appropriate list, timetable, chart or analytical presentation for each type of information.
+
+Do not break staff scope filters, schedule permissions, attendance workflows or assigned-school restrictions.
+
+### Administrative information
+
+Inspect AdminClassSchedules and other relevant dashboard sections.
+
+Improve repetitive record-heavy card grids where a table, expandable list or grouped presentation would be more efficient.
+
+Do not redesign complex input forms into lists. Forms should remain usable and organized around their actual workflows.
+
+---
+
+# PART 4: STRICT JAYSTARBLISS BRAND COLOUR ENFORCEMENT
+
+THIS IS A MAJOR REQUIREMENT.
+
+I want a thorough colour audit of the repository.
+
+The current application has inconsistent colours introduced by different components and previous design iterations.
+
+Examples include:
+
+- Blue.
+- Cyan.
+- Emerald.
+- Green.
+- Sky blue.
+- Purple.
+- Amber.
+- Orange.
+- Various unrelated colour combinations.
+
+Remove these inconsistent colour choices from the authenticated dashboard interface.
+
+Do not introduce another independent colour scheme.
+
+Use the official Jaystarbliss brand palette consistently.
+
+## 1. Approved primary colours
+
+**Primary Navy / Slate**
+
+`#1E293B`
+
+**Secondary Crimson Red**
+
+`#B91C1C`
+
+**Primary Neutral**
+
+`#F8FAFC`
+
+**Supporting light neutrals**
+
+`#FFFFFF`
+
+`#F1F5F9`
+
+`#E2E8F0`
+
+**Supporting dark neutrals**
+
+`#0B1120`
+
+`#111827`
+
+`#1E293B`
+
+These are the foundation of the existing Jaystarbliss Studios design system.
+
+The existing `#14284B` navy variation may be retained where required by the established institutional navigation design.
+
+## 2. Light and dark variants
+
+For bright/light interfaces:
+
+Use the official brand colours with their appropriate light tints.
+
+Examples:
+
+- Light navy-tinted surfaces.
+- Light crimson-tinted backgrounds.
+- Neutral white and off-white backgrounds.
+- Subtle slate borders.
+- Brand-aligned muted text.
+
+For dark interfaces:
+
+Use darker navy/slate surfaces, with appropriately lighter versions of the same brand colours for text, highlights and interactive states.
+
+Examples:
+
+- Dark navy backgrounds.
+- Dark slate panels.
+- Light neutral typography.
+- Subtle crimson accents.
+- Controlled crimson-tinted highlights.
+
+Do not use an unrelated bright colour merely because it is visually attractive.
+
+## 3. Prohibited colour drift
+
+Audit and remove the use of unrelated colour families from the dashboard visual system.
+
+In particular, eliminate decorative use of:
+
+- `blue-500`, `blue-600`, `blue-700`.
+- `cyan-*`.
+- `emerald-*`.
+- `green-*`.
+- `sky-*`.
+- `purple-*`.
+- `violet-*`.
+- `amber-*`.
+- `orange-*`.
+- Unrelated teal colours.
+
+Replace these with appropriate navy/slate or crimson variants.
+
+For example, a primary dashboard button that is currently blue should use the appropriate Jaystarbliss crimson or navy treatment.
+
+An emerald success panel should not automatically become another green panel. Represent its status through clear text and a suitable brand-aligned treatment.
+
+## 4. Status information
+
+Do not lose the meaning of operational statuses when consolidating the colours.
+
+Examples:
+
+- Active.
+- Restricted.
+- Completed.
+- Pending.
+- Overdue.
+- Approved.
+- Rejected.
+- Scheduled.
+- Rescheduled.
+
+These labels must remain clear.
+
+Use concise text labels, simple indicators and appropriate icons.
+
+Do not rely on colour alone to communicate a status.
+
+Use contrast, text and iconography to distinguish statuses without introducing unrelated colour families.
+
+## 5. Centralize and enforce the palette
+
+Inspect and reconcile the existing styling systems:
+
+- `tailwind.config.js`
+- `src/index.css`
+- `src/uiux-pro-max.css`
+- `src/components/portal/portal-polish.css`
+- `src/pages/Portal.css`
+- `src/pages/SecurePortalTheme.css`
+- The official design-system documentation.
+- Any other relevant portal and dashboard styling files.
+
+The current portal-polish stylesheet introduces blue-based button styling, and the global stylesheet has cyan hover accents. These must be reconciled with the official brand palette.
+
+Ensure that shared components do not reintroduce non-brand colours after the individual dashboards have been updated.
+
+Create or refine central brand tokens so that future components inherit the correct colours by default.
+
+Do not indiscriminately change unrelated imagery, uploaded media or meaningful content. The focus is on the application interface and its design system.
+
+---
+
+# PART 5: REMOVE UNNECESSARY NON-INTERACTIVE ROUNDED BADGES
+
+Conduct a thorough audit of decorative badges, pills, labels and status capsules.
+
+I do not want unnecessary rounded boxes around ordinary text.
+
+For example, many components currently use patterns such as:
+
+- Rounded background behind a status.
+- Rounded background behind a class name.
+- Rounded capsule behind a programme name.
+- Rounded badge behind a session label.
+- Rounded background behind descriptive metadata.
+
+When an element is merely displaying information and is not clickable, remove the unnecessary rounded container treatment.
+
+Present such information using:
+
+- Clean typography.
+- Appropriate brand-coloured text.
+- Small separators.
+- Subtle indicators.
+- Minimal icons where useful.
+- Clear typographic hierarchy.
+
+### Important distinction
+
+Do not remove functional interactive controls.
+
+Keep appropriate shapes and backgrounds for:
+
+- Buttons.
+- Clickable navigation tabs.
+- Interactive filters.
+- Selectable controls.
+- Inputs.
+- Search controls.
+- Expand/collapse buttons.
+- Other genuinely interactive elements.
+
+An interactive control may retain an appropriate rounded shape because the shape helps communicate its function.
+
+The goal is to stop treating every descriptive label as a button-like pill.
+
+The text itself must retain the appropriate brand-colour treatment.
+
+For example, a class label can appear as clean crimson text rather than a red rounded capsule.
+
+A programme label can appear as ordinary slate text without an unnecessary rounded background.
+
+A status can be displayed as a clear text label with a small brand-aligned indicator.
+
+Do not remove useful information simply to remove its badge.
+
+---
+
+# PART 6: RECHARTS AND DATA VISUALIZATION STANDARDS
+
+Use the existing Recharts implementation.
+
+Before introducing new charts, inspect:
+
+- `src/pages/portal/StaffDashboard.tsx`
+- `src/pages/portal/StudentDashboard.tsx`
+- `src/components/portal/StudentAnalyticsVisualizer.tsx`
+- Parent and school dashboard data sources.
+
+There are already chart implementations in the repository.
+
+Do not create duplicate chart systems.
+
+### Important data-quality correction
+
+The existing StaffDashboard contains a fallback weekly series that constructs illustrative lesson values when no real historical data exists.
+
+It also uses a default 94% attendance rate when there are no tracked records.
+
+This is not acceptable for a real operational analytics dashboard.
+
+Remove fabricated chart data and misleading default statistics.
+
+The existing StudentAnalyticsVisualizer also contains chart-data structures initialized as empty arrays.
+
+Inspect the actual data flow and ensure charts are connected to valid records.
+
+### Visualization requirements
+
+Charts should:
+
+- Use real application data.
+- Respect user and school permissions.
+- Update when the underlying data changes.
+- Have useful tooltips.
+- Have clear axes and legends.
+- Support mobile layouts.
+- Use the official brand palette.
+- Provide meaningful empty states.
+- Avoid decorative chart effects that obscure the information.
+
+Use different chart types where appropriate.
+
+Examples:
+
+- Bar charts for comparing learner progress.
+- Line or area charts for actual historical trends.
+- Donut charts for genuine categorical distributions.
+- Horizontal bars for class or programme comparisons.
+
+Do not use a chart merely because Recharts supports it.
+
+Choose a visualization based on the information it communicates.
+
+Important information from charts should also be understandable through text or a concise accompanying summary.
+
+---
+
+# PART 7: DASHBOARD DESIGN PRINCIPLES
+
+The application should adopt a more deliberate information hierarchy.
+
+A good dashboard should help the user answer:
+
+1. What is happening?
+2. What requires attention?
+3. What has changed?
+4. What is coming next?
+5. Where can I access more information?
+
+Avoid filling every available area with decorative components.
+
+### Layout principles
+
+Use compact summaries for high-priority metrics.
+
+Use charts for information that benefits from visual comparison or trend analysis.
+
+Use lists for multiple related records.
+
+Use timelines for chronological activities.
+
+Use expandable sections for secondary details.
+
+Use tables for dense operational information where column comparison is beneficial.
+
+Use cards only when grouping information into a distinct, meaningful surface actually improves usability.
+
+Do not completely prohibit cards. Eliminate the unnecessary repetition of cards as the default presentation for everything.
+
+### Typography
+
+Maintain a clear hierarchy between:
+
+- Page titles.
+- Section headings.
+- Primary values.
+- Supporting descriptions.
+- Metadata.
+- Status labels.
+
+Use Poppins as the existing primary typeface.
+
+Do not make every piece of text bold.
+
+Use tabular numerals for financial figures, metrics, percentages and scores.
+
+### Spacing
+
+Avoid oversized padding and unnecessarily tall components.
+
+Use consistent spacing.
+
+Keep dashboard layouts relatively information-dense without making them cramped.
+
+Ensure the design works equally well on desktop and mobile.
+
+---
+
+# PART 8: RESPONSIVENESS AND ACCESSIBILITY
+
+Test all redesigned dashboard components across:
+
+- 375px mobile.
+- 768px tablet.
+- 1024px laptop.
+- 1440px desktop.
+
+Ensure:
+
+- No accidental horizontal overflow.
+- Lists remain readable.
+- Expandable sections work properly.
+- Charts resize correctly.
+- Tooltips remain accessible.
+- Tables and records remain usable.
+- Touch targets remain sufficiently large.
+- Text contrast remains accessible.
+- Keyboard navigation works.
+- Focus indicators remain visible.
+- Reduced-motion preferences are respected.
+
+Preserve the existing light/dark theme functionality.
+
+The same brand identity must remain recognizable in both themes.
+
+Do not introduce different branding rules for dark mode.
+
+---
+
+# PART 9: FILES TO AUDIT
+
+At minimum, inspect the following.
+
+### Parent
+
+- `src/pages/portal/ParentDashboard.tsx`
+- `src/components/portal/ParentLearningTracks.tsx`
+- `src/pages/portal/ParentExaminationResults.tsx`
+- `src/pages/portal/PortalCalendar.tsx`
+
+### School
+
+- `src/pages/portal/SchoolDashboard.tsx`
+- `src/pages/portal/SchoolRoster.tsx`
+- `src/components/portal/SchoolClassScheduleTimeline.tsx`
+- `src/pages/portal/SchoolLearnerInsights.tsx`
+
+### Student
+
+- `src/pages/portal/StudentDashboard.tsx`
+- `src/components/portal/StudentAnalyticsVisualizer.tsx`
+
+### Staff and administration
+
+- `src/pages/portal/StaffDashboard.tsx`
+- `src/components/portal/StaffClassSchedulesManager.tsx`
+- `src/pages/admin/AdminClassSchedules.tsx`
+- `src/pages/admin/AdminDashboard.tsx`
+- Relevant admin activity and student-management components.
+
+### Design system
+
+- `design-system/jaystarbliss-studios/MASTER.md`
+- `design-system/jaystarbliss-studios/pages/dashboard.md`
+- `docs/ui-redesign/component-design-system.md`
+- `src/index.css`
+- `src/uiux-pro-max.css`
+- `src/components/portal/portal-polish.css`
+- `src/pages/Portal.css`
+- `tailwind.config.js`
+
+This is not an exhaustive file list.
+
+Search the entire repository for other components, stylesheets and shared elements that introduce the same layout or colour inconsistencies.
+
+---
+
+# PART 10: FUNCTIONALITY THAT MUST NOT BREAK
+
+This is a visual and UX redesign, not a rewrite of the business logic.
+
+Preserve:
+
+- Firebase authentication.
+- Firestore data relationships.
+- Parent-to-child account relationships.
+- School-to-student associations.
+- Tutor and staff assignments.
+- Programme hierarchy.
+- Student enrolment.
+- Access-code generation.
+- Student portal-access restrictions.
+- Search and filtering.
+- Attendance tracking.
+- Class schedule creation and management.
+- Session status updates.
+- Meeting-link validation.
+- Assessment permissions.
+- Notifications.
+- Billing and payment navigation.
+- Existing dashboard routes.
+- Administrative role-based access.
+
+Do not change security permissions simply to make the interface easier to redesign.
+
+Do not expose private learner information to unauthorized users.
+
+Do not introduce new mock records or fabricated metrics.
+
+Avoid unnecessary database schema changes.
+
+---
+
+# PART 11: TESTING AND ACCEPTANCE CRITERIA
+
+Do not declare the work complete simply because the application builds.
+
+### Parent dashboard
+
+- The old decorative hero banner is removed.
+- Enroll New Child and Support Desk still work.
+- Children appear in compact expandable lists.
+- No child card grid remains.
+- Child information is revealed correctly when expanded.
+- Copy access code works.
+- Timetable and billing links work.
+- Recharts visualizations use actual authorized data.
+- Empty states are correct.
+- Multiple children are handled correctly.
+
+### School portal
+
+- Student records appear in expandable list rows.
+- No student card grid is introduced.
+- Search and filters work.
+- Edit Student works.
+- Issue Code works.
+- Enable/Disable works.
+- Credentials remain properly protected.
+- Expanded rows do not disrupt mobile responsiveness.
+
+### Schedules and activities
+
+- Schedules are presented in an appropriate timeline or agenda format.
+- Individual sessions remain accessible.
+- Cohort breakdowns remain functional.
+- Meeting links work.
+- Tutors retain their permitted schedule-management actions.
+- Attendance workflows still work.
+- Activity feeds show accurate underlying records.
+
+### Brand consistency
+
+- Dashboard buttons use brand colours.
+- Charts use brand colours.
+- Decorative icons use brand colours.
+- Backgrounds use approved neutral and brand tints.
+- Unrelated blue, green, amber, purple and cyan styling is removed from the audited dashboard interfaces.
+- Unnecessary non-interactive rounded badges are removed.
+- Interactive controls retain appropriate styling.
+- Light and dark themes are consistent.
+
+### Data integrity
+
+- No fabricated chart series.
+- No invented attendance percentages.
+- No fake student performance statistics.
+- No cross-parent or cross-school data exposure.
+- No regression in existing dashboard loading and filtering.
+
+### Technical validation
+
+Run:
+
+`npm run build`
+
+`npm run lint`
+
+Also execute the relevant existing tests.
+
+Inspect the actual rendered interfaces at the required viewport sizes in light and dark mode.
+
+Fix any discovered issues before reporting completion.
+
+---
+
+# FINAL EXPECTATION
+
+I want the result to feel like a carefully designed, modern educational management platform.
+
+Not everything should be a card.
+
+Not every status should be a rounded badge.
+
+Not every piece of information needs an icon.
+
+Not every dashboard needs the same layout.
+
+Use professional UX judgement to determine the best way to present each kind of information.
+
+The parent should be able to understand their children's progress easily.
+
+The school administrator should be able to manage a large student roster without struggling through grids of cards.
+
+Tutors and staff should be able to understand their workloads, attendance and schedules quickly.
+
+The entire authenticated application should consistently reflect Jaystarbliss Studios branding.
+
+Prioritize:
+
+1. Information clarity.
+2. Efficient navigation.
+3. Real and meaningful data visualization.
+4. Expandable list-based record management.
+5. Appropriate variety in information presentation.
+6. Strict brand consistency.
+7. Mobile responsiveness.
+8. Preservation of existing functionality.
+
+**Do not make superficial styling changes. Conduct the audit, improve the underlying information hierarchy, implement the redesign and verify the actual application.**
+
+Do not deploy or merge into main automatically.
+
+At completion, provide a precise report of:
+
+- Files changed.
+- Components redesigned.
+- Charts introduced or repaired.
+- Colours standardized.
+- Unnecessary badges removed.
+- Existing workflows preserved.
+- Tests performed and their results.
+- Any remaining issues or limitations.

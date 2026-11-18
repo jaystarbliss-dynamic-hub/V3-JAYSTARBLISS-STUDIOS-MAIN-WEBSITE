@@ -5,8 +5,7 @@
 The Jaystarbliss authenticated platform uses a restrained, high-trust education SaaS visual language consolidated in `src/uiux-pro-max.css`, `src/index.css`, and `src/components/portal/portal-polish.css`:
 
 - **Brand Navy / Slate (`--jb-brand-slate`)**: `#1E293B` (Midnight Navy `#14284B` in portal navigation)
-- **Brand Red (`--jb-brand-red`)**: `#B91C1C` (Reserved for intentional brand accents and critical actions)
-- **Primary Action Blue (`--jb-status-info`)**: `#2563EB`
+- **Brand Red (`--jb-brand-red`)**: `#B91C1C` (Primary brand emphasis, primary CTA, and critical actions)
 - **Neutral Canvas (`--jb-brand-neutral`)**: `#F8FAFC` (Light) / `#0B1120` (Dark)
 - **Card / Panel Surface (`--jb-surface`)**: `#FFFFFF` (Light) / `#111827` (Dark) with crisp `1px solid #E2E8F0` (`rgba(255, 255, 255, 0.08)` in dark mode) borders and subtle single-elevation shadows.
 
@@ -21,10 +20,10 @@ The Jaystarbliss authenticated platform uses a restrained, high-trust education 
 | Primary Text | `--jb-text` | `#0f172a` | `#f8fafc` | Headings, primary data values |
 | Muted Text | `--jb-text-muted` | `#64748b` | `#94a3b8` | Labels, metadata, timestamps |
 | Border | `--jb-border` | `#e2e8f0` | `rgba(255,255,255,0.08)` | 1px structural dividers and card outlines |
-| Focus Ring | `--jb-focus` | `#0284c7` | `#38bdf8` | WCAG 2.2 AA 3px keyboard focus outline |
-| Status Success | `--jb-status-success` | `#16a34a` | `#4ade80` | Active, released, graded, verified states |
-| Status Warning | `--jb-status-warning` | `#d97706` | `#fbbf24` | Scheduled, pending, in-progress states |
-| Status Danger | `--jb-status-danger` | `#dc2626` | `#f87171` | Expired, overdue, destructive actions |
+| Focus Ring | `--jb-focus` | `#b91c1c` | `#f87171` | WCAG 2.2 AA 3px keyboard focus outline |
+| Status Info / Active | `--jb-status-info` | `#14284b` | `#f8fafc` | Active states, released, verified |
+| Status Secondary | `--jb-status-warning` | `#334155` | `#cbd5e1` | Scheduled, pending, in-progress states |
+| Status Danger | `--jb-status-danger` | `#b91c1c` | `#f87171` | Expired, overdue, destructive actions |
 | Header Height | `--jb-header-height` | `3.5rem` (`56px`) | `3.5rem` (`56px`) | Compact sticky topbar height |
 | Touch Target | `--jb-touch-target` | `2.75rem` (`44px`) | `2.75rem` (`44px`) | Minimum interactive target height on mobile |
 

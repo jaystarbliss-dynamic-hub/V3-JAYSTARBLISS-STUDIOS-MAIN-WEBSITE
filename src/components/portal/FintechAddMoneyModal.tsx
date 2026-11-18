@@ -1,10 +1,14 @@
-import React, { useState } from 'react';
-import { 
-  Building2, CreditCard, Copy, Check, X, 
-  ShieldCheck, Loader2
+import React, { useEffect, useId, useState } from 'react';
+import {
+  CreditCard,
+  Info,
+  Loader2,
+  ShieldCheck,
+  X
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/receiptGenerator';
 import { useToast } from '../../contexts/ToastContext';
+import { NO_REFUND_POLICY_TEXT, NO_REFUND_POLICY_TITLE } from './PaystackPaymentReviewModal';
 
 export interface FintechAddMoneyModalProps {
   isOpen: boolean;
@@ -17,72 +21,73 @@ export interface FintechAddMoneyModalProps {
 export const FintechAddMoneyModal: React.FC<FintechAddMoneyModalProps> = ({
   isOpen,
   onClose,
-  userName = 'Jaystarbliss User',
+  userName = 'Jaystarbliss Account',
+  userEmail,
   onPaystackTopUp
 }) => {
   const { toast } = useToast();
-  const [tab, setTab] = useState<'transfer' | 'card'>('transfer');
   const [amount, setAmount] = useState<string>('10000');
-  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [policyAccepted, setPolicyAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const checkboxId = useId();
+
+  useEffect(() => {
+    if (isOpen) {
+      setPolicyAccepted(false);
+      setLoading(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  // Virtual account dedicated to user
-  const virtualAccount = {
-    bankName: 'Wema Bank / ALAT',
-    accountNumber: '8129304921',
-    accountName: `JAYSTARBLISS / ${userName.toUpperCase()}`,
-    expires: 'Permanent Dedicated Account'
-  };
+  const numAmount = Number(amount) || 0;
 
-  const handleCopy = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(label);
-    toast.success(`${label} copied to clipboard!`);
-    setTimeout(() => setCopiedField(null), 2500);
-  };
-
-  const handleCardPayment = async (e: React.FormEvent) => {
+  const handlePaystackFunding = async (e: React.FormEvent) => {
     e.preventDefault();
-    const num = Number(amount);
-    if (!num || num < 500) {
-      toast.error('Minimum deposit amount is ₦500');
+    if (numAmount < 500) {
+      toast.error('Minimum deposit amount is ₦500.');
+      return;
+    }
+    if (!policyAccepted) {
+      toast.error('Please read and accept the Payment Policy before proceeding.');
       return;
     }
     setLoading(true);
     try {
       if (!onPaystackTopUp) {
-        throw new Error('Online card top-up is not configured for this account.');
+        throw new Error('Online Paystack funding is not configured for this account.');
       }
-      await onPaystackTopUp(num);
+      await onPaystackTopUp(numAmount);
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Unable to initiate top-up.');
+      toast.error(err instanceof Error ? err.message : 'Unable to initiate Paystack checkout.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fadeIn">
-      <div 
-        className="w-full max-w-lg rounded-t-[32px] sm:rounded-3xl bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] overflow-y-auto"
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/75 backdrop-blur-xs p-0 sm:p-4">
+      <div
+        className="w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] overflow-y-auto"
         role="dialog"
         aria-modal="true"
+        aria-label="Review Your Payment"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <CreditCard size={20} />
+        <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white dark:bg-slate-800 flex items-center justify-center shrink-0">
+              <CreditCard size={18} className="text-brand-red" />
             </div>
             <div>
+              <p className="text-[10px] font-black uppercase tracking-wider text-brand-red">
+                Paystack Hosted Checkout
+              </p>
               <h2 className="text-base font-black text-slate-900 dark:text-white">
-                Add Money to Wallet
+                Review Your Payment
               </h2>
-              <p className="text-xs text-slate-500">
-                Instant funding via Bank Transfer or Paystack Card
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Fund {userName}{userEmail ? ` (${userEmail})` : ''} via Paystack.
               </p>
             </div>
           </div>
@@ -90,132 +95,118 @@ export const FintechAddMoneyModal: React.FC<FintechAddMoneyModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-500"
+            disabled={loading}
+            aria-label="Close modal"
+            className="w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-500 cursor-pointer"
           >
             <X size={16} />
           </button>
         </div>
 
-        {/* Mode Tabs */}
-        <div className="grid grid-cols-2 gap-2 p-1 mt-5 rounded-2xl bg-slate-100 dark:bg-slate-800">
-          <button
-            type="button"
-            onClick={() => setTab('transfer')}
-            className={`py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all ${
-              tab === 'transfer'
-                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Building2 size={15} />
-            <span>Bank Transfer</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setTab('card')}
-            className={`py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all ${
-              tab === 'card'
-                ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <CreditCard size={15} />
-            <span>Debit Card / USSD</span>
-          </button>
-        </div>
-
-        {tab === 'transfer' ? (
-          <div className="mt-5 space-y-4">
-            <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/50">
-              <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                <ShieldCheck size={16} className="text-emerald-600" />
-                <span>Dedicated Virtual Account for Instant Top-up</span>
-              </div>
-              <p className="text-[11px] text-emerald-700/80 dark:text-emerald-400 mt-1">
-                Transfer any amount from your bank app (GTB, Kuda, Zenith, OPay, etc.) to this account to fund your wallet automatically in &lt; 30 seconds.
-              </p>
+        <form onSubmit={handlePaystackFunding} className="mt-5 space-y-4">
+          <div>
+            <label className="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+              Amount (₦ NGN)
+            </label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-base font-black font-mono text-slate-400">
+                ₦
+              </span>
+              <input
+                type="number"
+                min="500"
+                required
+                value={amount}
+                onChange={e => {
+                  setAmount(e.target.value);
+                  setPolicyAccepted(false);
+                }}
+                placeholder="10,000"
+                className="w-full min-h-12 pl-9 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-base font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-red outline-hidden"
+              />
             </div>
 
-            {/* Virtual Account Box */}
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-4 space-y-3">
-              <div>
-                <span className="block text-[10px] font-black uppercase text-slate-400">Bank Name</span>
-                <div className="flex items-center justify-between mt-0.5">
-                  <span className="font-bold text-sm text-slate-900 dark:text-white">{virtualAccount.bankName}</span>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
-                <span className="block text-[10px] font-black uppercase text-slate-400">Account Number</span>
-                <div className="flex items-center justify-between mt-0.5">
-                  <span className="font-mono font-black text-xl text-slate-900 dark:text-white tracking-widest">
-                    {virtualAccount.accountNumber}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(virtualAccount.accountNumber, 'Account number')}
-                    className="min-h-8 px-3 rounded-xl bg-slate-900 hover:bg-black dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold flex items-center gap-1 transition-all"
-                  >
-                    {copiedField === 'Account number' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                    <span>{copiedField === 'Account number' ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
-                <span className="block text-[10px] font-black uppercase text-slate-400">Account Name</span>
-                <div className="flex items-center justify-between mt-0.5">
-                  <span className="font-bold text-xs text-slate-700 dark:text-slate-300">{virtualAccount.accountName}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800/60 text-[11px] text-slate-500 flex items-center gap-2">
-              <ShieldCheck size={16} className="text-emerald-500 shrink-0" />
-              <span>Automated NIBSS reconciliation powered by Paystack Virtual Accounts.</span>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {[5000, 10000, 25000, 50000, 100000].map(val => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => {
+                    setAmount(String(val));
+                    setPolicyAccepted(false);
+                  }}
+                  className={`px-3 py-1 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${
+                    Number(amount) === val
+                      ? 'border-brand-red bg-red-50/70 text-brand-red dark:bg-red-950/30'
+                      : 'border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  ₦{val.toLocaleString()}
+                </button>
+              ))}
             </div>
           </div>
-        ) : (
-          <form onSubmit={handleCardPayment} className="mt-5 space-y-4">
-            <div>
-              <label className="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
-                Top-Up Amount (₦ NGN)
-              </label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-base font-black font-mono text-slate-400">
-                  ₦
-                </span>
-                <input
-                  type="number"
-                  min="500"
-                  required
-                  value={amount}
-                  onChange={e => setAmount(e.target.value)}
-                  placeholder="10,000"
-                  className="w-full min-h-12 pl-9 pr-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-base font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-red outline-hidden"
-                />
-              </div>
 
-              {/* Presets */}
-              <div className="flex flex-wrap gap-2 mt-2">
-                {[5000, 10000, 25000, 50000, 100000].map(val => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setAmount(String(val))}
-                    className="px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300"
-                  >
-                    ₦{val.toLocaleString()}
-                  </button>
-                ))}
-              </div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 p-4 space-y-2 text-xs">
+            <div className="flex justify-between text-slate-600 dark:text-slate-300">
+              <span>Account Target</span>
+              <strong className="text-slate-900 dark:text-white">{userName}</strong>
             </div>
+            <div className="flex justify-between pt-2 border-t border-slate-200 dark:border-slate-800 text-sm font-black">
+              <span className="text-slate-900 dark:text-white">Total Payable</span>
+              <strong className="font-mono text-brand-red">{formatCurrency(numAmount)}</strong>
+            </div>
+          </div>
 
+          <div className="flex items-start gap-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3.5 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            <Info size={15} className="shrink-0 mt-0.5 text-slate-700 dark:text-slate-300" />
+            <span>
+              Your payment will be processed securely through Paystack. You will be redirected to Paystack&apos;s hosted checkout, where you can select an available payment method.
+            </span>
+          </div>
+
+          <div className="rounded-xl border-2 border-brand-red/30 bg-red-50/40 dark:bg-red-950/20 p-4">
+            <p className="text-[11px] font-black uppercase tracking-wider text-brand-red">
+              {NO_REFUND_POLICY_TITLE}
+            </p>
+            <p className="mt-1 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+              {NO_REFUND_POLICY_TEXT}
+            </p>
+            <label
+              htmlFor={checkboxId}
+              className="mt-3 flex items-start gap-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 cursor-pointer"
+            >
+              <input
+                id={checkboxId}
+                type="checkbox"
+                checked={policyAccepted}
+                onChange={e => setPolicyAccepted(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-brand-red cursor-pointer"
+              />
+              <span className="text-xs font-bold text-slate-900 dark:text-white">
+                I have read and agree to the Payment Policy.
+              </span>
+            </label>
+            {!policyAccepted && (
+              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                Please accept the Payment Policy to enable payment.
+              </p>
+            )}
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="min-h-11 flex-1 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              Cancel
+            </button>
             <button
               type="submit"
-              disabled={loading || Number(amount) < 500}
-              className="w-full min-h-12 rounded-2xl bg-brand-red hover:bg-red-700 text-white font-black text-xs transition-all shadow-md flex items-center justify-center gap-2 mt-4"
+              disabled={loading || numAmount < 500 || !policyAccepted}
+              className="min-h-11 flex-[2] rounded-xl bg-brand-red hover:bg-red-800 text-white font-black text-xs transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {loading ? (
                 <>
@@ -225,13 +216,15 @@ export const FintechAddMoneyModal: React.FC<FintechAddMoneyModalProps> = ({
               ) : (
                 <>
                   <ShieldCheck size={16} />
-                  <span>Pay {formatCurrency(Number(amount) || 0)} Securely</span>
+                  <span>Pay through Paystack</span>
                 </>
               )}
             </button>
-          </form>
-        )}
+          </div>
+        </form>
       </div>
     </div>
   );
 };
+
+export default FintechAddMoneyModal;

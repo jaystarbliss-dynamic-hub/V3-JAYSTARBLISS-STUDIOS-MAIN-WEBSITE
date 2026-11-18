@@ -18,6 +18,7 @@ import {
   resolvePartnerSchoolName,
 } from "../../lib/classes";
 import { resolveParentLinkedChildren } from "../../lib/academicSyncEngine";
+import { ReleasedOfficialReportsSection } from "../../components/academic-reporting/ReleasedOfficialReportsSection";
 
 type Child = { id: string; name: string; className: string; schoolId?: string; schoolName?: string; allIds?: string[] };
 type Result = {
@@ -233,6 +234,9 @@ export default function ParentExaminationResults() {
   const handleDownloadPdf = async (result: Result) => {
     setDownloadingId(result.attemptId);
     try {
+      const isPrivChild =
+        !result.schoolId ||
+        String(result.schoolId).toLowerCase().includes("private");
       const bytes = await generateExamReportPdf(
         {
           id: result.attemptId,
@@ -240,8 +244,9 @@ export default function ParentExaminationResults() {
           studentId: result.studentId,
           studentName: result.studentName,
           className: result.className,
-          schoolId: result.schoolId,
-          schoolName: result.schoolName,
+          schoolId: isPrivChild ? "private_parent" : result.schoolId,
+          schoolName: isPrivChild ? "" : result.schoolName,
+          enrolmentType: isPrivChild ? "private" : "school",
           status: result.status,
           score: result.score,
           maxScore: result.maxScore,
@@ -257,8 +262,8 @@ export default function ParentExaminationResults() {
           id: result.examId,
           title: result.title,
           subject: result.subject,
-          schoolId: result.schoolId,
-          schoolName: result.schoolName,
+          schoolId: isPrivChild ? "private_parent" : result.schoolId,
+          schoolName: isPrivChild ? "" : result.schoolName,
           maxScore: result.maxScore,
           questions: result.questions,
         }
@@ -299,11 +304,16 @@ export default function ParentExaminationResults() {
         </div>
       )}
 
-      <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-end md:justify-between md:p-6">
-        <label className="block min-w-0 flex-1 text-sm font-semibold text-slate-700">
+      <ReleasedOfficialReportsSection
+        viewerRole="PARENT"
+        studentId={selectedChild !== "all" ? selectedChild : undefined}
+      />
+
+      <section className="flex flex-col gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 md:flex-row md:items-end md:justify-between md:p-5">
+        <label className="block min-w-0 flex-1 text-xs font-semibold text-slate-700 dark:text-slate-300">
           Filter by Linked Learner
           <select
-            className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 font-normal text-slate-900 outline-none focus:border-blue-500"
+            className="mt-1.5 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2.5 font-normal text-slate-900 dark:text-white outline-none focus:border-slate-900 dark:focus:border-slate-400"
             value={selectedChild}
             onChange={(event) => setSelectedChild(event.target.value)}
           >
@@ -320,113 +330,113 @@ export default function ParentExaminationResults() {
           type="button"
           onClick={() => void refresh()}
           disabled={loading || refreshing}
-          className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+          className="rounded-lg bg-slate-900 dark:bg-slate-800 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-50 inline-flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
         >
           {refreshing || loading ? (
-            <Loader2 className="animate-spin text-white" size={16} />
+            <Loader2 className="animate-spin text-white" size={15} />
           ) : (
-            <RefreshCw size={16} />
+            <RefreshCw size={15} />
           )}
           Refresh Results
         </button>
       </section>
 
       {!loading && !error && (
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <BookOpenCheck size={22} className="text-blue-700" />
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Released Results
-            </p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{visibleResults.length}</p>
+        <section className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+          <div className="p-4 sm:px-5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <BookOpenCheck size={16} className="text-brand-red" aria-hidden="true" />
+              <span>Released Results</span>
+            </div>
+            <p className="mt-1.5 text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{visibleResults.length}</p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <ClipboardCheck size={22} className="text-emerald-700" />
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Average Performance
-            </p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">
+          <div className="p-4 sm:px-5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <ClipboardCheck size={16} className="text-slate-700 dark:text-slate-300" aria-hidden="true" />
+              <span>Average Performance</span>
+            </div>
+            <p className="mt-1.5 text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
               {average === null ? "—" : `${average}%`}
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <CalendarClock size={22} className="text-indigo-700" />
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Linked Children
-            </p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{children.length}</p>
+          <div className="p-4 sm:px-5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <CalendarClock size={16} className="text-slate-700 dark:text-slate-300" aria-hidden="true" />
+              <span>Linked Children</span>
+            </div>
+            <p className="mt-1.5 text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{children.length}</p>
           </div>
         </section>
       )}
 
       {loading ? (
         <div className="flex justify-center py-16 text-sm font-semibold text-slate-500">
-          <Loader2 className="mr-2 animate-spin text-blue-600" size={20} />
+          <Loader2 className="mr-2 animate-spin text-brand-red" size={20} />
           Loading released results…
         </div>
       ) : !error && children.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
-          <h2 className="text-lg font-bold text-slate-900">No linked learner profiles found</h2>
-          <p className="mt-2 text-sm text-slate-600">
+        <section className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-12 text-center">
+          <h2 className="text-base font-bold text-slate-900 dark:text-white">No linked learner profiles found</h2>
+          <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
             When your parent account is linked to a learner profile, their released assessment
             results will appear here.
           </p>
         </section>
       ) : !error && visibleResults.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
-          <h2 className="text-lg font-bold text-slate-900">No released results yet</h2>
-          <p className="mt-2 text-sm text-slate-600">
+        <section className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-12 text-center">
+          <h2 className="text-base font-bold text-slate-900 dark:text-white">No released results yet</h2>
+          <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
             Submitted assessments remain pending here until verified and released by your child's
             tutor.
           </p>
         </section>
       ) : (
         !error && (
-          <section className="space-y-4">
+          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-800">
             {visibleResults.map((result) => (
               <article
                 key={result.attemptId}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6 hover:border-slate-300 transition-all"
+                className="p-5 md:p-6 transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-950/40"
               >
                 <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
                   <div className="min-w-0">
-                    <p className="text-xs font-bold uppercase tracking-wider text-blue-700">
+                    <p className="text-xs font-bold uppercase tracking-wider text-brand-red">
                       {result.subject || "Assessment"}
                       {result.className ? ` · ${result.className}` : ""}
                       {result.schoolName ? ` · ${result.schoolName}` : ""}
                     </p>
-                    <h2 className="mt-1 text-lg font-bold text-slate-900">{result.title}</h2>
-                    <p className="mt-1 text-sm text-slate-600">
+                    <h2 className="mt-1 text-base font-bold text-slate-900 dark:text-white">{result.title}</h2>
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                       {result.studentName} · Released {formatDate(result.releasedAt)}
                     </p>
                   </div>
-                  <div className="shrink-0 rounded-2xl bg-blue-50/70 border border-blue-100 px-5 py-3 text-right">
-                    <p className="text-xs font-bold text-blue-700 uppercase">Score</p>
-                    <p className="text-2xl font-black text-slate-900">
+                  <div className="shrink-0 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-4 py-2.5 text-right">
+                    <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase">Score</p>
+                    <p className="text-xl font-bold text-slate-900 dark:text-white tabular-nums">
                       {typeof result.score === "number" ? result.score : "—"}
                       {typeof result.maxScore === "number" ? ` / ${result.maxScore}` : ""}
                     </p>
                     {typeof result.percentage === "number" && (
-                      <p className="text-xs font-bold text-emerald-700">
+                      <p className="text-xs font-bold text-brand-red tabular-nums">
                         {result.percentage}% Grade
                       </p>
                     )}
                   </div>
                 </div>
                 {result.feedback && (
-                  <div className="mt-4 rounded-xl bg-slate-50 p-4 text-xs font-medium text-slate-700 border border-slate-100">
-                    <strong className="text-slate-900">Teacher Remarks:</strong> {result.feedback}
+                  <div className="mt-3 rounded-lg bg-slate-50 dark:bg-slate-950 p-3.5 text-xs font-medium text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800">
+                    <strong className="text-slate-900 dark:text-white">Teacher Remarks:</strong> {result.feedback}
                   </div>
                 )}
-                <div className="mt-4 pt-3 border-t flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+                <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
                   <span>Submitted: {formatDate(result.submittedAt)}</span>
                   <button
                     type="button"
                     onClick={() => void handleDownloadPdf(result)}
                     disabled={downloadingId === result.attemptId}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 font-bold text-slate-800 hover:bg-slate-50 shadow-sm"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-1.5 font-bold text-slate-800 dark:text-slate-200 hover:border-brand-red hover:text-brand-red cursor-pointer"
                   >
-                    <Download size={14} className="text-blue-600" />
+                    <Download size={14} className="text-brand-red" aria-hidden="true" />
                     {downloadingId === result.attemptId
                       ? "Generating PDF…"
                       : "Download Official Report PDF"}

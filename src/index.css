@@ -107,14 +107,14 @@ html.high-contrast.dark .dark\:border-slate-700 {
 html.high-contrast button:focus-visible,
 html.high-contrast a:focus-visible,
 html.high-contrast input:focus-visible {
-  outline: 3px solid #0284C7 !important;
+  outline: 3px solid #B91C1C !important;
   outline-offset: 2px !important;
 }
 
 html.high-contrast.dark button:focus-visible,
 html.high-contrast.dark a:focus-visible,
 html.high-contrast.dark input:focus-visible {
-  outline: 3px solid #38BDF8 !important;
+  outline: 3px solid #F87171 !important;
   outline-offset: 2px !important;
 }
 
@@ -140,9 +140,8 @@ html.high-contrast.dark input:focus-visible {
   }
 
   .glass-card:hover {
-    border-color: rgba(6, 182, 212, 0.45);
-    box-shadow: 0 16px 36px 0 rgba(30, 41, 59, 0.08), 
-                0 0 20px 2px rgba(6, 182, 212, 0.16);
+    border-color: rgba(30, 41, 59, 0.25);
+    box-shadow: 0 16px 36px 0 rgba(30, 41, 59, 0.08);
   }
 
   .glass-card-subtle {
@@ -154,8 +153,8 @@ html.high-contrast.dark input:focus-visible {
   }
 
   .glass-card-subtle:hover {
-    border-color: rgba(6, 182, 212, 0.35);
-    box-shadow: 0 10px 28px 0 rgba(6, 182, 212, 0.12);
+    border-color: rgba(30, 41, 59, 0.22);
+    box-shadow: 0 10px 28px 0 rgba(30, 41, 59, 0.08);
   }
 }
 
@@ -168,9 +167,8 @@ html.dark .glass-card {
 }
 
 html.dark .glass-card:hover {
-  border-color: rgba(6, 182, 212, 0.55);
-  box-shadow: 0 16px 40px 0 rgba(0, 0, 0, 0.5), 
-              0 0 24px 2px rgba(6, 182, 212, 0.22);
+  border-color: rgba(148, 163, 184, 0.3);
+  box-shadow: 0 16px 40px 0 rgba(0, 0, 0, 0.5);
 }
 
 html.dark .glass-card-subtle {
@@ -181,9 +179,8 @@ html.dark .glass-card-subtle {
 }
 
 html.dark .glass-card-subtle:hover {
-  border-color: rgba(6, 182, 212, 0.4);
-  box-shadow: 0 12px 32px 0 rgba(0, 0, 0, 0.4), 
-              0 0 16px 1px rgba(6, 182, 212, 0.16);
+  border-color: rgba(148, 163, 184, 0.25);
+  box-shadow: 0 12px 32px 0 rgba(0, 0, 0, 0.4);
 }
 
 /* Jaystarbliss 2026 interface system --------------------------------------- */
@@ -285,7 +282,7 @@ html.dark textarea:focus {
 }
 
 .tech-label { font-size: .68rem; line-height: 1rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-.hairline { height: 1px; background: linear-gradient(90deg, #0284c7, rgba(56, 189, 248, 0.4), transparent); }
+.hairline { height: 1px; background: linear-gradient(90deg, #B91C1C, rgba(30, 41, 59, 0.35), transparent); }
 
 .dashboard-interface > [class*="grid"] > [class*="bg-white"],
 .dashboard-interface > [class*="bg-white"],
@@ -327,12 +324,12 @@ html.dark textarea:focus {
   transform: scale(0);
   animation: glassRippleAnimation 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   pointer-events: none;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.4) 0%, rgba(255, 255, 255, 0.2) 65%, transparent 100%);
+  background: radial-gradient(circle, rgba(185, 28, 28, 0.28) 0%, rgba(255, 255, 255, 0.18) 65%, transparent 100%);
   z-index: 25;
 }
 
 html.dark .glass-ripple {
-  background: radial-gradient(circle, rgba(34, 211, 238, 0.45) 0%, rgba(255, 255, 255, 0.15) 65%, transparent 100%);
+  background: radial-gradient(circle, rgba(185, 28, 28, 0.35) 0%, rgba(255, 255, 255, 0.14) 65%, transparent 100%);
 }
 
 @keyframes glassRippleAnimation {
@@ -511,6 +508,17 @@ html.dark .bg-brand-neutral {
   background-color: rgba(148, 163, 184, 0.7);
 }
 
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 
 /* =========================================================================
    PORTAL & ADMIN DESIGN SYSTEM TOKENS (LIGHT & DARK MODE CONTRAST AUDIT)
@@ -526,8 +534,9 @@ html.dark .bg-brand-neutral {
   --portal-text-heading: #0F172A;
   --portal-text-body: #334155;
   --portal-text-muted: #64748B;
-  --portal-primary: #2563EB;
-  --portal-primary-hover: #1D4ED8;
+  --portal-primary: #B91C1C;
+  --portal-primary-hover: #991B1B;
+  --portal-navy: #1E293B;
 }
 
 html.dark {
@@ -539,8 +548,9 @@ html.dark {
   --portal-text-heading: #F8FAFC;
   --portal-text-body: #E2E8F0;
   --portal-text-muted: #94A3B8;
-  --portal-primary: #3B82F6;
-  --portal-primary-hover: #2563EB;
+  --portal-primary: #DC2626;
+  --portal-primary-hover: #B91C1C;
+  --portal-navy: #1E293B;
 }
 
 /* Guarantee readable minimum contrast for muted helper text in Light Mode */
@@ -583,8 +593,8 @@ html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-500:not(
 
 :is(.dashboard-interface, .admin-schools-command) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select, textarea):focus {
   outline: none;
-  border-color: #2563EB;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+  border-color: #B91C1C;
+  box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.14);
 }
 
 
@@ -659,4 +669,75 @@ img, video, canvas, svg { max-width: 100%; }
 @media (max-width: 767px) {
   :is(.portal-shell, .admin-shell) { height: 100dvh !important; min-height: 100dvh !important; overflow: hidden; }
   :is(.portal-main-content, .admin-main-content) { height: auto !important; min-height: 0 !important; flex: 1 1 auto; overflow-y: auto; overscroll-behavior-y: contain; }
+}
+
+/* =========================================================================
+   JAYSTARBLISS BRAND LOADER: CIRCULAR BREATHING LOGO + SLIM VARIABLE RING
+   ========================================================================= */
+@keyframes jb-logo-breathe {
+  0%, 100% {
+    transform: scale(0.93);
+    opacity: 0.92;
+  }
+  50% {
+    transform: scale(1.045);
+    opacity: 1;
+  }
+}
+
+@keyframes jb-ring-variable-spin {
+  0% {
+    transform: rotate(0deg);
+    animation-timing-function: cubic-bezier(0.75, 0, 0.25, 1);
+  }
+  /* 0s -> ~1.54s: Very fast burst (2 full turns) */
+  32% {
+    transform: rotate(720deg);
+    animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  /* ~1.54s -> ~3.17s: Slow calm glide (120 deg) */
+  66% {
+    transform: rotate(840deg);
+    animation-timing-function: cubic-bezier(0.78, 0, 0.22, 1);
+  }
+  /* ~3.17s -> 4.8s: Rapid spin back to seamless 4th revolution */
+  100% {
+    transform: rotate(1440deg);
+  }
+}
+
+.jb-loader-ring {
+  background: conic-gradient(
+    from 0deg,
+    #ff2442 0deg,
+    #df4627 65deg,
+    #2563eb 155deg,
+    #38bdf8 225deg,
+    #b91c1c 305deg,
+    #ff2442 360deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 1.5px));
+  animation: jb-ring-variable-spin 4.8s linear infinite;
+  will-change: transform;
+}
+
+.jb-loader-halo {
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 36, 66, 0.36),
+    rgba(37, 99, 235, 0.36),
+    rgba(56, 189, 248, 0.28),
+    rgba(223, 70, 39, 0.36),
+    rgba(255, 36, 66, 0.36)
+  );
+  filter: blur(10px);
+  opacity: 0.55;
+  animation: jb-ring-variable-spin 4.8s linear infinite, jb-logo-breathe 2.4s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.jb-loader-logo {
+  animation: jb-logo-breathe 2.4s ease-in-out infinite;
+  will-change: transform, opacity;
 }

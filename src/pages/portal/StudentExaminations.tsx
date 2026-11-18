@@ -16,6 +16,7 @@ import {
   Play,
   RotateCcw,
 } from "lucide-react";
+import { ReleasedOfficialReportsSection } from "../../components/academic-reporting/ReleasedOfficialReportsSection";
 import { auth, db, getAllClientDatabases } from "../../lib/firebase";
 import {
   collection,
@@ -927,13 +928,13 @@ export default function StudentExaminations() {
     <main className="mx-auto w-full max-w-6xl space-y-5 p-3 sm:p-5 md:p-8 overflow-x-hidden">
       {/* UPCOMING / RECENT ASSESSMENT NOTIFICATIONS BANNER */}
       {notifications.length > 0 && (
-        <section className="rounded-2xl border border-blue-200 dark:border-blue-800/70 bg-blue-50/70 dark:bg-blue-950/30 p-4 shadow-sm">
+        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/70 p-4 shadow-sm">
           <div className="flex items-start gap-3">
-            <Bell className="mt-0.5 text-blue-600 dark:text-blue-400 shrink-0" size={18} />
-            <div className="space-y-1 text-xs sm:text-sm text-blue-950 dark:text-blue-100 min-w-0">
+            <Bell className="mt-0.5 text-[#B91C1C] dark:text-red-400 shrink-0" size={18} />
+            <div className="space-y-1 text-xs sm:text-sm text-slate-900 dark:text-slate-100 min-w-0">
               <p className="font-bold">Class Assessment Notices</p>
               {notifications.map((n) => (
-                <p key={n.id} className="text-blue-900 dark:text-blue-200 break-words">
+                <p key={n.id} className="text-slate-700 dark:text-slate-300 break-words">
                   • <strong>{n.title}:</strong> {n.message}
                 </p>
               ))}
@@ -941,6 +942,9 @@ export default function StudentExaminations() {
           </div>
         </section>
       )}
+
+      {/* OFFICIAL RELEASED ACADEMIC PERFORMANCE REPORTS */}
+      <ReleasedOfficialReportsSection viewerRole="STUDENT" />
 
       {/* TABS & REFRESH */}
       <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm space-y-4">
@@ -981,11 +985,11 @@ export default function StudentExaminations() {
                 }`}
               >
                 <span>{wt.label}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                  {count}
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                  ({count})
                 </span>
                 {active && (
-                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-blue-600 dark:bg-blue-400 rounded-full" />
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#B91C1C]" />
                 )}
               </button>
             );
@@ -993,11 +997,11 @@ export default function StudentExaminations() {
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
             {studentInfo.class && (
-              <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200">
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
                 Class:{" "}
-                <span className="text-blue-700 dark:text-blue-400">{studentInfo.class}</span>
+                <span className="text-slate-900 dark:text-white">{studentInfo.class}</span>
               </span>
             )}
             <div className="flex flex-wrap gap-1.5 sm:gap-2">
@@ -1014,9 +1018,9 @@ export default function StudentExaminations() {
                   key={item.id}
                   type="button"
                   onClick={() => setTab(item.id)}
-                  className={`rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors text-center cursor-pointer ${
+                  className={`rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors text-center cursor-pointer tabular-nums ${
                     tab === item.id
-                      ? "bg-blue-600 text-white shadow-sm"
+                      ? "bg-[#1E293B] dark:bg-[#B91C1C] text-white shadow-sm"
                       : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700"
                   }`}
                 >
@@ -1029,7 +1033,7 @@ export default function StudentExaminations() {
             type="button"
             onClick={load}
             disabled={loading}
-            className="w-full sm:w-auto rounded-xl bg-blue-600 px-5 py-2 text-xs sm:text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 shadow-xs transition-colors cursor-pointer shrink-0"
+            className="w-full sm:w-auto rounded-xl bg-[#1E293B] dark:bg-slate-800 px-5 py-2 text-xs sm:text-sm font-semibold text-white hover:bg-[#0F172A] dark:hover:bg-slate-700 disabled:opacity-50 shadow-xs transition-colors cursor-pointer shrink-0"
           >
             {loading ? "Checking Work…" : "Refresh List"}
           </button>
@@ -1038,7 +1042,7 @@ export default function StudentExaminations() {
         {message?.id === "list" && (
           <div
             role="alert"
-            className="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 text-sm font-medium text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800"
+            className="rounded-xl bg-red-50 dark:bg-red-950/40 p-4 text-sm font-medium text-red-900 dark:text-red-200 border border-red-200 dark:border-red-800"
           >
             {message.text}
           </div>
@@ -1047,7 +1051,7 @@ export default function StudentExaminations() {
         {/* EMPTY STATE */}
         {!loading && exams.length === 0 && !message && (
           <div className="py-12 sm:py-14 text-center px-3">
-            <BookOpenCheck className="mx-auto mb-3 text-blue-600 dark:text-blue-400" size={44} />
+            <BookOpenCheck className="mx-auto mb-3 text-[#B91C1C] dark:text-red-400" size={44} />
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
               No Assessments Found For Your Class
             </h2>
@@ -1058,7 +1062,7 @@ export default function StudentExaminations() {
             </p>
             <button
               onClick={load}
-              className="mt-5 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition-colors"
+              className="mt-5 rounded-xl bg-[#B91C1C] px-6 py-2.5 text-sm font-bold text-white hover:bg-red-800 transition-colors cursor-pointer"
             >
               Check Again
             </button>
@@ -1104,41 +1108,49 @@ export default function StudentExaminations() {
                   className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-4 sm:p-5 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all"
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-                    <div className="rounded-2xl bg-blue-50 dark:bg-blue-950/60 p-3 text-blue-700 dark:text-blue-400 shrink-0 self-start">
+                    <div className="rounded-2xl bg-slate-100 dark:bg-slate-800 p-3 text-[#1E293B] dark:text-slate-200 shrink-0 self-start">
                       {isExternal ? <ExternalLink size={26} /> : <BookOpenCheck size={26} />}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-md bg-red-50 dark:bg-red-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-300">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                        <span className="font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                           {typeLabels.singular}
                         </span>
-                        <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words">
-                          {exam.title}
-                        </h2>
+                        <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
                         <span
-                          className={`rounded-full px-2.5 py-0.5 text-xs font-bold capitalize ${
+                          className={`capitalize font-bold ${
                             exam.status === "active"
-                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                              ? "text-[#1E293B] dark:text-white"
                               : exam.status === "upcoming"
-                              ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
-                              : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                              ? "text-slate-600 dark:text-slate-300"
+                              : "text-slate-500 dark:text-slate-400"
                           }`}
                         >
                           {exam.status}
                         </span>
                         {isExternal && (
-                          <span className="rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
-                            External Link
-                          </span>
+                          <>
+                            <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                            <span className="font-semibold text-slate-600 dark:text-slate-300">
+                              External Link
+                            </span>
+                          </>
                         )}
                         {exam.limitOneAttempt === false && (
-                          <span className="rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 px-2.5 py-0.5 text-[11px] font-bold text-blue-700 dark:text-blue-300">
-                            Retakes Allowed
-                          </span>
+                          <>
+                            <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
+                              Retakes Allowed
+                            </span>
+                          </>
                         )}
                       </div>
 
-                      <p className="mt-1 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300">
+                      <h2 className="mt-1 text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words">
+                        {exam.title}
+                      </h2>
+
+                      <p className="mt-1 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 tabular-nums">
                         {exam.subject}
                         {!isExternal && maxScore > 0 ? ` · Total Marks: ${maxScore}` : ""}
                       </p>
@@ -1161,7 +1173,7 @@ export default function StudentExaminations() {
                       )}
 
                       {!isExternal && exam.attemptStatus && (
-                        <div className="mt-2.5 inline-flex flex-wrap items-center gap-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                        <div className="mt-2.5 inline-flex flex-wrap items-center gap-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 tabular-nums">
                           <span>
                             Status:{" "}
                             <span className="capitalize font-bold text-slate-900 dark:text-white">
@@ -1169,11 +1181,11 @@ export default function StudentExaminations() {
                             </span>
                           </span>
                           {isReleased && exam.score !== undefined ? (
-                            <span className="text-emerald-700 dark:text-emerald-400 font-bold">
+                            <span className="text-slate-900 dark:text-white font-bold">
                               · Official Score: {exam.score} / {maxScore} ({pct}%)
                             </span>
                           ) : ["submitted", "expired", "graded"].includes(exam.attemptStatus) ? (
-                            <span className="text-amber-700 dark:text-amber-400 font-semibold">
+                            <span className="text-[#B91C1C] dark:text-red-400 font-semibold">
                               · Awaiting Tutor Release
                             </span>
                           ) : null}
@@ -1181,15 +1193,15 @@ export default function StudentExaminations() {
                       )}
 
                       {isReleased && exam.feedback && (
-                        <div className="mt-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-800/60 p-3 text-xs text-slate-800 dark:text-slate-200">
-                          <span className="font-bold text-blue-900 dark:text-blue-300 block mb-0.5">
+                        <div className="mt-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 text-xs text-slate-800 dark:text-slate-200">
+                          <span className="font-bold text-[#1E293B] dark:text-white block mb-0.5">
                             Tutor Feedback:
                           </span>
                           {exam.feedback}
                         </div>
                       )}
 
-                      <div className="mt-3 flex flex-wrap gap-3 sm:gap-4 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                      <div className="mt-3 flex flex-wrap gap-3 sm:gap-4 text-xs font-semibold text-slate-600 dark:text-slate-400 tabular-nums">
                         {exam.durationMinutes > 0 && (
                           <span className="inline-flex items-center gap-1.5">
                             <Clock3 size={15} className="text-slate-400 shrink-0" />
@@ -1197,8 +1209,8 @@ export default function StudentExaminations() {
                           </span>
                         )}
                         {submissionDeadlineText && (
-                          <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
-                            <CalendarDays size={15} className="text-amber-500 shrink-0" />
+                          <span className="inline-flex items-center gap-1.5 text-[#B91C1C] dark:text-red-400">
+                            <CalendarDays size={15} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
                             Submission Deadline:{" "}
                             {new Date(submissionDeadlineText).toString() !== "Invalid Date"
                               ? new Date(submissionDeadlineText).toLocaleString()
@@ -1228,7 +1240,7 @@ export default function StudentExaminations() {
                               `/portal/student/exams/${encodeURIComponent(exam.attemptId!)}`
                             )
                           }
-                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700"
+                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] px-5 py-2.5 text-sm font-bold text-white hover:bg-red-800 cursor-pointer"
                         >
                           {typeLabels.resumeLabel}
                           <ArrowRight size={16} />
@@ -1253,7 +1265,7 @@ export default function StudentExaminations() {
                                 true
                               )
                             }
-                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-5 py-2.5 text-sm font-bold text-white shadow-xs cursor-pointer disabled:opacity-50"
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 px-5 py-2.5 text-sm font-bold text-white shadow-xs cursor-pointer disabled:opacity-50"
                           >
                             <RotateCcw size={16} />
                             {busy === exam.id
@@ -1268,7 +1280,7 @@ export default function StudentExaminations() {
                               `/portal/student/exams/${encodeURIComponent(exam.attemptId!)}`
                             )
                           }
-                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-blue-600 bg-white dark:bg-slate-800 px-5 py-2.5 text-sm font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-slate-700"
+                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-[#1E293B] dark:border-slate-600 bg-white dark:bg-slate-800 px-5 py-2.5 text-sm font-bold text-[#1E293B] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
                         >
                           {isReleased
                             ? "View Official Report & Download PDF"
@@ -1291,15 +1303,15 @@ export default function StudentExaminations() {
 
                   {/* EXTERNAL LINK UNLOCKED STATE */}
                   {isExternal && exam.status === "active" && unlockedUrl && (
-                    <div className="mt-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 p-4 sm:p-5 border border-emerald-200 dark:border-emerald-800/70 space-y-3">
-                      <div className="flex items-center gap-2 text-sm font-bold text-emerald-900 dark:text-emerald-200">
+                    <div className="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800/70 p-4 sm:p-5 border border-slate-200 dark:border-slate-700 space-y-3">
+                      <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
                         <CheckCircle2
                           size={18}
-                          className="text-emerald-600 dark:text-emerald-400 shrink-0"
+                          className="text-[#1E293B] dark:text-slate-200 shrink-0"
                         />
                         Access Verified — Ready to Launch
                       </div>
-                      <p className="text-xs text-emerald-800 dark:text-emerald-300">
+                      <p className="text-xs text-slate-600 dark:text-slate-300">
                         Your portal access code has been verified. Click the button below to open
                         your {typeLabels.lowerSingular} in a new tab.
                       </p>
@@ -1308,7 +1320,7 @@ export default function StudentExaminations() {
                           href={unlockedUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 shadow-sm transition-colors"
+                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] px-6 py-3 text-sm font-bold text-white hover:bg-red-800 shadow-sm transition-colors"
                         >
                           Open {typeLabels.singular}
                           <ExternalLink size={16} />
@@ -1323,7 +1335,7 @@ export default function StudentExaminations() {
                     !["in_progress", "submitted", "expired", "graded"].includes(
                       exam.attemptStatus || ""
                     ) && (
-                      <div className="mt-4 sm:mt-5 rounded-2xl bg-blue-50/70 dark:bg-blue-950/25 p-4 sm:p-5 border border-blue-100 dark:border-blue-900/50">
+                      <div className="mt-4 sm:mt-5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/50 p-4 sm:p-5 border border-slate-200 dark:border-slate-700">
                         {(() => {
                           const normalizedType = normalizeWorkType(exam.workType, exam);
                           const requiresCode =
@@ -1334,7 +1346,7 @@ export default function StudentExaminations() {
                             return (
                               <div className="space-y-3">
                                 <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                                  <Play size={18} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                                  <Play size={18} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
                                   Ready to Begin {typeLabels.singular}
                                 </div>
                                 <p className="text-xs text-slate-600 dark:text-slate-300">
@@ -1347,7 +1359,7 @@ export default function StudentExaminations() {
                                     type="button"
                                     disabled={busy === exam.id}
                                     onClick={() => unlock(exam.id, "")}
-                                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm cursor-pointer"
+                                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] px-6 py-3 text-sm font-bold text-white hover:bg-red-800 disabled:opacity-50 shadow-sm cursor-pointer"
                                   >
                                     <Play size={17} />
                                     {busy === exam.id
@@ -1364,7 +1376,7 @@ export default function StudentExaminations() {
                                     className={`mt-2 flex items-start gap-2 text-xs font-semibold ${
                                       message.error
                                         ? "text-red-700 dark:text-red-400"
-                                        : "text-emerald-700 dark:text-emerald-400"
+                                        : "text-slate-900 dark:text-slate-100"
                                     }`}
                                   >
                                     <CircleAlert size={16} className="mt-0.5 shrink-0" />
@@ -1381,12 +1393,12 @@ export default function StudentExaminations() {
                                 <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
                                   <LockKeyhole
                                     size={18}
-                                    className="text-blue-700 dark:text-blue-400 shrink-0"
+                                    className="text-[#1E293B] dark:text-slate-200 shrink-0"
                                   />
                                   Enter {typeLabels.singular} Passcode
                                 </div>
                                 {exam.status === "active" && exam.passcode && (
-                                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 px-2.5 py-1 text-xs font-black text-blue-700 dark:text-blue-300 font-mono">
+                                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-xs font-black text-[#1E293B] dark:text-slate-100 font-mono">
                                     Active Passcode: {exam.passcode}
                                   </span>
                                 )}
@@ -1408,7 +1420,7 @@ export default function StudentExaminations() {
                                     }
                                     type={visible[exam.id] ? "text" : "password"}
                                     maxLength={128}
-                                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 pr-12 text-slate-900 dark:text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm font-semibold tracking-wider"
+                                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 pr-12 text-slate-900 dark:text-white outline-none focus:border-[#1E293B] focus:ring-2 focus:ring-slate-200 dark:focus:ring-slate-700 text-sm font-semibold tracking-wider"
                                     placeholder="Enter passcode (e.g. JDI-XXXXXX)"
                                   />
                                   <button
@@ -1426,7 +1438,7 @@ export default function StudentExaminations() {
                                   type="button"
                                   disabled={busy === exam.id}
                                   onClick={() => unlock(exam.id)}
-                                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm shrink-0 cursor-pointer"
+                                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] px-6 py-3 text-sm font-bold text-white hover:bg-red-800 disabled:opacity-50 shadow-sm shrink-0 cursor-pointer"
                                 >
                                   <LockKeyhole size={17} />
                                   {busy === exam.id
@@ -1442,7 +1454,7 @@ export default function StudentExaminations() {
                                   className={`mt-3 flex items-start gap-2 text-xs font-semibold ${
                                     message.error
                                       ? "text-red-700 dark:text-red-400"
-                                      : "text-emerald-700 dark:text-emerald-400"
+                                      : "text-slate-900 dark:text-slate-100"
                                   }`}
                                 >
                                   <CircleAlert size={16} className="mt-0.5 shrink-0" />
@@ -1452,7 +1464,7 @@ export default function StudentExaminations() {
                               <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
                                 <ShieldCheck
                                   size={14}
-                                  className="text-blue-600 dark:text-blue-400 shrink-0"
+                                  className="text-[#1E293B] dark:text-slate-300 shrink-0"
                                 />
                                 Protected by Jaystarbliss Central CBT Assessment Security.
                               </p>

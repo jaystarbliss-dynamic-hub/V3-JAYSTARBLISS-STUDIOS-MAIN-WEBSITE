@@ -314,37 +314,37 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
     switch (status) {
       case 'PRIOR_LEARNING_APPROVED':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
-            <Award size={11} /> Prior Learning Approved
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#1E293B] dark:text-slate-200">
+            <Award size={12} className="text-[#B91C1C] dark:text-red-400" /> Prior Learning Approved
           </span>
         );
       case 'COMPLETED':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-green-100 text-green-800">
-            <CheckCircle2 size={11} /> Completed
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#1E293B] dark:text-slate-200">
+            <CheckCircle2 size={12} className="text-[#1E293B] dark:text-white" /> Completed
           </span>
         );
       case 'CURRENT':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-100 text-indigo-800">
-            <Clock size={11} /> Currently Learning
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#B91C1C] dark:text-red-400">
+            <Clock size={12} /> Currently Learning
           </span>
         );
       case 'LOCKED':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900">
-            <Lock size={11} /> Prerequisite Locked
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+            <Lock size={12} /> Prerequisite Locked
           </span>
         );
       case 'OPTIONAL':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">
+          <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
             Optional Elective
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">
+          <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
             Upcoming
           </span>
         );
@@ -366,9 +366,9 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
         <div
           className={`p-3.5 rounded-xl border transition-all mb-2 ${
             node.selfStatus === 'PRIOR_LEARNING_APPROVED' || node.status === 'COMPLETED'
-              ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/80 dark:border-emerald-900/50'
+              ? 'bg-slate-50/90 dark:bg-slate-800/40 border-slate-300 dark:border-slate-700'
               : node.status === 'CURRENT'
-              ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800'
+              ? 'bg-white dark:bg-slate-900 border-[#1E293B]/40 dark:border-slate-600'
               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
           }`}
           style={{ marginLeft: `${Math.min(node.depth, 8) * 20}px` }}
@@ -391,35 +391,35 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
               <div className="mt-0.5 shrink-0">
                 {hasChildren || node.isContainer ? (
                   isExpanded ? (
-                    <FolderOpen size={18} className="text-brand-red" />
+                    <FolderOpen size={18} className="text-[#B91C1C]" />
                   ) : (
-                    <Folder size={18} className="text-brand-red" />
+                    <Folder size={18} className="text-[#B91C1C]" />
                   )
                 ) : (
-                  <BookOpen size={17} className="text-indigo-600 dark:text-indigo-400" />
+                  <BookOpen size={17} className="text-[#1E293B] dark:text-slate-300" />
                 )}
               </div>
 
               <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="font-black text-sm text-slate-900 dark:text-white">
                     {p.title}
                   </span>
+                  <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
                   {renderStatusBadge(node)}
                   {node.isContainer && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                      Branch Container ({node.completedRequiredUnitsCount}/
-                      {node.totalRequiredUnitsCount} units done)
+                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                      · Branch ({node.completedRequiredUnitsCount}/{node.totalRequiredUnitsCount} units done)
                     </span>
                   )}
                   {node.isHybrid && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
-                      Hybrid Branch
+                    <span className="text-[11px] font-semibold text-[#1E293B] dark:text-slate-300">
+                      · Hybrid Branch
                     </span>
                   )}
                   {node.isAncestorContextOnly && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
-                      Parent Context
+                    <span className="text-[11px] font-medium text-slate-500">
+                      · Parent Context
                     </span>
                   )}
                 </div>
@@ -429,7 +429,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                 </div>
 
                 {node.isLockedByPrerequisite && (
-                  <div className="text-[11px] font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                  <div className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400 flex items-center gap-1">
                     <Lock size={12} />
                     <span>
                       Requires completion of:{' '}
@@ -451,7 +451,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                 )}
 
                 {node.priorLearningRecord?.status === 'APPROVED' && (
-                  <div className="text-[11px] bg-emerald-100/70 dark:bg-emerald-950/50 text-emerald-900 dark:text-emerald-200 px-2.5 py-1 rounded-lg">
+                  <div className="text-[11px] bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 px-2.5 py-1 rounded-lg">
                     <strong>Prior-Learning Credit ({node.priorLearningRecord.recognitionType}):</strong>{' '}
                     {node.priorLearningRecord.verificationNotes ||
                       node.priorLearningRecord.evidenceReference}{' '}
@@ -467,7 +467,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
             <div className="flex flex-wrap items-center gap-3 shrink-0">
               {/* Branch or Unit Progress Display */}
               <div className="w-36">
-                <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+                <div className="flex items-center justify-between text-[11px] font-bold mb-1 tabular-nums">
                   <span className="text-slate-500">
                     {hasChildren && !countsOwnUnit ? 'Branch Aggregate' : 'Unit Progress'}
                   </span>
@@ -481,8 +481,8 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                       (hasChildren && !countsOwnUnit
                         ? node.aggregateProgress
                         : node.selfProgress) >= 100
-                        ? 'bg-emerald-500'
-                        : 'bg-indigo-600'
+                        ? 'bg-[#1E293B] dark:bg-white'
+                        : 'bg-[#B91C1C]'
                     }`}
                     style={{
                       width: `${
@@ -534,7 +534,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                         setPriorEvidence('');
                         setPriorNotes('');
                       }}
-                      className="px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold hover:bg-emerald-100"
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-bold hover:bg-slate-200 dark:hover:bg-slate-700"
                       title="Verify Prior-Learning Recognition for this unit"
                     >
                       Prior Credit
@@ -569,7 +569,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
         <div>
           <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-indigo-600" />
+            <GitBranch className="w-5 h-5 text-[#B91C1C]" />
             <span>Recursive Programme Pathway &amp; Progress Manager</span>
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -597,7 +597,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => setShowPathwayConfigurator((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-brand-red transition-colors"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#1E293B] text-white text-xs font-bold hover:bg-[#B91C1C] transition-colors"
             >
               <FolderTree size={14} />
               <span>
@@ -611,9 +611,9 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
       </div>
 
       {feedbackBanner && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center justify-between">
+        <div className="p-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-semibold flex items-center justify-between">
           <span>{feedbackBanner}</span>
-          <button onClick={() => setFeedbackBanner(null)} className="font-bold underline">
+          <button onClick={() => setFeedbackBanner(null)} className="font-bold underline text-[#B91C1C] dark:text-red-400">
             Dismiss
           </button>
         </div>
@@ -621,9 +621,9 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
 
       {/* Pending Student/Parent Prior-Learning Requests Alert */}
       {pendingPriorRequests.length > 0 && (
-        <div className="p-4 rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-3">
-          <div className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-200 flex items-center gap-2">
-            <Award size={16} className="text-amber-600" />
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+          <div className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2 tabular-nums">
+            <Award size={16} className="text-[#B91C1C]" />
             <span>
               Pending Prior-Learning Recognition Requests ({pendingPriorRequests.length})
             </span>
@@ -632,7 +632,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
             {pendingPriorRequests.map((req) => (
               <div
                 key={req.id}
-                className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-amber-200/80 flex flex-wrap items-center justify-between gap-3 text-xs"
+                className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs"
               >
                 <div>
                   <div className="font-bold text-slate-900 dark:text-white">
@@ -647,14 +647,14 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                   <button
                     type="button"
                     onClick={() => handleReviewPendingPrior(req, 'APPROVED')}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#1E293B] text-white font-bold hover:bg-[#0F172A] dark:bg-[#B91C1C] dark:hover:bg-[#991B1B]"
                   >
                     <Check size={13} /> Verify &amp; Approve
                   </button>
                   <button
                     type="button"
                     onClick={() => handleReviewPendingPrior(req, 'REJECTED')}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-700 font-bold hover:bg-red-100"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-[#B91C1C] dark:bg-red-950/40 dark:text-red-400 font-bold hover:bg-red-100"
                   >
                     <X size={13} /> Decline
                   </button>
@@ -684,7 +684,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => setShowPathwayConfigurator(false)}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600"
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300"
             >
               Cancel
             </button>
@@ -692,7 +692,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
               type="button"
               disabled={savingPathwayConfig}
               onClick={handleSavePathwayAssignment}
-              className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 disabled:opacity-50"
+              className="px-5 py-2 rounded-xl bg-[#1E293B] text-white text-xs font-bold hover:bg-[#0F172A] dark:bg-[#B91C1C] dark:hover:bg-[#991B1B] disabled:opacity-50"
             >
               {savingPathwayConfig ? 'Saving Pathway...' : 'Save Student Pathway'}
             </button>
@@ -700,35 +700,35 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Overall Pathway Summary Metrics */}
+      {/* Overall Pathway Summary Metrics Strip */}
       {currentStudent && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-            <div className="text-[10px] font-bold uppercase text-slate-400">Overall Completion</div>
+        <div className="grid grid-cols-2 sm:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 tabular-nums">
+          <div className="p-3.5">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Overall Completion</div>
             <div className="text-xl font-black text-slate-900 dark:text-white mt-0.5">
               {pathwaySummary.overallProgress}%
             </div>
           </div>
-          <div className="p-3.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40">
-            <div className="text-[10px] font-bold uppercase text-emerald-700">Required Units Done</div>
-            <div className="text-xl font-black text-emerald-900 dark:text-emerald-300 mt-0.5">
+          <div className="p-3.5">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Required Units Done</div>
+            <div className="text-xl font-black text-slate-900 dark:text-white mt-0.5">
               {pathwaySummary.completedRequiredUnits} / {pathwaySummary.totalRequiredUnits}
             </div>
           </div>
-          <div className="p-3.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/40">
-            <div className="text-[10px] font-bold uppercase text-indigo-700">Currently Learning</div>
-            <div className="text-xl font-black text-indigo-900 dark:text-indigo-300 mt-0.5">
+          <div className="p-3.5">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Currently Learning</div>
+            <div className="text-xl font-black text-[#B91C1C] dark:text-red-400 mt-0.5">
               {pathwaySummary.inProgressUnits}
             </div>
           </div>
-          <div className="p-3.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40">
-            <div className="text-[10px] font-bold uppercase text-amber-700">Prior-Learning Credits</div>
-            <div className="text-xl font-black text-amber-900 dark:text-amber-300 mt-0.5">
+          <div className="p-3.5">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Prior-Learning Credits</div>
+            <div className="text-xl font-black text-slate-900 dark:text-white mt-0.5">
               {pathwaySummary.priorLearningApprovedUnits}
             </div>
           </div>
-          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-            <div className="text-[10px] font-bold uppercase text-slate-400">Upcoming / Optional</div>
+          <div className="p-3.5">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Upcoming / Optional</div>
             <div className="text-xl font-black text-slate-900 dark:text-white mt-0.5">
               {pathwaySummary.upcomingUnits} / {pathwaySummary.optionalUnits}
             </div>
@@ -742,12 +742,12 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
           Select a student above to view and manage their recursive programme pathway.
         </div>
       ) : pathwaySummary.rootBranches.length === 0 ? (
-        <div className="p-8 rounded-2xl bg-amber-50/50 border border-amber-200 text-center space-y-3">
-          <AlertCircle className="w-8 h-8 text-amber-600 mx-auto" />
-          <div className="text-sm font-bold text-slate-900">
+        <div className="p-8 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-center space-y-3">
+          <AlertCircle className="w-8 h-8 text-[#B91C1C] mx-auto" />
+          <div className="text-sm font-bold text-slate-900 dark:text-white">
             Pending Programme Confirmation for {currentStudent.fullName || currentStudent.name}
           </div>
-          <p className="text-xs text-slate-600 max-w-md mx-auto">
+          <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md mx-auto">
             This student has not been assigned a confirmed programme branch yet. Click &quot;Configure Enrolled Sub-Programmes&quot; above to select their exact root, branch, or nested learning units.
           </p>
         </div>
@@ -766,7 +766,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                 <h3 className="text-base font-black text-slate-900 dark:text-white">
                   Update Unit Progress &amp; Notes
                 </h3>
-                <p className="text-xs text-indigo-600 font-semibold mt-0.5">
+                <p className="text-xs text-[#B91C1C] dark:text-red-400 font-semibold mt-0.5">
                   {editingNode.breadcrumbPath}
                 </p>
               </div>
@@ -853,7 +853,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <Award size={18} className="text-emerald-600" />
+                  <Award size={18} className="text-[#B91C1C]" />
                   <span>Verify Prior-Learning Recognition</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -925,7 +925,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
               <button
                 type="submit"
                 disabled={savingPrior}
-                className="px-5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
+                className="px-5 py-2 rounded-xl bg-[#1E293B] text-white text-xs font-bold hover:bg-[#0F172A] dark:bg-[#B91C1C] dark:hover:bg-[#991B1B] disabled:opacity-50"
               >
                 {savingPrior ? 'Verifying...' : 'Approve Prior-Learning Credit'}
               </button>

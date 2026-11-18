@@ -94,7 +94,7 @@ export const ParentTuitionModal: React.FC<ParentTuitionModalProps> = ({
     setPayNotes('');
   }, [student]);
 
-  const inputClass = 'w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-sky-500';
+  const inputClass = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-300';
   const assignedTutor = useMemo(() => tutors.find(t => t.id === tutorId), [tutors, tutorId]);
 
   if (!isOpen || !student) return null;
@@ -303,7 +303,7 @@ export const ParentTuitionModal: React.FC<ParentTuitionModalProps> = ({
         ]);
       }
 
-      generatePdfReceipt({
+      await generatePdfReceipt({
         id: txRef,
         reference: txRef,
         payerName: parentName || studentName,
@@ -351,11 +351,11 @@ export const ParentTuitionModal: React.FC<ParentTuitionModalProps> = ({
         </div>
 
         {provisionedPassword && (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30 p-4 text-xs text-amber-900 dark:text-amber-200">
+          <div className="rounded-xl border border-red-200 bg-red-50/70 dark:border-red-900/50 dark:bg-red-950/30 p-4 text-xs text-slate-900 dark:text-slate-100">
             <div className="flex items-start gap-2">
-              <ShieldCheck size={16} className="shrink-0 mt-0.5" />
+              <ShieldCheck size={16} className="shrink-0 mt-0.5 text-brand-red" />
               <div>
-                <p className="font-black">Parent account created</p>
+                <p className="font-bold">Parent account created</p>
                 <p className="mt-1">Temporary password: <strong className="font-mono">{provisionedPassword}</strong>. The parent should change it immediately after signing in.</p>
               </div>
             </div>
@@ -406,9 +406,9 @@ export const ParentTuitionModal: React.FC<ParentTuitionModalProps> = ({
 
         {activeTab === 'payment' && (
           <form onSubmit={handleRecordBankPayment} className="space-y-4">
-            <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-slate-200">
               <p className="font-bold">Direct Offline Bank Settlement</p>
-              <p className="mt-1 text-[11px]">This records an actual payment against the selected student. No payment amount is invented.</p>
+              <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">This records an actual payment against the selected student. No payment amount is invented.</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <label className="block text-[11px] font-black uppercase text-slate-500">Payment Amount (₦)<input required type="number" min={1} value={payAmount} onChange={e => setPayAmount(e.target.value)} className={`${inputClass} mt-1.5`} /></label>
@@ -417,8 +417,8 @@ export const ParentTuitionModal: React.FC<ParentTuitionModalProps> = ({
               <label className="block text-[11px] font-black uppercase text-slate-500">Payment Notes / Bank Name<input value={payNotes} onChange={e => setPayNotes(e.target.value)} className={`${inputClass} mt-1.5`} /></label>
             </div>
             <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs font-bold">Cancel</button>
-              <button type="submit" disabled={saving} className="px-6 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black inline-flex items-center gap-2"><Download size={15} />{saving ? 'Recording…' : `Record Payment (${formatCurrency(Number(payAmount) || 0)})`}</button>
+              <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold cursor-pointer">Cancel</button>
+              <button type="submit" disabled={saving} className="px-6 py-2.5 rounded-xl bg-brand-red hover:bg-red-800 text-white text-xs font-bold inline-flex items-center gap-2 cursor-pointer tabular-nums"><Download size={15} />{saving ? 'Recording…' : `Record Payment (${formatCurrency(Number(payAmount) || 0)})`}</button>
             </div>
           </form>
         )}

@@ -402,15 +402,15 @@ const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose }) => {
   const getItemIcon = (type: string) => {
     switch (type) {
       case 'PROGRAM':
-        return <Laptop className="w-4 h-4 text-brand-red" />;
+        return <Laptop className="w-4 h-4 text-[#B91C1C] dark:text-red-400" />;
       case 'RESOURCE':
-        return <BookOpen className="w-4 h-4 text-blue-500" />;
+        return <BookOpen className="w-4 h-4 text-[#1E293B] dark:text-slate-200" />;
       case 'BLOG':
-        return <Newspaper className="w-4 h-4 text-emerald-500" />;
+        return <Newspaper className="w-4 h-4 text-[#1E293B] dark:text-slate-200" />;
       case 'SERVICE':
-        return <Briefcase className="w-4 h-4 text-purple-500" />;
+        return <Briefcase className="w-4 h-4 text-[#B91C1C] dark:text-red-400" />;
       case 'PORTFOLIO':
-        return <FolderOpen className="w-4 h-4 text-amber-500" />;
+        return <FolderOpen className="w-4 h-4 text-slate-600 dark:text-slate-300" />;
       default:
         return <Compass className="w-4 h-4 text-slate-400" />;
     }
@@ -479,7 +479,7 @@ const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* Category Filter Pills */}
+        {/* Category Filter Tabs */}
         <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 overflow-x-auto no-scrollbar flex items-center gap-1.5">
           {categories.map((cat) => (
             <button
@@ -490,7 +490,7 @@ const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose }) => {
               }}
               className={`px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all select-none ${
                 activeCategory === cat.key
-                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
+                  ? 'bg-[#1E293B] dark:bg-white text-white dark:text-[#1E293B] shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
@@ -506,7 +506,7 @@ const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose }) => {
         >
           {isLoading && !hasLoadedDb ? (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400 gap-2">
-              <Loader2 className="w-6 h-6 animate-spin text-brand-red" />
+              <Loader2 className="w-6 h-6 animate-spin text-[#B91C1C]" />
               <span className="text-xs font-medium">Indexing knowledge base & syllabi...</span>
             </div>
           ) : filteredResults.length > 0 ? (
@@ -525,13 +525,13 @@ const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose }) => {
                     onMouseEnter={() => setSelectedIndex(idx)}
                     className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all group flex items-start gap-3 select-none ${
                       isSelected
-                        ? 'bg-red-50/80 dark:bg-red-950/30 text-slate-900 dark:text-white ring-1 ring-brand-red/30'
+                        ? 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-900 dark:text-white ring-1 ring-[#1E293B]/20 dark:ring-white/20'
                         : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     <div className={`p-2 rounded-lg shrink-0 mt-0.5 transition-colors ${
                       isSelected 
-                        ? 'bg-brand-red/10 dark:bg-brand-red/20' 
+                        ? 'bg-white dark:bg-slate-900' 
                         : 'bg-slate-100 dark:bg-slate-800'
                     }`}>
                       {getItemIcon(result.type)}
@@ -539,15 +539,16 @@ const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose }) => {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
-                        <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                        <span className={`text-[10px] font-black uppercase tracking-wider shrink-0 ${
                           isSelected
-                            ? 'bg-brand-red text-white'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                            ? 'text-[#B91C1C] dark:text-red-400'
+                            : 'text-slate-400 dark:text-slate-500'
                         }`}>
                           {result.badge || result.type}
                         </span>
+                        <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
                         <h4 className={`text-xs sm:text-sm font-bold truncate transition-colors ${
-                          isSelected ? 'text-brand-red dark:text-red-400' : 'text-slate-900 dark:text-white'
+                          isSelected ? 'text-[#1E293B] dark:text-white' : 'text-slate-900 dark:text-white'
                         }`}>
                           {result.title}
                         </h4>

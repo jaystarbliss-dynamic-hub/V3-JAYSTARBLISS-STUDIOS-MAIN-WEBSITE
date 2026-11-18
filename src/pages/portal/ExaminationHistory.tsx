@@ -33,12 +33,11 @@ import {
 } from "../../lib/classes";
 import { fetchAcademicStudentsFallback } from "../../lib/academicFallback";
 import {
-  type DocumentHeaderConfig,
-  loadSavedDocumentHeaderConfig,
   TUTOR_REMARK_PRESETS,
   getSuggestedTutorRemark,
-} from "../../lib/documentHeaderTemplates";
-import DocumentHeaderCustomizerModal from "../../components/portal/DocumentHeaderCustomizerModal";
+} from "../../lib/tutorRemarks";
+import { ReferenceLookupPanel } from "../../components/academic-reporting/ReferenceLookupPanel";
+import { ReleasedOfficialReportsSection } from "../../components/academic-reporting/ReleasedOfficialReportsSection";
 import {
   School,
   BookOpenCheck,
@@ -59,7 +58,6 @@ import {
   FileText,
   AlertCircle,
   Lock,
-  LayoutTemplate,
   MessageSquare,
   Sparkles,
   X,
@@ -461,8 +459,6 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   const [copiedUrlKey, setCopiedUrlKey] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [bulkReleaseBusy, setBulkReleaseBusy] = useState(false);
-  const [showHeaderDesigner, setShowHeaderDesigner] = useState(false);
-  const [headerConfig, setHeaderConfig] = useState<DocumentHeaderConfig | null>(null);
   const [releaseModalAttempt, setReleaseModalAttempt] = useState<Attempt | null>(null);
   const [releaseRemarkInput, setReleaseRemarkInput] = useState<string>("");
 
@@ -1055,15 +1051,6 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   useEffect(() => {
     if (scopeReady) {
       void load();
-      const fallbackSchoolName =
-        availableSchools.find((s) => s.id === schoolId)?.name ||
-        availableSchools[0]?.name ||
-        resolveSchoolLabel(schoolId);
-      void loadSavedDocumentHeaderConfig({
-        scopeKey: schoolId || "default",
-        schoolId,
-        fallbackSchoolName,
-      }).then((cfg) => setHeaderConfig(cfg));
     }
   }, [scopeReady, schoolId]);
 
@@ -1726,18 +1713,33 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       );
     }
     const exam = exams.find((e) => e.id === a.examId);
-    const authoritativeSchoolName = resolveSchoolLabel(
-      a.schoolId || exam?.schoolId,
-      a.schoolName || exam?.schoolName,
-      a.studentId,
-      a.studentUid
-    );
+    const priv =
+      (a.studentId ? privateLearnerById.get(a.studentId) : undefined) ||
+      (a.studentUid ? privateLearnerById.get(a.studentUid) : undefined);
+    const isPriv =
+      Boolean(priv) ||
+      isPrivateAttemptOrExam({ ...a, schoolId: a.schoolId || exam?.schoolId });
+    const authoritativeSchoolName = isPriv
+      ? ""
+      : resolveSchoolLabel(
+          a.schoolId || exam?.schoolId,
+          a.schoolName || exam?.schoolName,
+          a.studentId,
+          a.studentUid
+        );
+    const effectiveSchoolId = isPriv
+      ? priv?.subType === "parent"
+        ? "private_parent"
+        : "private_individual"
+      : String(a.schoolId || exam?.schoolId || "");
     const maxScore = computeExamMaxScore(exam, a);
 
     return await generateExamReportPdf(
       {
         ...a,
+        schoolId: effectiveSchoolId,
         schoolName: authoritativeSchoolName,
+        enrolmentType: isPriv ? "private" : "school",
         maxScore,
         questions: a.questionsSnapshot || a.questions || exam?.questions,
         callerRole: isSchoolUser ? "school" : "tutor",
@@ -1748,7 +1750,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             title: exam.title,
             subject: exam.subject,
             workType: exam.workType,
-            schoolId: exam.schoolId,
+            schoolId: effectiveSchoolId,
             schoolName: authoritativeSchoolName,
             maxScore,
             durationMinutes: exam.durationMinutes,
@@ -1757,11 +1759,12 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         : {
             title: "Assessment",
             subject: "General",
+            schoolId: effectiveSchoolId,
             schoolName: authoritativeSchoolName,
             maxScore,
           },
       {
-        headerConfig: headerConfig || undefined,
+        schoolDirectory: schoolNameMap,
       }
     );
   };
@@ -1904,36 +1907,38 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         {loading ? (
           <MetricGridSkeleton count={4} />
         ) : (
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+          <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800">
+            <article className="p-5">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 Current &amp; Upcoming
               </p>
-              <p className="mt-2 text-3xl font-black text-slate-900 dark:text-white">
+              <p className="mt-2 text-3xl font-black tabular-nums text-slate-900 dark:text-white">
                 {categorizedExams.active.length + categorizedExams.upcoming.length}
               </p>
             </article>
-            <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <article className="p-5">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 Active Now
               </p>
-              <p className="mt-2 text-3xl font-black text-emerald-600">
+              <p className="mt-2 text-3xl font-black tabular-nums text-[#B91C1C] dark:text-red-400">
                 {categorizedExams.active.length}
               </p>
             </article>
-            <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <article className="p-5">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 Scheduled / Upcoming
               </p>
-              <p className="mt-2 text-3xl font-black text-blue-600">
+              <p className="mt-2 text-3xl font-black tabular-nums text-[#1E293B] dark:text-white">
                 {categorizedExams.upcoming.length}
               </p>
             </article>
-            <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <article className="p-5">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 Classes Assigned
               </p>
-              <p className="mt-2 text-3xl font-black text-indigo-600">{overviewClasses.length}</p>
+              <p className="mt-2 text-3xl font-black tabular-nums text-slate-700 dark:text-slate-200">
+                {overviewClasses.length}
+              </p>
             </article>
           </section>
         )}
@@ -1945,7 +1950,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Partner School
                 <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 p-3 text-sm font-bold text-slate-900 dark:text-white normal-case tracking-normal">
-                  <School size={16} className="text-blue-600 shrink-0" />
+                  <School size={16} className="text-[#1E293B] dark:text-slate-200 shrink-0" />
                   <span className="truncate">
                     {availableSchools[0]?.name || resolveSchoolLabel(schoolId)}
                   </span>
@@ -1955,7 +1960,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Partner School
                 <select
-                  className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm font-medium text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+                  className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm font-medium text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
                   value={schoolId}
                   onChange={(e) => setSchoolId(e.target.value)}
                 >
@@ -1974,7 +1979,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Filter by Class
               <select
-                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm font-medium text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm font-medium text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
                 value={selectedClass}
                 onChange={(e) => setSelectedClass(e.target.value)}
               >
@@ -1999,7 +2004,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                   value={overviewSearch}
                   onChange={(e) => setOverviewSearch(e.target.value)}
                   placeholder="Title, subject or class…"
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 pl-9 pr-3 py-3 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 pl-9 pr-3 py-3 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
                 />
               </div>
             </label>
@@ -2020,7 +2025,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                   onClick={() => setOverviewStatusFilter(id)}
                   className={`rounded-xl px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer ${
                     overviewStatusFilter === id
-                      ? "bg-blue-600 text-white"
+                      ? "bg-[#1E293B] text-white dark:bg-[#B91C1C]"
                       : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
                   }`}
                 >
@@ -2034,7 +2039,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 type="button"
                 disabled={loading}
                 onClick={() => void load()}
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#1E293B] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#0F172A] disabled:opacity-50 cursor-pointer"
               >
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
                 {loading ? "Refreshing…" : "Refresh"}
@@ -2049,7 +2054,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 }
                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
               >
-                <History size={14} className="text-blue-600" />
+                <History size={14} className="text-[#B91C1C] dark:text-red-400" />
                 Assessment History &amp; Reports
               </Link>
             </div>
@@ -2059,7 +2064,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         {message && (
           <p
             role="alert"
-            className="rounded-xl bg-blue-50 p-4 text-sm font-medium text-blue-900 border border-blue-200"
+            className="rounded-xl bg-slate-50 dark:bg-slate-800/70 p-4 text-sm font-medium text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700"
           >
             {message}
           </p>
@@ -2105,26 +2110,22 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                   >
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#B91C1C]">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold uppercase tracking-wider">
+                          <span className="text-[#B91C1C] dark:text-red-400">
                             {getWorkTypeLabels(ex.workType, ex).singular}
                           </span>
+                          <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
                           <span
-                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase ${
+                            className={
                               isUpcoming
-                                ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
-                                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-                            }`}
+                                ? "text-slate-600 dark:text-slate-300"
+                                : "text-[#1E293B] dark:text-white"
+                            }
                           >
                             {isUpcoming ? "Upcoming / Scheduled" : "Active Now"}
                           </span>
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ${
-                              isExternal
-                                ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
-                                : "bg-slate-200/70 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                            }`}
-                          >
+                          <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                          <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
                             {isExternal ? <ExternalLink size={11} /> : <Layers size={11} />}
                             {isExternal ? "External Link" : "Native CBT"}
                           </span>
@@ -2144,7 +2145,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                           <>
                             {" "}
                             · {ex.durationMinutes || 30} mins ·{" "}
-                            {ex.maxScore ?? computeExamMaxScore(ex)} Marks
+                            <span className="tabular-nums">
+                              {ex.maxScore ?? computeExamMaxScore(ex)} Marks
+                            </span>
                           </>
                         )}
                       </p>
@@ -2163,7 +2166,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                           </span>
                         )}
                         {!isExternal && (
-                          <span>
+                          <span className="tabular-nums">
                             Attempts: <strong>{stats.total}</strong> ({stats.submitted} submitted
                             {stats.inProgress > 0 ? `, ${stats.inProgress} in progress` : ""})
                           </span>
@@ -2172,9 +2175,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     </div>
 
                     {ex.passcode && (
-                      <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-white dark:bg-slate-900 px-3.5 py-2.5">
+                      <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5">
                         <div className="flex items-center gap-2 min-w-0">
-                          <KeyRound size={15} className="text-emerald-700 shrink-0" />
+                          <KeyRound size={15} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
                           <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                             Access Code:
                           </span>
@@ -2185,7 +2188,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         <button
                           type="button"
                           onClick={() => copyPasscode(ex.id, ex.passcode)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 shrink-0 cursor-pointer"
+                          className="inline-flex items-center gap-1 rounded-lg bg-[#1E293B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#0F172A] shrink-0 cursor-pointer"
                         >
                           {copiedExamId === ex.id ? <Check size={13} /> : <Copy size={13} />}
                           {copiedExamId === ex.id ? "Copied" : "Copy Code"}
@@ -2217,6 +2220,12 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           </p>
         </div>
       </header>
+
+      {isSchoolUser ? (
+        <ReleasedOfficialReportsSection viewerRole="SCHOOL_ADMIN" />
+      ) : (
+        <ReferenceLookupPanel compact />
+      )}
 
       {/* SECTION NAVIGATION + COMPACT RIGHT-SIDE ACTION TOOLBAR (Deliverable 10) */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-2">
@@ -2261,7 +2270,14 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             title="Refresh assessment records"
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 cursor-pointer whitespace-nowrap"
           >
-            <RefreshCw size={13} className={loading ? "animate-spin text-blue-600" : "text-blue-600"} />
+            <RefreshCw
+              size={13}
+              className={
+                loading
+                  ? "animate-spin text-[#1E293B] dark:text-slate-200"
+                  : "text-[#1E293B] dark:text-slate-200"
+              }
+            />
             <span>{loading ? "Refreshing…" : "Refresh"}</span>
           </button>
 
@@ -2270,7 +2286,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               type="button"
               disabled={bulkReleaseBusy}
               onClick={() => void releaseAllPendingInView(unreleasedSubmittedFiltered)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer shadow-xs whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#B91C1C] px-3 py-1.5 text-xs font-bold text-white hover:bg-red-800 disabled:opacity-50 cursor-pointer shadow-xs whitespace-nowrap tabular-nums"
             >
               <CheckCircle2 size={13} />
               <span>
@@ -2286,7 +2302,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             <button
               type="button"
               onClick={() => setShowActionsMenu((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-slate-800 dark:hover:bg-blue-700 cursor-pointer whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#1E293B] px-3.5 py-1.5 text-xs font-bold text-white hover:bg-[#0F172A] cursor-pointer whitespace-nowrap"
             >
               <SlidersHorizontal size={13} />
               <span>Tools &amp; Exports</span>
@@ -2295,18 +2311,6 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
 
             {showActionsMenu && (
               <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1.5 shadow-xl z-40 space-y-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowActionsMenu(false);
-                    setShowHeaderDesigner(true);
-                  }}
-                  className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                >
-                  <LayoutTemplate size={14} className="text-blue-600 shrink-0" />
-                  <span>Document Header Customizer</span>
-                </button>
-
                 {!isSchoolUser && unreleasedSubmittedFiltered.length > 0 && (
                   <button
                     type="button"
@@ -2315,9 +2319,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                       setShowActionsMenu(false);
                       void releaseAllPendingInView(unreleasedSubmittedFiltered);
                     }}
-                    className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+                    className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold text-[#B91C1C] dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer tabular-nums"
                   >
-                    <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                    <CheckCircle2 size={14} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
                     <span>Release All Pending Results ({unreleasedSubmittedFiltered.length})</span>
                   </button>
                 )}
@@ -2331,7 +2335,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                   }}
                   className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  <FileSpreadsheet size={14} className="text-emerald-600 shrink-0" />
+                  <FileSpreadsheet size={14} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
                   <span>Download Excel (.xlsx)</span>
                 </button>
 
@@ -2342,9 +2346,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     setShowActionsMenu(false);
                     void bulkZip();
                   }}
-                  className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer tabular-nums"
                 >
-                  <FileArchive size={14} className="text-blue-600 shrink-0" />
+                  <FileArchive size={14} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
                   <span>
                     {zipBusy
                       ? zipProgress || "Packaging ZIP…"
@@ -2358,40 +2362,44 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       </div>
 
       {/* METRIC OVERVIEW */}
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800">
+        <article className="p-5">
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Past / Closed Assessments
           </p>
-          <p className="mt-2 text-3xl font-black text-slate-900 dark:text-white">
+          <p className="mt-2 text-3xl font-black tabular-nums text-slate-900 dark:text-white">
             {filteredArchivedExams.length}
           </p>
-          <p className="text-xs text-slate-400 mt-1">{exams.length} total in scope</p>
+          <p className="text-xs text-slate-400 mt-1 tabular-nums">{exams.length} total in scope</p>
         </article>
-        <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+        <article className="p-5">
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Attempts in View
           </p>
-          <p className="mt-2 text-3xl font-black text-blue-600">{filtered.length}</p>
+          <p className="mt-2 text-3xl font-black tabular-nums text-[#1E293B] dark:text-white">
+            {filtered.length}
+          </p>
           {(inProgressCount > 0 || expiredCount > 0) && (
-            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 font-medium">
+            <p className="text-xs text-[#B91C1C] dark:text-red-400 mt-1 font-medium tabular-nums">
               {inProgressCount > 0 ? `${inProgressCount} in progress` : ""}
               {inProgressCount > 0 && expiredCount > 0 ? " · " : ""}
               {expiredCount > 0 ? `${expiredCount} expired` : ""}
             </p>
           )}
         </article>
-        <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+        <article className="p-5">
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Submitted &amp; Graded
           </p>
-          <p className="mt-2 text-3xl font-black text-emerald-600">{submittedCount}</p>
+          <p className="mt-2 text-3xl font-black tabular-nums text-[#B91C1C] dark:text-red-400">
+            {submittedCount}
+          </p>
         </article>
-        <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+        <article className="p-5">
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Average Released Score
           </p>
-          <p className="mt-2 text-3xl font-black text-indigo-600">
+          <p className="mt-2 text-3xl font-black tabular-nums text-slate-900 dark:text-white">
             {averageReleasedScore === null ? "—" : `${averageReleasedScore.toFixed(1)}%`}
           </p>
           <p className="text-xs text-slate-400 mt-1">Based on released attempts</p>
@@ -2426,7 +2434,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     }}
                     className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
                       active
-                        ? "bg-blue-600 text-white shadow-xs"
+                        ? "bg-[#1E293B] text-white dark:bg-[#B91C1C] shadow-xs"
                         : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
                     }`}
                   >
@@ -2455,7 +2463,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     }}
                     className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer ${
                       privateSubFilter === sub.id
-                        ? "bg-indigo-600 text-white"
+                        ? "bg-[#B91C1C] text-white"
                         : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
                     }`}
                   >
@@ -2472,7 +2480,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Partner School Scope
               <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 p-2.5 text-sm font-bold text-slate-900 dark:text-white normal-case tracking-normal">
-                <School size={16} className="text-blue-600 shrink-0" />
+                <School size={16} className="text-[#1E293B] dark:text-slate-200 shrink-0" />
                 <span className="truncate">
                   {availableSchools[0]?.name || resolveSchoolLabel(schoolId)}
                 </span>
@@ -2482,7 +2490,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Private Student ({filteredPrivateLearnerOptions.length})
               <select
-                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
                 value={selectedStudentId}
                 onChange={(e) => setSelectedStudentId(e.target.value)}
               >
@@ -2498,7 +2506,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Partner School
               <select
-                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
                 value={schoolId}
                 onChange={(e) => {
                   setSchoolId(e.target.value);
@@ -2520,7 +2528,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
             Assessment
             <select
-              className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+              className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
             >
@@ -2538,7 +2546,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               Class {recipientCategory === "partner_schools" ? "/ Narrow by Student" : ""}
               <div className="mt-1.5 flex gap-2 normal-case tracking-normal">
                 <select
-                  className="block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500"
+                  className="block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white"
                   value={selectedClass}
                   onChange={(e) => {
                     setSelectedClass(e.target.value);
@@ -2556,7 +2564,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 </select>
                 {!isSchoolUser && recipientCategory === "partner_schools" && (
                   <select
-                    className="block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500"
+                    className="block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white"
                     value={selectedStudentId}
                     onChange={(e) => setSelectedStudentId(e.target.value)}
                   >
@@ -2574,7 +2582,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Class / Level
               <select
-                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
                 value={selectedClass}
                 onChange={(e) => setSelectedClass(e.target.value)}
               >
@@ -2593,7 +2601,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
             Attempt State
             <select
-              className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 normal-case tracking-normal"
+              className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
               value={attemptStateFilter}
               onChange={(e) => setAttemptStateFilter(e.target.value as any)}
             >
@@ -2610,7 +2618,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       {message && (
         <p
           role="alert"
-          className="rounded-xl bg-blue-50 dark:bg-blue-950/40 p-4 text-sm font-medium text-blue-900 dark:text-blue-200 border border-blue-200 dark:border-blue-800"
+          className="rounded-xl bg-slate-50 dark:bg-slate-800/70 p-4 text-sm font-medium text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700"
         >
           {message}
         </p>
@@ -2623,7 +2631,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
               Student Assessment Attempts &amp; Official Reports
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
               {filtered.length} attempt record(s) matching current filters
               {!isSchoolUser && " · Click any student submission to inspect answers, open submitted links, or mark responses."}
             </p>
@@ -2636,7 +2644,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 setSelectedStudentId("");
                 if (!isSchoolUser) setRecipientCategory("all");
               }}
-              className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
+              className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline cursor-pointer"
             >
               Reset active filters
             </button>
@@ -2697,14 +2705,14 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         </p>
                       </div>
                       <span
-                        className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                        className={`shrink-0 inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider ${
                           isReleased || a.status === "graded"
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                            ? "text-[#1E293B] dark:text-white"
                             : a.status === "submitted"
-                            ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
+                            ? "text-slate-700 dark:text-slate-200"
                             : a.status === "expired"
-                            ? "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300"
-                            : "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                            ? "text-[#B91C1C] dark:text-red-400"
+                            : "text-slate-600 dark:text-slate-300"
                         }`}
                       >
                         {a.status === "expired" && !isReleased && <AlertCircle size={12} />}
@@ -2720,18 +2728,18 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         {canSeeScore && typeof a.score === "number" ? (
                           <span>
                             {a.score} / {maxScore}{" "}
-                            <span className="text-blue-700 dark:text-blue-400">({pct}%)</span>
+                            <span className="text-[#B91C1C] dark:text-red-400">({pct}%)</span>
                           </span>
                         ) : a.status === "in_progress" ? (
-                          <span className="text-amber-600 dark:text-amber-400 font-sans">
+                          <span className="text-slate-600 dark:text-slate-300 font-sans">
                             In progress
                           </span>
                         ) : !isReleased && isSchoolUser ? (
-                          <span className="text-amber-700 dark:text-amber-400 font-sans">
+                          <span className="text-slate-600 dark:text-slate-300 font-sans">
                             Awaiting Tutor Release
                           </span>
                         ) : a.status === "expired" ? (
-                          <span className="text-rose-600 dark:text-rose-400 font-sans">
+                          <span className="text-[#B91C1C] dark:text-red-400 font-sans">
                             Expired
                           </span>
                         ) : (
@@ -2742,16 +2750,16 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
 
                     {/* Direct Link Open & Copy actions if student submitted a link */}
                     {primaryLink && !isSchoolUser && (
-                      <div className="flex items-center gap-2 rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-indigo-50/60 dark:bg-indigo-950/30 p-2.5 text-xs">
-                        <Link2 size={14} className="text-indigo-600 shrink-0" />
-                        <span className="truncate flex-1 font-medium text-indigo-950 dark:text-indigo-200">
+                      <div className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-2.5 text-xs">
+                        <Link2 size={14} className="text-[#1E293B] dark:text-slate-200 shrink-0" />
+                        <span className="truncate flex-1 font-medium text-slate-800 dark:text-slate-200">
                           {primaryLink.url}
                         </span>
                         <a
                           href={primaryLink.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-indigo-700 shrink-0"
+                          className="inline-flex items-center gap-1 rounded-lg bg-[#1E293B] px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#0F172A] shrink-0"
                         >
                           <ExternalLink size={11} />
                           Open Link
@@ -2759,7 +2767,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         <button
                           type="button"
                           onClick={() => handleCopySubmittedLink(a.id, primaryLink.url)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 shrink-0 cursor-pointer"
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 shrink-0 cursor-pointer"
                         >
                           {copiedUrlKey === a.id ? <Check size={11} /> : <Copy size={11} />}
                           {copiedUrlKey === a.id ? "Copied" : "Copy"}
@@ -2772,7 +2780,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         <button
                           type="button"
                           onClick={() => openReviewSubmissionModal(a)}
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-indigo-300 dark:border-indigo-700 bg-indigo-50/80 dark:bg-indigo-950/40 px-3 py-2 text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 cursor-pointer"
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs font-bold text-[#1E293B] dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
                         >
                           <Eye size={14} />
                           Review / Mark
@@ -2795,7 +2803,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         }`}
                       >
                         {!isSchoolUser || isReleased ? (
-                          <Download size={14} className="text-blue-600" />
+                          <Download size={14} className="text-[#1E293B] dark:text-slate-200" />
                         ) : (
                           <Lock size={14} className="text-slate-400" />
                         )}
@@ -2808,7 +2816,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                             type="button"
                             disabled={actionBusy === a.id + "release"}
                             onClick={() => openReleaseRemarkModal(a)}
-                            className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
+                            className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl bg-[#B91C1C] px-3 py-2 text-xs font-semibold text-white hover:bg-red-800 disabled:opacity-50 cursor-pointer"
                           >
                             <CheckCircle2 size={14} />
                             Release Result
@@ -2872,7 +2880,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                             <button
                               type="button"
                               onClick={() => openReviewSubmissionModal(a)}
-                              className="text-left hover:text-blue-600 dark:hover:text-blue-400 hover:underline cursor-pointer"
+                              className="text-left hover:text-[#B91C1C] dark:hover:text-red-400 hover:underline cursor-pointer"
                               title="Click to open and review student submission"
                             >
                               {a.studentName}
@@ -2889,9 +2897,10 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         </td>
                         <td className="p-4 text-slate-700 dark:text-slate-200">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="rounded bg-red-50 dark:bg-red-950/60 px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#B91C1C] dark:text-red-300">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                               {getWorkTypeLabels(exam?.workType, exam).singular}
                             </span>
+                            <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
                             <span>{exam?.title || a.examId}</span>
                           </div>
                           {primaryLink && !isSchoolUser && (
@@ -2900,7 +2909,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                 href={primaryLink.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 rounded-md bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100"
+                                className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 text-[11px] font-bold text-[#1E293B] dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700"
                               >
                                 <ExternalLink size={11} />
                                 Open Submitted Link
@@ -2918,14 +2927,14 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         </td>
                         <td className="p-4">
                           <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            className={`inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider ${
                               isReleased || a.status === "graded"
-                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                ? "text-[#1E293B] dark:text-white"
                                 : a.status === "submitted"
-                                ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
+                                ? "text-slate-700 dark:text-slate-200"
                                 : a.status === "expired"
-                                ? "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300"
-                                : "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                                ? "text-[#B91C1C] dark:text-red-400"
+                                : "text-slate-600 dark:text-slate-300"
                             }`}
                           >
                             {a.status === "expired" && !isReleased && <AlertCircle size={12} />}
@@ -2936,20 +2945,20 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                           {canSeeScore && typeof a.score === "number" ? (
                             <span>
                               {a.score} / {maxScore}{" "}
-                              <span className="text-xs font-semibold text-blue-700 dark:text-blue-400">
+                              <span className="text-xs font-semibold text-[#B91C1C] dark:text-red-400">
                                 ({pct}%)
                               </span>
                             </span>
                           ) : a.status === "in_progress" ? (
-                            <span className="text-amber-600 dark:text-amber-400 text-xs font-sans font-semibold">
+                            <span className="text-slate-600 dark:text-slate-300 text-xs font-sans font-semibold">
                               Attempt in progress
                             </span>
                           ) : !isReleased && isSchoolUser ? (
-                            <span className="text-amber-700 dark:text-amber-400 text-xs font-sans font-semibold">
+                            <span className="text-slate-600 dark:text-slate-300 text-xs font-sans font-semibold">
                               Awaiting Tutor Release
                             </span>
                           ) : a.status === "expired" ? (
-                            <span className="text-rose-600 dark:text-rose-400 text-xs font-sans font-semibold">
+                            <span className="text-[#B91C1C] dark:text-red-400 text-xs font-sans font-semibold">
                               Time expired (ungraded)
                             </span>
                           ) : (
@@ -2963,7 +2972,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                             <button
                               type="button"
                               onClick={() => openReviewSubmissionModal(a)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 px-2.5 py-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 cursor-pointer"
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs font-bold text-[#1E293B] dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
                             >
                               <Eye size={13} />
                               Review / Mark
@@ -2986,7 +2995,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                             }`}
                           >
                             {!isSchoolUser || isReleased ? (
-                              <Download size={13} className="text-blue-600" />
+                              <Download size={13} className="text-[#1E293B] dark:text-slate-200" />
                             ) : (
                               <Lock size={13} className="text-slate-400" />
                             )}
@@ -3000,7 +3009,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                     type="button"
                                     disabled={actionBusy === a.id + "release"}
                                     onClick={() => openReleaseRemarkModal(a)}
-                                    className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
+                                    className="inline-flex items-center gap-1 rounded-lg bg-[#B91C1C] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-800 disabled:opacity-50 cursor-pointer"
                                   >
                                     <CheckCircle2 size={13} />
                                     Release Result
@@ -3010,7 +3019,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                     type="button"
                                     disabled={actionBusy === a.id + "release"}
                                     onClick={() => openReleaseRemarkModal(a)}
-                                    className="inline-flex items-center gap-1 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-950/40 px-2.5 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100 cursor-pointer"
+                                    className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-[#1E293B] dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
                                   >
                                     <MessageSquare size={13} />
                                     Remark
@@ -3051,7 +3060,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               value={archiveSearch}
               onChange={(e) => setArchiveSearch(e.target.value)}
               placeholder="Search title, subject, school or class…"
-              className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 pl-8 pr-8 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900"
+              className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 pl-8 pr-8 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-[#1E293B] dark:focus:border-white focus:bg-white dark:focus:bg-slate-900"
             />
             {archiveSearch && (
               <button
@@ -3120,13 +3129,13 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     <tr
                       key={ex.id}
                       onClick={() => setArchivedDetailExam(ex)}
-                      className="hover:bg-blue-50/50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
                     >
-                      <td className="p-3.5 sm:p-4 font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                      <td className="p-3.5 sm:p-4 font-bold text-slate-900 dark:text-white group-hover:text-[#B91C1C] dark:group-hover:text-red-400">
                         {ex.title}
                       </td>
                       <td className="p-3.5 sm:p-4">
-                        <span className="inline-flex rounded-md bg-red-50 dark:bg-red-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-300">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
                           {typeLabels.singular}
                         </span>
                       </td>
@@ -3140,16 +3149,16 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         {classDisplay}
                       </td>
                       <td className="p-3.5 sm:p-4 text-center">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-950/60 px-2.5 py-0.5 text-xs font-bold text-blue-700 dark:text-blue-300">
+                        <span className="inline-flex items-center gap-1 text-xs font-bold tabular-nums text-[#1E293B] dark:text-slate-200">
                           <Users size={12} />
                           {stats.total} student{stats.total === 1 ? "" : "s"}
                         </span>
                       </td>
-                      <td className="p-3.5 sm:p-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                      <td className="p-3.5 sm:p-4 text-slate-600 dark:text-slate-400 whitespace-nowrap tabular-nums">
                         {closingDateDisplay}
                       </td>
                       <td className="p-3.5 sm:p-4 text-right whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 group-hover:translate-x-0.5 transition-transform">
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-[#B91C1C] dark:text-red-400 group-hover:translate-x-0.5 transition-transform">
                           View Records
                           <ChevronRight size={14} />
                         </span>
@@ -3174,18 +3183,19 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
             <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
               <div className="space-y-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-md bg-red-50 dark:bg-red-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-300">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-wider">
+                  <span className="text-[#B91C1C] dark:text-red-400">
                     {getWorkTypeLabels(archivedDetailExam.workType, archivedDetailExam).singular}
                   </span>
-                  <span className="rounded-full bg-slate-200 dark:bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold uppercase text-slate-700 dark:text-slate-300">
+                  <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                  <span className="text-slate-600 dark:text-slate-300">
                     Archived Record
                   </span>
                 </div>
                 <h3 className="text-base sm:text-xl font-bold text-slate-900 dark:text-white break-words">
                   {archivedDetailExam.title}
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 tabular-nums">
                   Subject: <strong>{archivedDetailExam.subject}</strong> · Duration:{" "}
                   <strong>{archivedDetailExam.durationMinutes || 30} mins</strong> · Max Score:{" "}
                   <strong>{computeExamMaxScore(archivedDetailExam)} pts</strong>
@@ -3220,9 +3230,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
 
               return (
                 <div className="p-5 overflow-y-auto space-y-5 flex-1">
-                  {/* Summary Cards */}
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-3.5">
+                  {/* Summary Strip */}
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 grid sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800">
+                    <div className="p-3.5">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                         School / Cohort
                       </p>
@@ -3230,7 +3240,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         {schoolText}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-3.5">
+                    <div className="p-3.5">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                         Target Class
                       </p>
@@ -3238,11 +3248,11 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         {classText}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-3.5">
+                    <div className="p-3.5">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                         Student Participation
                       </p>
-                      <p className="mt-1 text-sm font-bold text-blue-600 dark:text-blue-400">
+                      <p className="mt-1 text-sm font-bold tabular-nums text-[#B91C1C] dark:text-red-400">
                         {examAttempts.length} Participating Student{examAttempts.length === 1 ? "" : "s"}
                       </p>
                     </div>
@@ -3260,7 +3270,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                           setSelected(archivedDetailExam.id);
                           setArchivedDetailExam(null);
                         }}
-                        className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
+                        className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline cursor-pointer"
                       >
                         Filter main table by this assessment
                       </button>
@@ -3304,11 +3314,11 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                     {att.className || "—"}
                                   </td>
                                   <td className="p-3">
-                                    <span className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-[11px] font-bold capitalize text-slate-700 dark:text-slate-300">
+                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                                       {isRel ? "Released" : att.status}
                                     </span>
                                   </td>
-                                  <td className="p-3 font-mono font-bold text-slate-900 dark:text-white">
+                                  <td className="p-3 font-mono tabular-nums font-bold text-slate-900 dark:text-white">
                                     {canSee && typeof att.score === "number"
                                       ? `${att.score}/${max} (${pct}%)`
                                       : "Pending"}
@@ -3320,7 +3330,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                           href={links[0].url}
                                           target="_blank"
                                           rel="noopener noreferrer"
-                                          className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 px-2 py-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-300"
+                                          className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-1 text-[11px] font-bold text-[#1E293B] dark:text-slate-200 hover:bg-slate-200"
                                         >
                                           <ExternalLink size={11} />
                                           Open Link
@@ -3348,7 +3358,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                           setArchivedDetailExam(null);
                                           openReviewSubmissionModal(att);
                                         }}
-                                        className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-indigo-700 cursor-pointer"
+                                        className="inline-flex items-center gap-1 rounded-lg bg-[#1E293B] px-2.5 py-1 text-xs font-bold text-white hover:bg-[#0F172A] cursor-pointer"
                                       >
                                         <Eye size={12} />
                                         Review / Mark
@@ -3360,7 +3370,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                       onClick={() => void pdf(att)}
                                       className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
                                     >
-                                      <Download size={12} className="text-blue-600" />
+                                      <Download size={12} className="text-[#1E293B] dark:text-slate-200" />
                                       PDF Report
                                     </button>
                                   </td>
@@ -3431,16 +3441,17 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 {/* Modal Header */}
                 <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
                   <div className="space-y-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-md bg-indigo-100 dark:bg-indigo-950/70 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-800 dark:text-indigo-300">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-wider">
+                      <span className="text-[#B91C1C] dark:text-red-400">
                         Submission Inspection &amp; Marking
                       </span>
+                      <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
                       <span
-                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
+                        className={
                           isReleased
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-                            : "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
-                        }`}
+                            ? "text-[#1E293B] dark:text-white"
+                            : "text-slate-600 dark:text-slate-300"
+                        }
                       >
                         {isReleased ? "Result Released" : `Status: ${reviewModalAttempt.status}`}
                       </span>
@@ -3459,7 +3470,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                       onClick={() => void pdf(reviewModalAttempt)}
                       className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 cursor-pointer"
                     >
-                      <Download size={14} className="text-blue-600" />
+                      <Download size={14} className="text-[#1E293B] dark:text-slate-200" />
                       Print Official PDF
                     </button>
                     <button
@@ -3476,19 +3487,19 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 <div className="p-5 overflow-y-auto space-y-5 flex-1">
                   {/* Prominent Submitted Link Bar (Deliverable 8) */}
                   {submittedLinks.length > 0 && (
-                    <div className="rounded-2xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/30 p-4 space-y-2.5">
-                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-indigo-900 dark:text-indigo-200">
-                        <Link2 size={15} className="text-indigo-600" />
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-4 space-y-2.5">
+                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#1E293B] dark:text-slate-200">
+                        <Link2 size={15} className="text-[#B91C1C] dark:text-red-400" />
                         <span>Submitted Student Deliverable Link(s)</span>
                       </div>
                       <div className="space-y-2">
                         {submittedLinks.map((lnk, idx) => (
                           <div
                             key={lnk.url + idx}
-                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 p-3"
+                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3"
                           >
                             <div className="min-w-0 flex-1">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400 block">
                                 {lnk.label}
                               </span>
                               <p className="text-xs sm:text-sm font-mono font-semibold text-slate-800 dark:text-slate-200 truncate">
@@ -3500,7 +3511,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                 href={lnk.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-700 shadow-xs"
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-[#1E293B] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#0F172A] shadow-xs"
                               >
                                 <ExternalLink size={13} />
                                 Open Submitted Link
@@ -3513,7 +3524,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 cursor-pointer"
                               >
                                 {copiedUrlKey === `modal_${idx}` ? (
-                                  <Check size={13} className="text-emerald-600" />
+                                  <Check size={13} className="text-[#1E293B] dark:text-white" />
                                 ) : (
                                   <Copy size={13} />
                                 )}
@@ -3532,8 +3543,8 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white">
                         Submitted Responses &amp; Question Marking ({questions.length})
                       </h4>
-                      <div className="inline-flex items-center gap-2 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 px-3 py-1.5 text-xs font-bold text-blue-900 dark:text-blue-200">
-                        <Award size={14} className="text-blue-600" />
+                      <div className="inline-flex items-center gap-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-bold tabular-nums text-[#1E293B] dark:text-white">
+                        <Award size={14} className="text-[#B91C1C] dark:text-red-400" />
                         <span>
                           Total Score: {currentCalculatedScore} / {maxScore} ({currentPct}%)
                         </span>
@@ -3574,7 +3585,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                                 <div className="space-y-1 flex-1 min-w-0">
                                   <div className="flex items-center gap-2">
-                                    <span className="rounded bg-slate-900 text-white px-2 py-0.5 text-[11px] font-bold">
+                                    <span className="rounded bg-[#1E293B] text-white px-2 py-0.5 text-[11px] font-bold tabular-nums">
                                       Q{idx + 1}
                                     </span>
                                     <span className="text-[11px] font-semibold uppercase text-slate-500">
@@ -3604,9 +3615,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                       );
                                       setReviewMarksMap((prev) => ({ ...prev, [q.id]: val }));
                                     }}
-                                    className="w-16 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1 text-center text-xs font-bold text-slate-900 dark:text-white"
+                                    className="w-16 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1 text-center text-xs font-bold tabular-nums text-slate-900 dark:text-white"
                                   />
-                                  <span className="text-xs font-bold text-slate-500">
+                                  <span className="text-xs font-bold tabular-nums text-slate-500">
                                     / {maxPts}
                                   </span>
                                 </div>
@@ -3626,7 +3637,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                         href={formatted.linkUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-indigo-700"
+                                        className="inline-flex items-center gap-1 rounded-lg bg-[#1E293B] px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#0F172A]"
                                       >
                                         <ExternalLink size={11} />
                                         Open Submitted Link
@@ -3655,7 +3666,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                                       <a
                                         href={formatted.fileDataUrl}
                                         download={formatted.fileName || "submitted-deliverable"}
-                                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-700"
+                                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#1E293B] px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#0F172A]"
                                       >
                                         <Download size={11} />
                                         Download File ({formatted.fileName || "Attachment"})
@@ -3691,9 +3702,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         onClick={() =>
                           setReviewRemarkInput(getSuggestedTutorRemark(currentPct))
                         }
-                        className="inline-flex items-center gap-1 rounded-lg bg-blue-600/10 px-2.5 py-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-600/20 cursor-pointer"
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-[#1E293B] dark:text-slate-200 hover:bg-slate-100 cursor-pointer tabular-nums"
                       >
-                        <Sparkles size={12} />
+                        <Sparkles size={12} className="text-[#B91C1C] dark:text-red-400" />
                         Suggest Remark for {currentPct}%
                       </button>
                     </div>
@@ -3702,7 +3713,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                       value={reviewRemarkInput}
                       onChange={(e) => setReviewRemarkInput(e.target.value)}
                       placeholder="Enter feedback or marking comments for this student…"
-                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-900 dark:text-white outline-none focus:border-blue-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-900 dark:text-white outline-none focus:border-[#1E293B] dark:focus:border-white"
                     />
                   </div>
                 </div>
@@ -3721,7 +3732,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                       type="button"
                       disabled={reviewSaving}
                       onClick={() => void handleSaveReviewAndMarks(false)}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-blue-600 bg-white dark:bg-slate-800 px-4 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-50 disabled:opacity-50 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-[#1E293B] dark:border-slate-500 bg-white dark:bg-slate-800 px-4 py-2 text-xs font-bold text-[#1E293B] dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 cursor-pointer"
                     >
                       {reviewSaving ? "Saving…" : "Save Marks & Feedback"}
                     </button>
@@ -3729,7 +3740,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                       type="button"
                       disabled={reviewSaving}
                       onClick={() => void handleSaveReviewAndMarks(true)}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer shadow-xs"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#B91C1C] px-5 py-2 text-xs font-bold text-white hover:bg-red-800 disabled:opacity-50 cursor-pointer shadow-xs"
                     >
                       <CheckCircle2 size={14} />
                       {reviewSaving
@@ -3757,7 +3768,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-600/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-red-50 dark:bg-red-950/40 text-[#B91C1C] dark:text-red-400 flex items-center justify-center">
                   <MessageSquare size={18} />
                 </div>
                 <div>
@@ -3796,9 +3807,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         : 0;
                     setReleaseRemarkInput(getSuggestedTutorRemark(pct));
                   }}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600/10 text-blue-700 dark:text-blue-300 text-[11px] font-bold hover:bg-blue-600/20 cursor-pointer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 text-[11px] font-bold hover:bg-slate-100 cursor-pointer"
                 >
-                  <Sparkles size={12} />
+                  <Sparkles size={12} className="text-[#B91C1C] dark:text-red-400" />
                   Suggest Remark for Score
                 </button>
               </div>
@@ -3813,8 +3824,8 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                       onClick={() => setReleaseRemarkInput(preset.text)}
                       className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all cursor-pointer ${
                         selectedPreset
-                          ? "border-blue-600 bg-blue-600 text-white"
-                          : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-blue-400"
+                          ? "border-[#1E293B] bg-[#1E293B] text-white dark:border-[#B91C1C] dark:bg-[#B91C1C]"
+                          : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-400"
                       }`}
                     >
                       {preset.label}
@@ -3832,7 +3843,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                   value={releaseRemarkInput}
                   onChange={(e) => setReleaseRemarkInput(e.target.value)}
                   placeholder="Write a custom tutor remark or edit a selected preset above. This remark will accompany the student's released result and PDF report..."
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-xs text-slate-900 dark:text-white focus:border-blue-600 focus:outline-none"
+                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-xs text-slate-900 dark:text-white focus:border-[#1E293B] dark:focus:border-white focus:outline-none"
                 />
               </div>
             </div>
@@ -3851,7 +3862,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 onClick={() =>
                   void manage(releaseModalAttempt, "release", releaseRemarkInput)
                 }
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer shadow-xs"
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold disabled:opacity-50 cursor-pointer shadow-xs"
               >
                 <CheckCircle2 size={14} />
                 {actionBusy === releaseModalAttempt.id + "release"
@@ -3865,20 +3876,6 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         </div>
       )}
 
-      <DocumentHeaderCustomizerModal
-        isOpen={showHeaderDesigner}
-        onClose={() => setShowHeaderDesigner(false)}
-        scopeKey={schoolId || "default"}
-        schoolId={schoolId}
-        fallbackSchoolName={
-          availableSchools.find((s) => s.id === schoolId)?.name ||
-          availableSchools[0]?.name ||
-          resolveSchoolLabel(schoolId)
-        }
-        userUid={auth.currentUser?.uid || ""}
-        canUpdateSchoolProfile={isSchoolUser || isPlatformAdmin}
-        onSaved={(savedCfg) => setHeaderConfig(savedCfg)}
-      />
     </main>
   );
 }

@@ -29,7 +29,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
 
-const ROLE_COLORS = ['#0284c7', '#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4'];
+const ROLE_COLORS = ['#1E293B', '#B91C1C', '#475569', '#64748B', '#334155', '#94A3B8'];
 
 const AdminDashboard: React.FC = () => {
   const { toast } = useToast();
@@ -362,8 +362,7 @@ const AdminDashboard: React.FC = () => {
           name: 'Billings & Ledger',
           value: 'Active',
           icon: CreditCard,
-          color: 'from-emerald-500 to-teal-600',
-          iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
+          iconBg: 'bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700',
           href: '/admin/billing',
           badge: 'Tuition & Invoices',
           trend: 'Verified transactions',
@@ -372,8 +371,7 @@ const AdminDashboard: React.FC = () => {
           name: 'Pending Approvals',
           value: metrics.pendingEnrollments,
           icon: UserCheck,
-          color: 'from-amber-500 to-orange-600',
-          iconBg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20',
+          iconBg: 'bg-[#B91C1C]/10 text-[#B91C1C] dark:text-red-400 border border-[#B91C1C]/20',
           href: '/admin/approvals',
           badge: 'Fee & Access Queue',
           trend: 'Awaiting review',
@@ -382,8 +380,7 @@ const AdminDashboard: React.FC = () => {
           name: 'Agreements Centre',
           value: 'Contracts',
           icon: FileText,
-          color: 'from-blue-600 to-indigo-700',
-          iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20',
+          iconBg: 'bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700',
           href: '/admin/agreements',
           badge: 'Institutional & Tutor',
           trend: 'Active agreements',
@@ -392,8 +389,7 @@ const AdminDashboard: React.FC = () => {
           name: 'Enrolled Students',
           value: metrics.students,
           icon: Users,
-          color: 'from-sky-500 to-blue-600',
-          iconBg: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20',
+          iconBg: 'bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700',
           href: '/admin/billing',
           badge: 'Billing Accounts',
           trend: 'Active billing profiles',
@@ -407,8 +403,7 @@ const AdminDashboard: React.FC = () => {
           name: 'Programs & Courses',
           value: metrics.programs,
           icon: BookOpen,
-          color: 'from-sky-500 to-blue-600',
-          iconBg: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20',
+          iconBg: 'bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700',
           href: '/admin/programs',
           badge: 'Curriculum Catalog',
           trend: 'Published tracks',
@@ -417,8 +412,7 @@ const AdminDashboard: React.FC = () => {
           name: 'Services Catalog',
           value: metrics.services,
           icon: Briefcase,
-          color: 'from-blue-600 to-indigo-700',
-          iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20',
+          iconBg: 'bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700',
           href: '/admin/services',
           badge: 'Enterprise & Studio',
           trend: 'Live offerings',
@@ -427,8 +421,7 @@ const AdminDashboard: React.FC = () => {
           name: 'Public Inquiries',
           value: metrics.inquiries,
           icon: MessageSquare,
-          color: 'from-cyan-500 to-sky-600',
-          iconBg: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20',
+          iconBg: 'bg-[#B91C1C]/10 text-[#B91C1C] dark:text-red-400 border border-[#B91C1C]/20',
           href: '/admin/inquiries',
           badge: 'Leads & Contact',
           trend: 'Incoming requests',
@@ -437,8 +430,7 @@ const AdminDashboard: React.FC = () => {
           name: 'Pages & Section CMS',
           value: 'Live',
           icon: Layers,
-          color: 'from-emerald-500 to-teal-600',
-          iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
+          iconBg: 'bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700',
           href: '/admin/pages',
           badge: 'Website Editor',
           trend: 'Realtime publishing',
@@ -452,38 +444,34 @@ const AdminDashboard: React.FC = () => {
         name: 'Enrolled Students', 
         value: metrics.students, 
         icon: Users, 
-        color: 'from-sky-500 to-blue-600', 
-        iconBg: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20',
+        iconBg: 'bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700',
         href: '/admin/students', 
         badge: 'Active Cohorts',
-        trend: '+14% this month'
+        trend: `${metrics.users} total portal accounts`
       },
       { 
         name: 'Partner Schools', 
         value: metrics.schools, 
         icon: School, 
-        color: 'from-blue-600 to-indigo-700', 
-        iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20',
+        iconBg: 'bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700',
         href: '/admin/schools', 
         badge: 'Montessori Portals',
-        trend: '100% operational'
+        trend: 'Active school portals'
       },
       { 
         name: 'Curriculum Guides', 
         value: metrics.resources, 
         icon: BookOpen, 
-        color: 'from-cyan-500 to-sky-600', 
-        iconBg: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20',
+        iconBg: 'bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700',
         href: '/admin/resources', 
         badge: 'PDF & Labs',
-        trend: 'Updated recently'
+        trend: 'Persisted resource library'
       },
       { 
         name: 'CBT Assessments', 
         value: metrics.exams, 
         icon: Award, 
-        color: 'from-emerald-500 to-teal-600', 
-        iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
+        iconBg: 'bg-[#B91C1C]/10 text-[#B91C1C] dark:text-red-400 border border-[#B91C1C]/20',
         href: '/admin/examinations', 
         badge: 'Testing Windows',
         trend: 'Realtime grading'
@@ -550,8 +538,8 @@ const AdminDashboard: React.FC = () => {
       <div className="flex items-center justify-between gap-2.5 flex-wrap">
         <div>
           {capabilities.scope !== 'SUPER_ADMIN' && (
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-700 dark:text-sky-300 text-xs font-bold">
-              <ShieldCheck size={14} />
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#1E293B] dark:text-slate-200">
+              <ShieldCheck size={14} className="text-[#B91C1C]" />
               <span>{capabilities.roleLabel} Workspace</span>
             </div>
           )}
@@ -561,9 +549,9 @@ const AdminDashboard: React.FC = () => {
             <button 
               type="button"
               onClick={() => exportToCSV(studentsData, 'students_cadets_registry')}
-              className="flex items-center gap-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-slate-200 dark:border-white/10 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-xs cursor-pointer"
+              className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-xs cursor-pointer"
             >
-              <Download size={14} className="text-sky-600 dark:text-sky-400" />
+              <Download size={14} className="text-[#1E293B] dark:text-slate-200" />
               <span>Export Students CSV</span>
             </button>
           )}
@@ -572,7 +560,7 @@ const AdminDashboard: React.FC = () => {
             type="button"
             onClick={() => fetchDashboardData(true)}
             disabled={refreshing}
-            className="flex items-center gap-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+            className="flex items-center gap-2 bg-[#1E293B] hover:bg-slate-800 dark:bg-[#B91C1C] dark:hover:bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer"
           >
             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
             <span>{refreshing ? 'Syncing...' : 'Sync Firestore'}</span>
@@ -580,37 +568,37 @@ const AdminDashboard: React.FC = () => {
         </div>
       </div>
       
-      {/* Key Metric Overview Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Unified Key Metric Overview Strip */}
+      <div className="pro-surface rounded-2xl border border-slate-200/90 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200/80 dark:divide-slate-800 overflow-hidden">
         {stats.map((item) => {
           const Icon = item.icon;
           return (
             <div 
               key={item.name} 
-              className="pro-surface pro-interactive overflow-hidden rounded-2xl p-5 flex flex-col justify-between"
+              className="p-5 flex flex-col justify-between hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
             >
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <div>
                   <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                     {item.name}
                   </span>
-                  <div className="text-3xl font-black text-slate-900 dark:text-white mt-1 tracking-tight">
-                    {loading ? '...' : item.value}
+                  <div className="text-3xl font-black text-slate-900 dark:text-white mt-1 tracking-tight tabular-nums">
+                    {loading ? '—' : item.value}
                   </div>
-                  <span className="inline-block mt-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <span className="inline-block mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 tabular-nums">
                     {item.trend}
                   </span>
                 </div>
-                <div className={`rounded-xl p-3 ${item.iconBg}`}>
-                  <Icon className="h-5 w-5" />
+                <div className={`rounded-xl p-2.5 shrink-0 ${item.iconBg}`}>
+                  <Icon className="h-4 w-4" />
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-200/60 dark:border-white/5 flex items-center justify-between text-xs">
+              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
                 <span className="text-slate-500 dark:text-slate-400 font-medium text-[11px]">
                   {item.badge}
                 </span>
-                <Link to={item.href} className="font-bold text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 transition-colors inline-flex items-center gap-1">
+                <Link to={item.href} className="font-bold text-[#1E293B] dark:text-slate-200 hover:text-[#B91C1C] dark:hover:text-red-400 transition-colors inline-flex items-center gap-1">
                   Manage <ArrowUpRight size={13} />
                 </Link>
               </div>
@@ -620,47 +608,47 @@ const AdminDashboard: React.FC = () => {
       </div>
 
       {/* Quick Navigation Shortcuts Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="pro-surface rounded-2xl border border-slate-200/90 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-slate-200/80 dark:divide-slate-800 overflow-hidden">
         {quickActions.map((action, idx) => {
           const ActionIcon = action.icon;
           return (
             <Link
               key={idx}
               to={action.href}
-              className="pro-surface pro-interactive rounded-xl p-3 flex items-center justify-between group"
+              className="p-3.5 flex items-center justify-between group hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 flex items-center justify-center shrink-0 group-hover:text-[#B91C1C] transition-colors">
                   <ActionIcon size={16} />
                 </div>
                 <div className="truncate">
                   <div className="text-xs font-bold text-slate-900 dark:text-white truncate">{action.label}</div>
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400">{action.badge}</div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">{action.badge}</div>
                 </div>
               </div>
-              <ArrowUpRight size={14} className="text-slate-400 group-hover:text-sky-500 transition-colors shrink-0" />
+              <ArrowUpRight size={14} className="text-slate-400 group-hover:text-[#B91C1C] transition-colors shrink-0" />
             </Link>
           );
         })}
       </div>
 
       {/* ========================================================================= */}
-      {/* 🚀 PENDING STUDENT ENROLLMENTS & ACCESS APPROVALS QUEUE */}
+      {/* PENDING STUDENT ENROLLMENTS & ACCESS APPROVALS QUEUE */}
       {/* ========================================================================= */}
       {capabilities.canViewPendingEnrollments && pendingEnrollmentList.length > 0 && (
-        <div className="rounded-3xl bg-gradient-to-br from-white via-slate-50/50 to-white dark:from-slate-900 dark:via-slate-900/90 dark:to-slate-900 border-2 border-brand-red/30 p-5 sm:p-6 shadow-xl space-y-4">
+        <div className="rounded-3xl bg-white dark:bg-slate-900 border border-[#B91C1C]/30 p-5 sm:p-6 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-800 pb-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-brand-red/10 text-brand-red flex items-center justify-center font-black animate-pulse">
+              <div className="w-10 h-10 rounded-xl bg-[#B91C1C]/10 text-[#B91C1C] flex items-center justify-center font-black shrink-0">
                 <AlertCircle size={20} />
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
                     Pending Student Enrollments &amp; Access Approvals
                   </h2>
-                  <span className="px-2.5 py-0.5 rounded-full bg-brand-red text-white text-[10px] font-black uppercase shadow-xs">
-                    {pendingEnrollmentList.length} Action{pendingEnrollmentList.length > 1 ? 's' : ''} Needed
+                  <span className="text-xs font-black text-[#B91C1C] dark:text-red-400 tabular-nums">
+                    · {pendingEnrollmentList.length} Action{pendingEnrollmentList.length > 1 ? 's' : ''} Needed
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -671,7 +659,7 @@ const AdminDashboard: React.FC = () => {
 
             <Link
               to="/admin/approvals"
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-red hover:underline shrink-0"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline shrink-0"
             >
               <span>Full Approvals Center</span>
               <ChevronRight size={14} />
@@ -689,7 +677,7 @@ const AdminDashboard: React.FC = () => {
               return (
                 <div
                   key={req.id}
-                  className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-950/70 p-4 flex flex-col justify-between shadow-xs hover:border-brand-red/50 hover:shadow-md transition-all space-y-3"
+                  className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/60 p-4 flex flex-col justify-between hover:border-[#1E293B]/40 dark:hover:border-slate-700 transition-all space-y-3"
                 >
                   <div className="space-y-2">
                     <div className="flex items-start justify-between gap-2">
@@ -697,15 +685,15 @@ const AdminDashboard: React.FC = () => {
                         <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Child / Student</span>
                         <h4 className="text-sm font-black text-slate-900 dark:text-white">{reqStudentName}</h4>
                       </div>
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                      <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 tabular-nums">
                         {reqAge}
                       </span>
                     </div>
 
-                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-100 dark:border-slate-800 text-[11px] space-y-1">
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900/90 border border-slate-200/70 dark:border-slate-800 text-[11px] space-y-1">
                       <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
                         <span className="text-slate-400 font-medium">Programme:</span>
-                        <span className="font-bold text-brand-red truncate max-w-[150px]">{reqPlan}</span>
+                        <span className="font-bold text-[#B91C1C] dark:text-red-400 truncate max-w-[150px]">{reqPlan}</span>
                       </div>
                       <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
                         <span className="text-slate-400 font-medium">Parent:</span>
@@ -720,7 +708,7 @@ const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
+                  <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/80 flex items-center justify-between gap-2">
                     <button
                       type="button"
                       onClick={async () => {
@@ -747,7 +735,7 @@ const AdminDashboard: React.FC = () => {
                         setSelectedRequestForApproval(req);
                         setIsApprovalModalOpen(true);
                       }}
-                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                      className="px-3.5 py-1.5 rounded-xl bg-[#1E293B] hover:bg-slate-800 dark:bg-[#B91C1C] dark:hover:bg-red-700 text-white text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
                     >
                       <UserCheck size={13} />
                       <span>Approve &amp; Configure Access</span>
@@ -764,8 +752,8 @@ const AdminDashboard: React.FC = () => {
       {/* TYPING MASTERS ACADEMY • EDCLUB COLLABORATION HUB & BANNER DESIGN */}
       {/* ========================================================================= */}
       {capabilities.canViewEdclubHub && (
-      <div className="relative overflow-hidden rounded-3xl border border-indigo-500/30 p-6 sm:p-8 text-white shadow-2xl transition-all">
-        {/* Background Banner Image or Gradient */}
+      <div className="relative overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 text-white shadow-sm transition-all bg-[#0F172A]">
+        {/* Background Banner Image or Institutional Navy */}
         {edclubBannerUrl ? (
           <>
             <img 
@@ -773,56 +761,50 @@ const AdminDashboard: React.FC = () => {
               alt="EdClub Banner" 
               className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none"
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-slate-950/95 via-indigo-950/90 to-slate-950/80 pointer-events-none" />
+            <div className="absolute inset-0 bg-[#0F172A]/85 pointer-events-none" />
           </>
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-950 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A] pointer-events-none" />
         )}
-        
-        <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-60 h-60 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[10px] font-black uppercase tracking-wider shadow-sm">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] font-bold">
+              <span className="text-[#F87171] uppercase tracking-wider font-black">
                 Typing Masters Academy
               </span>
-              <span className="text-xs text-indigo-200 font-bold">
+              <span className="text-slate-500">·</span>
+              <span className="text-slate-300">
                 In Collaboration with <strong className="text-white font-black">EdClub</strong>
               </span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black uppercase">
-                Active Collab
+              <span className="text-slate-500">·</span>
+              <span className="text-slate-200 font-semibold">
+                Active Collab{edclubBannerUrl ? ' · Custom Banner Live' : ''}
               </span>
-              {edclubBannerUrl && (
-                <span className="px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 text-[10px] font-bold">
-                  Custom Banner Live
-                </span>
-              )}
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2.5 tracking-tight">
-              <Keyboard className="w-6 h-6 text-indigo-400 shrink-0" />
+              <Keyboard className="w-6 h-6 text-[#B91C1C] shrink-0" />
               <span>{edclubTitle}</span>
             </h2>
-            <p className="text-xs sm:text-sm text-indigo-100/90 leading-relaxed font-medium">
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-medium">
               {edclubSubtitle}
             </p>
-            <p className="text-[11px] text-indigo-300/70">
+            <p className="text-[11px] text-slate-400">
               Only students enrolled in programs with EdClub assigned will have this portal unlocked.
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 shrink-0">
-            <div className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900/80 backdrop-blur-md border border-indigo-500/30 text-indigo-300 font-mono text-xs shadow-inner">
+            <div className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-700 text-slate-300 font-mono text-xs">
               <span className="font-semibold text-white truncate max-w-[200px] sm:max-w-xs">{edclubUrl}</span>
               <button
                 type="button"
                 onClick={handleCopyEdclubLink}
                 title="Copy Collab Link"
                 aria-label="Copy Collab Link"
-                className="p-1 hover:text-white text-indigo-300 transition-colors ml-1"
+                className="p-1 hover:text-white text-slate-300 transition-colors ml-1 cursor-pointer"
               >
-                {copiedEdclub ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                {copiedEdclub ? <Check size={14} className="text-white" /> : <Copy size={14} />}
               </button>
             </div>
 
@@ -834,7 +816,7 @@ const AdminDashboard: React.FC = () => {
                   setEdclubBannerInput(edclubBannerUrl);
                   setIsEditingEdclub(true);
                 }}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-indigo-100 hover:text-white border border-white/20 text-xs font-bold transition-all shadow-sm"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-100 hover:text-white border border-white/20 text-xs font-bold transition-all cursor-pointer"
                 title="Edit EdClub Banner & Portal URL"
               >
                 <ImageIcon size={15} />
@@ -846,11 +828,11 @@ const AdminDashboard: React.FC = () => {
               href={edclubUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-xs font-black transition-all shadow-lg shadow-indigo-600/40 hover:scale-[1.02] active:scale-[0.98]"
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-700 text-white text-xs font-black transition-all shadow-sm"
             >
               <ExternalLink size={14} />
               <span>Launch EdClub</span>
-              <ArrowUpRight size={13} className="opacity-70" />
+              <ArrowUpRight size={13} className="opacity-80" />
             </a>
           </div>
         </div>
@@ -858,21 +840,21 @@ const AdminDashboard: React.FC = () => {
         {/* Modal / Editor for EdClub Banner & Collaboration Configuration */}
         {isEditingEdclub && capabilities.canConfigureEdclubHub && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fadeIn">
-            <div className="w-full max-w-xl bg-slate-900 rounded-3xl border border-indigo-500/40 shadow-2xl p-6 sm:p-8 space-y-5 text-white max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between pb-4 border-b border-indigo-900/60">
+            <div className="w-full max-w-xl bg-slate-900 rounded-3xl border border-slate-700 shadow-2xl p-6 sm:p-8 space-y-5 text-white max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-800">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 flex items-center justify-center">
                     <Keyboard size={20} />
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-white">Configure EdClub Portal &amp; Banner</h3>
-                    <p className="text-xs text-indigo-300">Upload background banner and set student portal launch link</p>
+                    <p className="text-xs text-slate-400">Upload background banner and set student portal launch link</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsEditingEdclub(false)}
-                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   <X size={18} />
                 </button>
@@ -890,7 +872,7 @@ const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 mb-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
                     EdClub Collaboration Launch URL *
                   </label>
                   <input
@@ -899,7 +881,7 @@ const AdminDashboard: React.FC = () => {
                     value={edclubInput}
                     onChange={(e) => setEdclubInput(e.target.value)}
                     placeholder="https://jaystarbliss-studios.edclub.com"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-indigo-900/80 bg-slate-950 text-white text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-950 text-white text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">
                     Custom school or general Jaystarbliss EdClub subdomain URL.
@@ -908,7 +890,7 @@ const AdminDashboard: React.FC = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 mb-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
                       Card Title
                     </label>
                     <input
@@ -916,11 +898,11 @@ const AdminDashboard: React.FC = () => {
                       value={edclubTitle}
                       onChange={(e) => setEdclubTitle(e.target.value)}
                       placeholder="Keyboarding & Speed Typing Hub"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-indigo-900/80 bg-slate-950 text-white text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-950 text-white text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-indigo-200 mb-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
                       Card Subtitle / Weekly Target
                     </label>
                     <input
@@ -928,23 +910,23 @@ const AdminDashboard: React.FC = () => {
                       value={edclubSubtitle}
                       onChange={(e) => setEdclubSubtitle(e.target.value)}
                       placeholder="Touch Typing Foundations • Home Row & Punctuation"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-indigo-900/80 bg-slate-950 text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-950 text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
                     />
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-indigo-900/60 flex items-center justify-end gap-3">
+                <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3">
                   <button
                     type="button"
                     onClick={() => setIsEditingEdclub(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white transition-colors"
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={savingEdclub}
-                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-xs font-black transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-lg shadow-indigo-600/30"
+                    className="px-5 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-700 text-white text-xs font-black transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-sm cursor-pointer"
                   >
                     <Save size={14} />
                     <span>{savingEdclub ? 'Saving Changes...' : 'Save Banner & Settings'}</span>
@@ -992,7 +974,7 @@ const AdminDashboard: React.FC = () => {
                     Breakdown of incoming enrollment requests by program track.
                   </p>
                 </div>
-                <Link to="/admin/inquiries" className="text-xs font-bold text-sky-600 dark:text-sky-400 hover:underline">
+                <Link to="/admin/inquiries" className="text-xs font-bold text-[#1E293B] dark:text-slate-200 hover:text-[#B91C1C] dark:hover:text-red-400 transition-colors">
                   View All &rarr;
                 </Link>
               </div>
@@ -1000,6 +982,10 @@ const AdminDashboard: React.FC = () => {
               <div className="h-[280px] w-full mt-2">
                 {loading ? (
                   <div className="h-full flex items-center justify-center text-slate-400 text-xs">Loading inquiry metrics...</div>
+                ) : chartDataInquiries.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                    No public inquiry records available yet.
+                  </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartDataInquiries} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -1008,14 +994,13 @@ const AdminDashboard: React.FC = () => {
                       <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="#64748b" />
                       <RechartsTooltip 
                         contentStyle={{ 
-                          backgroundColor: 'rgba(15, 23, 42, 0.9)', 
+                          backgroundColor: '#0F172A', 
                           borderRadius: '12px', 
-                          border: '1px solid rgba(255, 255, 255, 0.1)', 
-                          color: '#fff',
-                          backdropFilter: 'blur(10px)'
+                          border: '1px solid #334155', 
+                          color: '#fff'
                         }} 
                       />
-                      <Bar dataKey="value" name="Inquiries" fill="#0284c7" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="value" name="Inquiries" fill="#1E293B" radius={[6, 6, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
@@ -1034,7 +1019,7 @@ const AdminDashboard: React.FC = () => {
                     Active accounts across Students, Staff, Parents, and School Representatives.
                   </p>
                 </div>
-                <Link to="/admin/users" className="text-xs font-bold text-sky-600 dark:text-sky-400 hover:underline">
+                <Link to="/admin/users" className="text-xs font-bold text-[#1E293B] dark:text-slate-200 hover:text-[#B91C1C] dark:hover:text-red-400 transition-colors">
                   Manage RBAC &rarr;
                 </Link>
               </div>
@@ -1042,6 +1027,10 @@ const AdminDashboard: React.FC = () => {
               <div className="h-[280px] w-full mt-2">
                 {loading ? (
                   <div className="h-full flex items-center justify-center text-slate-400 text-xs">Loading user roles...</div>
+                ) : chartDataUsers.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                    No account role records available yet.
+                  </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -1060,11 +1049,10 @@ const AdminDashboard: React.FC = () => {
                       </Pie>
                       <RechartsTooltip 
                         contentStyle={{ 
-                          backgroundColor: 'rgba(15, 23, 42, 0.9)', 
+                          backgroundColor: '#0F172A', 
                           borderRadius: '12px', 
-                          border: '1px solid rgba(255, 255, 255, 0.1)', 
-                          color: '#fff',
-                          backdropFilter: 'blur(10px)'
+                          border: '1px solid #334155', 
+                          color: '#fff'
                         }} 
                       />
                       <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
