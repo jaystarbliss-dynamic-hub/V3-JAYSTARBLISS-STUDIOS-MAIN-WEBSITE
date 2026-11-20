@@ -34,7 +34,7 @@ export const handler: Handler = async (event) => {
     try {
       await adminDb.runTransaction(async transaction => {
         transaction.set(schoolRef, { name, schoolCode: code, contactName, contactEmail: email, phone: phone || null, address: address || null, state: state || null, notes: notes || null, status: 'ACTIVE', onboardingStatus: 'APPROVED', createdBy: decoded.uid, createdAt: now, updatedAt: now });
-        transaction.set(adminDb.collection('users').doc(authUser.uid), { uid: authUser.uid, name: contactName, fullName: contactName, email, role: 'SCHOOL', schoolId: schoolRef.id, schoolCode: code, accountStatus: 'ACTIVE', forcePasswordReset: true, onboardingStatus: 'APPROVED', createdBy: decoded.uid, createdAt: now, updatedAt: now });
+        transaction.set(adminDb.collection('users').doc(authUser.uid), { uid: authUser.uid, name: contactName, fullName: contactName, email, role: 'SCHOOL', schoolId: schoolRef.id, schoolCode: code, accountStatus: 'ACTIVE', forcePasswordReset: true, onboardingStatus: 'APPROVED', onboardingTourEligible: true, createdBy: decoded.uid, createdAt: now, updatedAt: now });
         transaction.set(adminDb.collection('schoolOnboarding').doc(schoolRef.id), { schoolId: schoolRef.id, schoolName: name, administratorId: authUser.uid, administratorEmail: email, status: 'APPROVED', approvedBy: decoded.uid, createdBy: decoded.uid, createdAt: now, updatedAt: now });
         transaction.set(adminDb.collection('activityLogs').doc(), { type: 'school_onboarded', action: 'SCHOOL_ONBOARDED', message: `School ${name} was onboarded by an administrator.`, actorId: decoded.uid, userId: authUser.uid, userEmail: email, userType: 'SCHOOL', schoolId: schoolRef.id, schoolName: name, timestamp: now, details: { schoolCode: code, contactName, phone, address, state, status: 'ACTIVE' } });
       });
@@ -44,7 +44,7 @@ export const handler: Handler = async (event) => {
       email,
       type: 'SCHOOL_ONBOARDING_APPROVED',
       title: 'Your Jaystarbliss Studios school portal is ready',
-      message: `Your school account for ${name} has been created. Sign in at ${process.env.URL || 'https://jaystarbliss-studios.name.ng'}/portal using your administrator email (${email}) and temporary password: ${password}. Please change your password immediately after signing in. Your school code ${code} is for institutional exam/operations purposes and is not your login password.`,
+      message: `Your school account for ${name} has been created. Sign in at ${process.env.PUBLIC_APP_URL || process.env.URL || 'https://jaystarblissstudios.com'}/portal using your administrator email (${email}) and temporary password: ${password}. Please change your password immediately after signing in. Your school code ${code} is for institutional exam/operations purposes and is not your login password.`,
       data: { schoolId: schoolRef.id, schoolCode: code }
     });
     return json(200, { success: true, school: { id: schoolRef.id, name, schoolCode: code, status: 'ACTIVE' }, administrator: { uid: authUser.uid, name: contactName, email }, temporaryPassword: password });

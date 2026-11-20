@@ -248,7 +248,8 @@ export const handler: Handler = async event => {
 
     // School Administrator Role
     if (role === "school") {
-      let schoolId = String((user as any).schoolId || event.queryStringParameters?.schoolId || "").trim();
+      // Strictly resolve schoolId from authenticated user profile or verified school ownership (never query params)
+      let schoolId = String((user as any).schoolId || "").trim();
       let schoolDoc: any = null;
 
       if (schoolId) {
@@ -696,21 +697,46 @@ export const handler: Handler = async event => {
       const schoolId = String(studentRecord?.schoolId || (user as any).schoolId || "");
       const parentId = String(studentRecord?.parentId || (user as any).parentId || "");
 
+      // Load student's self-funded programme enrolments
+      const progEnrollSnap = await adminDb
+        .collection("programme_enrollments")
+        .where("studentUid", "==", decoded.uid)
+        .limit(50)
+        .get()
+        .catch(() => ({ docs: [] } as any));
+      const programmeEnrollments = progEnrollSnap.docs.map((d: any) => ({
+        id: d.id,
+        ...plain(d.data()),
+      }));
+
+      const QUALIFYING_SELF_FUNDED_STATUSES = new Set([
+        "APPROVED_AWAITING_PAYMENT",
+        "PARTIALLY_PAID",
+        "ACTIVE",
+        "RENEWAL_DUE",
+      ]);
+      const hasQualifyingSelfFunded = programmeEnrollments.some(
+        (enr: any) =>
+          String(enr.billingResponsibility || "STUDENT_SELF_FUNDED") === "STUDENT_SELF_FUNDED" &&
+          QUALIFYING_SELF_FUNDED_STATUSES.has(String(enr.enrollmentStatus || "").toUpperCase())
+      );
+
       let isExempt = false;
       let managedBy: "school" | "parent" | "direct" = "direct";
       let managerName = "";
 
-      if (schoolId) {
-        isExempt = true;
-        managedBy = "school";
-        // lookup school name
-        const schoolSnap = await adminDb.collection("schools").doc(schoolId).get();
-        managerName = schoolSnap.exists ? schoolSnap.data()?.name || "Affiliated Partner School" : "Affiliated Partner School";
-      } else if (parentId) {
+      if (parentId) {
+        // Parent-enrolled child accounts remain strictly excluded from personal student billing
         isExempt = true;
         managedBy = "parent";
         const parentSnap = await adminDb.collection("users").doc(parentId).get();
         managerName = parentSnap.exists ? parentSnap.data()?.name || "Parent / Guardian" : "Parent / Guardian";
+      } else if (schoolId) {
+        managedBy = "school";
+        // School students unlock personal billing ONLY for their own approved self-funded programmes
+        isExempt = !hasQualifyingSelfFunded;
+        const schoolSnap = await adminDb.collection("schools").doc(schoolId).get();
+        managerName = schoolSnap.exists ? schoolSnap.data()?.name || "Affiliated Partner School" : "Affiliated Partner School";
       }
 
       const payments = await docs("payments", "userId", decoded.uid, 50);
@@ -725,6 +751,8 @@ export const handler: Handler = async event => {
           isExempt,
           managedBy,
           managerName,
+          hasSelfFundedEnrollments: hasQualifyingSelfFunded,
+          programmeEnrollments: parentId ? [] : programmeEnrollments,
           studentBilling: (user as any).billing || studentRecord?.billing || null,
           payments,
           billingSummary: billingSummary(payments),

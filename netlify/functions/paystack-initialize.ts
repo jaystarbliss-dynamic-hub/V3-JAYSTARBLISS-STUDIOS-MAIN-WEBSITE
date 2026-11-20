@@ -2,6 +2,7 @@ import type { Handler } from "@netlify/functions";
 import { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
 import {
   calculateCustomerCharge,
+  computeStudentProgrammePayableAmount,
   getFeePolicy,
   getPaymentConfig,
   getUserRecord,
@@ -158,7 +159,163 @@ export const handler: Handler = async (event) => {
       student = await findStudent(studentId, decoded.uid, "parent", decoded.email);
     }
 
+    // =========================================================================
+    // DEDICATED SELF-FUNDED STUDENT PROGRAMME ENROLMENT CHECKOUT
+    // Supports individual students AND school students paying personally
+    // (never parent-enrolled child accounts; never charges or bills schools).
+    // =========================================================================
+    const programmeEnrollmentId = String(body.programmeEnrollmentId || "").trim();
+    if (actualRole === "student" && programmeEnrollmentId) {
+      if (String((user as any).parentId || "").trim()) {
+        return json(403, {
+          error: "Billing for parent-managed student accounts is handled from the Parent Portal.",
+        });
+      }
+
+      const progEnrollSnap = await adminDb
+        .collection("programme_enrollments")
+        .doc(programmeEnrollmentId)
+        .get();
+      if (!progEnrollSnap.exists) {
+        return json(404, { error: "Approved programme enrolment record not found." });
+      }
+      const progEnroll = progEnrollSnap.data() || {};
+      if (String(progEnroll.studentUid || "") !== decoded.uid) {
+        return json(403, { error: "You are not authorized to pay for this programme enrolment." });
+      }
+      if (String(progEnroll.billingResponsibility || "") !== "STUDENT_SELF_FUNDED") {
+        return json(403, { error: "This enrolment is not configured for student self-funded billing." });
+      }
+
+      const requestedOption = String(body.paymentOption || "").toLowerCase() as
+        | "full"
+        | "deposit"
+        | "balance"
+        | "renewal"
+        | "";
+      const payable = computeStudentProgrammePayableAmount({
+        enrollment: progEnroll,
+        paymentOption: requestedOption || undefined,
+      });
+
+      if (payable.payableAmount <= 0) {
+        return json(400, {
+          error: "This programme enrolment has no payable outstanding balance right now.",
+        });
+      }
+
+      // Resolve student payment email — accept explicit payerEmail if school student has no real email; NEVER use school email
+      const candidateEmails = [
+        String(body.payerEmail || "").trim().toLowerCase(),
+        String(progEnroll.studentEmail || "").trim().toLowerCase(),
+        String(decoded.email || "").trim().toLowerCase(),
+        String((user as any).email || "").trim().toLowerCase(),
+      ].filter((e) => e.includes("@") && !e.endsWith(".local") && !e.endsWith(".invalid"));
+
+      const paymentEmail = candidateEmails[0] || "";
+      if (!paymentEmail) {
+        return json(400, {
+          error: "Please enter a valid personal email address to receive your Paystack receipt.",
+          code: "STUDENT_PAYMENT_EMAIL_REQUIRED",
+        });
+      }
+
+      const chargePreview = calculateCustomerCharge(
+        payable.payableAmount,
+        getFeePolicy(config, "student_self_funded")
+      );
+      if (!process.env.PAYSTACK_SECRET_KEY) {
+        return json(503, { error: "Payment gateway is not configured." });
+      }
+      const callbackRoot = process.env.PUBLIC_APP_URL || "https://jaystarblissstudios.com";
+      const callbackUrl = `${callbackRoot.replace(/\/$/, "")}/portal/student/payments?enrollmentId=${encodeURIComponent(
+        programmeEnrollmentId
+      )}`;
+
+      const durationWeeks = Math.max(1, Number(progEnroll.durationWeeks || 8));
+      const planLabel = String(progEnroll.programTitle || "Programme Tuition");
+      const paystackPayload = buildPaystackInitializePayload({
+        email: paymentEmail,
+        amountMinor: Math.round(payable.payableAmount * 100),
+        callbackUrl,
+        metadata: {
+          billingContext: "STUDENT_PROGRAMME_ENROLLMENT",
+          billingResponsibility: "STUDENT_SELF_FUNDED",
+          programmeEnrollmentId,
+          programId: String(progEnroll.programId || ""),
+          programSlug: String(progEnroll.programSlug || ""),
+          programTitle: planLabel,
+          paymentOption: payable.resolvedOption,
+          isRenewal: payable.isRenewal,
+          userId: decoded.uid,
+          role: "student",
+          planRole: "student",
+          planId: `prog_enr_${String(progEnroll.programId || programmeEnrollmentId)}`,
+          planName: planLabel,
+          baseAmount: payable.payableAmount,
+          estimatedTransactionFee: chargePreview.transactionFee,
+          estimatedCustomerTotal: chargePreview.totalAmount,
+          durationWeeks,
+          teachingMode: String(progEnroll.deliveryOption || "PUBLIC_GROUP"),
+          studentId: String(progEnroll.studentDocId || (user as any).studentDocId || decoded.uid),
+          studentName: String(progEnroll.studentName || (user as any).name || "Student"),
+          // Keep schoolId strictly null so self-funded student payments NEVER appear in school billing totals
+          schoolId: null,
+          affiliatedSchoolId: String(progEnroll.schoolId || "") || null,
+          checkoutProvider: "paystack",
+          paymentSource: "Student Self-Funded Programme Payment",
+          ...policyAudit,
+        },
+      });
+
+      const psRes = await fetch("https://api.paystack.co/transaction/initialize", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(paystackPayload),
+      });
+      const psData = await psRes.json();
+      if (!psRes.ok || !psData.status || !psData.data?.authorization_url) {
+        console.error("Paystack initialization failed (programme enrollment):", psData);
+        return json(502, { error: "Unable to initialize Paystack checkout right now." });
+      }
+
+      // Persist last initiated payment email & reference on the enrollment record
+      await adminDb
+        .collection("programme_enrollments")
+        .doc(programmeEnrollmentId)
+        .set(
+          {
+            lastPaymentReference: psData.data.reference,
+            studentEmail: progEnroll.studentEmail || paymentEmail,
+            updatedAt: new Date(),
+          },
+          { merge: true }
+        );
+
+      return json(200, {
+        authorizationUrl: psData.data.authorization_url,
+        reference: psData.data.reference,
+        programmeEnrollmentId,
+        planName: planLabel,
+        paymentOption: payable.resolvedOption,
+        baseAmount: payable.payableAmount,
+        transactionFee: chargePreview.transactionFee,
+        totalAmount: chargePreview.totalAmount,
+        feeIsEstimated: true,
+        feeSource: "Paystack checkout",
+        durationWeeks,
+      });
+    }
+
     if (actualRole === "student") {
+      if (String((user as any).parentId || "").trim()) {
+        return json(403, {
+          error: "Billing for parent-managed student accounts is handled from the Parent Portal.",
+        });
+      }
       studentId = studentId || String((user as any).studentDocId || "").trim();
       if (!studentId || !String((user as any).studentDocId || "").trim()) {
         return json(403, { error: "Your student profile is not ready for billing." });
@@ -170,7 +327,18 @@ export const handler: Handler = async (event) => {
       if (!studentLookup.exists || String(studentLookup.data()?.firebaseUid || studentLookup.data()?.userId || "") !== decoded.uid) {
         return json(403, { error: "Your student profile could not be verified." });
       }
-      student = { id: studentLookup.id, ...studentLookup.data() };
+      const sDocData = studentLookup.data() || {};
+      if (String(sDocData.parentId || sDocData.parentUid || "").trim()) {
+        return json(403, {
+          error: "Billing for parent-managed student accounts is handled from the Parent Portal.",
+        });
+      }
+      if (String(sDocData.schoolId || (user as any).schoolId || "").trim()) {
+        return json(403, {
+          error: "School-sponsored programmes are billed to your school. Select an approved self-funded additional programme to pay personally.",
+        });
+      }
+      student = { id: studentLookup.id, ...sDocData };
     }
 
     let schoolDocData: Record<string, any> | null = null;
@@ -330,7 +498,7 @@ export const handler: Handler = async (event) => {
 
     const chargePreview = calculateCustomerCharge(plan.baseAmount, getFeePolicy(config, feeRole));
     if (!process.env.PAYSTACK_SECRET_KEY) return json(503, { error: "Payment gateway is not configured." });
-    const callbackRoot = process.env.PUBLIC_APP_URL; if (!callbackRoot) return json(500, { error: "Payment callback is not configured." });
+    const callbackRoot = process.env.PUBLIC_APP_URL || "https://jaystarblissstudios.com";
     const callbackPath = actualRole === "school" ? "/portal/school/payments" : actualRole === "parent" ? "/portal/parent/payments" : "/portal/student/payments";
 
     const paystackPayload = buildPaystackInitializePayload({

@@ -1,5 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
+import { enforceEntitlementOrLock } from '../../api/_lib/subscription-service';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({ statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(body) });
 const getBearer = (event: any) => { const header = event.headers?.authorization || event.headers?.Authorization || ''; return header.startsWith('Bearer ') ? header.slice(7) : ''; };
@@ -59,8 +60,12 @@ const listAssignments = async (uid: string, role: string, queryParams: URLSearch
 export const handler: Handler = async (event) => {
   try {
     const authToken = getBearer(event); if (!authToken) return json(401, { error: 'Authentication required.' });
-    const decoded = await adminAuth.verifyIdToken(authToken); const user = await userRecord(decoded.uid); const role = normaliseRole(user.role);
-    if (event.httpMethod === 'GET') { const params = new URLSearchParams(); Object.entries(event.queryStringParameters || {}).forEach(([key, value]) => { if (value != null) params.set(key, value); }); return json(200, { assignments: await listAssignments(decoded.uid, role, params) }); }
+    const targetChildId = String(event.queryStringParameters?.studentId || '').trim() || null;
+    const entitlementGuard = await enforceEntitlementOrLock(event, { targetChildId });
+    if (!entitlementGuard.ok) return entitlementGuard.response;
+    const decoded = entitlementGuard.decoded; const user = await userRecord(decoded.uid); const role = normaliseRole(user.role);
+    const lockedChildSet = new Set(entitlementGuard.entitlement.lockedChildIds || []);
+    if (event.httpMethod === 'GET') { const params = new URLSearchParams(); Object.entries(event.queryStringParameters || {}).forEach(([key, value]) => { if (value != null) params.set(key, value); }); const rawList = await listAssignments(decoded.uid, role, params); const filtered = lockedChildSet.size ? rawList.filter((item: any) => !lockedChildSet.has(String(item.studentId || ''))) : rawList; return json(200, { assignments: filtered }); }
     if (event.httpMethod !== 'POST') return json(405, { error: 'Method Not Allowed' });
     const body = JSON.parse(event.body || '{}'); const action = String(body.action || '').trim();
 

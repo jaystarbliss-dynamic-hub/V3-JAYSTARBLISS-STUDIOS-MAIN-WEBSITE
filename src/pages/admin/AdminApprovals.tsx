@@ -13,19 +13,37 @@ import { resolveRealName } from '../../utils/userNames';
 import { formatNormalizedClassDisplay, normalizeClassName } from '../../lib/classes';
 import { claimGlobalUsername, ensureUniqueGeneratedUsername } from '../../lib/usernameRegistry';
 import { isValidTutorPhotoUrl, type TutorPublicProfileStatus } from '../../lib/tutorDirectory';
+import {
+  type ProgrammeEnrollmentRecord,
+  normalizeProgrammeEnrollmentDoc,
+  approveProgrammeEnrollmentAsAdmin,
+  rejectProgrammeEnrollmentAsAdmin,
+  retryProgrammeAdmissionEmail,
+} from '../../lib/programmeEnrollments';
 
 const AdminApprovals: React.FC = () => {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'tutors' | 'subjects' | 'students' | 'enrollments'>('tutors');
+  const [activeTab, setActiveTab] = useState<
+    'tutors' | 'subjects' | 'students' | 'enrollments' | 'programme_apps'
+  >('tutors');
   const [search, setSearch] = useState('');
   const [studentReqs, setStudentReqs] = useState<any[]>([]);
   const [tutorReqs, setTutorReqs] = useState<any[]>([]);
   const [subjectReqs, setSubjectReqs] = useState<any[]>([]);
   const [enrollmentReqs, setEnrollmentReqs] = useState<any[]>([]);
+  const [programmeApps, setProgrammeApps] = useState<ProgrammeEnrollmentRecord[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [selectedTutorDetail, setSelectedTutorDetail] = useState<any | null>(null);
   const [selectedSubjectDetail, setSelectedSubjectDetail] = useState<any | null>(null);
   const [selectedRequestForModal, setSelectedRequestForModal] = useState<any | null>(null);
+  const [approvalTargetApp, setApprovalTargetApp] = useState<ProgrammeEnrollmentRecord | null>(null);
+  const [approveFeeAmount, setApproveFeeAmount] = useState<string>('35000');
+  const [approveBillingCycle, setApproveBillingCycle] = useState<string>('Per Term / Cohort');
+  const [approveDurationWeeks, setApproveDurationWeeks] = useState<string>('8');
+  const [approveAllowDeposit, setApproveAllowDeposit] = useState<boolean>(false);
+  const [approveDepositAmount, setApproveDepositAmount] = useState<string>('15000');
+  const [approveAdminNotes, setApproveAdminNotes] = useState<string>('');
+  const [approvingApp, setApprovingApp] = useState<boolean>(false);
 
   useEffect(() => {
     const qStudents = query(collection(db, 'student_requests'), where('status', '==', 'pending'));
@@ -56,11 +74,29 @@ const AdminApprovals: React.FC = () => {
       console.warn('enrollment_requests listener warning:', err);
     });
 
+    const unsubProgApps = onSnapshot(
+      collection(db, 'programme_enrollments'),
+      (snap) => {
+        const list = snap.docs
+          .map((d) => normalizeProgrammeEnrollmentDoc(d.id, d.data() as Record<string, any>))
+          .sort((a, b) => {
+            const rank = (s: string) =>
+              s === 'PENDING_ADMIN_REVIEW' ? 0 : s === 'APPROVED_AWAITING_PAYMENT' ? 1 : 2;
+            return rank(a.enrollmentStatus) - rank(b.enrollmentStatus);
+          });
+        setProgrammeApps(list);
+      },
+      (err) => {
+        console.warn('programme_enrollments listener warning:', err);
+      }
+    );
+
     return () => {
       unsubStudents();
       unsubTutors();
       unsubSubjects();
       unsubEnrollments();
+      unsubProgApps();
     };
   }, []);
 
@@ -426,7 +462,12 @@ const AdminApprovals: React.FC = () => {
               >
                 <option value="tutors">Tutor Applications ({tutorReqs.length})</option>
                 <option value="students">Student Requests ({studentReqs.length})</option>
-                <option value="enrollments">Course Enrollments ({enrollmentReqs.length})</option>
+                <option value="enrollments">Parent Course Requests ({enrollmentReqs.length})</option>
+                <option value="programme_apps">
+                  Student Programme Applications (
+                  {programmeApps.filter((a) => a.enrollmentStatus === 'PENDING_ADMIN_REVIEW').length}
+                  )
+                </option>
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
             </div>
@@ -495,6 +536,22 @@ const AdminApprovals: React.FC = () => {
             }`}
           >
             Course Enrollments <span className="text-[10px] opacity-80">({enrollmentReqs.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('programme_apps')}
+            className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'programme_apps'
+                ? 'bg-brand-red text-white shadow-sm'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            Programme Applications{' '}
+            <span className="text-[10px] opacity-80">
+              ({programmeApps.filter((a) => a.enrollmentStatus === 'PENDING_ADMIN_REVIEW').length}{' '}
+              pending / {programmeApps.length})
+            </span>
           </button>
         </div>
       </div>
@@ -704,15 +761,187 @@ const AdminApprovals: React.FC = () => {
                 </tr>
               ))}
 
+              {/* STUDENT PROGRAMME APPLICATIONS (SELF-FUNDED) */}
+              {activeTab === 'programme_apps' &&
+                programmeApps
+                  .filter((app) => {
+                    const q = search.trim().toLowerCase();
+                    if (!q) return true;
+                    return (
+                      app.studentName.toLowerCase().includes(q) ||
+                      String(app.studentEmail || '').toLowerCase().includes(q) ||
+                      app.programTitle.toLowerCase().includes(q) ||
+                      String(app.schoolName || '').toLowerCase().includes(q)
+                    );
+                  })
+                  .map((app) => (
+                    <tr
+                      key={app.id}
+                      className="hover:bg-slate-50/60 dark:hover:bg-slate-950/40 transition-colors"
+                    >
+                      <td className="py-3 px-3.5 max-w-[240px]">
+                        <div className="font-bold text-slate-900 dark:text-white truncate">
+                          {app.studentName}
+                        </div>
+                        <div className="text-[11px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
+                          <Mail size={11} /> {app.studentEmail || 'No email on profile'}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <span
+                            className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                              app.studentRegistrationType === 'school'
+                                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300'
+                                : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                            }`}
+                          >
+                            {app.studentRegistrationType === 'school'
+                              ? `School Student · Self-Funded${app.schoolName ? ` (${app.schoolName})` : ''}`
+                              : 'Individual Student · Self-Funded'}
+                          </span>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-3.5 max-w-[280px]">
+                        <div className="font-bold text-slate-900 dark:text-white">
+                          {app.programTitle}
+                        </div>
+                        {app.breadcrumbPath && (
+                          <div className="text-[10px] text-slate-500 truncate">
+                            {app.breadcrumbPath}
+                          </div>
+                        )}
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                          <span className="font-semibold">
+                            {app.deliveryOption === 'PRIVATE_MENTORSHIP'
+                              ? '1-on-1 Private'
+                              : 'Public Group'}
+                          </span>
+                          <span>·</span>
+                          <span className="font-bold text-slate-700 dark:text-slate-200">
+                            {app.enrollmentStatus.replace(/_/g, ' ')}
+                          </span>
+                          {app.approvedFee > 0 && (
+                            <>
+                              <span>·</span>
+                              <span className="font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                                ₦{app.approvedFee.toLocaleString()} (Paid: ₦
+                                {app.amountPaid.toLocaleString()})
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        {app.emailDeliveryStatus && (
+                          <div className="mt-1 text-[10px] font-semibold text-slate-500">
+                            Email:{' '}
+                            <span
+                              className={
+                                app.emailDeliveryStatus === 'SENT'
+                                  ? 'text-emerald-600'
+                                  : app.emailDeliveryStatus === 'FAILED'
+                                  ? 'text-red-600'
+                                  : 'text-amber-600'
+                              }
+                            >
+                              {app.emailDeliveryStatus}
+                            </span>
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-3.5 text-[11px] text-slate-500">
+                        {app.createdAt?.toDate
+                          ? app.createdAt.toDate().toLocaleDateString()
+                          : 'Recent'}
+                      </td>
+
+                      <td className="py-3 px-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {app.enrollmentStatus === 'PENDING_ADMIN_REVIEW' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setApprovalTargetApp(app);
+                                  setApproveFeeAmount(
+                                    String(app.approvedFee > 0 ? app.approvedFee : 35000)
+                                  );
+                                  setApproveBillingCycle(app.billingCycle || 'Per Term / Cohort');
+                                  setApproveDurationWeeks(String(app.durationWeeks || 8));
+                                  setApproveAllowDeposit(false);
+                                  setApproveDepositAmount('15000');
+                                  setApproveAdminNotes('');
+                                }}
+                                className="min-h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold shadow-sm inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <UserCheck size={11} /> Approve &amp; Set Fee
+                              </button>
+                              <button
+                                type="button"
+                                disabled={loadingId === app.id}
+                                onClick={async () => {
+                                  setLoadingId(app.id);
+                                  try {
+                                    await rejectProgrammeEnrollmentAsAdmin({
+                                      enrollmentId: app.id,
+                                      rejectionReason: 'Application declined during admissions review.',
+                                    });
+                                    toast.info('Programme application rejected.');
+                                  } catch (err: any) {
+                                    toast.error(err?.message || 'Failed to reject application.');
+                                  } finally {
+                                    setLoadingId(null);
+                                  }
+                                }}
+                                className="min-h-7 px-2 bg-red-50 dark:bg-red-950/40 text-red-600 hover:bg-red-100 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <XCircle size={11} /> Reject
+                              </button>
+                            </>
+                          )}
+
+                          {app.enrollmentStatus !== 'PENDING_ADMIN_REVIEW' &&
+                            app.enrollmentStatus !== 'REJECTED' &&
+                            app.studentEmail && (
+                              <button
+                                type="button"
+                                disabled={loadingId === app.id}
+                                onClick={async () => {
+                                  setLoadingId(app.id);
+                                  try {
+                                    const res = await retryProgrammeAdmissionEmail(app.id);
+                                    if (res.emailSent) {
+                                      toast.success('Admission email sent successfully.');
+                                    } else {
+                                      toast.error(
+                                        res.emailError || 'Email delivery failed.'
+                                      );
+                                    }
+                                  } catch (err: any) {
+                                    toast.error(err?.message || 'Failed to resend email.');
+                                  } finally {
+                                    setLoadingId(null);
+                                  }
+                                }}
+                                className="min-h-7 px-2.5 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Mail size={11} /> Retry Email
+                              </button>
+                            )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+
               {/* EMPTY STATE */}
               {((activeTab === 'students' && filteredStudents.length === 0) || 
                 (activeTab === 'tutors' && filteredTutors.length === 0) || 
-                (activeTab === 'enrollments' && filteredEnrollments.length === 0)) && (
+                (activeTab === 'enrollments' && filteredEnrollments.length === 0) ||
+                (activeTab === 'programme_apps' && programmeApps.length === 0)) && (
                 <tr>
                   <td colSpan={activeTab === 'tutors' ? 5 : 4} className="py-16 text-center text-xs text-slate-400">
                     <div className="flex flex-col items-center justify-center">
                       <CheckCircle2 size={24} className="text-emerald-500 mb-1.5" />
-                      <p className="font-bold text-slate-800 dark:text-slate-200">No pending {activeTab} applications</p>
+                      <p className="font-bold text-slate-800 dark:text-slate-200">No pending {activeTab.replace(/_/g, ' ')} applications</p>
                       <p className="text-[11px] text-slate-400 mt-0.5">All incoming requests have been reviewed.</p>
                     </div>
                   </td>
@@ -854,6 +1083,182 @@ const AdminApprovals: React.FC = () => {
             setSelectedRequestForModal(null);
           }}
         />
+      )}
+
+      {/* Self-Funded Student Programme Approval & Fee Configuration Modal */}
+      {approvalTargetApp && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-5 space-y-4 border border-slate-200 dark:border-slate-800 text-xs shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="font-black text-sm text-slate-900 dark:text-white">
+                  Approve &amp; Configure Programme Fee
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {approvalTargetApp.studentName} — {approvalTargetApp.programTitle}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setApprovalTargetApp(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {approvalTargetApp.studentRegistrationType === 'school' && (
+              <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 text-[11px]">
+                <strong>School Student (Self-Funded):</strong> Approving this unlocks personal
+                student payment only. School-funded tracks and school invoices remain untouched.
+              </div>
+            )}
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setApprovingApp(true);
+                try {
+                  const normCycle = approveBillingCycle.toLowerCase();
+                  const mappedCycle: 'monthly' | 'termly' | 'cohort' | 'one_time' =
+                    normCycle.includes('month')
+                      ? 'monthly'
+                      : normCycle.includes('term')
+                      ? 'termly'
+                      : normCycle.includes('one')
+                      ? 'one_time'
+                      : 'cohort';
+                  const res = await approveProgrammeEnrollmentAsAdmin({
+                    enrollmentId: approvalTargetApp.id,
+                    approvedFee: Number(approveFeeAmount),
+                    billingCycle: mappedCycle,
+                    durationWeeks: Number(approveDurationWeeks) || 8,
+                    allowDepositAccess: approveAllowDeposit,
+                    depositAmount: approveAllowDeposit ? Number(approveDepositAmount) : 0,
+                    adminNotes: approveAdminNotes,
+                  });
+                  if (!res.emailSent) {
+                    toast.info(
+                      res.emailError ||
+                        'Approved & saved! Use Retry Email if the student has a valid email address.'
+                    );
+                  } else {
+                    toast.success('Approved & branded admission email sent to student!');
+                  }
+                  setApprovalTargetApp(null);
+                } catch (err: any) {
+                  toast.error(err?.message || 'Failed to approve programme application.');
+                } finally {
+                  setApprovingApp(false);
+                }
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Approved Tuition Fee (NGN) *
+                </label>
+                <input
+                  type="number"
+                  min={100}
+                  required
+                  value={approveFeeAmount}
+                  onChange={(e) => setApproveFeeAmount(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold tabular-nums"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Billing Cycle
+                  </label>
+                  <select
+                    value={approveBillingCycle}
+                    onChange={(e) => setApproveBillingCycle(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-semibold"
+                  >
+                    <option value="Per Term / Cohort">Per Term / Cohort</option>
+                    <option value="Monthly">Monthly</option>
+                    <option value="One-Time Full Programme">One-Time Full Programme</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Cycle Duration (Weeks)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={52}
+                    value={approveDurationWeeks}
+                    onChange={(e) => setApproveDurationWeeks(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold tabular-nums"
+                  />
+                </div>
+              </div>
+
+              <label className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 cursor-pointer">
+                <span className="font-bold text-slate-700 dark:text-slate-200">
+                  Allow Partial Deposit to Start
+                </span>
+                <input
+                  type="checkbox"
+                  checked={approveAllowDeposit}
+                  onChange={(e) => setApproveAllowDeposit(e.target.checked)}
+                  className="h-4 w-4 text-brand-red rounded"
+                />
+              </label>
+
+              {approveAllowDeposit && (
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Minimum Deposit Amount (NGN) *
+                  </label>
+                  <input
+                    type="number"
+                    min={100}
+                    required
+                    value={approveDepositAmount}
+                    onChange={(e) => setApproveDepositAmount(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold tabular-nums"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Admissions Note (Included in Email)
+                </label>
+                <textarea
+                  rows={2}
+                  value={approveAdminNotes}
+                  onChange={(e) => setApproveAdminNotes(e.target.value)}
+                  placeholder="Optional welcome message or cohort start instructions..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setApprovalTargetApp(null)}
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={approvingApp}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold disabled:opacity-50 cursor-pointer"
+                >
+                  {approvingApp && <Loader2 size={13} className="animate-spin" />}
+                  <span>Approve &amp; Send Email</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

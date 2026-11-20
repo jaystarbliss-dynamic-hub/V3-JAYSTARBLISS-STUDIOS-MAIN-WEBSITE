@@ -1,5 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
+import { enforceEntitlementOrLock } from '../../api/_lib/subscription-service';
 import { buildAttendanceRecordKey } from '../../api/_lib/jdi-assessment';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -80,7 +81,10 @@ export const handler: Handler = async (event) => {
   try {
     const raw = token(event);
     if (!raw) return json(401, { error: 'Authentication required.' });
-    const decoded = await adminAuth.verifyIdToken(raw);
+    const targetChildId = text(event.queryStringParameters?.studentId, 200) || null;
+    const entitlementGuard = await enforceEntitlementOrLock(event, { targetChildId });
+    if (!entitlementGuard.ok) return entitlementGuard.response;
+    const decoded = entitlementGuard.decoded;
     const profile = await user(decoded.uid);
     const role = roleOf(profile.role);
 

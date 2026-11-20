@@ -4,10 +4,10 @@ import {
   Loader2, PlayCircle, ClipboardList, Flag, GraduationCap,
   Calendar, Check, UserCheck, ArrowRight, FileText, Upload, Eye,
   Download, Printer, X, Plus, AlertCircle, Send, Folder, FolderOpen,
-  FolderTree, ChevronRight, ChevronDown, Lock, Clock
+  FolderTree, ChevronRight, ChevronDown, Lock, Clock, Compass, CreditCard
 } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, query, setDoc, where, addDoc, serverTimestamp } from 'firebase/firestore';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { db, auth } from '../../lib/firebase';
 import SEO from '../../components/ui/SEO';
 import { getEffectiveAuth } from '../../utils/impersonation';
@@ -16,6 +16,13 @@ import {
   type ProgramRecord,
   fetchAllProgramsMap,
 } from '../../lib/programHierarchy';
+import {
+  type ProgrammeEnrollmentRecord,
+  PAYABLE_ENROLLMENT_STATUSES,
+  fetchStudentProgrammeEnrollments,
+  resolveStudentPortalEligibility,
+} from '../../lib/programmeEnrollments';
+import PortalProgramExplorer from '../../components/portal/PortalProgramExplorer';
 import {
   type ComputedProgramNodeProgress,
   type StudentPathwayProgressSummary,
@@ -95,6 +102,38 @@ const toModule = (id: string, data: Record<string, any>, index: number): CourseM
 
 export const PortalCourses: React.FC = () => {
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<'tracks' | 'explore'>(() =>
+    searchParams.get('tab') === 'explore' ||
+    searchParams.get('programId') ||
+    searchParams.get('programSlug')
+      ? 'explore'
+      : 'tracks'
+  );
+  const [studentEligibility, setStudentEligibility] = useState<
+    ReturnType<typeof resolveStudentPortalEligibility>
+  >({
+    registrationType: 'individual',
+    isParentManagedChild: false,
+    canSelfDiscoverAndEnroll: false,
+    isSchoolStudent: false,
+  });
+  const [studentProfileMeta, setStudentProfileMeta] = useState<{
+    uid: string;
+    studentDocId: string;
+    name: string;
+    email: string;
+    schoolId: string;
+    schoolName: string;
+  }>({
+    uid: '',
+    studentDocId: '',
+    name: 'Student',
+    email: '',
+    schoolId: '',
+    schoolName: '',
+  });
+  const [selfFundedEnrollments, setSelfFundedEnrollments] = useState<ProgrammeEnrollmentRecord[]>([]);
   const [modules, setModules] = useState<CourseModule[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -206,25 +245,66 @@ export const PortalCourses: React.FC = () => {
       const effectiveStudentId = String(
         studentDocId || studentRecord?.id || currentUid || ''
       ).trim();
-      setResolvedStudentId(effectiveStudentId);
-      setResolvedStudentName(
-        studentRecord?.fullName ||
-          studentRecord?.studentName ||
-          studentRecord?.name ||
-          currentUser?.displayName ||
-          'Student'
-      );
+      const eligibility = resolveStudentPortalEligibility({
+        registrationType:
+          studentRecord?.registrationType ||
+          sessionStorage.getItem('studentRegistrationType'),
+        registrationSource:
+          studentRecord?.registrationSource ||
+          sessionStorage.getItem('studentRegistrationSource'),
+        parentId:
+          studentRecord?.parentId ||
+          sessionStorage.getItem('parentId') ||
+          sessionStorage.getItem('studentParentId'),
+        parentUid: studentRecord?.parentUid,
+        schoolId:
+          studentRecord?.schoolId ||
+          sessionStorage.getItem('schoolId'),
+        isIndependent: studentRecord?.isIndependent,
+      });
+      setStudentEligibility(eligibility);
+      if (eligibility.isParentManagedChild) {
+        setActiveTab('tracks');
+      }
 
-      // 2. Fetch full recursive programme hierarchy + student progress + prior-learning recognitions
-      const [allProgramsMap, progressRecs, priorRecs] = await Promise.all([
+      const resolvedName =
+        studentRecord?.fullName ||
+        studentRecord?.studentName ||
+        studentRecord?.name ||
+        currentUser?.displayName ||
+        sessionStorage.getItem('userName') ||
+        'Student';
+      const resolvedEmail =
+        studentRecord?.email ||
+        currentUser?.email ||
+        sessionStorage.getItem('userEmail') ||
+        '';
+      setStudentProfileMeta({
+        uid: currentUid || '',
+        studentDocId: effectiveStudentId,
+        name: resolvedName,
+        email: resolvedEmail,
+        schoolId: String(studentRecord?.schoolId || sessionStorage.getItem('schoolId') || ''),
+        schoolName: String(studentRecord?.schoolName || sessionStorage.getItem('schoolName') || ''),
+      });
+
+      setResolvedStudentId(effectiveStudentId);
+      setResolvedStudentName(resolvedName);
+
+      // 2. Fetch full recursive programme hierarchy + student progress + prior-learning recognitions + self-funded enrolments
+      const [allProgramsMap, progressRecs, priorRecs, selfEnrollments] = await Promise.all([
         fetchAllProgramsMap(),
         effectiveStudentId ? fetchStudentProgressRecords(effectiveStudentId) : Promise.resolve([]),
         effectiveStudentId
           ? fetchStudentPriorLearningRecognitions(effectiveStudentId)
           : Promise.resolve([]),
+        currentUid && eligibility.canSelfDiscoverAndEnroll
+          ? fetchStudentProgrammeEnrollments(currentUid).catch(() => [])
+          : Promise.resolve([]),
       ]);
 
       setProgramsMap(allProgramsMap);
+      setSelfFundedEnrollments(selfEnrollments);
 
       // Expand all visible nodes by default
       const allIds = new Set<string>();
@@ -379,11 +459,66 @@ export const PortalCourses: React.FC = () => {
         noindex={true}
       />
 
-      {/* Compact Track & Scratch IDE Toolbar */}
+      {/* Compact Track, Tabs & Scratch IDE Toolbar */}
       <div className="bg-white dark:bg-[#0c1220] rounded-2xl border border-gray-200/80 dark:border-slate-800 p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-          <GraduationCap size={16} className="text-brand-red shrink-0" />
-          <span>Active Track: <strong className="text-slate-900 dark:text-white font-bold">{studentTrackTitle}</strong></span>
+        <div className="flex flex-wrap items-center gap-3">
+          {studentEligibility.canSelfDiscoverAndEnroll && (
+            <div
+              className="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700"
+              role="tablist"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'tracks'}
+                onClick={() => {
+                  setActiveTab('tracks');
+                  const next = new URLSearchParams(searchParams);
+                  next.delete('tab');
+                  next.delete('programId');
+                  next.delete('programSlug');
+                  setSearchParams(next, { replace: true });
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  activeTab === 'tracks'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <BookOpen size={13} />
+                <span>My Learning Tracks</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'explore'}
+                onClick={() => {
+                  setActiveTab('explore');
+                  const next = new URLSearchParams(searchParams);
+                  next.set('tab', 'explore');
+                  setSearchParams(next, { replace: true });
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  activeTab === 'explore'
+                    ? 'bg-[#B91C1C] text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Compass size={13} />
+                <span>Explore Programmes</span>
+              </button>
+            </div>
+          )}
+
+          <div className="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+            <GraduationCap size={16} className="text-brand-red shrink-0" />
+            <span>
+              Active Track:{' '}
+              <strong className="text-slate-900 dark:text-white font-bold">
+                {studentTrackTitle}
+              </strong>
+            </span>
+          </div>
         </div>
 
         <a 
@@ -396,15 +531,87 @@ export const PortalCourses: React.FC = () => {
         </a>
       </div>
 
-      {loading ? (
+      {/* Approved Self-Funded Enrolments Awaiting Payment Strip */}
+      {studentEligibility.canSelfDiscoverAndEnroll &&
+        selfFundedEnrollments.some((e) =>
+          PAYABLE_ENROLLMENT_STATUSES.has(e.enrollmentStatus)
+        ) && (
+          <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-0.5 text-xs">
+              <div className="font-extrabold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                <CreditCard size={15} />
+                <span>Approved Programme Ready for Payment</span>
+              </div>
+              <p className="text-emerald-800/90 dark:text-emerald-300/90">
+                {(() => {
+                  const firstPayable = selfFundedEnrollments.find((e) =>
+                    PAYABLE_ENROLLMENT_STATUSES.has(e.enrollmentStatus)
+                  )!;
+                  return `${firstPayable.programTitle} is approved — outstanding balance ₦${Number(
+                    firstPayable.remainingBalance || firstPayable.approvedFee || 0
+                  ).toLocaleString()}.`;
+                })()}
+              </p>
+            </div>
+            <Link
+              to={`/portal/student/payments?enrollmentId=${encodeURIComponent(
+                selfFundedEnrollments.find((e) =>
+                  PAYABLE_ENROLLMENT_STATUSES.has(e.enrollmentStatus)
+                )!.id
+              )}`}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shrink-0"
+            >
+              <CreditCard size={13} />
+              <span>Continue to Payment</span>
+            </Link>
+          </div>
+        )}
+
+      {studentEligibility.canSelfDiscoverAndEnroll && activeTab === 'explore' ? (
+        <PortalProgramExplorer
+          mode="student"
+          initialProgramId={searchParams.get('programId')}
+          initialProgramSlug={searchParams.get('programSlug')}
+          studentContext={{
+            studentUid: studentProfileMeta.uid,
+            studentDocId: studentProfileMeta.studentDocId || null,
+            studentName: studentProfileMeta.name,
+            studentEmail: studentProfileMeta.email || null,
+            studentOriginType:
+              studentEligibility.registrationType === 'school' ? 'school' : 'individual',
+            schoolId: studentProfileMeta.schoolId || null,
+            schoolName: studentProfileMeta.schoolName || null,
+            existingEnrollments: selfFundedEnrollments,
+            onEnrollmentSubmitted: () => {
+              if (studentProfileMeta.uid) {
+                void fetchStudentProgrammeEnrollments(studentProfileMeta.uid)
+                  .then(setSelfFundedEnrollments)
+                  .catch(() => undefined);
+              }
+            },
+          }}
+        />
+      ) : loading ? (
         <div className="flex items-center justify-center py-24 text-gray-500">
           <Loader2 className="animate-spin mr-2" size={22} /> Loading your assigned courses…
         </div>
       ) : message && !modules.length ? (
-        <div className="p-12 text-center rounded-3xl border border-dashed border-gray-200 dark:border-slate-800 text-sm text-gray-500 bg-white dark:bg-[#0c1220]">
-          <BookOpen size={32} className="mx-auto text-slate-400 mb-3" />
+        <div className="p-12 text-center rounded-3xl border border-dashed border-gray-200 dark:border-slate-800 text-sm text-gray-500 bg-white dark:bg-[#0c1220] space-y-3">
+          <BookOpen size={32} className="mx-auto text-slate-400" />
           <p className="font-bold text-slate-700 dark:text-slate-300">{message}</p>
-          <p className="text-xs text-slate-400 mt-1">Contact your institution administrator or tutor to assign your curriculum track.</p>
+          <p className="text-xs text-slate-400">
+            Contact your institution administrator or tutor to assign your curriculum track.
+          </p>
+          {studentEligibility.canSelfDiscoverAndEnroll && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('explore')}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
+            >
+              <Compass size={14} />
+              <span>Explore Available Programmes</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-6">

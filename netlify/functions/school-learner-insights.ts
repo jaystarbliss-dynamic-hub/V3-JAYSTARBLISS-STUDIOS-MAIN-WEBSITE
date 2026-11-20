@@ -1,6 +1,7 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
 import { computeExamMaxScore, isAttemptResultReleased, normalizeClassName, normalizeWorkType, resolvePartnerSchoolName } from '../../api/_lib/jdi-assessment.js';
+import { enforceEntitlementOrLock } from '../../api/_lib/subscription-service';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -118,6 +119,8 @@ async function queryBySchoolAliases(collectionName: string, aliases: string[]) {
 
 export const handler: Handler = async event => {
   if (event.httpMethod !== 'GET') return json(405, { error: 'Method Not Allowed' });
+  const entitlementGuard = await enforceEntitlementOrLock(event);
+  if (!entitlementGuard.ok) return entitlementGuard.response;
   try {
     const header = event.headers?.authorization || event.headers?.Authorization || '';
     if (!header.startsWith('Bearer ')) return json(401, { error: 'Authentication required.' });

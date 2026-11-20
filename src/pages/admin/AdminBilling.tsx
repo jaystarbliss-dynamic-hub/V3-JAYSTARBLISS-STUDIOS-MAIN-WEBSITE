@@ -31,6 +31,7 @@ import { TransferToTutorModal } from '../../components/portal/TransferToTutorMod
 import { ParentTuitionModal } from '../../components/portal/ParentTuitionModal';
 import type { UnifiedParentStudent } from '../../components/portal/ParentTuitionModal';
 import { TutorAllocationModal } from '../../components/portal/TutorAllocationModal';
+import { AdminSubscriptionGuardrailsPanel } from '../../components/admin/AdminSubscriptionGuardrailsPanel';
 import { formatCurrency, generatePdfReceipt, generatePdfStatement } from '../../lib/receiptGenerator';
 import type { TransactionReceiptData } from '../../lib/receiptGenerator';
 
@@ -46,7 +47,7 @@ export interface ParentFamilyGroup {
 
 type Plan = Record<string, any> & { id: string };
 type Policy = { percentage: string; flat: string; cap: string; waiveFlatBelow?: string; enabled: boolean };
-type ActiveView = 'hub' | 'transactions' | 'monthly' | 'schools' | 'tutors' | 'policies' | 'parents';
+type ActiveView = 'hub' | 'transactions' | 'monthly' | 'schools' | 'tutors' | 'policies' | 'parents' | 'subscriptions';
 
 const money = (v: any) => formatNaira(Number(v || 0));
 const monthKey = (v: any) => { 
@@ -1159,6 +1160,15 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
   }
 
   const renderViewContent = () => {
+    if (activeView === 'subscriptions') {
+      return (
+        <AdminSubscriptionGuardrailsPanel
+          onBack={() => setActiveView('hub')}
+          onRefreshParent={() => void load()}
+        />
+      );
+    }
+
     // SUB-VIEW: Transaction History Page
     if (activeView === 'transactions') {
     return (
@@ -2880,6 +2890,7 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {[
+          ['subscriptions', 'Subscription Guardrails & Manual Payments', 'Manage 7-day grace periods, locked portals, record manual bank/cash payments, overrides, reminders, and test data reset.'],
           ['parents', 'Parent Enrollment & Billing', 'Set student plans, billing and tutor allocations for parent-linked students.'],
           ['transactions', 'Transaction History', 'Review verified financial transactions and receipts.'],
           ['monthly', 'Monthly Breakdown', 'Review financial activity by period.'],

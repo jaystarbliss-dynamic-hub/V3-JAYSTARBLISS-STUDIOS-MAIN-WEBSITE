@@ -9,9 +9,18 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import { isStudentClassMatch } from '../utils/classMatching';
 import { CANONICAL_CLASSES, normalizeClassList, normalizeClassName } from './classes';
+import {
+  isHistoricalOccurrence,
+  planOccurrenceLinkUpdates,
+  resolveOccurrenceMeetingLink,
+  type MeetingLinkSource,
+  type MeetingLinkUpdateScope,
+  type ScheduleOccurrenceLinkView,
+} from '../../api/_lib/schedule-link-planner';
+import { getLagosDateKey } from '../../api/_lib/subscription-core';
 
 export interface MeetingLinkValidation {
   valid: boolean;
@@ -830,60 +839,173 @@ export function addMinutesToTime(startTime: string, durationMinutes: number): st
   return `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
 }
 
+export interface ScheduleLinkUpdateResult {
+  updatedCount: number;
+  skippedHistoricalCount: number;
+  skippedCustomOverrideCount: number;
+  scope: MeetingLinkUpdateScope;
+  normalizedUrl: string;
+  platform: string;
+}
+
 /**
- * Updates the meeting link across an entire recurring schedule series (`scheduleGroupId`) or single session.
+ * Updates per-session or recurring future meeting links while strictly protecting
+ * historical/completed occurrences and preserving custom overrides when requested.
+ * Calls the authoritative server endpoint (`PATCH /.netlify/functions/class-schedules`)
+ * with safe client fallback for preview environments.
+ */
+export async function updateScheduleMeetingLinkWithScope(params: {
+  scheduleId: string;
+  scheduleGroupId?: string;
+  meetingLink: string;
+  scope?: MeetingLinkUpdateScope;
+  selectedOccurrenceIds?: string[];
+  applyToSeries?: boolean;
+  actorUid?: string;
+  actorName?: string;
+  actorRole?: 'ADMIN' | 'TUTOR';
+}): Promise<ScheduleLinkUpdateResult> {
+  const scope: MeetingLinkUpdateScope =
+    params.scope || (params.applyToSeries ? 'ALL_FUTURE_INHERITED' : 'SINGLE');
+
+  if (scope !== 'RESET_TO_DEFAULT' && params.meetingLink.trim()) {
+    const linkCheck = validateMeetingLink(params.meetingLink);
+    if (!linkCheck.valid) {
+      throw new Error(linkCheck.error || 'Please enter a valid meeting URL.');
+    }
+  }
+
+  // Primary authoritative server path (enforces assigned tutor / admin RBAC & audit trail)
+  try {
+    const token = await auth.currentUser?.getIdToken();
+    if (token) {
+      const resp = await fetch('/.netlify/functions/class-schedules', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: 'update_meeting_link',
+          scheduleId: params.scheduleId,
+          scheduleGroupId: params.scheduleGroupId || null,
+          meetingLink: params.meetingLink,
+          scope,
+          selectedOccurrenceIds: params.selectedOccurrenceIds || [],
+        }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        return {
+          updatedCount: Number(data?.updatedCount || 0),
+          skippedHistoricalCount: Number(data?.skippedHistoricalCount || 0),
+          skippedCustomOverrideCount: Number(data?.skippedCustomOverrideCount || 0),
+          scope: (data?.scope as MeetingLinkUpdateScope) || scope,
+          normalizedUrl: String(data?.normalizedUrl || ''),
+          platform: String(data?.platform || 'Online Class'),
+        };
+      }
+      // Propagate real authorization/validation/lockdown errors instead of bypassing server security
+      if (resp.status === 400 || resp.status === 401 || resp.status === 403 || resp.status === 423) {
+        const errBody = await resp.json().catch(() => ({}));
+        throw new Error(errBody?.error || 'You do not have permission to modify this class meeting link.');
+      }
+    }
+  } catch (err: any) {
+    // Re-throw explicit API security/validation errors
+    if (
+      err?.message &&
+      !String(err.message).toLowerCase().includes('failed to fetch') &&
+      !String(err.message).toLowerCase().includes('networkerror') &&
+      !String(err.message).toLowerCase().includes('unexpected token')
+    ) {
+      throw err;
+    }
+  }
+
+  // Client-side Firestore fallback using the exact same pure planner
+  const targetRef = doc(db, 'classSchedules', params.scheduleId);
+  const targetSnap = await getDoc(targetRef);
+  if (!targetSnap.exists()) {
+    throw new Error('Class schedule session not found.');
+  }
+  const targetData = targetSnap.data() as Record<string, any>;
+  const groupId = params.scheduleGroupId || targetData.scheduleGroupId || '';
+
+  let occurrences: ScheduleOccurrenceLinkView[] = [
+    { id: targetSnap.id, ...(targetData as any) },
+  ];
+
+  if (scope !== 'SINGLE' && scope !== 'RESET_TO_DEFAULT' && groupId) {
+    const snap = await getDocs(
+      query(collection(db, 'classSchedules'), where('scheduleGroupId', '==', groupId))
+    );
+    if (!snap.empty) {
+      occurrences = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+    }
+  }
+
+  const nowLagosDateKey = getLagosDateKey(new Date());
+  const planned = planOccurrenceLinkUpdates({
+    occurrences,
+    targetOccurrenceId: params.scheduleId,
+    selectedOccurrenceIds: params.selectedOccurrenceIds,
+    scope,
+    newLink: params.meetingLink,
+    nowLagosDateKey,
+  });
+
+  const nowIso = new Date().toISOString();
+  for (let i = 0; i < planned.patches.length; i += 300) {
+    const chunk = planned.patches.slice(i, i + 300);
+    const batch = writeBatch(db);
+    chunk.forEach((patch) => {
+      const updatePayload: Record<string, any> = {
+        meetingLink: patch.meetingLink,
+        linkSource: patch.linkSource,
+        platform: patch.platform,
+        updatedAt: serverTimestamp(),
+        updatedByUid: params.actorUid || null,
+        updatedByName: params.actorName || null,
+        updatedByRole: params.actorRole || 'TUTOR',
+        meetingLinkUpdatedByUid: params.actorUid || null,
+        meetingLinkUpdatedByName: params.actorName || null,
+        meetingLinkUpdatedAt: nowIso,
+      };
+      if (patch.defaultMeetingLink !== undefined) {
+        updatePayload.defaultMeetingLink = patch.defaultMeetingLink;
+      }
+      batch.update(doc(db, 'classSchedules', patch.id), updatePayload);
+    });
+    await batch.commit();
+  }
+
+  return {
+    updatedCount: planned.patches.length,
+    skippedHistoricalCount: planned.skippedHistoricalCount,
+    skippedCustomOverrideCount: planned.skippedCustomOverrideCount,
+    scope,
+    normalizedUrl: planned.normalizedUrl,
+    platform: planned.platform,
+  };
+}
+
+/**
+ * Backwards-compatible wrapper returning updated document count.
  */
 export async function updateScheduleMeetingLink(params: {
   scheduleId: string;
   scheduleGroupId?: string;
   meetingLink: string;
   applyToSeries?: boolean;
+  scope?: MeetingLinkUpdateScope;
+  selectedOccurrenceIds?: string[];
   actorUid?: string;
   actorName?: string;
   actorRole?: 'ADMIN' | 'TUTOR';
 }): Promise<number> {
-  const linkCheck = validateMeetingLink(params.meetingLink);
-  if (params.meetingLink.trim() && !linkCheck.valid) {
-    throw new Error(linkCheck.error || 'Please enter a valid meeting URL.');
-  }
-
-  const cleanUrl = params.meetingLink.trim() ? linkCheck.normalizedUrl : '';
-  const platform = linkCheck.platform;
-
-  if (params.applyToSeries && params.scheduleGroupId) {
-    const snap = await getDocs(
-      query(collection(db, 'classSchedules'), where('scheduleGroupId', '==', params.scheduleGroupId))
-    );
-    if (!snap.empty) {
-      const docs = snap.docs;
-      for (let i = 0; i < docs.length; i += 300) {
-        const chunk = docs.slice(i, i + 300);
-        const batch = writeBatch(db);
-        chunk.forEach((d) => {
-          batch.update(doc(db, 'classSchedules', d.id), {
-            meetingLink: cleanUrl,
-            platform,
-            updatedAt: serverTimestamp(),
-            updatedByUid: params.actorUid || null,
-            updatedByName: params.actorName || null,
-            updatedByRole: params.actorRole || 'TUTOR',
-          });
-        });
-        await batch.commit();
-      }
-      return docs.length;
-    }
-  }
-
-  await updateDoc(doc(db, 'classSchedules', params.scheduleId), {
-    meetingLink: cleanUrl,
-    platform,
-    updatedAt: serverTimestamp(),
-    updatedByUid: params.actorUid || null,
-    updatedByName: params.actorName || null,
-    updatedByRole: params.actorRole || 'TUTOR',
-  });
-  return 1;
+  const result = await updateScheduleMeetingLinkWithScope(params);
+  return result.updatedCount;
 }
 
 export const MeetingLinkValidation = {};
@@ -893,5 +1015,14 @@ export const AuthorizedSchoolOption = {};
 export const PrivateStudentOption = {};
 export const TutorSchedulingScope = {};
 
-export { CANONICAL_CLASSES, normalizeClassList, normalizeClassName };
+export {
+  CANONICAL_CLASSES,
+  normalizeClassList,
+  normalizeClassName,
+  resolveOccurrenceMeetingLink,
+  isHistoricalOccurrence,
+  getLagosDateKey,
+  type MeetingLinkSource,
+  type MeetingLinkUpdateScope,
+};
 

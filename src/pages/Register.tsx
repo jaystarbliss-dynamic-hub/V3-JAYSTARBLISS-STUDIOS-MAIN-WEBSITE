@@ -22,6 +22,14 @@ import { useStandalonePWA } from '../utils/pwa';
 import { useToast } from '../contexts/ToastContext';
 import CyberLiquidButton from '../components/portal/CyberLiquidButton';
 import portalWallpaper from '../assets/jdi login bg.png';
+import {
+  type ProgramRecord,
+  fetchAllProgramsMap,
+  getProgramBreadcrumbs,
+  isProgramPubliclyEnrollable,
+} from '../lib/programHierarchy';
+import { submitStudentProgrammeApplication } from '../lib/programmeEnrollments';
+import { buildPortalProgramExplorePath, resolveProgramSlug } from '../lib/sharing';
 import './Portal.css';
 import './SecurePortalTheme.css';
 
@@ -173,13 +181,53 @@ const Register: React.FC = () => {
     }
   };
 
-  // URL mode initialization
+  // Programme interest carried from external programme link
+  const [preselectedProgram, setPreselectedProgram] = useState<ProgramRecord | null>(null);
+  const [preselectedBreadcrumb, setPreselectedBreadcrumb] = useState<string>('');
+
+  // URL mode & programme preselection initialization
   useEffect(() => {
     const urlMode = searchParams.get('mode');
     if (urlMode === 'tutor' || urlMode === 'student' || urlMode === 'parent') {
       setMode(urlMode);
       setCurrentStepIndex(1); // Skip to basic details if mode is in URL
     }
+
+    const qProgId = searchParams.get('programId');
+    const qProgSlug = searchParams.get('programSlug');
+    if (!qProgId && !qProgSlug) return;
+
+    let mounted = true;
+    void fetchAllProgramsMap()
+      .then((map) => {
+        if (!mounted) return;
+        const slugLower = String(qProgSlug || '').trim().toLowerCase();
+        let found: ProgramRecord | undefined = qProgId ? map.get(qProgId) : undefined;
+        if (!found && slugLower) {
+          for (const p of map.values()) {
+            if (p.slug.toLowerCase() === slugLower || p.id.toLowerCase() === slugLower) {
+              found = p;
+              break;
+            }
+          }
+        }
+        if (found && isProgramPubliclyEnrollable(found)) {
+          setPreselectedProgram(found);
+          setPreselectedBreadcrumb(
+            getProgramBreadcrumbs(found.id, map)
+              .map((c) => c.title)
+              .join(' › ')
+          );
+          setSelectedSubjects((prev) =>
+            prev.includes(found!.title) ? prev : [found!.title, ...prev]
+          );
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      mounted = false;
+    };
   }, [searchParams]);
 
   // Steps definition
@@ -411,6 +459,7 @@ const Register: React.FC = () => {
           notes: parentNotes.trim(),
           children: [],
           emailVerified: false,
+          onboardingTourEligible: true,
           createdAt: serverTimestamp()
         };
         
@@ -432,8 +481,15 @@ const Register: React.FC = () => {
         setSuccess('Account created successfully! A verification email has been sent.');
         toast.success('Account created! Welcome to Jaystarbliss Studios.');
         
+        const parentNextPath = preselectedProgram
+          ? buildPortalProgramExplorePath({
+              role: 'parent',
+              programId: preselectedProgram.id,
+              programSlug: resolveProgramSlug(preselectedProgram),
+            })
+          : '/portal/parent';
         setTimeout(() => {
-          navigate('/portal/parent');
+          navigate(parentNextPath);
         }, 1200);
       } catch (err: any) {
         let msg = 'Registration failed. Please try again.';
@@ -470,10 +526,18 @@ const Register: React.FC = () => {
           registrationType: 'individual',
           studentType: 'personal',
           subjects: selectedSubjects,
+          ...(preselectedProgram
+            ? {
+                interestedProgramId: preselectedProgram.id,
+                interestedProgramSlug: resolveProgramSlug(preselectedProgram),
+                interestedProgramTitle: preselectedProgram.title,
+              }
+            : {}),
           goals: studentGoals.trim(),
           status: 'ACTIVE',
           accountStatus: 'ACTIVE',
           emailVerified: false,
+          onboardingTourEligible: true,
           createdAt: serverTimestamp()
         };
 
@@ -494,17 +558,48 @@ const Register: React.FC = () => {
           ...data
         });
 
+        // If user registered from a programme share/details link, create a PENDING_ADMIN_REVIEW application (never auto-admitted or paid)
+        if (preselectedProgram) {
+          await submitStudentProgrammeApplication({
+            studentUid: cred.user.uid,
+            studentDocId: cred.user.uid,
+            studentName: fullName.trim(),
+            studentEmail: email.trim().toLowerCase(),
+            studentRegistrationType: 'individual',
+            programId: preselectedProgram.id,
+            programSlug: preselectedProgram.slug || preselectedProgram.id,
+            programTitle: preselectedProgram.title,
+            parentProgramId: preselectedProgram.parentProgramId || null,
+            breadcrumbPath: preselectedBreadcrumb || preselectedProgram.title,
+            deliveryOption: 'PUBLIC_GROUP',
+            source: 'PUBLIC_REGISTER',
+          }).catch((e) => console.warn('Initial programme application creation notice:', e));
+        }
+
         sessionStorage.setItem('userId', cred.user.uid);
         sessionStorage.setItem('userRole', 'student');
+        sessionStorage.setItem('studentRegistrationType', 'individual');
+        sessionStorage.setItem('studentDocId', cred.user.uid);
         sessionStorage.setItem('userEmail', email.trim().toLowerCase());
         sessionStorage.setItem('userName', fullName.trim());
         sessionStorage.setItem('studentUsername', unameCheck.cleanUsername);
 
-        setSuccess('Student account created successfully! Welcome to your learning portal.');
+        setSuccess(
+          preselectedProgram
+            ? `Student account created and your application for ${preselectedProgram.title} is now pending admin review!`
+            : 'Student account created successfully! Welcome to your learning portal.'
+        );
         toast.success('Student account created! Redirecting to student hub...');
         
+        const studentNextPath = preselectedProgram
+          ? buildPortalProgramExplorePath({
+              role: 'student',
+              programId: preselectedProgram.id,
+              programSlug: resolveProgramSlug(preselectedProgram),
+            })
+          : '/portal/student';
         setTimeout(() => {
-          navigate('/portal/student');
+          navigate(studentNextPath);
         }, 1200);
       } catch (err: any) {
         let msg = 'Registration failed. Please try again.';
@@ -552,6 +647,7 @@ const Register: React.FC = () => {
               status: 'PENDING',
               approvalStatus: 'pending',
               publicProfileStatus: 'PENDING_REVIEW',
+              onboardingTourEligible: true,
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             }, { merge: true }).catch(() => null);
@@ -698,6 +794,31 @@ const Register: React.FC = () => {
             <span className="text-xs font-semibold text-slate-300">
               {currentStep.title} ({mode.toUpperCase()})
             </span>
+          </div>
+        )}
+
+        {/* SELECTED PROGRAMME INTEREST BANNER */}
+        {preselectedProgram && (
+          <div className="mx-6 mt-3 p-3 rounded-xl bg-red-950/55 border border-red-500/35 text-xs flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-wider text-red-300">
+                Selected Programme Interest
+              </div>
+              <div className="font-bold text-white truncate">{preselectedProgram.title}</div>
+              {preselectedBreadcrumb && (
+                <div className="text-[10px] text-slate-300 truncate">{preselectedBreadcrumb}</div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setPreselectedProgram(null);
+                setPreselectedBreadcrumb('');
+              }}
+              className="text-[10px] font-bold text-slate-300 hover:text-white underline shrink-0 cursor-pointer"
+            >
+              Clear
+            </button>
           </div>
         )}
 

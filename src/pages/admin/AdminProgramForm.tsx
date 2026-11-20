@@ -80,6 +80,7 @@ const AdminProgramForm: React.FC = () => {
     nodeType: initialNodeType as ProgramNodeType,
     canContainChildren: true,
     isEnrollable: initialNodeType !== 'CONTAINER',
+    showAsStandalone: false,
     isRequired: true,
     sortOrder: 1,
     prerequisiteProgramIds: [] as string[],
@@ -156,6 +157,7 @@ const AdminProgramForm: React.FC = () => {
                 typeof rawData.isEnrollable === 'boolean'
                   ? rawData.isEnrollable
                   : nodeType !== 'CONTAINER',
+              showAsStandalone: Boolean(rawData.showAsStandalone === true),
               isRequired:
                 typeof rawData.isRequired === 'boolean' ? rawData.isRequired : true,
               sortOrder:
@@ -381,6 +383,7 @@ const AdminProgramForm: React.FC = () => {
         nodeType: formData.nodeType,
         canContainChildren: Boolean(formData.canContainChildren),
         isEnrollable: formData.nodeType === 'CONTAINER' ? false : Boolean(formData.isEnrollable),
+        showAsStandalone: Boolean(formData.showAsStandalone),
         isRequired: Boolean(formData.isRequired),
         isPublished,
         isArchived,
@@ -719,6 +722,26 @@ const AdminProgramForm: React.FC = () => {
                 />
               </label>
             </div>
+
+            {formData.parentProgramId && (
+              <label className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 cursor-pointer">
+                <div>
+                  <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Also Show Independently in Top-Level Catalogue
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Off by default — nested programmes stay organized inside their parent container unless explicitly promoted here.
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  name="showAsStandalone"
+                  checked={formData.showAsStandalone}
+                  onChange={handleChange}
+                  className="h-4 w-4 text-brand-red rounded border-gray-300"
+                />
+              </label>
+            )}
 
             {/* Progression Rule Configuration */}
             <div className="pt-2">

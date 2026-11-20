@@ -1,5 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
+import { enforceEntitlementOrLock } from '../../api/_lib/subscription-service';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({ statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(body) });
 const token = (event: any) => { const h = event.headers?.authorization || event.headers?.Authorization || ''; return h.startsWith('Bearer ') ? h.slice(7) : ''; };
@@ -86,12 +87,18 @@ const list = async (uid: string, role: string, targetType: string, targetId: str
 export const handler: Handler = async (event) => {
   try {
     const raw = token(event); if (!raw) return json(401, { error: 'Authentication required.' });
-    const decoded = await adminAuth.verifyIdToken(raw); const user = await userRecord(decoded.uid); const role = roleOf(user.role);
+    const targetChildId = String(event.queryStringParameters?.targetId || '').trim() || null;
+    const entitlementGuard = await enforceEntitlementOrLock(event, { targetChildId });
+    if (!entitlementGuard.ok) return entitlementGuard.response;
+    const decoded = entitlementGuard.decoded; const user = await userRecord(decoded.uid); const role = roleOf(user.role);
+    const lockedChildSet = new Set(entitlementGuard.entitlement.lockedChildIds || []);
     if (event.httpMethod === 'GET') {
       const targetType = String(event.queryStringParameters?.targetType || 'STUDENT').toUpperCase();
       const targetId = String(event.queryStringParameters?.targetId || '');
       if (!['STUDENT', 'SCHOOL'].includes(targetType)) return json(400, { error: 'Invalid milestone target.' });
-      return json(200, { milestones: await list(decoded.uid, role, targetType, targetId) });
+      const items = await list(decoded.uid, role, targetType, targetId);
+      const filtered = lockedChildSet.size ? items.filter((m: any) => !lockedChildSet.has(String(m.studentId || m.targetId || ''))) : items;
+      return json(200, { milestones: filtered });
     }
     if (event.httpMethod !== 'POST') return json(405, { error: 'Method Not Allowed' });
     const body = JSON.parse(event.body || '{}'); const action = String(body.action || '').trim();

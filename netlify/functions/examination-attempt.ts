@@ -7,6 +7,7 @@ import {
   getLegacyNamedAdminDb,
 } from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { enforceEntitlementOrLock } from "../../api/_lib/subscription-service";
 
 function getAllAdminDbs() {
   const dbs = [getDefaultAdminDb(), getLegacyNamedAdminDb()].filter(Boolean);
@@ -135,6 +136,8 @@ async function notifyStaff(a: any, exam: any, attemptId: string) {
 export const handler: Handler = async event => {
   try {
     applyRequestDatabaseHeader(event.headers as any);
+    const entitlementGuard = await enforceEntitlementOrLock(event);
+    if ("response" in entitlementGuard) return entitlementGuard.response;
     const c = await user(event);
     if (!isAssessmentStudentRole(c.role)) return json(403, { error: "Student access required." });
     const path = String(event.path || "");

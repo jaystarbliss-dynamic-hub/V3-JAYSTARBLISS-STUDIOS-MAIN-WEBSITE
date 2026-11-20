@@ -1,0 +1,1440 @@
+# JAYSTARBLISS STUDIOS V3 — PROGRAMME DISCOVERY, HIERARCHY, ENROLMENT, ADMISSIONS, STUDENT BILLING, SOCIAL SHARING & PORTAL ONBOARDING
+
+## IMPLEMENTATION BRIEF FOR GOOGLE AI STUDIO
+
+You are working on the existing **Jaystarbliss Studios V3** application.
+
+Your task is to extend and refine the existing application to implement a complete programme discovery, enrolment, admissions, payment and portal onboarding experience.
+
+This is an enhancement of a functioning production application, NOT a new application or a ground-up redesign.
+
+You must first inspect the relevant existing source files, services, Firestore schemas, security rules, Netlify Functions, routing and UI components before changing anything.
+
+Do not make assumptions about how an existing feature works without checking its implementation.
+
+---
+
+# PART 1 — IMPORTANT EXISTING ARCHITECTURE AND FILES
+
+The application currently uses:
+
+- React 19, TypeScript and Vite.
+- Tailwind CSS and React Router.
+- Firebase Authentication and Firestore.
+- Netlify Functions for privileged backend operations.
+- Cloudinary for image hosting.
+- Paystack for payments.
+- Resend for transactional emails.
+- Existing role-based portal access and administration permissions.
+
+The repository contains important existing functionality that must be reused.
+
+### Programme hierarchy
+
+Inspect:
+
+- `src/lib/programHierarchy.ts`
+- `src/pages/Programs.tsx`
+- `src/pages/ProgramDetails.tsx`
+- `src/pages/admin/AdminProgramForm.tsx`
+- `src/components/admin/ProgramHierarchySelector.tsx`
+- `src/components/admin/programs-preview/hierarchyUtils.ts`
+- `src/components/admin/programs-preview/ProgrammeHierarchyView.tsx`
+
+The existing hierarchy supports:
+
+- `parentProgramId`
+- `rootProgramId`
+- `ancestorIds`
+- `nodeType`
+- `isEnrollable`
+- `isPrimaryRoot`
+- `primaryRootKey`
+
+It distinguishes `CONTAINER`, `ENROLLABLE` and `HYBRID` programme nodes.
+
+There are four canonical primary programme roots:
+
+1. Technology
+2. Music
+3. Academics
+4. Design & Graphics
+
+The application already contains canonical root resolution, recursive hierarchy utilities, catalogue URL builders, programme publication checks and newest-first sorting.
+
+**Do not recreate these utilities or replace the existing hierarchy with a second incompatible system.**
+
+### Existing programme routes
+
+- `/programs`
+- `/programs/:slug`
+
+The programme detail route already retrieves published programmes and displays details, descriptions, cover artwork and syllabus information.
+
+Enhance it rather than introducing an unrelated programme-detail system.
+
+### Existing portal routes
+
+- `/portal/student`
+- `/portal/student/courses`
+- `/portal/student/payments`
+- `/portal/parent`
+- `/portal/parent/payments`
+- `/portal/school`
+- `/portal/staff`
+
+The existing `/portal/student/courses` page is the Student Learning & Tracks experience.
+
+Inspect:
+
+- `src/pages/portal/PortalCourses.tsx`
+- `src/pages/portal/StudentDashboard.tsx`
+- `src/pages/portal/ParentDashboard.tsx`
+- `src/pages/portal/SchoolDashboard.tsx`
+- `src/components/portal/ParentLearningTracks.tsx`
+- `src/components/portal/PortalLayout.tsx`
+- `src/pages/portal/BillingCenter.tsx`
+- `src/pages/Register.tsx`
+- `src/pages/SecurePortalLogin.tsx`
+- `src/pages/admin/AdminApprovals.tsx`
+- `src/components/admin/StudentEnrollmentApprovalModal.tsx`
+
+### Existing financial infrastructure
+
+Inspect:
+
+- `src/lib/billing.ts`
+- `api/_lib/billing.ts`
+- `api/_lib/payment-reconciliation.ts`
+- `netlify/functions/billing-data.ts`
+- `netlify/functions/billing-admin.ts`
+- `netlify/functions/paystack-initialize.ts`
+- `netlify/functions/paystack-verify.ts`
+- `netlify/functions/paystack-webhook.ts`
+- `api/_lib/email.ts`
+
+The existing implementation already supports Paystack initialization, transaction verification, webhook reconciliation, payment records, parent billing and student billing.
+
+Reuse it.
+
+Do not introduce another payment gateway, bypass server-side fee validation or create a parallel payment history.
+
+### Existing promotions infrastructure
+
+Inspect:
+
+- `src/lib/promotions.ts`
+- `src/pages/admin/AdminPromotions.tsx`
+- `src/components/home/HomePromotionsCarousel.tsx`
+- `src/components/promotions/FirstVisitPromoPopup.tsx`
+- `src/components/ui/SEO.tsx`
+- `src/contexts/MetaTagsContext.tsx`
+- `netlify.toml`
+
+The promotional carousel, campaign manager and first-visit popup already exist.
+
+Enhance those systems with programme linking and social sharing rather than building replacements.
+
+---
+
+# PART 2 — PROGRAMME CATALOGUE: DISPLAY THE HIERARCHY CORRECTLY
+
+## 2.1 The problem
+
+Some programmes are not independent offerings. They are containers for other programmes.
+
+For example, a hypothetical hierarchy could look like:
+
+Technology
+- Smart Techies Programme
+  - Scratch Programming
+  - Python Programming
+  - Web Development
+  - Artificial Intelligence
+- Robotics & Engineering
+  - Robotics Fundamentals
+  - Electronics
+  - IoT Projects
+
+The current catalogue can display published, enrollable child programmes independently, even when they already belong to a parent programme.
+
+This makes the catalogue unnecessarily repetitive and does not communicate the actual learning structure.
+
+## 2.2 Required catalogue behaviour
+
+The public programme catalogue must respect the real recursive hierarchy.
+
+**A programme registered beneath another programme must not appear as an independent top-level catalogue card by default.**
+
+Instead:
+
+1. Display the appropriate parent/container programme in the main catalogue.
+2. Allow visitors to open that programme.
+3. Display its available child programmes and further nested categories.
+4. Allow visitors to select a specific child programme.
+5. Display the selected programme's complete information.
+6. Allow enrolment specifically into that selected programme.
+
+This must work recursively at every hierarchy level.
+
+### Catalogue visibility rules
+
+Implement a clear distinction between a programme being visible as a container and being eligible for enrolment.
+
+- A published top-level parent programme should be discoverable even when its own `isEnrollable` value is false, provided it has published, discoverable descendants.
+- A programme with a valid `parentProgramId` should appear beneath its actual parent, not independently at the top level.
+- A non-enrollable container should display its children but must not display a misleading enrolment button.
+- An enrollable child should display its own enrolment action.
+- A `HYBRID` programme may be both directly enrollable and contain children. Preserve both capabilities.
+- A standalone published programme with no parent should remain independently discoverable.
+- Draft, archived, unpublished and unassigned programmes must not appear in the public catalogue.
+- Never invent parent-child relationships from programme names alone.
+- Detect missing parents and circular relationships safely.
+
+If there is a legitimate administrative reason for a child programme to appear independently as well as within its parent, introduce an explicit, optional CMS setting such as `showAsStandalone`, defaulting to false. Do not make it the default behaviour.
+
+### Catalogue cards
+
+Use the existing compact catalogue-card design.
+
+Each parent card should communicate:
+
+- Programme title.
+- Featured image.
+- Brief description.
+- Primary category.
+- Number of available child programmes, where appropriate.
+- Relevant status labels.
+- A clear `Explore Programme` or `View Tracks` action.
+
+Do not turn every child into another large catalogue card.
+
+On parent programme detail pages, show children in a clean, compact and navigable layout.
+
+Provide meaningful breadcrumbs, for example:
+
+`Technology → Smart Techies → Python Programming`
+
+The visitor should always know where the selected programme sits in the larger learning ecosystem.
+
+## 2.3 Programme detail pages
+
+Enhance `src/pages/ProgramDetails.tsx`.
+
+A programme detail page should support:
+
+- Programme title.
+- Featured image.
+- Short and full descriptions.
+- Category and hierarchy breadcrumbs.
+- Programme objectives.
+- Target audience.
+- Duration.
+- Delivery modes.
+- Curriculum overview.
+- Learning outcomes.
+- Programme fees, where publicly configured.
+- Available child programmes.
+- Relevant enrolment information.
+- A clear enrolment CTA.
+- Share programme action.
+- Syllabus download where available.
+
+When visitors select a particular child programme, its detail page must open directly.
+
+The parent/container page should also make it easy to navigate back to its available children.
+
+Do not expose administrative-only information, unpublished content or internal tutor data.
+
+---
+
+# PART 3 — PROGRAMME AND ADVERTISEMENT SHARING
+
+Every published programme and every promotional campaign should be shareable through a proper URL.
+
+This is important for WhatsApp, Facebook, Instagram DMs, LinkedIn, X and other platforms.
+
+## 3.1 Programme sharing
+
+Every publicly available programme should have a stable, canonical and shareable URL.
+
+Use the existing programme route:
+
+`/programs/:slug`
+
+For example:
+
+`https://jaystarblissstudios.com/programs/python-programming`
+
+Use the actual programme slug generated or stored by the system. Do not invent URLs from titles when a valid slug already exists.
+
+Add a visible Share action to programme detail pages.
+
+The sharing interface should support:
+
+- Native device sharing using the Web Share API where available.
+- Copy Link as a fallback.
+- A success notification after copying.
+- An appropriate accessible share icon.
+
+Sharing must work on desktop and mobile.
+
+## 3.2 Social link previews
+
+When someone shares a programme link, the preview should display the actual programme's:
+
+- Title.
+- Short description.
+- Featured programme image.
+- Canonical URL.
+- Jaystarbliss Studios identity.
+
+Populate the appropriate metadata:
+
+- `og:title`
+- `og:description`
+- `og:image`
+- `og:url`
+- `og:type`
+- `twitter:card`
+- `twitter:title`
+- `twitter:description`
+- `twitter:image`
+- Canonical URL.
+
+The preview image must be the actual programme artwork, not the generic website favicon.
+
+Where appropriate, add valid `Course` or `EducationalOccupationalProgram` structured data without inventing unsupported facts.
+
+### Critical implementation requirement
+
+The current website uses a client-rendered React/Vite application.
+
+Changing document metadata with React after a page loads is not sufficient for many social-media crawlers. Some crawlers will read the initial HTML without executing the React application.
+
+Therefore, implement a crawler-accessible metadata solution for dynamic programme links.
+
+Investigate the existing Netlify architecture and implement the least disruptive reliable solution, such as:
+
+- A Netlify Edge Function that resolves published programme data and returns the correct initial HTML metadata to social crawlers.
+- A suitable prerendering solution.
+- Another verified server-rendered metadata approach compatible with the current deployment.
+
+Normal browser visitors must continue receiving the actual React application.
+
+Do not return a fake static preview or expose private programme data to crawlers.
+
+The current `MetaTagsContext.tsx` also contains a legacy `.name.ng` production URL. Reconcile canonical URL generation with the production domain already configured in `netlify.toml`. Use the configured production base URL consistently; do not generate legacy or mixed-domain share links.
+
+Test dynamic metadata using real crawler-style requests that do not execute JavaScript.
+
+## 3.3 Advertisement and campaign sharing
+
+Extend the existing `AdminPromotions` and `promotions.ts` functionality.
+
+Every campaign should have an admin-accessible `Copy Share Link` action.
+
+A campaign linked to an individual programme must resolve to the correct specific programme.
+
+Campaign behaviour:
+
+- If the campaign CTA is linked to an individual programme, its primary CTA must open that programme's detail page.
+- If linked to a catalogue root, it must open the correct root-filtered catalogue.
+- If linked to an internal page, it must open the configured internal page.
+- External links must continue using HTTPS validation.
+- Campaign sharing must preserve the association with its linked programme or destination.
+
+For programme-linked campaigns, ensure the shared link opens the correct programme rather than merely sending the visitor to the homepage.
+
+Where campaign artwork is used for a dedicated campaign share preview, make the campaign preview image available to social crawlers. Where the shared URL is the programme URL, use the programme's actual featured image.
+
+The user should never encounter a broken or generic link preview.
+
+## 3.4 Advertisement CTA configuration
+
+The existing promotions manager already supports these destination types:
+
+- `PROGRAM_CATALOG`
+- `INDIVIDUAL_PROGRAM`
+- `INTERNAL_PAGE`
+- `EXTERNAL_URL`
+
+Preserve these options.
+
+Improve the `INDIVIDUAL_PROGRAM` selector so administrators can easily select the exact published, enrollable programme they intend to advertise.
+
+Where possible, show its hierarchy breadcrumb to distinguish similarly named nested programmes.
+
+When an advertisement is linked to a particular child programme, its CTA must lead directly to that child's detail page.
+
+Do not change the existing carousel, popup scheduling or campaign publication behaviour unnecessarily.
+
+---
+
+# PART 4 — PORTAL PROGRAMME DISCOVERY AND LEARNING & TRACKS
+
+The public website catalogue is not the only place where users should discover programmes.
+
+The portal must also have a proper programme discovery experience.
+
+The purpose is to let authenticated users browse available programmes, select one and submit an enrolment request.
+
+## 4.1 Eligible portal audiences
+
+The programme discovery experience should be available to:
+
+1. Individually enrolled students.
+2. School-enrolled students.
+3. Parent or guardian accounts, with the ability to select one of their linked children for enrolment.
+
+**It must not be exposed as a self-enrolment feature to parent-enrolled children using their student accounts.**
+
+These children are enrolled and managed through their parent or guardian. Their learning progress remains accessible through the existing parent-child relationship.
+
+Do not confuse the student role with the student's registration type.
+
+A student with `role: STUDENT` may be:
+
+- Individually enrolled.
+- School enrolled.
+- Parent enrolled.
+
+These are not interchangeable.
+
+Use the actual registration and ownership fields in the existing records, including `registrationType`, `parentId`, `schoolId` and `registrationSource`, while providing safe compatibility for legacy records.
+
+## 4.2 Individual student and school student interface
+
+Use the existing `/portal/student/courses` route.
+
+Enhance the current Learning & Tracks page so that it provides two distinct experiences:
+
+**A. My Learning Tracks**
+
+This is the existing learning experience.
+
+It displays:
+
+- Programmes assigned or approved for the student.
+- Their enrolled learning units.
+- Curriculum and syllabus.
+- Progress.
+- Milestones.
+- Completion information.
+- Relevant learning resources.
+
+Preserve all existing functionality.
+
+**B. Explore Programmes**
+
+Add a new programme discovery section or tab.
+
+This should resemble the improved public catalogue, adapted to the portal.
+
+Display:
+
+- Published programme containers.
+- Their nested child programmes.
+- Programme images.
+- Descriptions.
+- Duration.
+- Available learning formats.
+- Fees, where appropriately public.
+- Programme availability labels.
+- A clear `View Programme` action.
+
+When a student opens a parent programme, they should see the available child programmes and be able to choose the exact programme they wish to enrol in.
+
+Use the same canonical hierarchy data and display rules as the public catalogue.
+
+Do not duplicate the programme database or create a separate portal-only catalogue.
+
+The available programmes should come from the existing Firestore programme collection and existing hierarchy helpers.
+
+## 4.3 School students must also be able to enrol independently
+
+This requirement is particularly important.
+
+A school student should not be restricted to the programmes already assigned to their school.
+
+A student in a partner school may discover another published Jaystarbliss programme and decide to enrol independently.
+
+For example:
+
+A student is already learning through a school-provided Technology programme.
+
+They visit Learning & Tracks, open Explore Programmes, find a separate Music programme, select it and submit a request.
+
+That request is made by the student's authenticated portal account.
+
+The new Music programme is treated as a **student-funded additional programme**, not as a new school subscription.
+
+The school must not automatically receive the bill.
+
+The student's existing school-funded programmes, institutional contract, school billing arrangements and assigned curriculum must remain untouched.
+
+The student's additional programme must have its own:
+
+- Enrolment request.
+- Approval status.
+- Approved fee.
+- Billing responsibility.
+- Payment history.
+- Payment status.
+- Renewal information.
+
+The student should be able to manage the additional programme through their own portal.
+
+Do not create a new parent account or convert the student into an individually registered student just because they are adding a self-funded programme.
+
+Maintain the original school relationship and registration type.
+
+---
+
+# PART 5 — PARENT PROGRAMME DISCOVERY AND CHILD ENROLMENT
+
+Parents should also be able to discover available programmes from their authenticated portal.
+
+Use the existing parent portal architecture.
+
+Introduce a clear `Learning & Tracks` destination for parents, preferably through the existing parent navigation and a dedicated route such as:
+
+`/portal/parent/learning-tracks`
+
+Reuse the existing `ParentLearningTracks` functionality.
+
+The parent experience should have:
+
+- Their linked children.
+- Existing learning tracks and progress.
+- An `Explore Programmes` section.
+- The same parent/container hierarchy display.
+- A child selector before submitting a new programme request.
+
+A parent selecting a programme must also select which linked child they intend to enrol.
+
+The request must be associated with the correct child and authenticated parent.
+
+Do not allow a parent to enrol a child who does not belong to their verified account.
+
+Preserve the existing parent-specific `enrollment_requests` workflow and family billing infrastructure.
+
+Parent-managed child enrolments must continue to use parent billing.
+
+Do not turn a parent-managed child into a self-paying individual student.
+
+---
+
+# PART 6 — EXTERNAL PROGRAMME LINKS, SIGN-IN AND RETURN NAVIGATION
+
+A person may discover a programme through:
+
+- The main website.
+- A WhatsApp message.
+- A shared programme link.
+- A promotional campaign.
+- A social media advertisement.
+- A direct email link.
+
+The enrolment process must preserve the exact programme they selected.
+
+## 6.1 Visitor who is not signed in
+
+Suppose someone opens:
+
+`/programs/python-programming`
+
+They read the details and click `Request Enrolment`.
+
+The application should:
+
+1. Identify the exact programme.
+2. Preserve its programme ID and slug.
+3. Direct the visitor to the correct sign-in or registration flow.
+4. Allow an existing account holder to sign in.
+5. Allow a new eligible student to create an account.
+6. After successful authentication or registration, return the user to the correct portal.
+7. Open Learning & Tracks.
+8. Automatically navigate to the relevant Explore Programmes entry.
+9. Scroll the selected programme into view.
+10. Display its enrolment option.
+
+This must also work when the visitor enters from an advertising link rather than the public programme detail page.
+
+Use safe, validated same-origin return paths or structured destination parameters.
+
+Do not accept arbitrary external redirect URLs.
+
+## 6.2 Existing account holder
+
+When a user is already authenticated and clicks Request Enrolment:
+
+- Do not force them to create another account.
+- Identify the authenticated portal role.
+- Determine whether they are an individual student, school student or parent.
+- Send them to the appropriate programme-selection and enrolment interface.
+- Preserve the selected programme.
+- Do not expose the self-enrolment process to parent-enrolled child accounts.
+
+## 6.3 Registration flow
+
+Extend `src/pages/Register.tsx`.
+
+The existing independent-student registration flow already contains age validation. Preserve the current policy: independent student registration must not become a way to bypass the existing minimum age or parent-registration requirements.
+
+When someone arrives through a programme-specific registration link, add a preselected programme interest to the registration process.
+
+The user should see the programme they expressed interest in.
+
+Where appropriate, allow them to change their selection before submitting.
+
+Store the actual programme IDs and other canonical identifiers rather than relying only on programme-name strings.
+
+After account creation:
+
+- Create or update the appropriate student profile using the existing registration architecture.
+- Preserve the existing authentication and username processes.
+- Preserve the normal student-registration audit process.
+- Submit the selected programme as an interest/enrolment request with the required ownership fields.
+- Navigate the new user to Learning & Tracks and the selected programme.
+
+Do not mark the student as admitted or paid just because their account has been created.
+
+Do not create duplicate student profiles or Firebase accounts for existing users.
+
+---
+
+# PART 7 — STUDENT PROGRAMME APPLICATION AND ADMIN APPROVAL
+
+There is an important difference between:
+
+1. Creating a portal account.
+2. Requesting admission into a programme.
+3. Being approved for that programme.
+4. Paying the approved programme fees.
+5. Gaining the programme's paid learning access.
+
+Implement those as distinct states.
+
+## 7.1 Student enrolment request
+
+When an individual or school student selects a programme and clicks `Request Enrolment`, create a proper application linked to:
+
+- Authenticated Firebase UID.
+- Canonical student document ID.
+- Student name.
+- Student email.
+- Student registration type: `individual` or `school`.
+- School ID when applicable.
+- Programme ID.
+- Programme slug.
+- Programme title snapshot.
+- Parent programme ID and hierarchy breadcrumb where appropriate.
+- Selected delivery option.
+- Requested date.
+- Application status.
+- Creation and update timestamps.
+
+For a student-initiated self-funded application, establish a dedicated and secure canonical workflow, for example:
+
+`programme_enrollments`
+
+This workflow should distinguish an application, an approved fee, a payment obligation and an active programme entitlement.
+
+Do not silently overload parent-owned `enrollment_requests` records with a new ownership model.
+
+If an existing unified collection is demonstrably more suitable after inspection, document the reason and update the existing system consistently. Do not create two competing sources of truth.
+
+## 7.2 Admin approval interface
+
+Integrate the new programme applications into the existing Admin Approvals experience.
+
+Relevant file:
+
+`src/pages/admin/AdminApprovals.tsx`
+
+Administrators should be able to see:
+
+- Student name.
+- Student email.
+- Student registration type.
+- School affiliation where relevant.
+- Selected programme.
+- Parent/container programme.
+- Requested delivery option.
+- Date requested.
+- Current status.
+
+Administrators should be able to:
+
+- Open the application.
+- Inspect the programme selected.
+- Approve the request.
+- Reject the request.
+- Enter or confirm the approved fee.
+- Choose an applicable billing cycle.
+- Configure an instalment or deposit arrangement if supported.
+- Add an internal note.
+- Record the administrator responsible.
+
+The approved amount must be an authoritative server/database value, not an amount supplied by the student through an editable browser payload.
+
+Record the approved fee and its source.
+
+## 7.3 Admission states
+
+Use explicit, consistent statuses.
+
+A suitable state progression is:
+
+- `PENDING_ADMIN_REVIEW`
+- `APPROVED_AWAITING_PAYMENT`
+- `PARTIALLY_PAID`
+- `ACTIVE`
+- `RENEWAL_DUE`
+- `REJECTED`
+- `CANCELLED`
+- `EXPIRED`
+
+Keep payment status separate from application/admission status.
+
+An approval must not automatically mean that payment has occurred.
+
+A paid programme must not be marked unpaid because of a page refresh, repeated callback or duplicate webhook.
+
+Implement idempotent approval and payment transitions.
+
+---
+
+# PART 8 — ADMISSION EMAIL AND STUDENT NOTIFICATIONS
+
+When an administrator approves a student's programme application, the student must receive a professional email informing them that they have been admitted into the selected programme.
+
+Reuse the existing Resend infrastructure and branded email templates.
+
+Relevant file:
+
+`api/_lib/email.ts`
+
+The email should contain:
+
+- Student's name.
+- Programme title.
+- Admission confirmation.
+- Approved fee.
+- Billing cycle.
+- Payment instructions.
+- Outstanding amount, where relevant.
+- A prominent `Continue to Payment` link.
+
+The payment link should open the authenticated portal's billing area and identify the exact approved programme fee.
+
+Example destination:
+
+`/portal/student/payments?enrollmentId=...`
+
+The student should sign in first if their session has expired.
+
+After signing in, the payment link must return them to the exact invoice or fee item.
+
+Also create an in-app portal notification.
+
+Use the existing notification infrastructure and do not create duplicate notifications every time an approval document is processed.
+
+Only send the admission-confirmation email after the approval has been successfully saved.
+
+Handle email delivery failures without rolling back a successfully recorded approval. Record the delivery attempt and allow safe retry.
+
+---
+
+# PART 9 — PERSONAL PROGRAMME BILLING FOR INDIVIDUAL AND SCHOOL STUDENTS
+
+This is one of the most important parts of the implementation.
+
+**A school student who independently enrols in an additional programme must be billed as an individual payer for that specific programme. The school must not be charged for it.**
+
+An individually enrolled student must also be able to manage their own programme fees.
+
+A student may have more than one funding relationship at the same time.
+
+For example:
+
+- School-provided Mathematics: school-funded.
+- School-provided Technology: school-funded.
+- Independently selected Music programme: student-funded.
+
+These must remain separate.
+
+## 9.1 Unlock the student's Billing tab when appropriate
+
+The existing student navigation currently conditionally displays `Payments & Fees` based largely on:
+
+`studentRegistrationType === 'individual'`
+
+This restriction must be extended.
+
+A student must have access to their personal Billing/Fees section when they have at least one qualifying self-funded student programme fee or approved self-funded programme enrolment.
+
+That includes relevant states such as:
+
+- Approved and awaiting payment.
+- Partially paid.
+- Active with an upcoming renewal.
+- Renewal due.
+- Outstanding balance.
+
+This must apply to both:
+
+- Individually enrolled students.
+- School-enrolled students with at least one independently funded programme.
+
+It must not unlock self-service billing for parent-enrolled children.
+
+Use authoritative enrolment/fee records to determine access rather than relying only on a manually edited browser session flag.
+
+The student's existing school-funded learning and billing arrangements must remain unchanged.
+
+## 9.2 Student Billing/Fees interface
+
+Reuse:
+
+`/portal/student/payments`
+
+and:
+
+`src/pages/portal/BillingCenter.tsx`
+
+Extend the existing billing interface to display the student's own programme fee obligations.
+
+A student should see:
+
+- Programme name.
+- Invoice or fee reference.
+- Approved total fee.
+- Amount paid.
+- Outstanding balance.
+- Payment status.
+- Billing cycle.
+- Next payment date.
+- Paid-through date.
+- Payment history.
+- Available repayment or renewal actions.
+
+Provide clear actions:
+
+- `Pay Now`
+- `Pay Outstanding Balance`
+- `Continue Payment`
+- `Renew Programme` or `Resubscribe`, where applicable.
+
+A payment button on an approved programme in Learning & Tracks should take the student directly to the corresponding fee item in Billing/Fees.
+
+The student must not need to search through unrelated billing records to find the correct payment.
+
+## 9.3 Partial payments and repayments
+
+Support the approved payment arrangement.
+
+Where the administrator has configured a deposit or instalment arrangement:
+
+- Display the amount due now.
+- Display any remaining balance.
+- Allow the student to make an eligible repayment.
+- Update the outstanding balance after verified payment.
+- Keep each successful payment in transaction history.
+- Never overwrite previous payments.
+
+Do not automatically mark a partially paid fee as fully paid.
+
+Do not permit a student to modify the approved fee or invent an instalment arrangement from the browser.
+
+All calculations must be verified server-side.
+
+## 9.4 Renewals and re-subscriptions
+
+Programmes may have monthly, termly, cohort-based or other configured billing periods.
+
+When a programme's paid-through period ends or a new payment cycle becomes due:
+
+- Show the due renewal in the student's Billing/Fees section.
+- Display the relevant programme and renewal amount.
+- Provide a `Renew Programme` or `Resubscribe` action.
+- Allow the student to complete a new Paystack checkout.
+- Record the new cycle separately from prior cycles.
+- Update the paid-through and next-due dates after verification.
+
+Do not automatically charge a student's card without an explicit supported subscription and consent arrangement.
+
+A renewal must be a traceable new billing event.
+
+## 9.5 Payment responsibilities
+
+Use explicit billing responsibility metadata.
+
+For example:
+
+- `SCHOOL_FUNDED`
+- `PARENT_FUNDED`
+- `STUDENT_SELF_FUNDED`
+
+The funding responsibility must be determined by the approved enrolment record.
+
+For the new independently requested school-student programme, use:
+
+`STUDENT_SELF_FUNDED`
+
+The `schoolId` may be retained for identification and administrative reporting, but it must not cause the school's billing account to be debited.
+
+For parent-managed enrolments, preserve the existing parent-funded model.
+
+For existing individual student billing, preserve valid legacy arrangements.
+
+Review the existing fee policies in `api/_lib/billing.ts`.
+
+If a distinct student-self-funded fee policy is needed, introduce a configurable policy with a backward-compatible default. Do not silently apply school billing rules to student-funded programmes.
+
+## 9.6 Paystack integration
+
+Reuse:
+
+- `netlify/functions/paystack-initialize.ts`
+- `netlify/functions/paystack-verify.ts`
+- `netlify/functions/paystack-webhook.ts`
+- `api/_lib/payment-reconciliation.ts`
+
+Extend these services to support the new student programme fee records.
+
+The payment server must:
+
+1. Authenticate the Firebase user.
+2. Verify the user's role and account status.
+3. Verify ownership of the student profile.
+4. Verify ownership of the approved programme enrolment.
+5. Verify that the programme fee has been approved.
+6. Resolve the authoritative payable amount from the database.
+7. Verify the requested payment does not exceed the allowed outstanding amount.
+8. Apply the relevant student payment policy.
+9. Initialize the Paystack transaction.
+10. Store sufficient verified metadata to reconcile the transaction to the correct student and programme.
+11. Reconcile the transaction after successful verification or webhook confirmation.
+12. Update the appropriate fee item and enrolment status.
+13. Dispatch the relevant notification.
+
+Never accept a student-supplied amount as the authoritative payment amount.
+
+Never mark an application paid merely because Paystack redirected the user back to the website.
+
+Successful Paystack verification and server-side reconciliation are required.
+
+Use idempotency to prevent duplicate charges or duplicated payment records.
+
+If a school student does not have a usable billing email on their authenticated student profile, collect and validate a suitable payment email before initialization. Do not silently use the school's contact email or charge the school.
+
+## 9.7 Parent billing must remain separate
+
+The existing parent billing centre has family fee handling and linked-child isolation.
+
+Do not break it.
+
+Parent-funded programme enrolments must continue to appear in the correct parent's Billing/Fees area.
+
+Do not mix parent fee items with the school student's own self-funded programme fees.
+
+Do not mix a student's school-funded institutional charges with their independently purchased programmes.
+
+---
+
+# PART 10 — LEARNING ACCESS AFTER APPROVAL AND PAYMENT
+
+The student's programme journey must be unambiguous.
+
+A useful flow is:
+
+`Programme Discovery → Enrolment Request → Admin Review → Admission Approved → Fee Created → Payment → Payment Verified → Programme Access Activated`
+
+Where an approved arrangement allows a deposit or staged payment, access must follow the actual approved access policy.
+
+Do not automatically give full paid learning access simply because a student has submitted an application.
+
+Do not block access when the applicable policy explicitly permits access after a deposit.
+
+After payment reconciliation:
+
+- Update the approved programme enrolment.
+- Add the correct programme ID to the student's canonical selected/assigned programme fields.
+- Update the relevant learning-pathway data.
+- Make the programme visible in My Learning Tracks.
+- Preserve other school-assigned or individually assigned programmes.
+- Keep the existing recursive progress engine functioning.
+- Notify the student when the programme is available.
+
+Use the existing learning-pathway engine where possible.
+
+Relevant file:
+
+`src/lib/learningPathwayEngine.ts`
+
+Do not assume that selecting a programme for discovery means the student is already enrolled in every descendant programme.
+
+Maintain correct hierarchy and direct enrolment scope.
+
+---
+
+# PART 11 — FIRST-LOGIN PORTAL TUTORIAL
+
+Create a responsive guided tutorial for newly created portal accounts.
+
+This is separate from the existing promotional first-visit popup.
+
+The purpose is to show a new user around their portal and explain where important features are located.
+
+There is currently no dedicated portal walkthrough implementation. Build one that works with the existing portal shell.
+
+## 11.1 First-time behaviour
+
+The guided tutorial should appear only when a newly created account opens the portal for the first time.
+
+It should:
+
+- Appear after authentication and portal initialization.
+- Run once for the account.
+- Be dismissible.
+- Allow the user to move backward and forward.
+- Clearly indicate the current step and total steps.
+- Save completion status.
+- Avoid appearing on every subsequent login.
+
+Persist completion against the authenticated user's profile, with a versioned field such as:
+
+- `portalTourVersion`
+- `portalTourCompletedAt`
+
+Use a safe fallback only where necessary.
+
+Do not repeatedly show the tutorial because the browser session changes.
+
+Do not force an existing user through the tutorial simply because they have cleared browser storage.
+
+## 11.2 Role-specific tutorial steps
+
+The tour should adapt to the user's actual portal role.
+
+### Individual and school students
+
+Introduce:
+
+- Dashboard.
+- Learning & Tracks.
+- My Learning Tracks.
+- Explore Programmes.
+- Programme enrolment.
+- Assessments and Work.
+- Resources.
+- Class schedules or Live Classrooms where available.
+- Payments & Fees, when unlocked.
+- Account settings and support.
+
+Explain that a school student can independently add a new programme without changing their existing school-funded programme.
+
+### Parents
+
+Introduce:
+
+- Parent Dashboard.
+- Linked children.
+- Learning & Tracks.
+- Programme discovery and child selection.
+- Assignments and assessments.
+- Class schedules.
+- Payments & Fees.
+- Notifications and support.
+
+### School administrators and tutors
+
+Introduce the relevant role-specific navigation, dashboard and key operational functions without displaying irrelevant student-only controls.
+
+## 11.3 Responsive behaviour
+
+The tutorial must work on:
+
+- Desktop.
+- Laptop.
+- Tablets.
+- Mobile phones.
+
+Do not create desktop-only tooltips positioned outside the viewport on mobile.
+
+The tutorial should:
+
+- Detect viewport dimensions.
+- Recalculate positions when resizing.
+- Scroll the targeted element into view.
+- Keep the highlighted area visible.
+- Keep the instructional panel within viewport boundaries.
+- Avoid horizontal overflow.
+- Avoid clipping behind the portal sidebar or header.
+- Respect mobile navigation drawer behaviour.
+
+On narrow screens, use an appropriately positioned bottom sheet or centered instructional panel instead of forcing a wide tooltip.
+
+The user must be able to navigate the tutorial with touch, keyboard and mouse.
+
+Use accessible labels, focus management, Escape behaviour and reduced-motion support.
+
+The experience should look professionally integrated with the existing Jaystarbliss portal design.
+
+---
+
+# PART 12 — ADMINISTRATIVE CONTROLS AND VISIBILITY
+
+Enhance the existing administration experience without adding unnecessary parallel dashboards.
+
+Administrators must be able to:
+
+- Review programme applications.
+- Approve or reject applications.
+- Set and manage approved programme fees.
+- Identify individually funded and school-student-funded enrolments.
+- See the associated school where applicable.
+- Inspect outstanding student balances.
+- Inspect repayment and renewal history.
+- See when a student has become active in a programme.
+
+Finance administrators should have the appropriate billing visibility according to the existing RBAC model.
+
+CMS administrators should continue managing programme content and promotions.
+
+Academic administrators should retain academic approval authority in accordance with existing permissions.
+
+Do not expose finance configuration to ordinary tutors or students.
+
+Maintain the existing administrative authority and audit trails.
+
+---
+
+# PART 13 — FIRESTORE SECURITY AND DATA CONSISTENCY
+
+Inspect `firestore.rules` before creating or modifying collections.
+
+The existing collections include:
+
+- `users`
+- `students`
+- `individualStudents`
+- `parents`
+- `programs`
+- `student_requests`
+- `enrollment_requests`
+- `payments`
+- `notifications`
+
+Introduce new programme-enrolment or student-fee collections only where the existing data model genuinely requires them.
+
+A suggested self-funded student enrolment record should support:
+
+- Unique enrolment ID.
+- `studentUid`.
+- `studentDocId`.
+- `studentRegistrationType`.
+- `schoolId`, where applicable.
+- `programId`.
+- `programSlug`.
+- `programTitle`.
+- `parentProgramId`.
+- `billingResponsibility`.
+- `enrollmentStatus`.
+- `paymentStatus`.
+- `approvedFee`.
+- `amountPaid`.
+- `remainingBalance`.
+- `billingCycle`.
+- `paidThrough`.
+- `nextDueDate`.
+- `createdAt`.
+- `approvedAt`.
+- `updatedAt`.
+- `approvedBy`.
+
+You may choose a better schema after reviewing the existing system, but maintain the same clear separation of ownership, admission, billing and payment states.
+
+### Security requirements
+
+- A student may submit an application only for their own authenticated account.
+- A school student may independently request an additional student-funded programme.
+- A school student must not alter their `schoolId`, programme fee or billing responsibility through client-side writes.
+- A student must not approve their own application.
+- A student must not alter the administrator-approved fee.
+- A student may access only their own self-funded programme fee records.
+- A parent may request programmes only for verified linked children.
+- Parents must not access unrelated family records.
+- Only authorized administrators may approve applications and modify approved billing terms.
+- Paystack reconciliation must use privileged server-side operations.
+- No client-side writes may mark a transaction successful.
+- Public programme reads must not expose private student or financial records.
+
+Use Firestore rules that match the actual queries and access patterns.
+
+Do not solve permission errors by broadly allowing public read/write access.
+
+Add necessary Firestore indexes.
+
+Review the security rules for existing legacy collection aliases before removing or consolidating anything.
+
+---
+
+# PART 14 — IMPORTANT EXISTING FUNCTIONALITY THAT MUST NOT BREAK
+
+Preserve:
+
+1. The four canonical primary programme roots.
+2. Recursive programme hierarchy and parent-child relationships.
+3. Existing programme administration and CMS workflows.
+4. Homepage hero and ecosystem design.
+5. Homepage promotions carousel.
+6. First-visit promotional popup.
+7. Existing Cloudinary image uploads.
+8. Existing programme publication and sorting rules.
+9. Student registration and authentication.
+10. School-created and school-managed student accounts.
+11. Parent-child relationships.
+12. Parent dashboard and learning tracks.
+13. Existing tutor, staff and school portals.
+14. Existing assigned learning units and progress.
+15. Assessments, resources, schedules and milestones.
+16. Existing billing history.
+17. Existing school subscriptions and institutional invoices.
+18. Existing parent payment workflows.
+19. Paystack verification and webhook reconciliation.
+20. Existing administrative RBAC.
+21. Existing notification and Resend email infrastructure.
+
+Do not remove a feature because it is not directly related to this task.
+
+Do not rename or replace collections without a properly documented migration.
+
+Do not create artificial sample programmes or pretend payment success.
+
+Do not delete existing genuine student or programme data.
+
+---
+
+# PART 15 — TESTING AND ACCEPTANCE CRITERIA
+
+Implement meaningful automated tests for the new workflows.
+
+## A. Programme catalogue and hierarchy
+
+Test that:
+
+- A nested child does not appear as an independent top-level card.
+- The parent container appears in the catalogue.
+- Clicking the parent exposes its direct children.
+- Deeper hierarchy levels work recursively.
+- A hybrid programme can be enrolled in and can expose its children.
+- A non-enrollable container does not show a false enrolment CTA.
+- A standalone programme remains independently discoverable.
+- Draft and archived programmes never appear publicly.
+- Circular and invalid relationships do not break rendering.
+- The root filters return the correct hierarchy.
+
+## B. Programme sharing and previews
+
+Test that:
+
+- Each published programme has a stable share link.
+- Copy Link returns the correct URL.
+- Native sharing works where supported.
+- A shared nested programme opens its own detail page.
+- The programme preview displays the correct title and image.
+- Social crawlers receive usable metadata without executing JavaScript.
+- Campaign-linked CTAs open the exact linked programme.
+- Invalid external campaign URLs are rejected.
+- Unpublished programmes cannot be shared as publicly accessible content.
+
+## C. Authentication and return navigation
+
+Test that:
+
+- A signed-out visitor selecting a programme is sent to authentication.
+- A returning user signs in and returns to the selected programme in the portal.
+- A new eligible individual student registers and returns to the selected programme.
+- The programme selection survives the authentication process.
+- The system does not create duplicate accounts.
+- External redirect URLs cannot be injected into the return flow.
+- Parent-enrolled children cannot use the individual self-enrolment flow.
+
+## D. Individual student enrolment
+
+Test that:
+
+- An individual student submits a programme request.
+- The application appears in Admin Approvals.
+- An administrator can approve or reject it.
+- The approved fee is authoritative.
+- The student receives an admission email with the correct payment link.
+- The billing area is available after an approved fee item is created.
+- The correct programme fee appears.
+- Paystack payment is initialized with the correct student and enrolment references.
+- Successful verification updates the fee and programme enrolment.
+- Failed or abandoned payments do not activate paid access.
+
+## E. School student self-funded enrolment
+
+This is a mandatory test.
+
+Create a school student with:
+
+- An existing `schoolId`.
+- Existing school-funded learning.
+- An authenticated student portal account.
+
+Let that student request an unrelated additional programme.
+
+Verify that:
+
+1. The request belongs to the student's UID.
+2. The existing school-funded programmes remain unchanged.
+3. The application is shown to administrators.
+4. The administrator approves a student-funded fee.
+5. The student's personal Billing/Fees tab becomes available.
+6. The fee appears under the student's billing records.
+7. The payment is initialized for the student.
+8. The school is not charged.
+9. The school's contract and billing totals remain unchanged.
+10. Successful payment activates the additional programme.
+11. The student's original school relationship is preserved.
+12. The student can make a repayment or pay the remaining balance.
+13. The student can renew the programme when due.
+
+## F. Parent enrolment
+
+Test that:
+
+- A parent can browse programmes.
+- A parent must choose a linked child.
+- The application belongs to that parent and selected child.
+- An unrelated child cannot be selected or charged.
+- Parent billing remains separate from student-funded billing.
+- Parent payment records and existing family fee-item functionality continue to work.
+
+## G. Tutorial
+
+Test:
+
+- New student account.
+- New parent account.
+- New school/tutor account where applicable.
+- Tutorial appears at the first eligible portal opening.
+- Tutorial does not reappear after completion.
+- Navigation between steps works.
+- Skip and finish work.
+- No content extends outside narrow mobile screens.
+- Resizing the screen does not leave the tutorial positioned off-screen.
+- Navigation targets are visible before the instructions are shown.
+
+---
+
+# PART 16 — IMPLEMENTATION APPROACH
+
+Work incrementally.
+
+### Phase 1 — Repository review and technical plan
+
+Inspect every relevant component and establish:
+
+- Existing collection schemas.
+- Existing role and ownership fields.
+- Existing application approval operations.
+- Existing billing and payment contracts.
+- Existing navigation and route guards.
+- Existing metadata and production-domain configuration.
+
+Document the exact files to change.
+
+Identify legacy data compatibility requirements before modifying anything.
+
+### Phase 2 — Programme catalogue and details
+
+Implement the correct hierarchy-aware catalogue.
+
+Improve parent programme details and child programme navigation.
+
+Implement programme share actions and reliable dynamic previews.
+
+Extend advertisement sharing and programme-linked CTA functionality.
+
+### Phase 3 — Portal discovery
+
+Add programme discovery to Learning & Tracks.
+
+Add the parent-facing discovery and child-selection experience.
+
+Exclude parent-enrolled children from self-enrolment.
+
+### Phase 4 — Admission workflow
+
+Implement student programme applications and administrator approval.
+
+Preserve the existing parent-specific process.
+
+Add admission emails and notifications.
+
+### Phase 5 — Student billing and Paystack
+
+Extend the existing billing and Paystack infrastructure to support approved self-funded programme fees for individual and school students.
+
+Preserve parent and school billing.
+
+Implement repayments, outstanding balances and renewals.
+
+### Phase 6 — Portal tutorial
+
+Implement a role-aware, first-login guided tour with reliable mobile and desktop positioning.
+
+### Phase 7 — Verification
+
+Run:
+
+- Existing automated tests.
+- New hierarchy and enrolment tests.
+- Payment reconciliation tests.
+- Firestore rules tests where available.
+- TypeScript checks.
+- Production build.
+- Desktop and mobile responsive checks.
+
+Fix regressions before reporting completion.
+
+---
+
+# PART 17 — DELIVERY RULES
+
+These are mandatory.
+
+1. Work on the existing repository and existing codebase.
+2. Inspect files before editing them.
+3. Reuse existing services and components where appropriate.
+4. Keep existing naming conventions and architecture consistent.
+5. Do not create duplicate catalogues, billing engines or unrelated application workflows.
+6. Do not invent data to fill empty states.
+7. Do not change real production records without a safe migration plan.
+8. Do not bypass authentication or payment verification.
+9. Do not push changes to GitHub.
+10. Do not deploy to Netlify or another production environment.
+11. Do not commit changes unless explicitly instructed.
+12. Do not expose API secrets or credentials.
+13. Preserve all unrelated application functionality.
+
+At the end, provide a clear implementation report containing:
+
+- What was implemented.
+- Files created.
+- Files modified.
+- Collections or fields introduced.
+- Firestore rules and indexes changed.
+- Payment workflow changes.
+- Tests executed and their results.
+- Any remaining issues.
+- Any migration or configuration steps requiring administrator action.
+
+**Do not merely produce a plan or mock-up. Implement the approved changes in the existing project, verify them and report the actual results. Do not claim that a feature works unless it has been implemented and tested.**

@@ -21,9 +21,29 @@ export const handler: Handler = async (event) => {
   } catch (error) {
     const code = error instanceof Error ? error.message : "";
     const errors: Record<string, [number, string]> = {
-      PAYMENT_METADATA_INVALID: [400, "Payment metadata could not be verified."], PAYMENT_OWNER_MISMATCH: [403, "Payment ownership could not be verified."], PAYMENT_USER_NOT_FOUND: [403, "The paying portal account could not be verified."], PAYMENT_ROLE_MISMATCH: [403, "Payment role does not match the portal account."], PAYMENT_ROLE_INVALID: [403, "This portal account cannot complete this payment."], PAYMENT_PLAN_INVALID: [400, "The payment plan is no longer active."], PAYMENT_PLAN_ROLE_MISMATCH: [400, "The selected payment plan is not valid for this portal."], PAYMENT_AMOUNT_MISMATCH: [400, "The verified Paystack amount does not reconcile with the configured base fee and gateway fee."], PAYMENT_METADATA_AMOUNT_MISMATCH: [400, "The payment metadata amount does not match the configured base fee."], PAYMENT_STUDENT_OWNER_MISMATCH: [403, "The selected student is not linked to this account."], PAYMENT_SCHOOL_OWNER_MISMATCH: [403, "The payment school could not be verified."], PAYMENT_ENROLLMENT_ROLE_INVALID: [400, "Enrollment-linked payments must come from a parent portal."], ENROLLMENT_NOT_FOUND: [404, "Linked enrollment request could not be found."], ENROLLMENT_OWNER_MISMATCH: [403, "Payment is not authorized for this enrollment request."], ENROLLMENT_PLAN_MISMATCH: [400, "Payment plan does not match the linked enrollment request."], ENROLLMENT_ALREADY_PAID: [409, "This enrollment request has already been paid."]
+      PAYMENT_METADATA_INVALID: [400, "Payment metadata could not be verified."],
+      PAYMENT_OWNER_MISMATCH: [403, "Payment ownership could not be verified."],
+      PAYMENT_USER_NOT_FOUND: [403, "The paying portal account could not be verified."],
+      PAYMENT_ROLE_MISMATCH: [403, "Payment role does not match the portal account."],
+      PAYMENT_ROLE_INVALID: [403, "This portal account cannot complete this payment."],
+      PAYMENT_PLAN_INVALID: [400, "The payment plan is no longer active."],
+      PAYMENT_PLAN_ROLE_MISMATCH: [400, "The selected payment plan is not valid for this portal."],
+      PAYMENT_NOT_SUCCESSFUL: [402, "Payment transaction was not completed successfully."],
+      PAYMENT_CURRENCY_MISMATCH: [400, "Payment currency must be NGN to reconcile this tuition charge."],
+      PAYMENT_AMOUNT_MISMATCH: [400, "The verified Paystack amount does not reconcile with the configured base fee and gateway fee."],
+      PAYMENT_METADATA_AMOUNT_MISMATCH: [400, "The payment metadata amount does not match the configured base fee."],
+      PAYMENT_STUDENT_OWNER_MISMATCH: [403, "The selected student is not linked to this account."],
+      PAYMENT_SCHOOL_OWNER_MISMATCH: [403, "The payment school could not be verified."],
+      PAYMENT_RESPONSIBILITY_MISMATCH: [403, "This enrolment is not configured for student self-funded payment."],
+      PROGRAMME_ENROLLMENT_NOT_FOUND: [404, "The linked programme enrolment could not be found."],
+      STUDENT_NOT_FOUND: [404, "The linked student record could not be found."],
+      PAYMENT_ENROLLMENT_ROLE_INVALID: [400, "Enrollment-linked payments must come from a parent portal."],
+      ENROLLMENT_NOT_FOUND: [404, "Linked enrollment request could not be found."],
+      ENROLLMENT_OWNER_MISMATCH: [403, "Payment is not authorized for this enrollment request."],
+      ENROLLMENT_PLAN_MISMATCH: [400, "Payment plan does not match the linked enrollment request."],
+      ENROLLMENT_ALREADY_PAID: [409, "This enrollment request has already been paid."]
     };
-    if (errors[code]) return json(errors[code][0], { error: errors[code][1] });
+    if (errors[code]) return json(errors[code][0], { error: errors[code][1], code });
     console.error("Payment verification error:", error); return json(500, { error: "Unable to verify payment." });
   }
 };

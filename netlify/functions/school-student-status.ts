@@ -1,5 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
+import { enforceEntitlementOrLock } from '../../api/_lib/subscription-service';
 
 const json=(statusCode:number,body:Record<string,unknown>)=>({statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify(body)});
 const blocked=(v:unknown)=>['DISABLED','SUSPENDED','BANNED'].includes(String(v||'ACTIVE').toUpperCase());
@@ -9,7 +10,9 @@ export const handler: Handler=async event=>{
  try{
   const raw=event.headers?.authorization||event.headers?.Authorization||'';
   if(!raw.startsWith('Bearer ')) return json(401,{error:'Authentication required.'});
-  const decoded=await adminAuth.verifyIdToken(raw.slice(7));
+  const entitlementGuard=await enforceEntitlementOrLock(event);
+  if(!entitlementGuard.ok) return entitlementGuard.response;
+  const decoded=entitlementGuard.decoded;
   const callerSnap=await adminDb.collection('users').doc(decoded.uid).get();
   const caller=callerSnap.data()||{};
   if(String(caller.role||'').toUpperCase()!=='SCHOOL'||blocked(caller)) return json(403,{error:'Only active school administrators can manage their roster.'});

@@ -1,6 +1,7 @@
 import type { Handler } from '@netlify/functions';
 import { createHash, randomBytes } from 'node:crypto';
 import { adminAuth, adminDb, hasAdminAuth, hasAdminDb, applyRequestDatabaseHeader, getDefaultAdminDb, getLegacyNamedAdminDb } from '../../api/_lib/firebase-admin';
+import { enforceEntitlementOrLock } from '../../api/_lib/subscription-service';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({ statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(body) });
 const bearer = (event: any) => { const value = event.headers?.authorization || event.headers?.Authorization || ''; return value.startsWith('Bearer ') ? value.slice(7) : ''; };
@@ -30,6 +31,17 @@ export const handler: Handler = async event => {
     const isTeachingStaff = ['staff', 'tutor', 'instructor'].includes(callerRole);
     const isSchool = ['school', 'school_admin', 'schooladmin', 'partner_school', 'institution'].includes(callerRole);
     if (!isAdmin && !isTeachingStaff && !isSchool) return json(403, { error: 'You are not authorized to issue student credentials.' });
+
+    if (isSchool) {
+      const lockResponse = await enforceEntitlementOrLock({
+        uid: decoded.uid,
+        role: callerRole,
+        email: decoded.email || caller.email,
+        userRecord: caller,
+        resourceLabel: 'student access credentials and passcodes',
+      });
+      if (lockResponse) return lockResponse;
+    }
 
     const body = JSON.parse(event.body || '{}');
     const studentId = String(body.studentId || '').trim();

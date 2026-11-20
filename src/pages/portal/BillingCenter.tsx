@@ -19,6 +19,7 @@ import {
   extractPaymentAmountNaira
 } from '../../lib/billing';
 import { useToast } from '../../contexts/ToastContext';
+import { triggerEntitlementRefresh } from '../../contexts/SubscriptionEntitlementContext';
 import SEO from '../../components/ui/SEO';
 import { MetricGridSkeleton, TableSkeleton } from '../../components/ui/Skeleton';
 import { FintechTransactionHistory } from '../../components/portal/FintechTransactionHistory';
@@ -27,8 +28,13 @@ import { FintechWithdrawalModal } from '../../components/portal/FintechWithdrawa
 import { PaystackPaymentReviewModal } from '../../components/portal/PaystackPaymentReviewModal';
 import { auth, db } from '../../lib/firebase';
 import { collection, getDocs, getDoc, doc, query, where, limit } from 'firebase/firestore';
+import { useSearchParams } from 'react-router-dom';
 import { getEffectiveAuth, isMasqueradingActive } from '../../utils/impersonation';
 import { resolveParentLinkedChildren } from '../../lib/academicSyncEngine';
+import {
+  fetchStudentProgrammeEnrollments,
+  type ProgrammeEnrollmentRecord,
+} from '../../lib/programmeEnrollments';
 
 export type BillingCenterRole = 'student' | 'parent' | 'staff' | 'school';
 type PaymentRecord = Record<string, any> & { id: string };
@@ -79,6 +85,16 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   const [expandedChildIds, setExpandedChildIds] = useState<string[]>([]);
   const [parentFeeFilter, setParentFeeFilter] = useState<'all' | 'due' | 'paid'>('all');
   const [showParentCheckoutModal, setShowParentCheckoutModal] = useState(false);
+
+  const [searchParams] = useSearchParams();
+  const focusEnrollmentId = searchParams.get('enrollmentId') || '';
+
+  // Self-funded student programme enrollment checkout states
+  const [programmeEnrollments, setProgrammeEnrollments] = useState<ProgrammeEnrollmentRecord[]>([]);
+  const [activeProgEnrollment, setActiveProgEnrollment] = useState<ProgrammeEnrollmentRecord | null>(null);
+  const [progPaymentOption, setProgPaymentOption] = useState<'full' | 'deposit' | 'balance' | 'renewal'>('full');
+  const [studentPayerEmail, setStudentPayerEmail] = useState<string>('');
+  const [expandedProgHistoryIds, setExpandedProgHistoryIds] = useState<Record<string, boolean>>({});
 
   // Staff wallet & Fintech modals
   const [withdrawalAmount, setWithdrawalAmount] = useState(''); 
@@ -289,6 +305,33 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
         }
       }
 
+      if (role === 'student') {
+        const uid = currentUser?.uid || sessionStorage.getItem('userId') || '';
+        const serverEnrollments = Array.isArray(result.programmeEnrollments)
+          ? (result.programmeEnrollments as ProgrammeEnrollmentRecord[])
+          : [];
+        if (serverEnrollments.length > 0) {
+          setProgrammeEnrollments(serverEnrollments);
+        } else if (uid) {
+          const directEnrollments = await fetchStudentProgrammeEnrollments(uid).catch(() => []);
+          setProgrammeEnrollments(directEnrollments);
+          if (directEnrollments.some((e) => e.billingResponsibility === 'STUDENT_SELF_FUNDED')) {
+            if (!sessionStorage.getItem('parentId') && !sessionStorage.getItem('studentParentId')) {
+              result.isExempt = false;
+            }
+          }
+        }
+        const defaultEmail = String(currentUser?.email || '').trim();
+        if (
+          defaultEmail &&
+          defaultEmail.includes('@') &&
+          !defaultEmail.endsWith('.local') &&
+          !defaultEmail.endsWith('.invalid')
+        ) {
+          setStudentPayerEmail((prev) => prev || defaultEmail);
+        }
+      }
+
       setData({ ...result, payments: mergedPayments });
       if (result.schoolBilling?.mode) {
         setSelectedMode(result.schoolBilling.mode);
@@ -311,11 +354,17 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   }, [role]);
 
   useEffect(() => { 
-    const reference = new URLSearchParams(window.location.search).get('reference'); 
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get('reference') || params.get('trxref'); 
     if (!reference) return; 
     billingPost<any>('paystack-verify', { reference }).then(() => { 
-      toast.success('Payment verified successfully.'); 
-      window.history.replaceState({}, document.title, window.location.pathname); 
+      toast.success('Payment verified successfully. Portal access has been refreshed.'); 
+      triggerEntitlementRefresh();
+      const keepEnrollment = params.get('enrollmentId');
+      const cleanUrl = keepEnrollment
+        ? `${window.location.pathname}?enrollmentId=${encodeURIComponent(keepEnrollment)}`
+        : window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl); 
       void load(); 
     }).catch(error => toast.error(error instanceof Error ? error.message : 'Payment verification failed.')); 
   }, []);
@@ -772,6 +821,57 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
     } finally { 
       setPaying(false); 
     } 
+  };
+
+  const openProgrammeEnrollmentCheckout = (
+    enrollment: ProgrammeEnrollmentRecord,
+    defaultOpt: 'full' | 'deposit' | 'balance' | 'renewal'
+  ) => {
+    if (isMasqueradingActive()) {
+      toast.error('Payment checkout is disabled in Superadmin Impersonation Mode.');
+      return;
+    }
+    setActiveProgEnrollment(enrollment);
+    setProgPaymentOption(defaultOpt);
+    if (!studentPayerEmail && enrollment.studentEmail && !enrollment.studentEmail.endsWith('.local')) {
+      setStudentPayerEmail(enrollment.studentEmail);
+    }
+  };
+
+  const processProgrammeEnrollmentPayment = async () => {
+    if (!activeProgEnrollment) return;
+    if (isMasqueradingActive()) {
+      toast.error('Payment authorization is disabled in Superadmin Impersonation Mode.');
+      return;
+    }
+    const cleanEmail = studentPayerEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@') || cleanEmail.endsWith('.local') || cleanEmail.endsWith('.invalid')) {
+      toast.error('Please enter a valid personal email address to receive your Paystack receipt.');
+      return;
+    }
+    setPaying(true);
+    try {
+      const result = await billingPost<any>('paystack-initialize', {
+        role: 'student',
+        programmeEnrollmentId: activeProgEnrollment.id,
+        paymentOption: progPaymentOption,
+        payerEmail: cleanEmail,
+        paymentPolicyAccepted: true,
+      });
+      if (result?.authorizationUrl) {
+        if (result.authorizationUrl.startsWith('http://') || result.authorizationUrl.startsWith('https://')) {
+          window.location.assign(result.authorizationUrl);
+        } else {
+          window.location.href = result.authorizationUrl;
+        }
+      } else {
+        throw new Error('Paystack checkout URL was not returned by the payment server.');
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to initialize programme checkout.');
+    } finally {
+      setPaying(false);
+    }
   };
 
   const saveBank = async (event: React.FormEvent) => { 
@@ -1741,9 +1841,225 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
           />
         </div>
       ) : role === 'student' ? (
-        /* Independent Student View */
+        /* Independent & Self-Funded School Student Billing View */
         <div className="space-y-6">
-          {standardPlans.length > 0 && (
+          {/* Approved & Self-Funded Programme Enrolments */}
+          {programmeEnrollments.length > 0 && (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-brand-red">
+                    Personal Self-Funded Programmes
+                  </span>
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white mt-0.5">
+                    Approved Programme Tuition &amp; Renewals
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Settle approved fees directly via Paystack. Partial deposits, outstanding balances, and cycle renewals are tracked automatically.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void load()}
+                  className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 text-xs font-semibold text-white shrink-0 cursor-pointer"
+                >
+                  <RefreshCw size={14} /> Refresh
+                </button>
+              </div>
+
+              {sessionStorage.getItem('studentRegistrationType') === 'school' && (
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 flex items-start gap-3">
+                  <ShieldCheck size={18} className="text-brand-red shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="font-bold text-slate-900 dark:text-white block">
+                      Independent Personal Billing Only
+                    </strong>
+                    Only your personal self-funded programmes appear here. Your school-sponsored classes remain completely unaffected, and your school is never billed for these enrolments.
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                {programmeEnrollments.map((enr) => {
+                  const isFocused = focusEnrollmentId === enr.id;
+                  const status = String(enr.enrollmentStatus || '').toUpperCase();
+                  const approvedFee = Math.max(0, Number(enr.approvedFee || 0));
+                  const amountPaid = Math.max(0, Number(enr.amountPaid || 0));
+                  const remaining = Math.max(0, Number(enr.remainingBalance ?? Math.max(0, approvedFee - amountPaid)));
+                  const cycleNorm = String(enr.billingCycle || 'one_time').toLowerCase();
+                  const isRecurring = cycleNorm === 'monthly' || cycleNorm === 'termly';
+                  const canDeposit = Boolean(enr.allowDepositAccess && Number(enr.depositAmount || 0) > 0 && Number(enr.depositAmount) < approvedFee && amountPaid === 0);
+                  const isRenewalDue = status === 'RENEWAL_DUE' || (isRecurring && status === 'ACTIVE' && remaining === 0);
+                  const isAwaitingPayment = status === 'APPROVED_AWAITING_PAYMENT' || status === 'APPROVED_PENDING_PAYMENT';
+                  const canPay =
+                    approvedFee > 0 &&
+                    (isAwaitingPayment ||
+                      status === 'PARTIALLY_PAID' ||
+                      status === 'RENEWAL_DUE' ||
+                      (status === 'ACTIVE' && (remaining > 0 || isRecurring)));
+
+                  const primaryOption: 'full' | 'deposit' | 'balance' | 'renewal' =
+                    status === 'RENEWAL_DUE' || (status === 'ACTIVE' && remaining === 0 && isRecurring)
+                      ? 'renewal'
+                      : amountPaid > 0 && remaining > 0
+                      ? 'balance'
+                      : 'full';
+
+                  const primaryLabel =
+                    primaryOption === 'renewal'
+                      ? `Renew Programme (${formatNaira(approvedFee)})`
+                      : primaryOption === 'balance'
+                      ? `Pay Outstanding Balance (${formatNaira(remaining)})`
+                      : `Pay Full Tuition (${formatNaira(remaining || approvedFee)})`;
+
+                  const historyList = Array.isArray(enr.paymentHistory) ? enr.paymentHistory : [];
+                  const isHistoryOpen = Boolean(expandedProgHistoryIds[enr.id]);
+
+                  return (
+                    <article
+                      key={enr.id}
+                      className={`rounded-2xl border p-5 flex flex-col justify-between transition-all ${
+                        isFocused
+                          ? 'border-brand-red ring-2 ring-brand-red/20 bg-red-50/20 dark:bg-red-950/15'
+                          : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/60'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="inline-block text-[10px] font-black uppercase tracking-wider text-brand-red">
+                              Student Self-Funded • {cycleNorm.replace(/_/g, ' ')}
+                            </span>
+                            <h4 className="font-black text-base text-slate-900 dark:text-white mt-0.5 leading-snug">
+                              {enr.programTitle}
+                            </h4>
+                          </div>
+                          <span
+                            className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider shrink-0 ${
+                              status === 'ACTIVE'
+                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                : isAwaitingPayment || status === 'RENEWAL_DUE'
+                                ? 'bg-red-50 text-brand-red dark:bg-red-950/40'
+                                : status === 'PARTIALLY_PAID'
+                                ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                            }`}
+                          >
+                            {status.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-3 gap-2 text-xs p-3 bg-slate-50 dark:bg-slate-950/40 rounded-xl">
+                          <div>
+                            <span className="block text-slate-400 text-[10px] font-bold uppercase">Approved Fee</span>
+                            <strong className="font-mono text-slate-900 dark:text-white">
+                              {approvedFee > 0 ? formatNaira(approvedFee) : 'Pending'}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="block text-slate-400 text-[10px] font-bold uppercase">Paid</span>
+                            <strong className="font-mono text-emerald-700 dark:text-emerald-400">
+                              {formatNaira(amountPaid)}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="block text-slate-400 text-[10px] font-bold uppercase">Balance</span>
+                            <strong className="font-mono text-brand-red font-black">
+                              {formatNaira(remaining)}
+                            </strong>
+                          </div>
+                        </div>
+
+                        {(enr.paidThrough || enr.nextDueDate) && (
+                          <div className="mt-3 flex flex-wrap gap-4 text-[11px] text-slate-500">
+                            {enr.paidThrough && (
+                              <span>
+                                Paid Through: <strong className="text-slate-800 dark:text-slate-200">{dateLabel(enr.paidThrough)}</strong>
+                              </span>
+                            )}
+                            {enr.nextDueDate && (
+                              <span>
+                                Next Due: <strong className="text-slate-800 dark:text-slate-200">{dateLabel(enr.nextDueDate)}</strong>
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {status === 'PENDING_ADMIN_REVIEW' && (
+                          <p className="mt-3 text-xs text-slate-500 leading-relaxed">
+                            Your application is under Admissions review. Once approved with your official tuition fee, Paystack payment will unlock here.
+                          </p>
+                        )}
+
+                        {historyList.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedProgHistoryIds((prev) => ({ ...prev, [enr.id]: !prev[enr.id] }))
+                              }
+                              className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-brand-red cursor-pointer"
+                            >
+                              {isHistoryOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                              Payment History ({historyList.length})
+                            </button>
+                            {isHistoryOpen && (
+                              <div className="mt-2 space-y-1.5">
+                                {historyList.map((h: any, idx: number) => (
+                                  <div
+                                    key={h.reference || idx}
+                                    className="flex items-center justify-between text-[11px] px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950/50"
+                                  >
+                                    <span className="text-slate-600 dark:text-slate-300 truncate">
+                                      {dateLabel(h.paidAt)} • {h.paymentOption || 'payment'}
+                                    </span>
+                                    <strong className="font-mono text-slate-900 dark:text-white shrink-0">
+                                      {formatNaira(Number(h.amount || 0))}
+                                    </strong>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {canPay && (
+                        <div className="mt-5 flex flex-col sm:flex-row gap-2">
+                          <button
+                            type="button"
+                            disabled={isMasqueradingActive()}
+                            onClick={() => openProgrammeEnrollmentCheckout(enr, primaryOption)}
+                            className={`flex-1 min-h-11 rounded-xl px-4 text-xs font-black shadow-sm transition-all ${
+                              isMasqueradingActive()
+                                ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
+                                : 'bg-brand-red hover:bg-red-700 text-white cursor-pointer'
+                            }`}
+                          >
+                            {isMasqueradingActive() ? 'Disabled in Impersonation' : primaryLabel}
+                          </button>
+
+                          {canDeposit && !isRenewalDue && (
+                            <button
+                              type="button"
+                              disabled={isMasqueradingActive()}
+                              onClick={() => openProgrammeEnrollmentCheckout(enr, 'deposit')}
+                              className="min-h-11 rounded-xl px-4 border border-brand-red/40 text-brand-red hover:bg-red-50 dark:hover:bg-red-950/30 text-xs font-black transition-all cursor-pointer shrink-0"
+                            >
+                              Pay Deposit ({formatNaira(Number(enr.depositAmount))})
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Legacy Independent Student Standard Plans (only for individual students, never school students) */}
+          {sessionStorage.getItem('studentRegistrationType') === 'individual' && standardPlans.length > 0 && (
             <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-sm">
               <div className="mb-5">
                 <h3 className="text-xl font-black text-slate-900 dark:text-white">
@@ -1815,6 +2131,107 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
               </div>
             </div>
           )}
+
+          {/* Self-Funded Student Programme Paystack Review Modal */}
+          {activeProgEnrollment && (() => {
+            const approvedFee = Math.max(0, Number(activeProgEnrollment.approvedFee || 0));
+            const amountPaid = Math.max(0, Number(activeProgEnrollment.amountPaid || 0));
+            const remaining = Math.max(0, Number(activeProgEnrollment.remainingBalance ?? Math.max(0, approvedFee - amountPaid)));
+            const depositAmt = Math.max(0, Number(activeProgEnrollment.depositAmount || 0));
+            const canDeposit = Boolean(activeProgEnrollment.allowDepositAccess && depositAmt > 0 && depositAmt < approvedFee && amountPaid === 0);
+
+            const subtotal =
+              progPaymentOption === 'renewal'
+                ? approvedFee
+                : progPaymentOption === 'deposit' && canDeposit
+                ? depositAmt
+                : remaining > 0
+                ? remaining
+                : approvedFee;
+
+            const selfFundedPolicy = data.config?.studentSelfFundedFeePolicy || feePolicy;
+            const preview = feeFromBase(subtotal, selfFundedPolicy);
+            const emailValid =
+              studentPayerEmail.trim().includes('@') &&
+              !studentPayerEmail.trim().toLowerCase().endsWith('.local') &&
+              !studentPayerEmail.trim().toLowerCase().endsWith('.invalid');
+
+            return (
+              <PaystackPaymentReviewModal
+                isOpen={Boolean(activeProgEnrollment)}
+                onClose={() => { if (!paying) setActiveProgEnrollment(null); }}
+                reviewKey={`self-prog:${activeProgEnrollment.id}:${progPaymentOption}:${subtotal}`}
+                subtitle="Student Self-Funded Programme"
+                title="Review Programme Payment"
+                description="Verify your approved fee, billing responsibility, and receipt email before proceeding to Paystack."
+                contextRows={[
+                  { label: 'Programme', value: activeProgEnrollment.programTitle },
+                  { label: 'Billing Responsibility', value: 'Student Self-Funded (Personal)' },
+                  { label: 'Payment Option', value: progPaymentOption.toUpperCase() },
+                  { label: 'Billing Cycle', value: activeProgEnrollment.billingCycle || 'ONE_TIME' },
+                ]}
+                subtotal={subtotal}
+                estimatedFee={preview.transactionFee}
+                estimatedTotal={preview.totalAmount}
+                feeNote="The final amount is computed authoritatively on our server from your approved tuition record."
+                loading={paying}
+                disabled={isMasqueradingActive() || !emailValid}
+                disabledMessage={!emailValid ? 'Please provide a valid personal email address for your receipt.' : 'Disabled in Impersonation mode.'}
+                onConfirmPaystack={processProgrammeEnrollmentPayment}
+              >
+                <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                  {canDeposit && (
+                    <div>
+                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-slate-500">
+                        Choose Payment Amount
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setProgPaymentOption('full')}
+                          className={`px-3 py-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
+                            progPaymentOption === 'full'
+                              ? 'border-brand-red bg-red-50 text-brand-red dark:bg-red-950/30'
+                              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          Full Tuition ({formatNaira(remaining || approvedFee)})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setProgPaymentOption('deposit')}
+                          className={`px-3 py-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
+                            progPaymentOption === 'deposit'
+                              ? 'border-brand-red bg-red-50 text-brand-red dark:bg-red-950/30'
+                              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          Min. Deposit ({formatNaira(depositAmt)})
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <label className="block">
+                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-slate-500">
+                      Personal Receipt Email (Required by Paystack)
+                    </span>
+                    <input
+                      type="email"
+                      required
+                      value={studentPayerEmail}
+                      onChange={(e) => setStudentPayerEmail(e.target.value)}
+                      placeholder="your.email@example.com"
+                      className="min-h-11 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-900 dark:text-white"
+                    />
+                    <span className="mt-1 block text-[11px] text-slate-500">
+                      Enter your personal email address for official Paystack receipts. Do not enter a school email.
+                    </span>
+                  </label>
+                </div>
+              </PaystackPaymentReviewModal>
+            );
+          })()}
         </div>
       ) : null}
 

@@ -6,12 +6,18 @@ import {
   GraduationCap, ClipboardCheck, CalendarDays, KeyRound, Users, FileCheck2,
   Library, SlidersHorizontal, WalletCards, ExternalLink, Award, Headphones,
   HelpCircle, Keyboard, ChevronDown, PanelLeftClose, FileText, History,
-  ChartNoAxesColumn, UserRoundCog, Wallet, Headset, Settings, Menu
+  ChartNoAxesColumn, UserRoundCog, Wallet, Headset, Settings, Menu, Lock, Loader2
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useToast } from '../../contexts/ToastContext';
+import {
+  SubscriptionEntitlementProvider,
+  useSubscriptionEntitlement,
+} from '../../contexts/SubscriptionEntitlementContext';
+import { PortalSubscriptionBanner, PortalLockdownView } from './PortalLockdownView';
 import { Tooltip } from '../ui/Tooltip';
 import { JaystarblissIcon } from '../common/JaystarblissLogo';
 import ChangePasswordModal from './ChangePasswordModal';
@@ -23,6 +29,13 @@ import { resolvePartnerSchoolName } from '../../lib/classes';
 import { useEdgeSwipeDrawer } from '../../hooks/useEdgeSwipeDrawer';
 import PWAInstallButton from '../ui/PWAInstallButton';
 import { getExternalMainWebsiteUrl, useStandalonePWA } from '../../utils/pwa';
+import {
+  fetchStudentProgrammeEnrollments,
+  resolveStudentPortalEligibility,
+  shouldUnlockStudentBillingTab,
+} from '../../lib/programmeEnrollments';
+import PortalOnboardingTour from './PortalOnboardingTour';
+import type { PortalTourRole } from '../../lib/portalTour';
 import './portal-polish.css';
 
 type NavItem = {
@@ -30,6 +43,7 @@ type NavItem = {
   path: string;
   icon: React.ReactNode;
   desc: string;
+  tourId?: string;
 };
 
 type NavGroup = {
@@ -81,7 +95,7 @@ function resolvePortalPageTitle(pathname: string, role: string, navGroups: NavGr
   if (clean.endsWith('/live-classrooms') || clean.endsWith('/live-classes')) return 'Live Classrooms';
   if (clean.endsWith('/classes')) return 'Live Classes';
   if (clean.endsWith('/subjects')) return 'Subjects I Teach';
-  if (clean.endsWith('/courses')) return 'Learning & Tracks';
+  if (clean.endsWith('/courses') || clean.endsWith('/learning-tracks')) return 'Learning & Tracks';
   if (clean.endsWith('/achievements')) return 'Achievements';
   if (clean.endsWith('/edge-club')) return 'Ed Club';
   if (clean.endsWith('/roster')) return 'Learners Roster';
@@ -104,12 +118,30 @@ function resolvePortalPageTitle(pathname: string, role: string, navGroups: NavGr
   return 'Dashboard';
 }
 
-const PortalLayout: React.FC = () => {
+const isAlwaysPermittedRoute = (pathname: string): boolean => {
+  const clean = pathname.replace(/\/+$/, '').toLowerCase();
+  return (
+    clean.endsWith('/payments') ||
+    clean.includes('/payments/') ||
+    clean.endsWith('/support') ||
+    clean.includes('/support/') ||
+    clean.endsWith('/settings') ||
+    clean.includes('/settings/')
+  );
+};
+
+const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+  const { toast } = useToast();
+  const {
+    entitlement,
+    loading: entitlementLoading,
+    isRouteAllowed,
+    isNavPathLocked,
+  } = useSubscriptionEntitlement();
   const isStandalone = useStandalonePWA();
-  const role = location.pathname.split('/')[2] || 'student';
 
   const [displayName, setDisplayName] = useState('Portal User');
   const [roleSubtitle, setRoleSubtitle] = useState(() => resolveRoleSubtitle(role));
@@ -127,6 +159,16 @@ const PortalLayout: React.FC = () => {
   const [collapsedNavGroups] = useState<Record<string, boolean>>({});
   const [impersonation, setImpersonation] = useState<any>(() => getActiveImpersonation());
   const [studentFeatures, setStudentFeatures] = useState<StudentPortalFeatures>({});
+  const [studentBillingUnlocked, setStudentBillingUnlocked] = useState<boolean>(
+    () => sessionStorage.getItem('studentRegistrationType') === 'individual'
+  );
+  const [studentOriginType, setStudentOriginType] = useState<'individual' | 'school' | 'parent'>(() => {
+    const raw = sessionStorage.getItem('studentRegistrationType');
+    if (raw === 'parent') return 'parent';
+    if (raw === 'school') return 'school';
+    return 'individual';
+  });
+  const [tourReplayToken, setTourReplayToken] = useState(0);
   const profileRef = useRef<HTMLDivElement>(null);
 
   useEdgeSwipeDrawer(mobileMenuOpen, setMobileMenuOpen, 768);
@@ -251,33 +293,87 @@ const PortalLayout: React.FC = () => {
 
   useEffect(() => {
     if (role !== 'student') return;
+    let active = true;
+    const uid = getActiveImpersonation()?.uid || sessionStorage.getItem('userId') || auth.currentUser?.uid || '';
     const studentDocId = sessionStorage.getItem('studentDocId') || '';
-    if (!studentDocId) return;
-    void getDoc(doc(db, 'students', studentDocId)).then(snap => {
-      if (!snap.exists()) return;
-      const data = snap.data() as any;
-      const realStudentName = String(data.fullName || data.name || '').trim();
-      if (realStudentName) {
-        setDisplayName(realStudentName);
-        sessionStorage.setItem('userName', realStudentName);
+
+    const hydrateStudentState = async () => {
+      try {
+        const [studentSnap, userSnap, enrollments] = await Promise.all([
+          studentDocId ? getDoc(doc(db, 'students', studentDocId)).catch(() => null) : Promise.resolve(null),
+          uid ? getDoc(doc(db, 'users', uid)).catch(() => null) : Promise.resolve(null),
+          uid ? fetchStudentProgrammeEnrollments(uid).catch(() => []) : Promise.resolve([]),
+        ]);
+
+        if (!active) return;
+
+        const studentData = studentSnap?.exists() ? (studentSnap.data() as any) : null;
+        const userData = userSnap?.exists() ? (userSnap.data() as any) : null;
+
+        if (studentData) {
+          const realStudentName = String(studentData.fullName || studentData.name || '').trim();
+          if (realStudentName) {
+            setDisplayName(realStudentName);
+            sessionStorage.setItem('userName', realStudentName);
+          }
+          const featureAccess = studentData.featureAccess || {};
+          const deliveryMode = normalizeMode(studentData.deliveryMode || studentData.classScheduleDetails?.deliveryMode);
+          const registrationSource = normalizeMode(studentData.registrationSource);
+          const next = {
+            assessments: featureAccess.assessments === true,
+            edClub: featureAccess.edClub === true || studentData.edClubEnabled === true,
+            deliveryMode,
+            registrationSource
+          };
+          setStudentFeatures(next);
+          sessionStorage.setItem('studentEdClubEnabled', String(next.edClub));
+          sessionStorage.setItem('studentDeliveryMode', deliveryMode);
+          sessionStorage.setItem('studentRegistrationSource', registrationSource);
+        }
+
+        const eligibility = resolveStudentPortalEligibility({
+          registrationType:
+            userData?.studentRegistrationType ||
+            studentData?.registrationType ||
+            sessionStorage.getItem('studentRegistrationType'),
+          registrationSource:
+            studentData?.registrationSource ||
+            userData?.registrationSource ||
+            sessionStorage.getItem('studentRegistrationSource'),
+          parentId:
+            studentData?.parentId ||
+            userData?.parentId ||
+            sessionStorage.getItem('parentId') ||
+            sessionStorage.getItem('studentParentId'),
+          parentUid: studentData?.parentUid || userData?.parentUid,
+          schoolId:
+            studentData?.schoolId ||
+            userData?.schoolId ||
+            sessionStorage.getItem('schoolId'),
+          isIndependent: userData?.isIndependent ?? studentData?.isIndependent,
+        });
+
+        setStudentOriginType(eligibility.registrationType);
+
+        setStudentBillingUnlocked(
+          shouldUnlockStudentBillingTab({
+            eligibility,
+            selfFundedEnrollments: enrollments,
+          })
+        );
+      } catch {
+        // Keep safe defaults
       }
-      const featureAccess = data.featureAccess || {};
-      const deliveryMode = normalizeMode(data.deliveryMode || data.classScheduleDetails?.deliveryMode);
-      const registrationSource = normalizeMode(data.registrationSource);
-      const next = {
-        assessments: featureAccess.assessments === true,
-        edClub: featureAccess.edClub === true || data.edClubEnabled === true,
-        deliveryMode,
-        registrationSource
-      };
-      setStudentFeatures(next);
-      sessionStorage.setItem('studentEdClubEnabled', String(next.edClub));
-      sessionStorage.setItem('studentDeliveryMode', deliveryMode);
-      sessionStorage.setItem('studentRegistrationSource', registrationSource);
-    }).catch(() => undefined);
+    };
+
+    void hydrateStudentState();
+    return () => {
+      active = false;
+    };
   }, [role, location.pathname]);
 
   const parentEnrolledStudent = role === 'student' && (
+    studentOriginType === 'parent' ||
     studentFeatures.registrationSource === 'parent-enrollment-approved' ||
     !!sessionStorage.getItem('parentId') ||
     !!sessionStorage.getItem('studentParentId')
@@ -292,14 +388,14 @@ const PortalLayout: React.FC = () => {
         {
           label: 'Overview',
           items: [
-            { name: 'Dashboard', path: '/portal/school', icon: <LayoutDashboard size={19} />, desc: 'School administration overview' },
+            { name: 'Dashboard', path: '/portal/school', icon: <LayoutDashboard size={19} />, desc: 'School administration overview', tourId: 'nav-dashboard' },
             { name: 'Class Schedules', path: '/portal/school/schedules', icon: <CalendarDays size={19} />, desc: 'Programme timetables & sessions' }
           ]
         },
         {
           label: 'Academics',
           items: [
-            { name: 'Assessment Overview', path: '/portal/school/exams', icon: <FileText size={19} />, desc: 'School assessment management' },
+            { name: 'Assessment Overview', path: '/portal/school/exams', icon: <FileText size={19} />, desc: 'School assessment management', tourId: 'nav-exams' },
             { name: 'Assessment History', path: '/portal/school/exam-history', icon: <History size={19} />, desc: 'Submissions & past assessment records' },
             { name: 'Learner Progress', path: '/portal/school/learner-progress', icon: <ChartNoAxesColumn size={19} />, desc: 'Assignments, activities, tests, assessments & attendance' }
           ]
@@ -307,14 +403,14 @@ const PortalLayout: React.FC = () => {
         {
           label: 'People',
           items: [
-            { name: 'Learners Roster', path: '/portal/school/roster', icon: <Users size={19} />, desc: 'Student directory and class assignments' },
+            { name: 'Learners Roster', path: '/portal/school/roster', icon: <Users size={19} />, desc: 'Student directory and class assignments', tourId: 'nav-roster' },
             { name: 'Student Access', path: '/portal/school/credentials', icon: <UserRoundCog size={19} />, desc: 'Access credentials & passcodes' }
           ]
         },
         {
           label: 'Finance & Agreements',
           items: [
-            { name: 'Fees & Payments', path: '/portal/school/payments', icon: <Wallet size={19} />, desc: 'Institutional fees & payments' },
+            { name: 'Fees & Payments', path: '/portal/school/payments', icon: <Wallet size={19} />, desc: 'Institutional fees & payments', tourId: 'nav-payments' },
             { name: 'Agreements', path: '/portal/school/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communications & school contracts' }
           ]
         },
@@ -327,7 +423,7 @@ const PortalLayout: React.FC = () => {
         {
           label: 'Administration',
           items: [
-            { name: 'Help & Support', path: '/portal/school/support', icon: <Headset size={19} />, desc: 'Institutional support & help desk' },
+            { name: 'Help & Support', path: '/portal/school/support', icon: <Headset size={19} />, desc: 'Institutional support & help desk', tourId: 'nav-support' },
             { name: 'Settings', path: '/portal/school/settings', icon: <Settings size={19} />, desc: 'School preferences & configuration' }
           ]
         }
@@ -336,8 +432,8 @@ const PortalLayout: React.FC = () => {
 
     if (role === 'student') {
       const academicItems: NavItem[] = [
-        { name: 'Learning & Tracks', path: '/portal/student/courses', icon: <GraduationCap size={19} />, desc: 'Curriculum & Series' },
-        { name: 'Assessments & Work', path: '/portal/student/assessments', icon: <ClipboardCheck size={19} />, desc: 'Assignments, activities, tests & exams' }
+        { name: 'Learning & Tracks', path: '/portal/student/courses', icon: <GraduationCap size={19} />, desc: 'Curriculum, tracks & discovery', tourId: 'nav-courses' },
+        { name: 'Assessments & Work', path: '/portal/student/assessments', icon: <ClipboardCheck size={19} />, desc: 'Assignments, activities, tests & exams', tourId: 'nav-assessments' }
       ];
       if (studentFeatures.edClub) {
         academicItems.push({ name: 'Ed Club', path: '/portal/student/edge-club', icon: <Keyboard size={19} />, desc: 'Keyboarding & speed typing portal' });
@@ -354,7 +450,7 @@ const PortalLayout: React.FC = () => {
       const groups: NavGroup[] = [
         {
           label: 'Overview',
-          items: [{ name: 'Dashboard', path: '/portal/student', icon: <LayoutDashboard size={19} />, desc: 'Student portal overview' }]
+          items: [{ name: 'Dashboard', path: '/portal/student', icon: <LayoutDashboard size={19} />, desc: 'Student portal overview', tourId: 'nav-dashboard' }]
         },
         {
           label: 'Academics',
@@ -370,21 +466,21 @@ const PortalLayout: React.FC = () => {
         label: 'Progress & Materials',
         items: [
           { name: 'Achievements & Badges', path: '/portal/student/achievements', icon: <Trophy size={19} />, desc: 'Mastery, badges & certificates' },
-          { name: 'Lesson Resources', path: '/portal/student/resources', icon: <BookOpen size={19} />, desc: 'Lesson notes & materials' }
+          { name: 'Lesson Resources', path: '/portal/student/resources', icon: <BookOpen size={19} />, desc: 'Lesson notes & materials', tourId: 'nav-resources' }
         ]
       });
 
-      if (sessionStorage.getItem('studentRegistrationType') === 'individual') {
+      if (studentBillingUnlocked && !parentEnrolledStudent) {
         groups.push({
           label: 'Finance',
-          items: [{ name: 'Payments & Fees', path: '/portal/student/payments', icon: <CreditCard size={19} />, desc: 'Personal billing & statements' }]
+          items: [{ name: 'Payments & Fees', path: '/portal/student/payments', icon: <CreditCard size={19} />, desc: 'Personal billing & self-funded programmes', tourId: 'nav-payments' }]
         });
       }
 
       groups.push({
         label: 'Administration',
         items: [
-          { name: 'Help & Support', path: '/portal/student/support', icon: <Headset size={19} />, desc: 'Help desk & live support chat' },
+          { name: 'Help & Support', path: '/portal/student/support', icon: <Headset size={19} />, desc: 'Help desk & live support chat', tourId: 'nav-support' },
           { name: 'Settings', path: '/portal/student/settings', icon: <Settings size={19} />, desc: 'Account preferences' }
         ]
       });
@@ -397,7 +493,7 @@ const PortalLayout: React.FC = () => {
         {
           label: 'Overview',
           items: [
-            { name: 'Dashboard', path: '/portal/staff', icon: <LayoutDashboard size={19} />, desc: 'Assigned schools, schedules & reminders' },
+            { name: 'Dashboard', path: '/portal/staff', icon: <LayoutDashboard size={19} />, desc: 'Assigned schools, schedules & reminders', tourId: 'nav-dashboard' },
             { name: 'Assigned Learners', path: '/portal/staff/students', icon: <Users size={19} />, desc: 'School-assigned & private learners roster' }
           ]
         },
@@ -411,7 +507,7 @@ const PortalLayout: React.FC = () => {
         {
           label: 'Academics & Assessments',
           items: [
-            { name: 'Assessments', path: '/portal/staff/assessments', icon: <ClipboardCheck size={19} />, desc: 'Create & manage assignments, activities, tests & assessments' },
+            { name: 'Assessments', path: '/portal/staff/assessments', icon: <ClipboardCheck size={19} />, desc: 'Create & manage assignments, activities, tests & assessments', tourId: 'nav-assessments' },
             { name: 'Assessment History', path: '/portal/staff/exam-history', icon: <History size={19} />, desc: 'Review history across assignments, activities, tests & assessments' },
             { name: 'Academic Reporting', path: '/portal/staff/academic-reporting', icon: <FileText size={19} />, desc: 'Grading profiles, reference lookup & official performance reports' },
             { name: 'Assignments & Review', path: '/portal/staff/assignments', icon: <FileText size={19} />, desc: 'Assign & grade individual student coursework' },
@@ -422,20 +518,20 @@ const PortalLayout: React.FC = () => {
           label: 'People & Resources',
           items: [
             { name: 'Student Access', path: '/portal/staff/credentials', icon: <KeyRound size={19} />, desc: 'Issue & manage learner access codes' },
-            { name: 'Lesson Resources', path: '/portal/staff/resources', icon: <BookOpen size={19} />, desc: 'Distribute documents, images, videos & links' }
+            { name: 'Lesson Resources', path: '/portal/staff/resources', icon: <BookOpen size={19} />, desc: 'Distribute documents, images, videos & links', tourId: 'nav-resources' }
           ]
         },
         {
           label: 'Finance & Agreements',
           items: [
-            { name: 'Billing / Fees', path: '/portal/staff/payments', icon: <WalletCards size={19} />, desc: 'Tutor ledger & payouts' },
+            { name: 'Billing / Fees', path: '/portal/staff/payments', icon: <WalletCards size={19} />, desc: 'Tutor ledger & payouts', tourId: 'nav-payments' },
             { name: 'Agreements', path: '/portal/staff/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communications & tutor contracts' }
           ]
         },
         {
           label: 'Administration',
           items: [
-            { name: 'Help & Support', path: '/portal/staff/support', icon: <Headset size={19} />, desc: 'Help desk & live support chat' },
+            { name: 'Help & Support', path: '/portal/staff/support', icon: <Headset size={19} />, desc: 'Help desk & live support chat', tourId: 'nav-support' },
             { name: 'Settings', path: '/portal/staff/settings', icon: <Settings size={19} />, desc: 'Account preferences' }
           ]
         }
@@ -446,11 +542,12 @@ const PortalLayout: React.FC = () => {
       return [
         {
           label: 'Overview',
-          items: [{ name: 'Dashboard', path: '/portal/parent', icon: <LayoutDashboard size={19} />, desc: 'Parent dashboard' }]
+          items: [{ name: 'Dashboard', path: '/portal/parent', icon: <LayoutDashboard size={19} />, desc: 'Parent dashboard', tourId: 'nav-dashboard' }]
         },
         {
           label: 'Learning & Schedules',
           items: [
+            { name: 'Learning & Tracks', path: '/portal/parent/learning-tracks', icon: <GraduationCap size={19} />, desc: 'Linked children tracks & programme enrolment', tourId: 'nav-learning-tracks' },
             { name: 'Class Schedules', path: '/portal/parent/schedules', icon: <CalendarDays size={19} />, desc: 'Class timetable and session status' },
             { name: 'Resources', path: '/portal/parent/resources', icon: <BookOpen size={19} />, desc: 'Learning materials' }
           ]
@@ -460,20 +557,20 @@ const PortalLayout: React.FC = () => {
           items: [
             { name: 'Assignments', path: '/portal/parent/assignments', icon: <ClipboardCheck size={19} />, desc: 'Track assigned work' },
             { name: 'Assessments & Quizzes', path: '/portal/parent/assessments', icon: <ClipboardCheck size={19} />, desc: 'View learning assessments' },
-            { name: 'Assessment Results', path: '/portal/parent/examinations', icon: <FileCheck2 size={19} />, desc: 'View released results for linked children' }
+            { name: 'Assessment Results', path: '/portal/parent/examinations', icon: <FileCheck2 size={19} />, desc: 'View released results for linked children', tourId: 'nav-examinations' }
           ]
         },
         {
           label: 'Finance & Agreements',
           items: [
-            { name: 'Payments & Fees', path: '/portal/parent/payments', icon: <CreditCard size={19} />, desc: 'Invoices & statements' },
+            { name: 'Payments & Fees', path: '/portal/parent/payments', icon: <CreditCard size={19} />, desc: 'Invoices & statements', tourId: 'nav-payments' },
             { name: 'Agreements', path: '/portal/parent/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communications & family agreements' }
           ]
         },
         {
           label: 'Administration',
           items: [
-            { name: 'Help & Support', path: '/portal/parent/support', icon: <Headset size={19} />, desc: 'Help desk & live support chat' },
+            { name: 'Help & Support', path: '/portal/parent/support', icon: <Headset size={19} />, desc: 'Help desk & live support chat', tourId: 'nav-support' },
             { name: 'Settings', path: '/portal/parent/settings', icon: <Settings size={19} />, desc: 'Account preferences' }
           ]
         }
@@ -502,13 +599,40 @@ const PortalLayout: React.FC = () => {
 
   const NavLinkComponent = ({ item, mobile = false }: { item: NavItem; mobile?: boolean }) => {
     const active = isItemActive(item.path);
+    const locked = isNavPathLocked(item.path);
+
+    const handleLockedClick = () => {
+      toast.error(
+        entitlement?.restrictedClickMessage ||
+          'This section is locked until subscription payment is completed.'
+      );
+      if (mobile) setMobileMenuOpen(false);
+    };
 
     if (!mobile && !sidebarExpanded) {
+      if (locked) {
+        return (
+          <Tooltip content={`${item.name} • Locked until subscription is renewed`} placement="right" delay={150}>
+            <button
+              type="button"
+              onClick={handleLockedClick}
+              aria-disabled="true"
+              aria-label={`${item.name} (Locked)`}
+              className="relative flex items-center justify-center w-11 h-11 mx-auto my-0.5 rounded-xl text-slate-400 dark:text-slate-500 opacity-55 cursor-not-allowed hover:bg-red-50/50 dark:hover:bg-red-950/20 transition-all"
+            >
+              <span className="shrink-0 flex items-center justify-center">{item.icon}</span>
+              <Lock size={10} className="absolute bottom-1.5 right-1.5 text-red-500" />
+            </button>
+          </Tooltip>
+        );
+      }
+
       // Collapsed rail mode: icon-only with tooltip
       return (
         <Tooltip content={`${item.name} • ${item.desc}`} placement="right" delay={150}>
           <Link
             to={item.path}
+            data-tour-id={item.tourId}
             aria-label={item.name}
             className={`relative flex items-center justify-center w-11 h-11 mx-auto my-0.5 rounded-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C] focus-visible:ring-offset-1 ${
               active
@@ -525,11 +649,33 @@ const PortalLayout: React.FC = () => {
       );
     }
 
+    if (locked) {
+      return (
+        <Tooltip content={!mobile ? 'Locked until subscription payment is completed' : undefined} placement="right" delay={200}>
+          <button
+            type="button"
+            onClick={handleLockedClick}
+            aria-disabled="true"
+            className="w-full relative group flex items-center justify-between h-11 min-h-[44px] px-3 my-0.5 rounded-xl text-xs text-slate-400 dark:text-slate-500 opacity-60 cursor-not-allowed hover:bg-red-50/40 dark:hover:bg-red-950/20 transition-colors overflow-hidden text-left"
+          >
+            <span className="flex items-center min-w-0">
+              <span className="w-8 h-8 flex items-center justify-center shrink-0 ml-1 text-slate-400 dark:text-slate-500">
+                {item.icon}
+              </span>
+              <span className="min-w-0 truncate pl-2.5 text-[13px] font-medium">{item.name}</span>
+            </span>
+            <Lock size={13} className="shrink-0 text-red-500/80 ml-2" aria-hidden="true" />
+          </button>
+        </Tooltip>
+      );
+    }
+
     // Expanded / Mobile mode: full row with deliberate spacing, active indicator and white icon contrast
     return (
       <Tooltip content={!mobile ? item.desc : undefined} placement="right" delay={300}>
         <Link
           to={item.path}
+          data-tour-id={!mobile ? item.tourId : undefined}
           onClick={() => { if (mobile) setMobileMenuOpen(false); }}
           className={`relative group flex items-center h-11 min-h-[44px] px-3 my-0.5 rounded-xl text-xs transition-colors overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C] focus-visible:ring-offset-1 ${
             active
@@ -836,7 +982,9 @@ const PortalLayout: React.FC = () => {
               </button>
             </Tooltip>
 
-            <NotificationBell role={role} />
+            <div data-tour-id="header-notifications" className="flex items-center">
+              <NotificationBell role={role} />
+            </div>
 
             {/* Profile Dropdown (Avatar icon button only in header; full text inside menu) */}
             <div className="relative" ref={profileRef}>
@@ -880,6 +1028,16 @@ const PortalLayout: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setShowProfileMenu(false);
+                        setTourReplayToken((n) => n + 1);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2 text-[#14284B] dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-left cursor-pointer"
+                    >
+                      <HelpCircle size={14} /> Portal Guide
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowProfileMenu(false);
                         setShowPasswordModal(true);
                       }}
                       className="w-full flex items-center gap-2.5 px-4 py-2 text-[#14284B] dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-left cursor-pointer"
@@ -901,14 +1059,48 @@ const PortalLayout: React.FC = () => {
           </div>
         </header>
 
+        {/* Persistent Subscription Status / Grace Period / Lockdown Bar */}
+        <PortalSubscriptionBanner entitlement={entitlement} />
+
         {/* Main Routed Page Content */}
         <div className="flex-1 p-4 sm:p-6 lg:p-8">
-          <Outlet />
+          {entitlementLoading && ['school', 'student', 'parent'].includes(role) && !isAlwaysPermittedRoute(location.pathname) ? (
+            <div className="min-h-[320px] flex flex-col items-center justify-center gap-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <Loader2 className="animate-spin text-[#14284B] dark:text-slate-200" size={22} />
+              <span>Verifying subscription access…</span>
+            </div>
+          ) : entitlement?.isLocked && !isRouteAllowed(location.pathname) ? (
+            <PortalLockdownView
+              entitlement={entitlement}
+              restrictedFeatureName={currentPageTitle}
+            />
+          ) : (
+            <Outlet />
+          )}
         </div>
       </main>
 
       <ChangePasswordModal isOpen={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
+      {(['student', 'parent', 'school', 'staff'].includes(role)) && !entitlement?.isLocked && (
+        <PortalOnboardingTour
+          role={role as PortalTourRole}
+          studentOriginType={studentOriginType}
+          canAccessStudentBilling={studentBillingUnlocked && !parentEnrolledStudent}
+          isImpersonating={Boolean(impersonation)}
+          forceOpenToken={tourReplayToken}
+        />
+      )}
     </div>
+  );
+};
+
+const PortalLayout: React.FC = () => {
+  const location = useLocation();
+  const role = location.pathname.split('/')[2] || 'student';
+  return (
+    <SubscriptionEntitlementProvider role={role}>
+      <PortalLayoutInner role={role} />
+    </SubscriptionEntitlementProvider>
   );
 };
 

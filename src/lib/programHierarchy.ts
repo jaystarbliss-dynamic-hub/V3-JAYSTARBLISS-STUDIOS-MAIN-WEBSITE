@@ -71,6 +71,7 @@ export interface ProgramRecord {
   nodeType: ProgramNodeType;
   canContainChildren: boolean;
   isEnrollable: boolean;
+  showAsStandalone?: boolean;
   isPublished: boolean;
   isArchived: boolean;
   isUnassigned: boolean;
@@ -918,6 +919,7 @@ export function normalizeProgramRecord(id: string, raw: Record<string, any> = {}
     nodeType,
     canContainChildren,
     isEnrollable,
+    showAsStandalone: Boolean(raw.showAsStandalone === true),
     isPublished: status === 'PUBLISHED',
     isArchived: status === 'ARCHIVED',
     isUnassigned,
@@ -2551,4 +2553,258 @@ export function resolveProgramSubjectsAndModules(
 
   return Array.from(results.values());
 }
+
+/**
+ * Pure predicate: true if a programme is publicly published and active (not draft/archived).
+ */
+export function isProgramPublished(
+  program: Pick<ProgramRecord, 'status' | 'isArchived' | 'isPublished'> | null | undefined
+): boolean {
+  if (!program) return false;
+  return program.status === 'PUBLISHED' && !program.isArchived && program.isPublished !== false;
+}
+
+/**
+ * Returns direct published children of a programme node, sorted deterministically by
+ * sortOrder ascending, then stageNumber ascending, then newest-first.
+ */
+export function getPublishedDirectChildren(
+  parentId: string,
+  programsMap: Map<string, ProgramRecord>
+): ProgramRecord[] {
+  if (!parentId) return [];
+  const children: ProgramRecord[] = [];
+  for (const candidate of programsMap.values()) {
+    if (candidate.id === parentId) continue;
+    if (candidate.parentProgramId !== parentId) continue;
+    if (!isProgramPublished(candidate)) continue;
+    children.push(candidate);
+  }
+  return children.sort((a, b) => {
+    const orderDiff = (a.sortOrder ?? 999) - (b.sortOrder ?? 999);
+    if (orderDiff !== 0) return orderDiff;
+    const stageDiff = (a.stageNumber ?? 999) - (b.stageNumber ?? 999);
+    if (stageDiff !== 0) return stageDiff;
+    return (parseProgramTimestampMs(b.createdAt) ?? 0) - (parseProgramTimestampMs(a.createdAt) ?? 0);
+  });
+}
+
+/**
+ * Counts published discoverable descendants of a node using cycle-safe traversal.
+ */
+export function countPublishedDiscoverableDescendants(
+  programId: string,
+  programsMap: Map<string, ProgramRecord>
+): number {
+  const visited = new Set<string>([programId]);
+  const stack: string[] = [programId];
+  let count = 0;
+
+  while (stack.length > 0) {
+    const currentId = stack.pop()!;
+    const children = getPublishedDirectChildren(currentId, programsMap);
+    for (const child of children) {
+      if (visited.has(child.id)) continue;
+      visited.add(child.id);
+      if (child.nodeType !== 'CONTAINER' || child.isEnrollable) {
+        count += 1;
+      }
+      stack.push(child.id);
+    }
+  }
+  return count;
+}
+
+/**
+ * Determines whether a programme node should be discoverable in the hierarchy-aware
+ * public or portal catalogue:
+ *  - Must be PUBLISHED and not ARCHIVED.
+ *  - Either enrollable itself (ENROLLABLE / HYBRID / enrollable container)
+ *    OR a published container/parent with at least one published discoverable descendant.
+ */
+export function isProgramCatalogDiscoverable(
+  program: ProgramRecord,
+  programsMap: Map<string, ProgramRecord>
+): boolean {
+  if (!isProgramPublished(program)) return false;
+  if (isProgramPubliclyEnrollable(program)) return true;
+  return countPublishedDiscoverableDescendants(program.id, programsMap) > 0;
+}
+
+export interface TopLevelCatalogEntry {
+  program: ProgramRecord;
+  rootKey: CanonicalRootKey | null;
+  rootTitle: string;
+  indicators: ProgramIndicatorLabel[];
+  directChildrenCount: number;
+  totalDescendantsCount: number;
+  isContainer: boolean;
+  breadcrumbPath: string[];
+  descendantSearchText: string;
+}
+
+const CATALOG_ROOT_LABELS: Record<CanonicalRootKey, string> = {
+  technology: 'Technology',
+  music: 'Music',
+  academics: 'Academics',
+  'design-graphics': 'Design & Graphics',
+};
+
+function hasValidPublishedParent(
+  program: ProgramRecord,
+  programsMap: Map<string, ProgramRecord>
+): ProgramRecord | null {
+  if (!program.parentProgramId || program.parentProgramId === program.id) return null;
+  const parent = programsMap.get(program.parentProgramId);
+  if (!parent || !isProgramPublished(parent)) return null;
+
+  // Cycle guard: ensure walking up from parent does not loop back to program
+  const seen = new Set<string>([program.id]);
+  let cursor: ProgramRecord | undefined = parent;
+  let guard = 0;
+  while (cursor && guard < 30) {
+    if (seen.has(cursor.id)) return null;
+    seen.add(cursor.id);
+    if (!cursor.parentProgramId) break;
+    cursor = programsMap.get(cursor.parentProgramId);
+    guard += 1;
+  }
+  return parent;
+}
+
+function collectDescendantSearchText(
+  programId: string,
+  programsMap: Map<string, ProgramRecord>
+): string {
+  const visited = new Set<string>([programId]);
+  const stack = [programId];
+  const parts: string[] = [];
+
+  while (stack.length > 0) {
+    const currentId = stack.pop()!;
+    const children = getPublishedDirectChildren(currentId, programsMap);
+    for (const child of children) {
+      if (visited.has(child.id)) continue;
+      visited.add(child.id);
+      parts.push(child.title, child.shortDescription);
+      stack.push(child.id);
+    }
+  }
+  return parts.filter(Boolean).join(' ').toLowerCase();
+}
+
+/**
+ * Returns top-level hierarchy-aware catalogue entries for the public & portal catalogue:
+ * - Children with a valid published parent are NEVER surfaced independently at the top level
+ *   unless explicitly configured with `showAsStandalone: true`.
+ * - Structural CONTAINER parents are surfaced if they have at least one published discoverable
+ *   descendant so learners can browse into containers (e.g. Technology -> Smart Techies -> Python).
+ * - When `rootFilter` is `'ALL'`, returns top-level published discoverable entries (the 4 primary
+ *   roots if present, plus any published standalone top-level programmes, plus any explicitly
+ *   `showAsStandalone: true` child programmes).
+ * - When `rootFilter` is a specific `CanonicalRootKey`, drills one level inside that primary root
+ *   (showing its direct published containers & courses, or the root itself if it has no children)
+ *   so grandchildren remain nested inside their parent container instead of flattening.
+ */
+export function getTopLevelCatalogEntries(
+  programsMap: Map<string, ProgramRecord>,
+  rootFilter: CanonicalRootKey | 'ALL' = 'ALL',
+  nowMs: number = Date.now()
+): TopLevelCatalogEntry[] {
+  const allPublished = Array.from(programsMap.values()).filter((p) =>
+    isProgramCatalogDiscoverable(p, programsMap)
+  );
+
+  // Identify canonical primary root documents if they exist in the map
+  const primaryRootByKey = new Map<CanonicalRootKey, ProgramRecord>();
+  for (const p of allPublished) {
+    if (p.isPrimaryRoot && !p.parentProgramId) {
+      const res = resolveProgramCanonicalRoot(p, programsMap);
+      if (res.rootKey && !primaryRootByKey.has(res.rootKey)) {
+        primaryRootByKey.set(res.rootKey, p);
+      }
+    }
+  }
+
+  let selected: ProgramRecord[] = [];
+
+  if (rootFilter === 'ALL') {
+    selected = allPublished.filter((p) => {
+      const validParent = hasValidPublishedParent(p, programsMap);
+      if (!validParent) return true;
+      // If parent is one of the 4 primary roots AND user wants top-level overview,
+      // check whether primary roots themselves are in the published catalog:
+      // If primary roots exist as published docs, keep children nested under their parent
+      // unless explicitly marked showAsStandalone.
+      return p.showAsStandalone === true;
+    });
+  } else {
+    const rootDoc = primaryRootByKey.get(rootFilter);
+    const rootDirectChildren = rootDoc
+      ? getPublishedDirectChildren(rootDoc.id, programsMap).filter((c) =>
+          isProgramCatalogDiscoverable(c, programsMap)
+        )
+      : [];
+
+    if (rootDoc && rootDirectChildren.length > 0) {
+      const directIds = new Set(rootDirectChildren.map((c) => c.id));
+      const extras = allPublished.filter((p) => {
+        if (p.id === rootDoc.id || directIds.has(p.id)) return false;
+        const res = resolveProgramCanonicalRoot(p, programsMap);
+        if (res.rootKey !== rootFilter) return false;
+        const validParent = hasValidPublishedParent(p, programsMap);
+        return !validParent || p.showAsStandalone === true;
+      });
+      selected = [...rootDirectChildren, ...extras];
+    } else {
+      selected = allPublished.filter((p) => {
+        const res = resolveProgramCanonicalRoot(p, programsMap);
+        if (res.rootKey !== rootFilter) return false;
+        const validParent = hasValidPublishedParent(p, programsMap);
+        return !validParent || p.showAsStandalone === true;
+      });
+    }
+  }
+
+  // Sort: primary roots by canonical order if rootFilter === 'ALL', otherwise sortOrder / newest-first
+  const sorted = [...selected].sort((a, b) => {
+    if (a.isPrimaryRoot && b.isPrimaryRoot) {
+      return (a.sortOrder ?? 99) - (b.sortOrder ?? 99);
+    }
+    if (a.isPrimaryRoot !== b.isPrimaryRoot) {
+      return a.isPrimaryRoot ? -1 : 1;
+    }
+    const aHasChildren = getPublishedDirectChildren(a.id, programsMap).length > 0;
+    const bHasChildren = getPublishedDirectChildren(b.id, programsMap).length > 0;
+    if (aHasChildren !== bHasChildren) {
+      return aHasChildren ? -1 : 1;
+    }
+    const aTime = parseProgramTimestampMs(a.publishedAt) ?? parseProgramTimestampMs(a.createdAt) ?? 0;
+    const bTime = parseProgramTimestampMs(b.publishedAt) ?? parseProgramTimestampMs(b.createdAt) ?? 0;
+    if (bTime !== aTime) return bTime - aTime;
+    return (a.sortOrder ?? 999) - (b.sortOrder ?? 999);
+  });
+
+  return sorted.map((program) => {
+    const resolution = resolveProgramCanonicalRoot(program, programsMap);
+    const directChildren = getPublishedDirectChildren(program.id, programsMap).filter((c) =>
+      isProgramCatalogDiscoverable(c, programsMap)
+    );
+    const totalDescendantsCount = countPublishedDiscoverableDescendants(program.id, programsMap);
+    const breadcrumbs = getProgramBreadcrumbs(program.id, programsMap);
+    const isContainer = program.nodeType === 'CONTAINER' || directChildren.length > 0;
+    return {
+      program,
+      rootKey: resolution.rootKey,
+      rootTitle: resolution.rootKey ? CATALOG_ROOT_LABELS[resolution.rootKey] : 'Specialised Track',
+      indicators: computeProgramIndicators(program, nowMs),
+      directChildrenCount: directChildren.length,
+      totalDescendantsCount,
+      isContainer,
+      breadcrumbPath: breadcrumbs.map((b) => b.title),
+      descendantSearchText: collectDescendantSearchText(program.id, programsMap),
+    };
+  });
+}
+
 

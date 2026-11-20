@@ -18,6 +18,8 @@ import { auth, db } from '../../lib/firebase';
 import { formatNormalizedClassDisplay } from '../../lib/classes';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
+import { useSubscriptionEntitlement } from '../../contexts/SubscriptionEntitlementContext';
+import { PortalLockdownView } from '../../components/portal/PortalLockdownView';
 
 export type SchoolDashboardTab = 'overview' | 'roster' | 'exams' | 'passcodes' | 'resources' | 'links' | 'schedules' | 'partnership';
 export interface SchoolDashboardProps { initialTab?: SchoolDashboardTab; }
@@ -72,6 +74,7 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const { entitlement, loading: entitlementLoading } = useSubscriptionEntitlement();
   const effective = getEffectiveAuth();
   const [tab, setTab] = useState<SchoolDashboardTab>(initialTab || 'overview');
   const [school, setSchool] = useState<SchoolRecord | null>(null);
@@ -203,6 +206,17 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
       if (activeSchoolId && activeSchoolId !== 'school-default') {
         sessionStorage.setItem('schoolId', activeSchoolId);
         localStorage.setItem('jaystar_cached_school_id', activeSchoolId);
+      }
+
+      // Subscription Lockdown short-circuit: do NOT fetch restricted roster, schedules, exams, links, or passcodes
+      if (entitlement?.isLocked) {
+        setStudentCount(0);
+        setStudentBreakdowns([]);
+        setClassSchedules([]);
+        setExams([]);
+        setLinks([]);
+        setPasscodes([]);
+        return;
       }
 
       // Collect all verified school ID aliases and names for this institution
@@ -360,8 +374,11 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
       setSchool(null); setStudentCount(0); setStudentBreakdowns([]); setExams([]); setLinks([]); setPasscodes([]); setClassSchedules([]);
       toast.error(error instanceof Error ? error.message : 'Unable to load school operations.');
     } finally { setLoading(false); }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
+  }, [entitlement?.isLocked]);
+  useEffect(() => {
+    if (entitlementLoading) return;
+    void load();
+  }, [entitlementLoading, load]);
 
   const classDistribution = useMemo(() => {
     const counts = new Map<string, number>();
@@ -425,8 +442,38 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
     catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to update passcode.'); }
   };
 
-  if (loading) return <div className="min-h-[360px] flex items-center justify-center gap-3 text-sm text-slate-500"><Loader2 className="animate-spin" size={22}/> Loading secure school operations…</div>;
+  if (loading || entitlementLoading) return <div className="min-h-[360px] flex items-center justify-center gap-3 text-sm text-slate-500"><Loader2 className="animate-spin" size={22}/> Loading secure school operations…</div>;
   const schoolName = school?.name || 'School Portal';
+
+  // Basic locked institutional overview — zero roster/student counts, schedules, exams, or restricted data exposed
+  if (entitlement?.isLocked) {
+    return (
+      <div className="space-y-6 max-w-5xl mx-auto pb-12">
+        <SEO title={`Subscription Renewal Required | ${schoolName}`} description="School subscription renewal required." noindex />
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-[#B91C1C]">
+              Partner Institution Overview
+            </p>
+            <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] dark:text-white tracking-tight mt-0.5">
+              {schoolName}
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Coordinator: {school?.coordinator || 'School Administrator'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/portal/school/payments')}
+            className="min-h-10 px-4 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-extrabold uppercase tracking-wider inline-flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            <CreditCard size={15} /> Open Billing Center
+          </button>
+        </header>
+        <PortalLockdownView entitlement={entitlement} compact />
+      </div>
+    );
+  }
 
   const billingStatusLabel = String(school?.billing?.status || 'ACTIVE PARTNERSHIP').replace(/_/g, ' ');
   const isBillingAttention = ['OVERDUE', 'DUE', 'UNPAID'].includes(String(school?.billing?.status || '').toUpperCase());

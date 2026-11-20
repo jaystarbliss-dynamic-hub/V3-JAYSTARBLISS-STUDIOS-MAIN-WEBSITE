@@ -1,5 +1,12 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
+import { enforceEntitlementOrLock } from '../../api/_lib/subscription-service';
+import { getLagosDateKey } from '../../api/_lib/subscription-core';
+import {
+  type MeetingLinkUpdateScope,
+  planOccurrenceLinkUpdates,
+  validateMeetingLinkUrl,
+} from '../../api/_lib/schedule-link-planner';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -179,6 +186,10 @@ const loadRecords = async () => {
 
 export const handler: Handler = async event => {
   try {
+    const entitlementGuard = await enforceEntitlementOrLock(event);
+    if (!entitlementGuard.ok) return entitlementGuard.response;
+    const lockedChildSet = new Set(entitlementGuard.entitlement.lockedChildIds || []);
+
     const { decoded, user, uid } = await requireUser(event);
     const role = String(user.role || '').toUpperCase();
     const method = event.httpMethod || 'GET';
@@ -257,7 +268,12 @@ export const handler: Handler = async event => {
           return recordClasses.some((level: string) => identity.classes.has(level));
         });
       } else if (role === 'PARENT') {
-        records = records.filter((r: any) => String(r.parentId || '') === uid || normalize(r.parentEmail) === normalize(user.email));
+        records = records.filter((r: any) => {
+          const matchesParent = String(r.parentId || '') === uid || normalize(r.parentEmail) === normalize(user.email);
+          if (!matchesParent) return false;
+          if (lockedChildSet.size > 0 && r.studentId && lockedChildSet.has(String(r.studentId))) return false;
+          return true;
+        });
       } else if (isTutor(role)) {
         const identity = await resolveTutorIdentity(uid, user);
         const scope = await resolveTutorScope(uid, user, identity);
@@ -311,6 +327,15 @@ export const handler: Handler = async event => {
       let batch = adminDb.batch(); let writes = 0;
       const commitIfNeeded = async () => { if (writes >= 450) { await batch.commit(); batch = adminDb.batch(); writes = 0; } };
 
+      const initialLinkCheck = validateMeetingLinkUrl(String(body.meetingLink || ''));
+      if (String(body.meetingLink || '').trim() && !initialLinkCheck.valid) {
+        return json(400, { error: initialLinkCheck.error || 'Please provide a valid HTTPS meeting link.' });
+      }
+      const initialLink = initialLinkCheck.normalizedUrl;
+      const initialPlatform = initialLinkCheck.platform;
+      const actorName = String(user.name || user.fullName || user.displayName || decoded.email || 'Faculty').trim();
+      const nowDate = new Date();
+
       if (targetType === 'STUDENT') {
         const studentId = String(body.studentId || '').trim();
         if (!studentId && !body.studentName) return json(400, { error: 'Private student name or student ID is required.' });
@@ -319,7 +344,9 @@ export const handler: Handler = async event => {
           batch.set(ref, {
             scheduleGroupId: groupId, targetType: 'STUDENT', studentId, studentName: String(body.studentName || ''), parentId: String(body.parentId || ''), studentEmail: String(body.studentEmail || ''),
             title, programId: String(body.programId || ''), programName: String(body.programName || title), tutorId, tutorName,
-            date: dateFor(startDate, i), startDate, startTime, endTime, status: 'SCHEDULED', recurring, recurrence: recurring ? 'WEEKLY' : 'ONCE', occurrenceNumber: i + 1, occurrenceTotal: count, createdBy: uid, createdAt: new Date(), updatedAt: new Date()
+            meetingLink: initialLink, defaultMeetingLink: initialLink, linkSource: 'INHERITED', platform: initialPlatform,
+            ...(initialLink ? { meetingLinkUpdatedByUid: uid, meetingLinkUpdatedByName: actorName, meetingLinkUpdatedAt: nowDate } : {}),
+            date: dateFor(startDate, i), startDate, startTime, endTime, status: 'SCHEDULED', recurring, recurrence: recurring ? 'WEEKLY' : 'ONCE', occurrenceNumber: i + 1, occurrenceTotal: count, createdBy: uid, createdAt: nowDate, updatedAt: nowDate
           }); writes++; await commitIfNeeded();
         }
       } else {
@@ -334,8 +361,10 @@ export const handler: Handler = async event => {
           batch.set(ref, {
             scheduleGroupId: groupId, targetType: 'SCHOOL', schoolId, schoolName: resolvedSchoolName, classLevel, classLevels,
             title, programId: String(body.programId || ''), programName: String(body.programName || title), tutorId, tutorName,
-            meetingLink: String(body.meetingLink || ''), date: dateFor(startDate, i), startDate, startTime, endTime, status: 'SCHEDULED', recurring,
-            recurrence: recurring ? 'WEEKLY' : 'ONCE', occurrenceNumber: i + 1, occurrenceTotal: count, createdBy: uid, createdAt: new Date(), updatedAt: new Date()
+            meetingLink: initialLink, defaultMeetingLink: initialLink, linkSource: 'INHERITED', platform: initialPlatform,
+            ...(initialLink ? { meetingLinkUpdatedByUid: uid, meetingLinkUpdatedByName: actorName, meetingLinkUpdatedAt: nowDate } : {}),
+            date: dateFor(startDate, i), startDate, startTime, endTime, status: 'SCHEDULED', recurring,
+            recurrence: recurring ? 'WEEKLY' : 'ONCE', occurrenceNumber: i + 1, occurrenceTotal: count, createdBy: uid, createdAt: nowDate, updatedAt: nowDate
           }); writes++; await commitIfNeeded();
         }
       }
@@ -345,9 +374,126 @@ export const handler: Handler = async event => {
 
     if (method === 'PATCH') {
       const body = JSON.parse(event.body || '{}');
+      const action = String(body.action || '').trim().toLowerCase();
       const scheduleId = String(body.scheduleId || '').trim();
       const scheduleGroupId = String(body.scheduleGroupId || '').trim();
       const status = String(body.status || '').toUpperCase();
+      const actorName = String(user.name || user.fullName || user.displayName || decoded.email || 'Faculty').trim();
+
+      // Dedicated Part 8 Per-Session Meeting Link Manager (Single / Selected Future / Future Inherited / Reset to Default)
+      if (action === 'update_meeting_link') {
+        if (!isAdmin(role) && !isTutor(role)) {
+          return json(403, { error: 'Only assigned tutors and authorized administrators may change class meeting links.' });
+        }
+
+        const scope = String(body.scope || 'SINGLE').toUpperCase() as MeetingLinkUpdateScope;
+        if (!['SINGLE', 'SELECTED_FUTURE', 'ALL_FUTURE_INHERITED', 'ALL_FUTURE', 'RESET_TO_DEFAULT'].includes(scope)) {
+          return json(400, { error: 'Invalid meeting link update scope.' });
+        }
+
+        const rawLink = String(body.meetingLink ?? '');
+        if (scope !== 'RESET_TO_DEFAULT' && rawLink.trim()) {
+          const check = validateMeetingLinkUrl(rawLink);
+          if (!check.valid) return json(400, { error: check.error || 'Please provide a valid HTTPS meeting URL.' });
+        }
+
+        const selectedIds: string[] = Array.isArray(body.selectedOccurrenceIds)
+          ? body.selectedOccurrenceIds.map((v: any) => String(v || '').trim()).filter(Boolean)
+          : [];
+
+        let targetGroupId = scheduleGroupId;
+        const candidateDocs = new Map<string, { ref: any; data: Record<string, any> }>();
+
+        if (scheduleId) {
+          const ref = adminDb.collection('classSchedules').doc(scheduleId);
+          const snap = await ref.get();
+          if (!snap.exists) return json(404, { error: 'Class schedule occurrence not found.' });
+          const rec = snap.data() || {};
+          candidateDocs.set(snap.id, { ref, data: rec });
+          if (!targetGroupId && rec.scheduleGroupId) targetGroupId = String(rec.scheduleGroupId);
+        }
+
+        if (scope !== 'SINGLE' && scope !== 'RESET_TO_DEFAULT') {
+          if (targetGroupId) {
+            const gSnap = await adminDb.collection('classSchedules').where('scheduleGroupId', '==', targetGroupId).get();
+            gSnap.docs.forEach((d) => candidateDocs.set(d.id, { ref: d.ref, data: d.data() || {} }));
+          }
+          for (const extraId of selectedIds) {
+            if (candidateDocs.has(extraId)) continue;
+            const snap = await adminDb.collection('classSchedules').doc(extraId).get();
+            if (snap.exists) candidateDocs.set(snap.id, { ref: snap.ref, data: snap.data() || {} });
+          }
+        }
+
+        if (!candidateDocs.size) {
+          return json(404, { error: 'No matching class schedule occurrences were found.' });
+        }
+
+        // Strict tutor ownership enforcement: a tutor may ONLY update classes assigned to them
+        if (isTutor(role) && !isAdmin(role)) {
+          const identity = await resolveTutorIdentity(uid, user);
+          for (const entry of candidateDocs.values()) {
+            if (!canTutorAccessRecord(entry.data, identity)) {
+              return json(403, { error: 'You can only manage meeting links for classes assigned to you.' });
+            }
+          }
+        }
+
+        const occurrences = Array.from(candidateDocs.entries()).map(([id, entry]) => ({
+          id,
+          ...entry.data,
+        }));
+
+        const nowDate = new Date();
+        const plan = planOccurrenceLinkUpdates({
+          occurrences,
+          targetOccurrenceId: scheduleId || undefined,
+          selectedOccurrenceIds: selectedIds,
+          scope,
+          newLink: rawLink,
+          nowLagosDateKey: getLagosDateKey(nowDate),
+        });
+
+        let batch = adminDb.batch();
+        let writes = 0;
+        for (const patch of plan.patches) {
+          const entry = candidateDocs.get(patch.id);
+          if (!entry) continue;
+          const payload: Record<string, any> = {
+            meetingLink: patch.meetingLink,
+            linkSource: patch.linkSource,
+            platform: patch.platform,
+            meetingLinkUpdatedByUid: uid,
+            meetingLinkUpdatedByName: actorName,
+            meetingLinkUpdatedAt: nowDate,
+            updatedBy: uid,
+            updatedByUid: uid,
+            updatedByName: actorName,
+            updatedAt: nowDate,
+          };
+          if (patch.defaultMeetingLink !== undefined) {
+            payload.defaultMeetingLink = patch.defaultMeetingLink;
+          }
+          batch.set(entry.ref, payload, { merge: true });
+          writes += 1;
+          if (writes >= 450) {
+            await batch.commit();
+            batch = adminDb.batch();
+            writes = 0;
+          }
+        }
+        if (writes > 0) await batch.commit();
+
+        return json(200, {
+          updated: true,
+          scope,
+          updatedCount: plan.patches.length,
+          skippedHistoricalCount: plan.skippedHistoricalCount,
+          skippedCustomOverrideCount: plan.skippedCustomOverrideCount,
+          normalizedUrl: plan.normalizedUrl,
+          platform: plan.platform,
+        });
+      }
 
       if (scheduleId) {
         const ref = adminDb.collection('classSchedules').doc(scheduleId);

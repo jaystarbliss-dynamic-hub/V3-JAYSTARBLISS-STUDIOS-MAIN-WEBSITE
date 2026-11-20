@@ -12,6 +12,7 @@ import {
   normalizeClassName,
   validateBulkStudentRows,
 } from '../../api/_lib/jdi-assessment.js';
+import { enforceEntitlementOrLock } from '../../api/_lib/subscription-service';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -38,7 +39,9 @@ export const handler: Handler = async (event) => {
   try {
     const rawToken = bearer(event);
     if (!rawToken) return json(401, { error: 'Authentication required.' });
-    const decoded = await adminAuth.verifyIdToken(rawToken);
+    const entitlementGuard = await enforceEntitlementOrLock(event);
+    if (!entitlementGuard.ok) return entitlementGuard.response;
+    const decoded = entitlementGuard.decoded;
     const callerSnap = await adminDb.collection('users').doc(decoded.uid).get();
     if (!callerSnap.exists) return json(403, { error: 'Portal profile not found.' });
     const caller = callerSnap.data() || {};

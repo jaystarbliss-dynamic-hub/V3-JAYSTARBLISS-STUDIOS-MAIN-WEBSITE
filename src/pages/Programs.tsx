@@ -25,7 +25,8 @@ import LearningSchoolsGrid from '../components/ecosystem/LearningSchoolsGrid';
 import LearningPathBuilder from '../components/ecosystem/LearningPathBuilder';
 import InteractiveTrackRoadmap from '../components/ecosystem/InteractiveTrackRoadmap';
 import PageHeader from '../components/ui/PageHeader';
-import { pageHeaderImages, getProgramImage } from '../lib/stockImages';
+import { pageHeaderImages } from '../lib/stockImages';
+import { resolveProgramBackgroundImage } from '../lib/programMedia';
 import { usePageSection } from '../lib/cms';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import {
@@ -34,10 +35,7 @@ import {
   type ProgramIndicatorLabel,
   normalizeProgramRecord,
   normalizeCanonicalRootKey,
-  resolveProgramCanonicalRoot,
-  sortProgramsNewestFirst,
-  isProgramPubliclyEnrollable,
-  computeProgramIndicators,
+  getTopLevelCatalogEntries,
 } from '../lib/programHierarchy';
 
 function resolveProgramRouteSlug(program: ProgramRecord): string {
@@ -234,38 +232,29 @@ const Programs: React.FC = () => {
     return map;
   }, [allPrograms]);
 
-  // Enrollable published programmes sorted newest-first with resolved canonical roots
+  // Hierarchy-aware top-level catalogue entries (children stay nested unless showAsStandalone is true)
   const catalogEntries = useMemo(() => {
-    const enrollable = allPrograms.filter((p) => isProgramPubliclyEnrollable(p));
-    const sorted = sortProgramsNewestFirst(enrollable);
-    return sorted.map((program) => {
-      const resolution = resolveProgramCanonicalRoot(program, programsMap);
-      const indicators = computeProgramIndicators(program);
-      return {
-        program,
-        rootKey: resolution.rootKey,
-        rootTitle: resolution.rootKey ? ROOT_LABEL_MAP[resolution.rootKey] : 'Specialised Track',
-        indicators,
-      };
-    });
-  }, [allPrograms, programsMap]);
+    return getTopLevelCatalogEntries(programsMap, selectedRootFilter);
+  }, [programsMap, selectedRootFilter]);
+
+  const totalTopLevelCount = useMemo(() => {
+    return getTopLevelCatalogEntries(programsMap, 'ALL').length;
+  }, [programsMap]);
 
   const filteredEntries = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return catalogEntries.filter(({ program, rootKey, rootTitle }) => {
-      const matchesRoot =
-        selectedRootFilter === 'ALL' ? true : rootKey === selectedRootFilter;
-      if (!matchesRoot) return false;
-      if (!q) return true;
+    if (!q) return catalogEntries;
+    return catalogEntries.filter(({ program, rootTitle, descendantSearchText }) => {
       return (
         program.title.toLowerCase().includes(q) ||
         program.shortDescription.toLowerCase().includes(q) ||
         program.fullDescription.toLowerCase().includes(q) ||
         program.whoIsItFor.toLowerCase().includes(q) ||
-        rootTitle.toLowerCase().includes(q)
+        rootTitle.toLowerCase().includes(q) ||
+        descendantSearchText.includes(q)
       );
     });
-  }, [catalogEntries, selectedRootFilter, searchQuery]);
+  }, [catalogEntries, searchQuery]);
 
   const handleSelectFilter = (nextFilter: CatalogFilterKey) => {
     setSelectedRootFilter(nextFilter);
@@ -365,7 +354,7 @@ const Programs: React.FC = () => {
             {
               id: 'catalog',
               label: 'Program Catalog',
-              number: String(catalogEntries.length).padStart(2, '0'),
+              number: String(totalTopLevelCount).padStart(2, '0'),
               title: 'Program Catalog',
               description:
                 'Search and filter every published course, track, and workshop directly.',
@@ -641,75 +630,164 @@ const Programs: React.FC = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4">
-                  {filteredEntries.map(({ program, rootTitle, indicators }) => (
-                    <Card
-                      key={program.id}
-                      hoverEffect
-                      className="pro-surface pro-interactive flex flex-col justify-between overflow-hidden !rounded-2xl"
-                    >
-                      <div>
-                        <div className="relative h-28 sm:h-32 overflow-hidden bg-slate-900">
-                          <img
-                            src={
-                              program.featuredImage ||
-                              getProgramImage(program.categoryId)
-                            }
-                            alt={program.title || 'Programme cover'}
-                            loading="lazy"
-                            className="absolute inset-0 w-full h-full object-cover"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-950/15 to-transparent" />
-                          {indicators.length > 0 && (
-                            <div className="absolute top-2 left-2 right-2 flex flex-wrap gap-1">
-                              {indicators.map((label) => (
-                                <span
-                                  key={label}
-                                  className={`px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] border rounded-sm backdrop-blur-xs bg-white/90 dark:bg-slate-950/90 ${INDICATOR_STYLE_MAP[label]}`}
-                                >
-                                  {label}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                  {filteredEntries.map(
+                    ({
+                      program,
+                      rootKey,
+                      rootTitle,
+                      indicators,
+                      directChildrenCount,
+                      totalDescendantsCount,
+                      isContainer,
+                    }) => {
+                      const bgImage = resolveProgramBackgroundImage(program, programsMap, rootKey);
+                      const routeHref = `/programs/${resolveProgramRouteSlug(program)}`;
 
-                        <CardContent className="!p-3 sm:!p-3.5 space-y-1.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#B91C1C] dark:text-red-400 truncate">
-                              {rootTitle}
-                            </span>
-                            <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 shrink-0">
-                              {program.deliveryMode || 'Online / Physical'}
-                            </span>
+                      if (isContainer) {
+                        const trackCount =
+                          totalDescendantsCount > directChildrenCount
+                            ? totalDescendantsCount
+                            : directChildrenCount;
+                        return (
+                          <Link
+                            key={program.id}
+                            to={routeHref}
+                            className="group relative flex flex-col justify-between min-h-[268px] sm:min-h-[288px] rounded-2xl overflow-hidden border border-slate-200/80 dark:border-white/15 bg-slate-950 shadow-sm hover:shadow-xl transition-all duration-300"
+                          >
+                            <img
+                              src={bgImage}
+                              alt={program.title || 'Programme container cover'}
+                              loading="lazy"
+                              className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-[1.04]"
+                            />
+                            <div
+                              className="absolute inset-0 bg-gradient-to-t from-slate-950/95 via-slate-950/60 to-slate-950/20"
+                              aria-hidden="true"
+                            />
+
+                            {/* Top meta row */}
+                            <div className="relative z-10 p-3.5 flex items-start justify-between gap-2">
+                              <span className="text-[10px] font-black uppercase tracking-[0.16em] text-red-400">
+                                {rootTitle}
+                              </span>
+                              {indicators.length > 0 && (
+                                <div className="flex flex-wrap justify-end gap-1">
+                                  {indicators.map((label) => (
+                                    <span
+                                      key={label}
+                                      className={`px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] border rounded-sm bg-slate-950/80 text-white border-white/20`}
+                                    >
+                                      {label}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Bottom Editorial Copy */}
+                            <div className="relative z-10 p-4 pt-8 space-y-2">
+                              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-300/90 tabular-nums">
+                                {trackCount > 0
+                                  ? `${trackCount} ${trackCount === 1 ? 'Sub-Programme' : 'Sub-Programmes'}`
+                                  : 'Programme Pathway'}
+                              </div>
+                              <h3 className="text-base sm:text-lg font-extrabold text-white leading-snug line-clamp-2 tracking-tight">
+                                {program.title}
+                              </h3>
+                              {program.shortDescription && (
+                                <p className="text-[11px] text-slate-200/85 line-clamp-2 leading-relaxed">
+                                  {program.shortDescription}
+                                </p>
+                              )}
+                              <div className="pt-2 flex items-center justify-between gap-2 border-t border-white/15">
+                                <span className="text-[11px] font-semibold text-slate-300 truncate">
+                                  {program.nodeType === 'CONTAINER'
+                                    ? 'Browse Pathway'
+                                    : program.duration || 'Flexible Schedule'}
+                                </span>
+                                <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-white group-hover:text-red-300 transition-colors shrink-0">
+                                  <span>
+                                    {program.nodeType === 'CONTAINER' ? 'Explore' : 'View'}
+                                  </span>
+                                  <ArrowRight
+                                    size={12}
+                                    className="transition-transform group-hover:translate-x-0.5"
+                                  />
+                                </span>
+                              </div>
+                            </div>
+                          </Link>
+                        );
+                      }
+
+                      return (
+                        <Card
+                          key={program.id}
+                          hoverEffect
+                          className="pro-surface pro-interactive flex flex-col justify-between overflow-hidden !rounded-2xl"
+                        >
+                          <div>
+                            <div className="relative h-28 sm:h-32 overflow-hidden bg-slate-900">
+                              <img
+                                src={bgImage}
+                                alt={program.title || 'Programme cover'}
+                                loading="lazy"
+                                className="absolute inset-0 w-full h-full object-cover"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-950/15 to-transparent" />
+                              {indicators.length > 0 && (
+                                <div className="absolute top-2 left-2 right-2 flex flex-wrap gap-1">
+                                  {indicators.map((label) => (
+                                    <span
+                                      key={label}
+                                      className={`px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] border rounded-sm backdrop-blur-xs bg-white/90 dark:bg-slate-950/90 ${INDICATOR_STYLE_MAP[label]}`}
+                                    >
+                                      {label}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <CardContent className="!p-3 sm:!p-3.5 space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#B91C1C] dark:text-red-400 truncate">
+                                  {rootTitle}
+                                </span>
+                                <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 shrink-0">
+                                  {program.deliveryMode || 'Online / Physical'}
+                                </span>
+                              </div>
+
+                              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white leading-snug line-clamp-2">
+                                {program.title}
+                              </h3>
+
+                              {program.shortDescription && (
+                                <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                                  {program.shortDescription}
+                                </p>
+                              )}
+                            </CardContent>
                           </div>
 
-                          <h3 className="text-sm font-extrabold text-slate-900 dark:text-white leading-snug line-clamp-2">
-                            {program.title}
-                          </h3>
-
-                          {program.shortDescription && (
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                              {program.shortDescription}
-                            </p>
-                          )}
-                        </CardContent>
-                      </div>
-
-                      <CardFooter className="!px-3 sm:!px-3.5 !py-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
-                          {program.duration || 'Flexible Schedule'}
-                        </span>
-                        <Button
-                          to={`/programs/${resolveProgramRouteSlug(program)}`}
-                          size="sm"
-                          className="!px-2.5 !py-1.5 font-bold text-[11px] bg-[#B91C1C] hover:bg-red-700 text-white shrink-0"
-                          rightIcon={<ArrowRight size={12} />}
-                        >
-                          View
-                        </Button>
-                      </CardFooter>
-                    </Card>
-                  ))}
+                          <CardFooter className="!px-3 sm:!px-3.5 !py-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                              {program.duration || 'Flexible Schedule'}
+                            </span>
+                            <Button
+                              to={routeHref}
+                              size="sm"
+                              className="!px-2.5 !py-1.5 font-bold text-[11px] bg-[#B91C1C] hover:bg-red-700 text-white shrink-0"
+                              rightIcon={<ArrowRight size={12} />}
+                            >
+                              View
+                            </Button>
+                          </CardFooter>
+                        </Card>
+                      );
+                    }
+                  )}
                 </div>
               )}
             </div>

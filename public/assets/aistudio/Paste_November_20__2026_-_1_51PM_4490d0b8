@@ -1,0 +1,1121 @@
+# JAYSTARBLISS STUDIOS V3 — SUBSCRIPTION GUARDRAILS, SEVEN-DAY GRACE PERIOD, PORTAL LOCKDOWN, PAYMENT RENEWALS, TUTOR CLASS LINKS & TEST FINANCIAL DATA RESET
+
+## PROJECT CONTEXT
+
+Work on the existing repository:
+
+`jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE`
+
+Repository: https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE
+
+This is an extension of the existing Jaystarbliss Studios platform. Do not build a separate billing application or replace the existing authentication, dashboards, Paystack integration, or Billing Center.
+
+The existing project uses React, TypeScript, Vite, Firebase Authentication, Firestore, Netlify Functions, Paystack and Resend.
+
+Relevant existing files include:
+
+- `src/pages/portal/BillingCenter.tsx`
+- `src/pages/portal/SchoolDashboard.tsx`
+- `src/pages/portal/StudentDashboard.tsx`
+- `src/pages/portal/ParentDashboard.tsx`
+- `src/components/portal/SchoolClassScheduleTimeline.tsx`
+- `src/lib/billing.ts`
+- `src/lib/scheduleEngine.ts`
+- `netlify/functions/billing-data.ts`
+- `netlify/functions/billing-admin.ts`
+- `netlify/functions/paystack-initialize.ts`
+- `netlify/functions/paystack-verify.ts`
+- `netlify/functions/paystack-webhook.ts`
+- `api/_lib/payment-reconciliation.ts`
+- `firestore.rules`
+
+These are starting points, not an exhaustive list. Inspect the current repository and trace the complete flows before making changes. Locate the corresponding tutor dashboard, student data endpoints, resource endpoints, assessment endpoints, schedule endpoints, notification services and administrative billing interfaces.
+
+**Do not assume that a previously proposed feature has already been implemented. Verify the actual current code.**
+
+---
+
+# PART 1 — CENTRAL SUBSCRIPTION AND ACCESS-CONTROL SYSTEM
+
+## 1.1 Establish one authoritative subscription model
+
+Implement a central subscription/access-control service that determines whether an account is entitled to use its current programme or institutional services.
+
+Do not implement separate, conflicting payment checks in individual dashboard components.
+
+The service should resolve the current subscription status from trusted Firestore records and the authenticated user's actual account relationships.
+
+It must support:
+
+1. School subscriptions.
+2. Individual student subscriptions.
+3. Parent subscriptions and parent-funded children.
+4. School-funded student access.
+5. Student-funded additional programmes purchased independently by school students.
+
+Preserve the distinction between who is enrolled, who pays, and which programme is being funded.
+
+For example, a school student may simultaneously have:
+- A school-funded academic programme.
+- An independently purchased, student-funded additional programme.
+
+The school must never be billed for the independently purchased programme. Equally, the student must not be made responsible for the school's institutional subscription.
+
+Use a normalized subscription record where appropriate, such as `billingSubscriptions`, or extend the existing billing records if they can safely support this model. Avoid creating multiple competing sources of truth.
+
+A subscription record should support fields equivalent to:
+
+- `accountType`
+- `accountId`
+- `billingResponsibility`
+- `status`
+- `planId`
+- `programmeId` where applicable
+- `amount`
+- `currency`
+- `billingCycle`
+- `durationWeeks` or equivalent duration
+- `currentPeriodStartAt`
+- `currentPeriodEndAt`
+- `nextDueAt`
+- `gracePeriodDays`
+- `graceEndsAt`
+- `lastSuccessfulPaymentAt`
+- `lastReminderSentAt`
+- `createdAt`
+- `updatedAt`
+
+Use appropriate Firestore timestamps and maintain compatibility with existing records.
+
+Possible subscription states:
+
+- `ACTIVE`
+- `DUE_SOON`
+- `GRACE_PERIOD`
+- `LOCKED`
+- `PARTIALLY_PAID`
+- `EXEMPT`
+- `SUSPENDED`
+- `CANCELLED`
+
+The exact state model may be improved after inspecting the current implementation, but it must be unambiguous.
+
+**Important:** An account with no configured payment obligation, an explicitly exempt account, or a complimentary programme must not be automatically locked merely because a payment date is missing. Flag incomplete billing configuration for administrative review rather than guessing.
+
+## 1.2 Seven-day grace-period policy
+
+Use the following policy consistently:
+
+| Period | Required behaviour |
+|---|---|
+| Seven days before the due date | Send a renewal reminder. |
+| Due date | Mark the obligation as due and send a due-date notification. |
+| Days 1–7 after due date | Keep access active, but show overdue/grace-period warnings. |
+| After seven full days overdue | Automatically activate portal lockdown. |
+| After successful renewal | Restore entitled access immediately. |
+
+Use the following logic:
+
+`lockdownAt = subscriptionDueAt + 7 days`
+
+At the end of the seven-day grace period, access must become locked. Make the boundary consistent everywhere so users cannot access restricted content through a different route because of a time-calculation discrepancy.
+
+Use **Africa/Lagos** as the business timezone for displayed dates and scheduled reminders. Store timestamps consistently in Firestore and calculate them safely across timezone boundaries.
+
+Display the due date, amount due, days remaining, and grace-period status clearly.
+
+Do not rely on a browser clock or a client-calculated value to enforce access.
+
+---
+
+# PART 2 — ROLE-SPECIFIC PORTAL LOCKDOWN
+
+The lockdown should resemble the Microsoft Office activation experience: the account can still open the permitted parts of the portal, but restricted features are visibly disabled.
+
+Do not make the interface look broken or display endless loading indicators.
+
+Show a deliberate, professional lockdown screen or banner explaining the exact reason and the action required.
+
+## 2.1 School administrator lockdown
+
+A school administrator whose institutional subscription has exceeded the grace period must retain access to:
+
+- Basic school dashboard/overview.
+- Billing Center.
+- Payment history and available invoices/receipts.
+- Subscription details.
+- Pay Now action.
+- Account and contact details needed to resolve billing.
+
+The following school features must be locked:
+
+- Student roster.
+- Student profiles and personal information.
+- Class schedules.
+- Resources panel and resource downloads.
+- Examination management and results.
+- Assessment management.
+- Passcodes.
+- Student reports.
+- Results printing and exporting.
+- Other restricted school operational dashboards.
+
+The restrictions must apply to both navigation and direct URLs.
+
+### Visual behaviour
+
+When the administrator enters the school portal:
+
+- Display a prominent but professional lockdown notice.
+- Clearly show: **PORTAL CURRENTLY ON LOCKDOWN — PAYMENT OVERDUE.**
+- Display the outstanding payment amount and due date where available.
+- Provide a prominent **PAY NOW** action.
+- Keep Billing accessible.
+- Keep the permitted basic dashboard accessible.
+- Grey out restricted navigation items and make them non-interactive.
+- Display a lock indicator beside restricted sections.
+
+When the administrator clicks a restricted feature, show a clear explanation:
+
+"Your school portal is currently on lockdown because the institutional subscription has not been renewed. Please complete your outstanding payment to restore access."
+
+The Pay Now action must open the school's existing Billing Center, not an unrelated payment page.
+
+Do not expose student names, roster information, examination information, or schedules on the locked overview page.
+
+## 2.2 School student lockdown
+
+A school student's subscription entitlement must inherit the payment status of the school-funded programme or institution.
+
+When the school administrator's institutional subscription becomes locked after the seven-day grace period:
+
+- School students may still authenticate and log in.
+- Their academic data must not load.
+- Their assignments, resources, assessments, results, schedules and learning materials must not load.
+- They must not be able to print or download restricted academic records.
+- The portal should display a dedicated lockdown screen.
+
+Display:
+
+**YOUR SCHOOL PORTAL IS CURRENTLY ON LOCKDOWN**
+
+"Your school's institutional subscription has not been renewed. Please contact your school administrator for further information."
+
+Do not show students a payment button for an institutional payment that belongs to their school.
+
+Do not allow school students to make payments on behalf of the school.
+
+Once the school subscription is successfully renewed and verified, the students' access should automatically return without requiring an administrator to manually unlock every student account.
+
+## 2.3 Individually enrolled student lockdown
+
+An independently enrolled student is responsible for their own programme subscription.
+
+During the seven-day grace period, allow access and show appropriate renewal notices.
+
+After seven full days overdue:
+
+Keep accessible:
+- Basic student dashboard.
+- Billing Center.
+- Outstanding balance.
+- Payment history.
+- Pay Now.
+- Relevant account information.
+
+Lock:
+- Learning materials and programme content.
+- Assignments and activities.
+- Assessments and examinations.
+- Results and reports.
+- Restricted class resources.
+- Other features that require an active programme subscription.
+
+Display:
+
+**YOUR LEARNING PORTAL IS CURRENTLY ON LOCKDOWN**
+
+"Your current programme subscription has expired and has not been renewed. Please complete your payment to continue learning."
+
+Provide a **PAY NOW** action that opens the student's own Billing Center.
+
+Do not redirect payment responsibility to a school or parent unless the student's actual billing responsibility says that the parent pays.
+
+## 2.4 Parent and parent-enrolled student lockdown
+
+The parent is responsible for payment for parent-funded children.
+
+When the parent's relevant payment obligation exceeds the seven-day grace period:
+
+### Parent account
+
+The parent must still be able to:
+- Sign in.
+- Open the basic account overview.
+- Open Billing.
+- Review outstanding fee items.
+- See the affected child's name and programme.
+- View payment history.
+- Make payments.
+- View relevant invoices and receipts.
+
+The parent must not be able to access restricted child learning content while the corresponding fee obligation is locked.
+
+Restrict the affected child's:
+- Resources.
+- Assignments.
+- Activities.
+- Assessments.
+- Examination results.
+- Learning tracks and paid programme features.
+- Reports and restricted downloads.
+
+Display:
+
+**YOUR CHILD'S LEARNING ACCESS IS CURRENTLY ON LOCKDOWN**
+
+"Payment for your child's current programme is overdue. Please complete the outstanding payment to restore learning access."
+
+Provide **PAY NOW** and direct the parent to the correct fee item in the Billing Center.
+
+### Parent-enrolled student account
+
+The child must still be able to sign in, but academic data must not load while their parent-funded entitlement is locked.
+
+Display:
+
+**YOUR LEARNING PORTAL IS CURRENTLY ON LOCKDOWN**
+
+"Your learning access is temporarily unavailable because the payment for your programme has not been renewed. Please contact your parent or guardian for more information."
+
+Do not show a Pay Now action on the child account. The parent is the payer.
+
+### Multiple children
+
+Preserve the existing parent-child relationship model.
+
+Where fee obligations are tracked separately for different children or programmes, lock the affected child/programme rather than unnecessarily blocking access to another child's fully paid programme.
+
+Where the existing parent contract is explicitly a single account-level subscription covering all children, apply lockdown consistently to that contract.
+
+Never expose or modify records belonging to another parent.
+
+## 2.5 Funding-responsibility precedence
+
+Enforce the following rules:
+
+| Learner type | Who pays? | What triggers lockdown? |
+|---|---|---|
+| School administrator | School | School subscription overdue beyond grace period |
+| School-funded student | School | Parent institution's school subscription becomes locked |
+| Individually enrolled student | Student | Their personal subscription becomes locked |
+| Parent-enrolled student | Parent/guardian | The relevant parent-funded fee obligation becomes locked |
+| School student with a self-funded additional programme | Student for the additional programme | That additional programme's own unpaid obligation |
+
+A school must not receive a bill for a student's independently purchased programme.
+
+A parent must not be charged for a school-funded programme merely because the parent has an account connected to the student.
+
+Preserve all existing student registration categories and their account relationships.
+
+---
+
+# PART 3 — ACCESS ENFORCEMENT MUST BE SERVER-SIDE
+
+This is extremely important.
+
+Do not implement lockdown as a visual-only feature.
+
+Disabling a React button or hiding a navigation item is not security.
+
+A locked user must not be able to bypass the restriction by:
+
+- Typing a restricted URL directly.
+- Reusing an old browser tab.
+- Calling a Netlify Function manually.
+- Reading Firestore records through an alternative component.
+- Reusing cached API responses.
+- Downloading files through a previously obtained resource URL.
+- Calling a print or export endpoint directly.
+
+Implement a centralized access-entitlement resolver.
+
+Before restricted data is fetched, the backend must verify:
+1. The authenticated user.
+2. The user's actual account type.
+3. Their school, parent or student relationship.
+4. Who is responsible for paying.
+5. The relevant subscription or fee obligation.
+6. Whether the grace period has expired.
+7. Whether the account or programme is exempt or has an authorized override.
+
+All relevant protected endpoints must enforce this rule.
+
+Inspect endpoints that supply:
+- School student records.
+- Student academic profiles.
+- Assignments.
+- Assessments.
+- Results.
+- Resources.
+- Class schedules.
+- Passcodes.
+- Reports.
+- Printing and exports.
+- Parent-linked student records.
+
+Return a clear server response such as HTTP `423 Locked` with a structured error code like `PORTAL_LOCKED` and the appropriate message.
+
+The frontend should recognize this response and display the correct lockdown interface.
+
+For locked school students, do not perform the normal academic data-loading requests at all.
+
+For school administrators, do not fetch rosters, schedules, examinations or student records before establishing that the subscription permits access.
+
+Inspect `SchoolDashboard.tsx` carefully because its existing loading flow fetches several categories of student and school operational data. Short-circuit the restricted data-loading process before those requests are made.
+
+Review Firestore rules and the existing client-side Firestore access patterns. Strengthen the security rules where feasible and move sensitive reads behind authenticated backend endpoints where necessary.
+
+Do not make existing Firestore collections publicly readable simply to make this feature work.
+
+The following should remain possible:
+- Platform administrators can manage subscriptions.
+- Authorized billing administrators can record payments.
+- Tutors can continue using features they are independently authorized to use.
+- Authorized support staff can perform permitted account investigations.
+
+Any privileged lockdown override must be auditable and must not become a general bypass for ordinary users.
+
+---
+
+# PART 4 — AUTOMATIC RENEWAL REMINDERS AND EMAIL NOTIFICATIONS
+
+Create an automatic reminder system for all three paying categories:
+
+- Schools.
+- Parents.
+- Individually enrolled students.
+
+Use the existing Resend email implementation and portal notification system. Reuse the current notification utilities rather than introducing an unrelated email service.
+
+## 4.1 Seven days before the due date
+
+At seven days before the subscription due date, send a reminder.
+
+**School email:**
+
+Subject: Your Jaystarbliss Studios School Subscription Is Due for Renewal
+
+Explain that the school's current subscription is approaching its renewal date. Include the due date, amount, billing portal link and payment instructions.
+
+**Parent email:**
+
+Subject: Reminder — Your Child's Jaystarbliss Programme Is Due for Renewal
+
+Include the child's name, programme, amount due, due date and link to the parent's Billing Center.
+
+**Individual student email:**
+
+Subject: Your Jaystarbliss Programme Is Due for Renewal
+
+Include the programme name, amount due, due date and Billing Center link.
+
+Where the student is a minor, use the appropriate parent/guardian billing contact rather than assuming the child should receive billing correspondence.
+
+Every email should be professional, clear and branded as Jaystarbliss Studios.
+
+## 4.2 On the due date
+
+Send another reminder on the actual due date.
+
+Clearly state that payment is due today and that the seven-day grace period has begun.
+
+Show the Pay Now link.
+
+## 4.3 At lockdown
+
+When the subscription becomes locked, optionally send a final email explaining that the portal has been restricted and that access will return after successful payment.
+
+For parents, explicitly identify the affected child or children without exposing unrelated learner information.
+
+## 4.4 Scheduling and duplicate prevention
+
+Use a reliable scheduled backend mechanism supported by the current hosting setup.
+
+Inspect the existing Netlify Functions and deployment configuration before choosing the implementation.
+
+The reminder process must:
+- Run automatically.
+- Use Africa/Lagos date boundaries.
+- Find all relevant accounts whose dates match the reminder window.
+- Avoid duplicate emails for the same subscription cycle.
+- Record successful reminder delivery.
+- Retry appropriately when an email provider fails.
+- Avoid sending reminders for exempt or cancelled subscriptions.
+- Avoid sending reminders for already renewed subscriptions.
+- Handle missed scheduled executions safely.
+
+Use a deterministic reminder key based on the subscription, billing cycle and reminder type.
+
+Do not rely on a person manually opening the dashboard for an email to be sent.
+
+---
+
+# PART 5 — PAYMENT RENEWAL AND ACCESS RESTORATION
+
+Use the existing Paystack integration.
+
+Do not replace the existing payment gateway.
+
+The renewal workflow must be consistent for school, parent and independent student accounts.
+
+## 5.1 Successful payment
+
+When Paystack reports a successful transaction:
+
+1. Verify the transaction server-side with Paystack.
+2. Confirm that the amount, currency, reference and payment owner match the expected obligation.
+3. Prevent duplicate processing.
+4. Record the transaction.
+5. Apply the payment to the correct subscription or fee item.
+6. Update the authoritative subscription period.
+7. Update relevant legacy billing mirrors if they are still needed.
+8. Recalculate access entitlement.
+9. Remove lockdown when the obligation is satisfied.
+10. Refresh the affected portal immediately.
+
+Never unlock a portal simply because the browser returned from Paystack.
+
+Only a confirmed and reconciled successful transaction should restore access.
+
+The Paystack verification endpoint and webhook may both process the same transaction. The implementation must be idempotent so the subscription period is never extended twice.
+
+## 5.2 Renewal period extension
+
+Renewal payments must add a new billing duration to the subscription period already in place rather than blindly replacing the existing date.
+
+Examples:
+
+**Early renewal:** If a school is due to expire on 30 November and pays for another 12-week period on 20 November, the new period must extend from the existing paid-through date, not begin on 20 November.
+
+**Payment during grace:** If a parent pays during the seven-day grace period, the renewal should preserve the existing subscription timeline rather than accidentally losing the remaining period.
+
+**Payment after a fully expired subscription:** If the account has already passed the entire grace period, start the new period from the verified renewal date unless an administrator explicitly chooses an approved effective date.
+
+Calculate all dates using the actual plan duration.
+
+Do not assume every programme lasts four weeks.
+
+## 5.3 Partial payments
+
+Respect the existing progressive payment and fee-item structure.
+
+A partial payment must:
+- Be recorded accurately.
+- Reduce the outstanding balance.
+- Remain visible in the billing history.
+- Not automatically trigger full access unless the configured payment policy explicitly permits access after a deposit or other qualifying threshold.
+
+Only a fully satisfied obligation, or a valid administrator-approved access arrangement, should unlock the relevant subscription.
+
+## 5.4 Immediate restoration
+
+After a qualifying verified payment:
+- Restore the appropriate portal sections.
+- Remove the lockdown screen.
+- Re-enable navigation.
+- Restore the affected students' academic data access.
+- Update the subscription status.
+- Display the new next payment due date.
+- Send a payment confirmation notification and receipt.
+
+Do not require the user to contact support or wait for a manual database update after Paystack has successfully reconciled the payment.
+
+---
+
+# PART 6 — ADMINISTRATIVE MANUAL PAYMENT RECORDING
+
+The platform administrator must be able to record a payment manually when a school or parent has paid through an alternative channel.
+
+This capability is currently important because some payments may have been made through bank transfer, cash, POS or another approved method.
+
+Inspect `netlify/functions/billing-admin.ts` and the existing administrative Billing interface.
+
+There are existing administrative actions for configuring billing, plans and reminders. Extend the current billing workflow with a secure manual-payment action rather than creating a disconnected system.
+
+## 6.1 Admin interface
+
+Add a section or action labelled:
+
+**Record Manual Payment**
+
+An authorized administrator should be able to select:
+- School.
+- Parent.
+- Individually enrolled student.
+- Relevant child/student where applicable.
+- Relevant subscription or programme.
+- Billing cycle or fee item.
+- Amount received.
+- Payment date.
+- Payment method.
+- Transaction/reference number, if available.
+- Administrative notes.
+- Proof of payment, if available and supported by the existing upload setup.
+
+Support full and partial payments.
+
+## 6.2 Backend action
+
+Implement a secured backend action such as `record_manual_payment`.
+
+Only authorized platform administrators and designated billing administrators may use it.
+
+Do not allow a parent, student, school administrator or tutor to impersonate the platform and mark their own payment as received.
+
+The backend must validate:
+- Target account.
+- Billing responsibility.
+- Relevant fee obligation.
+- Amount.
+- Outstanding balance.
+- Payment date.
+- Admin authorization.
+
+Record manual payments distinctly from Paystack transactions.
+
+Use clear fields such as:
+- `paymentSource: MANUAL_ADMIN`
+- `paymentMethod`
+- `verificationStatus: ADMIN_VERIFIED`
+- `verifiedBy`
+- `verifiedAt`
+- `subscriptionId`
+- `feeItemId` where applicable
+- `billingCycleId`
+- `reference`
+- `notes`
+
+Do not invent a Paystack reference or make a manual payment appear to be a verified Paystack transaction.
+
+## 6.3 Atomic updates and audit trail
+
+When an administrator records a manual payment, perform the payment record and corresponding subscription/balance updates atomically where possible.
+
+The action should:
+1. Create the manual payment record.
+2. Update the correct fee item.
+3. Update the subscription period if the obligation has been satisfied.
+4. Recalculate the remaining balance.
+5. Re-evaluate lockdown.
+6. Restore access if the payment qualifies.
+7. Record an administrative audit entry.
+
+Prevent accidental duplicate manual payment entries.
+
+Show who recorded the payment and when.
+
+If a payment is reversed or corrected, preserve the audit trail. Do not silently edit historical successful payment records.
+
+---
+
+# PART 7 — FINANCIAL TEST-DATA RESET
+
+## IMPORTANT: HANDLE THIS AS A CONTROLLED MAINTENANCE OPERATION
+
+During platform testing, financial records were created in Firestore. We want to clear the existing test financial transactions so that the billing system starts with a clean financial history.
+
+The intended outcome is an empty test transaction history, not a deletion of the entire platform.
+
+The current repository already uses financial data in areas including:
+
+- `payments`
+- `walletWithdrawals`
+- `staffWallets`
+- `payment_config`
+- `schools.billing`
+- `users.billing`
+- Parent and student fee-related records
+- Other financial collections or embedded financial records that may exist in the current codebase
+
+Do not assume this list is complete. Search the repository for all payment, transaction, invoice, receipt, ledger, refund, wallet, payout, balance and fee-related collections and subcollections.
+
+Identify which records are:
+1. Transaction history.
+2. Derived wallet or balance records.
+3. Subscription configuration.
+4. Contract or fee configuration.
+5. Student/programme enrolment information.
+6. Audit records.
+
+These categories must not be treated as interchangeable.
+
+## 7.1 What should be cleared
+
+After the target test Firebase project has been positively identified and the reset has been explicitly confirmed, clear the financial test transactions and their associated test-only financial records.
+
+This may include:
+- Test payment documents.
+- Test transaction history.
+- Test-only wallet transaction records.
+- Test-only withdrawal records.
+- Test-only financial ledger entries.
+- Test-only receipts and invoice records tied to those transactions.
+- Test-only derived wallet balances, after reconciliation.
+
+The exact collections must be determined from the actual current repository and Firestore structure before implementing the cleanup.
+
+The aim is for the relevant test financial transaction collections to be empty after the reset.
+
+## 7.2 What must NOT be deleted
+
+Do not delete or reset:
+
+- Firebase Authentication accounts.
+- `users` documents as a whole.
+- `students` or `individualStudents` profiles.
+- Schools.
+- Parents.
+- Programme records.
+- Student programme enrolments.
+- Class schedules.
+- Academic records.
+- Assessments.
+- Results.
+- Resources.
+- Tutor records.
+- School relationships.
+- Parent-child relationships.
+- Payment gateway configuration.
+- Paystack secret configuration.
+- Payment plan definitions.
+- Transaction fee policies.
+- Legitimate subscription/contract configuration.
+- Administrative audit logs.
+
+In particular, do not delete `payment_config/settings` merely because it is related to payments.
+
+Preserve the configured fees, plans, payment gateway setup, and any legitimate billing contract configuration required to continue the platform.
+
+Where embedded fields such as `schools.billing` or `users.billing` mix contract configuration with historical payment information, identify and reset only the appropriate test transaction fields. Do not remove the entire billing object.
+
+## 7.3 Verify the target Firebase environment
+
+The application may be deployed while still using a designated testing Firebase project.
+
+Do not infer that a Firebase project is a test environment from its name alone.
+
+Inspect the current Firebase project configuration and active environment.
+
+The cleanup must:
+- Identify the Firebase project ID.
+- Display the target project ID in the reset preview.
+- Use a configured expected test project ID.
+- Fail closed if the actual project does not match the expected test project.
+- Never execute a production-wide reset.
+- Never expose Firebase private keys or secrets in the UI or logs.
+
+If the active database is production or its environment cannot be confidently established, do not execute the cleanup.
+
+## 7.4 Dry run and confirmation
+
+Implement a superadmin-only maintenance workflow with two distinct stages.
+
+### Stage A — Dry run
+
+Show:
+- Firebase project ID.
+- Environment.
+- Collection/subcollection names identified.
+- Number of records in each collection.
+- Number of successful, pending, failed and partial transactions.
+- Aggregate amounts by transaction status.
+- Number of affected wallet records.
+- Number of affected withdrawal records.
+- Other derived financial records that would be reset.
+
+Do not print sensitive personal data or full financial credentials.
+
+The dry run must not modify Firestore.
+
+### Stage B — Controlled execution
+
+Before executing:
+- Create a recoverable backup/export of the identified test financial data.
+- Display the exact backup location and record counts.
+- Require an explicit superadmin confirmation.
+- Require a clear confirmation phrase such as `CLEAR TEST FINANCIAL DATA`.
+- Recheck the environment and project ID.
+- Recheck the collection counts.
+- Abort if the environment, project or record scope no longer matches the approved preview.
+
+Use Firebase Admin SDK on the server for the operation.
+
+Process large collections safely using pagination and batch limits. Do not rely on one oversized Firestore batch.
+
+Write a reset audit record containing:
+- Authorized administrator UID.
+- Timestamp.
+- Firebase project ID.
+- Collections processed.
+- Number of records processed.
+- Aggregate totals cleared.
+- Backup reference.
+- Reset operation ID.
+
+Do not delete the audit record.
+
+Do not trigger refunds, Paystack reversals, transfers or external financial operations as part of this cleanup.
+
+After execution, verify that all targeted test transaction collections are empty and that the unrelated user, student, school, academic and programme records remain intact.
+
+**Do not execute the destructive reset merely because code has been written. First present the dry-run report and require the explicit final confirmation.**
+
+If the collections are empty after document removal, that is sufficient; Firestore does not require an empty collection to be physically deleted.
+
+---
+
+# PART 8 — TUTOR-MANAGED CLASS MEETING LINKS
+
+Add a flexible class meeting-link management feature to the existing tutor scheduling workflow.
+
+The requirement is that tutors can configure the meeting link for each scheduled class, including different links for different weeks.
+
+For example:
+
+| Week | Class date | Meeting link |
+|---|---|---|
+| Week 1 | 1 December | Microsoft Teams link A |
+| Week 2 | 8 December | Microsoft Teams link B |
+| Week 3 | 15 December | Microsoft Teams link C |
+| Week 4 | 22 December | Microsoft Teams link C |
+
+A tutor may also choose to retain the same meeting link for every week.
+
+## 8.1 Per-session link configuration
+
+Inspect the existing `classSchedules` structure and the current schedule creation and editing interfaces.
+
+The existing schedule model already supports a `meetingLink` field in `SchoolClassScheduleTimeline.tsx`.
+
+Extend the existing system so that an authorized tutor can:
+
+- Add a meeting link to an individual class.
+- Edit the link for a future class.
+- Change the link for a particular week without changing other weeks.
+- Leave the same link in place for future weeks.
+- Apply one link to multiple selected future classes.
+- Choose whether an edit applies to only one occurrence or to selected future occurrences.
+
+Do not automatically overwrite historical class meeting links when a tutor changes a future session.
+
+## 8.2 Link inheritance
+
+Where recurring class schedules or schedule groups exist, support a sensible inheritance model:
+
+- A recurring group may have a default meeting link.
+- An individual occurrence may override that link.
+- If the tutor does not provide a new link for an occurrence, it can inherit the existing default.
+- A tutor can replace the default for future classes without changing historical occurrences.
+- The interface must make it clear whether the link is inherited or individually configured.
+
+Do not create unnecessary duplicate schedule records simply to store different meeting links.
+
+## 8.3 Permissions and validation
+
+Only:
+- The tutor assigned to that class or programme.
+- Authorized platform administrators.
+
+may change its meeting link.
+
+School administrators and students should not be able to alter tutor-controlled meeting links unless an existing explicit administrative permission allows it.
+
+Validate links using the existing meeting-link validation logic in `src/lib/scheduleEngine.ts`.
+
+Support Microsoft Teams, Google Meet, Zoom and other valid HTTPS meeting platforms.
+
+Record:
+- Who created or changed the link.
+- When it was changed.
+- The affected schedule occurrence.
+- Whether it is an inherited or individual link.
+
+The student, parent and school schedule interfaces should always display the correct current link for the relevant class date.
+
+Ensure the link displayed to a learner is the link for that exact scheduled occurrence, not merely the most recent link saved for the entire programme.
+
+---
+
+# PART 9 — ADMINISTRATIVE CONTROLS AND CONFIGURATION
+
+Add a clear subscription management section to the existing administration area.
+
+Platform administrators should be able to:
+
+- View all active subscriptions.
+- View subscriptions due within seven days.
+- View subscriptions in grace periods.
+- View locked accounts.
+- View overdue balances.
+- View the responsible payer.
+- View the affected school, parent, student or programme.
+- Configure billing amounts and durations using existing payment plans.
+- View payment history.
+- Record manual payments.
+- Review failed and pending transactions.
+- View reminder history.
+- View lockdown history.
+- Exempt an account or programme where legitimately approved.
+- Restore or suspend an account where authorized.
+- Apply a time-limited exceptional access override with a reason.
+- See exactly who made an administrative change.
+
+Where possible, use the existing Billing Center and administrative billing screens rather than introducing a separate dashboard that duplicates existing information.
+
+All exemption and override actions must be logged and must include:
+- Administrator.
+- Reason.
+- Date/time.
+- Start and end of override, where applicable.
+
+Do not make a permanent exemption the default when a temporary administrative extension would be more appropriate.
+
+---
+
+# PART 10 — SECURITY, DATA CONSISTENCY AND PERFORMANCE
+
+Ensure the implementation is compatible with the existing Firebase architecture.
+
+Important requirements:
+
+1. Payment reconciliation must remain server-authoritative.
+2. No client-supplied amount may become the trusted payment amount.
+3. No client may mark its own payment as successful.
+4. No client may change its own subscription status to active.
+5. No client may remove its own lockdown.
+6. Manual payment entry must be restricted to authorized administrators.
+7. School students must not be able to change their school relationship to bypass payment enforcement.
+8. Parent-child verification must remain intact.
+9. School billing must never leak into a student's self-funded billing account.
+10. A successful payment must never extend the same subscription twice.
+11. Payment reminders must not be duplicated.
+12. Existing parent progressive fee payments must continue to work.
+13. Existing tutor wallet accounting must not be corrupted.
+14. Existing school and parent payment histories must be correctly scoped.
+15. Existing account exemptions must be preserved.
+
+For the financial reset, preserve a backup and audit trail.
+
+For the subscription system, avoid loading unnecessary academic data for locked users. This is important both for security and to prevent repeated Firestore reads and unnecessary loading.
+
+Review Firestore indexes and rules if new queries or collections require changes.
+
+---
+
+# PART 11 — REQUIRED USER EXPERIENCE
+
+The design should feel like a professional education-management platform, not a punitive error page.
+
+Use the current Jaystarbliss Studios design system.
+
+The lockdown interface should have:
+- A clear lock icon.
+- A concise explanation.
+- Outstanding amount.
+- Due date.
+- Grace-period information where applicable.
+- A Pay Now action for the responsible payer.
+- A support/contact option where appropriate.
+
+Restricted menu items should be visibly disabled.
+
+Do not make every dashboard look like an error page.
+
+The Billing Center must remain fully usable during lockdown.
+
+After successful payment, show a confirmation and restore the interface without requiring a new account or a new enrolment.
+
+Use responsive desktop, tablet and mobile layouts.
+
+Preserve current light/dark mode behaviour.
+
+---
+
+# PART 12 — TESTING AND ACCEPTANCE CRITERIA
+
+Do not consider this task complete until the following scenarios have been tested.
+
+## School tests
+
+1. A school with an active subscription can access all authorized school features.
+2. Seven days before its due date, the school receives a renewal email.
+3. On its due date, it receives a due-date notification.
+4. During the seven-day grace period, school access remains active.
+5. After the grace period, the school administrator can access only the permitted dashboard and Billing.
+6. Direct access to the roster, resources, schedules, examination pages and result-printing routes is rejected.
+7. No restricted student data loads before the lockdown screen appears.
+8. A successful Paystack renewal immediately restores access.
+9. An authorized manual payment has the same effect when it settles the obligation.
+
+## School student tests
+
+1. A student whose school's subscription is active can use the normal portal.
+2. When the school's subscription enters the locked state, the school student portal also locks.
+3. The student can log in but cannot load academic data.
+4. The student sees the instruction to contact the school administrator.
+5. The student cannot bypass the lock using a direct URL.
+6. When the school renews, the student account automatically becomes accessible again.
+
+## Individual student tests
+
+1. An individual student with an active subscription has normal access.
+2. The student receives a reminder seven days before the due date.
+3. A due-date notification is sent.
+4. During grace, access remains available.
+5. After grace, the student can access the basic dashboard and Billing only.
+6. Learning content and restricted academic features are blocked.
+7. Successful renewal restores access.
+
+## Parent tests
+
+1. A parent can access their linked children and the correct fee items.
+2. The parent receives a reminder seven days before the relevant payment is due.
+3. A due-date notification is sent.
+4. During grace, the relevant access remains available.
+5. After grace, the parent can still access Billing but cannot access restricted content for affected children.
+6. Parent-enrolled students are also locked.
+7. The child sees the instruction to contact their parent or guardian.
+8. The parent can pay the correct fee item and restore access.
+9. An unrelated parent's child or another household's data is never exposed.
+
+## Manual payment tests
+
+1. An authorized administrator can record a school payment.
+2. An authorized administrator can record a parent payment.
+3. An authorized administrator can record an individual student payment.
+4. Partial payments update the balance correctly.
+5. Manual payments are clearly distinguished from Paystack transactions.
+6. An ordinary user cannot mark their own payment as successful.
+7. Duplicate manual payment submissions are prevented.
+8. Successful manual settlement restores access where the payment policy permits it.
+
+## Renewal calculation tests
+
+1. Early payment extends the current paid-through date.
+2. Payment during grace preserves the correct renewal timeline.
+3. Payment after the full grace period starts a new period correctly.
+4. Duplicate Paystack webhook and verification events do not extend the same subscription twice.
+5. Different programme durations are respected.
+
+## Tutor schedule tests
+
+1. An assigned tutor can configure a link for an upcoming class.
+2. The tutor can configure different links for different weeks.
+3. The tutor can retain the same default link for future weeks.
+4. Changing one occurrence does not change unrelated or historical occurrences.
+5. The correct link appears for the correct class in student, parent and school views.
+6. Unauthorized tutors and ordinary users cannot edit another tutor's class links.
+
+## Financial reset tests
+
+1. The reset preview identifies the correct Firebase project.
+2. The dry run does not modify Firestore.
+3. The proposed cleanup lists the exact records and collections affected.
+4. The reset refuses to operate against an unapproved or production Firebase project.
+5. The reset cannot be initiated by an ordinary administrator or user.
+6. A backup is created before the destructive step.
+7. The reset clears only approved test financial records.
+8. School, parent, student, tutor and academic records remain intact.
+9. Payment plans and gateway configuration remain intact.
+10. The final audit record is preserved.
+11. Target transaction collections are empty after a successful reset.
+
+---
+
+# PART 13 — IMPLEMENTATION ORDER
+
+Implement in controlled phases. Do not try to modify every portal independently without first establishing the shared subscription rules.
+
+**Phase 1 — Repository audit and subscription model**
+- Inspect the current billing model.
+- Identify payer ownership and programme funding responsibility.
+- Define the canonical subscription state.
+- Map all affected dashboards and API endpoints.
+- Document any legacy fields that require compatibility.
+
+**Phase 2 — Central entitlement enforcement**
+- Implement the shared server-side access resolver.
+- Enforce due dates and the seven-day grace period.
+- Secure sensitive API and Firestore access.
+- Add the frontend lockdown state.
+
+**Phase 3 — Automatic reminders**
+- Implement seven-day pre-due reminders.
+- Implement due-date notifications.
+- Add idempotency and retry logic.
+- Add relevant email templates.
+
+**Phase 4 — Renewal and restoration**
+- Connect the existing Paystack payment workflow to subscription extension.
+- Support early and late renewal.
+- Ensure idempotent payment reconciliation.
+- Restore access automatically.
+
+**Phase 5 — Manual payments**
+- Add the authorized admin recording interface.
+- Add the backend action.
+- Add transaction/audit records.
+- Test full and partial settlement.
+
+**Phase 6 — Tutor meeting links**
+- Inspect current schedule creation and editing.
+- Add per-occurrence link management.
+- Add default and override behaviour.
+- Test the student, parent and school views.
+
+**Phase 7 — Controlled test financial reset**
+- Inventory the exact financial records.
+- Implement the dry-run preview.
+- Implement the secure backup and confirmation process.
+- Do not execute the reset until the approved test Firebase project and the reset preview have been confirmed.
+
+**Phase 8 — Full regression testing**
+- Test all account types.
+- Test direct URL restrictions.
+- Test payment verification.
+- Test access restoration.
+- Test schedule-link permissions.
+- Confirm that existing features still work.
+
+---
+
+# FINAL IMPLEMENTATION INSTRUCTIONS
+
+This is an implementation task, not merely a design exercise.
+
+Inspect the current code and make the required changes in the existing architecture. Do not create decorative buttons that do not work, simulated subscription states, mock payment confirmations, or frontend-only restrictions.
+
+Do not remove working features or rewrite unrelated parts of the platform.
+
+Preserve existing Firebase Authentication, existing school/parent/student relationships, current payment gateway integration, current fee plans, existing billing records where legitimate, existing tutor assignments, and all academic records.
+
+Use the existing notification and email infrastructure where appropriate.
+
+Provide a clear implementation report showing:
+
+1. What files were changed.
+2. What new files were created.
+3. What subscription model was implemented.
+4. Which API endpoints now enforce lockdown.
+5. How reminders are scheduled.
+6. How manual payments are recorded.
+7. How renewals extend existing subscriptions.
+8. How tutor meeting links are managed.
+9. Which financial collections were identified for reset.
+10. Whether the financial reset was only previewed or actually executed.
+11. What tests passed and what remains unresolved.
+
+**Do not commit, push, merge or deploy these changes to the production repository without explicit authorization.**
+
+The final objective is a reliable subscription system where the correct payer is notified, receives a seven-day grace period, loses only the access covered by their unpaid obligation after that period, can make payment through the correct Billing Center, and regains the correct access immediately after verified settlement.

@@ -7,8 +7,8 @@ export const JDI_CONTACTS = Object.freeze({
   email: 'jaystarblissstudios@gmail.com',
   handle: '@jaystarbliss_studios',
   website: 'www.jaystarblissstudios.com',
-  verifyUrl: 'jaystarbliss-studios.name.ng/verify',
-  portalUrl: 'jaystarbliss-studios.name.ng/portal',
+  verifyUrl: 'jaystarblissstudios.com/verify',
+  portalUrl: 'jaystarblissstudios.com/portal',
 });
 
 export const JDI_COLORS = Object.freeze({

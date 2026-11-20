@@ -22,9 +22,9 @@ export const PasswordResetEmailTemplate: React.FC<PasswordResetEmailProps> = ({
   recipientEmail,
   resetUrl,
   expiresIn = '1 Hour (Single Use)',
-  logoUrl = 'https://jaystarbliss-studios.name.ng/logo.png',
-  websiteUrl = 'https://jaystarbliss-studios.name.ng',
-  portalUrl = 'https://jaystarbliss-studios.name.ng/portal',
+  logoUrl = 'https://jaystarblissstudios.com/logo.png',
+  websiteUrl = 'https://jaystarblissstudios.com',
+  portalUrl = 'https://jaystarblissstudios.com/portal',
   supportEmail = 'jaystarblissstudios@gmail.com',
   supportWhatsapp = '+234 707 763 8925'
 }) => {

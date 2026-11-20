@@ -20,7 +20,7 @@ interface MetaTagsContextType {
 }
 
 const BRAND_NAME = 'Jaystarbliss Studios';
-const BASE_PRODUCTION_URL = 'https://jaystarbliss-studios.name.ng';
+const BASE_PRODUCTION_URL = 'https://jaystarblissstudios.com';
 const DEFAULT_IMAGE = `${BASE_PRODUCTION_URL}/favicon.png`;
 const DEFAULT_DESCRIPTION = 'Jaystarbliss Studios is a modern technology, creative and educational studio in Lagos, Nigeria. We teach practical skills, build scalable software, and engineer digital solutions.';
 const DEFAULT_KEYWORDS = 'Jaystarbliss Studios, coding for kids Lagos, tech education Nigeria, web development Lagos, programming courses Nigeria, robotics for kids, software development, creative digital solutions, coding academy Nigeria';

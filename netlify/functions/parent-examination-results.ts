@@ -7,6 +7,7 @@ import {
   resolvePartnerSchoolName,
   normalizeClassName,
 } from "../../api/_lib/jdi-assessment.js";
+import { enforceEntitlementOrLock } from "../../api/_lib/subscription-service";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -78,7 +79,11 @@ export const handler: Handler = async event => {
     }
     const token = bearer(event);
     if (!token) return json(401, { error: "Please sign in again." });
-    const decoded = await adminAuth.verifyIdToken(token);
+    const requestedChildId = String(event.queryStringParameters?.studentId || event.queryStringParameters?.childId || "").trim() || null;
+    const entitlementGuard = await enforceEntitlementOrLock(event, { targetChildId: requestedChildId });
+    if (!entitlementGuard.ok) return entitlementGuard.response;
+    const decoded = entitlementGuard.decoded;
+    const lockedChildSet = new Set(entitlementGuard.entitlement.lockedChildIds || []);
     const userSnap = await adminDb.collection("users").doc(decoded.uid).get();
     if (!userSnap.exists) return json(403, { error: "Portal profile not found." });
     const user = userSnap.data() || {};
@@ -95,6 +100,7 @@ export const handler: Handler = async event => {
 
     const attemptsById = new Map<string, any>();
     for (const [childId, child] of children.entries()) {
+      if (lockedChildSet.has(childId)) continue;
       const snapById = await adminDb.collection("jdiExamAttempts").where("studentId", "==", childId).limit(200).get();
       snapById.forEach(doc => {
         const attempt = doc.data();

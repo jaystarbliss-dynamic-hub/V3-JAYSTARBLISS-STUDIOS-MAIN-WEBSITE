@@ -1,4 +1,11 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "./lib/firebase";
+import {
+  fetchStudentProgrammeEnrollments,
+  resolveStudentPortalEligibility,
+  shouldUnlockStudentBillingTab,
+} from "./lib/programmeEnrollments";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ToastProvider } from "./contexts/ToastContext";
 import { SessionTimeoutProvider } from "./contexts/SessionTimeoutContext";
@@ -55,6 +62,7 @@ const TutorExaminations = lazy(() => import("./pages/portal/TutorExaminations"))
 const StudentExamAttempt = lazy(() => import("./pages/portal/StudentExamAttempt"));
 const ResourceLibrary = lazy(() => import("./pages/portal/ResourceLibrary"));
 const PortalCourses = lazy(() => import("./pages/portal/PortalCourses"));
+const ParentLearningTracksPage = lazy(() => import("./pages/portal/ParentLearningTracksPage"));
 const PortalLiveClasses = lazy(() => import("./pages/portal/PortalLiveClasses"));
 const PortalCalendar = lazy(() => import("./pages/portal/PortalCalendar"));
 const PortalSettings = lazy(() => import("./pages/portal/PortalSettings"));
@@ -105,12 +113,79 @@ const StudentEdgeClub = lazy(() => import("./pages/portal/StudentEdgeClub"));
 const PortalWireframesShowcase = lazy(() => import("./pages/PortalWireframesShowcase"));
 const AcademicReportingCenter = lazy(() => import("./pages/portal/AcademicReportingCenter"));
 
-const StudentBillingGate = () =>
-  sessionStorage.getItem("studentRegistrationType") === "individual" ? (
+const StudentBillingGate = () => {
+  const [decision, setDecision] = useState<"checking" | "allow" | "deny">(() => {
+    const regType = sessionStorage.getItem("studentRegistrationType");
+    if (regType === "individual") return "allow";
+    if (regType === "parent" || sessionStorage.getItem("parentId") || sessionStorage.getItem("studentParentId")) {
+      return "deny";
+    }
+    return "checking";
+  });
+
+  useEffect(() => {
+    if (decision === "allow" || decision === "deny") return;
+    let active = true;
+    const verifyEligibility = async () => {
+      try {
+        const uid = auth.currentUser?.uid || sessionStorage.getItem("userId") || "";
+        const studentDocId = sessionStorage.getItem("studentDocId") || "";
+        if (!uid) {
+          if (active) setDecision("deny");
+          return;
+        }
+        const [userSnap, studentSnap, enrollments] = await Promise.all([
+          getDoc(doc(db, "users", uid)).catch(() => null),
+          studentDocId ? getDoc(doc(db, "students", studentDocId)).catch(() => null) : Promise.resolve(null),
+          fetchStudentProgrammeEnrollments(uid).catch(() => []),
+        ]);
+        const userDoc = userSnap?.exists() ? (userSnap.data() as Record<string, any>) : null;
+        const studentDoc = studentSnap?.exists() ? (studentSnap.data() as Record<string, any>) : null;
+        const eligibility = resolveStudentPortalEligibility({
+          registrationType:
+            userDoc?.studentRegistrationType ||
+            studentDoc?.registrationType ||
+            sessionStorage.getItem("studentRegistrationType"),
+          registrationSource:
+            studentDoc?.registrationSource ||
+            userDoc?.registrationSource ||
+            sessionStorage.getItem("studentRegistrationSource"),
+          parentId:
+            studentDoc?.parentId ||
+            userDoc?.parentId ||
+            sessionStorage.getItem("parentId") ||
+            sessionStorage.getItem("studentParentId"),
+          parentUid: studentDoc?.parentUid || userDoc?.parentUid,
+          schoolId:
+            studentDoc?.schoolId ||
+            userDoc?.schoolId ||
+            sessionStorage.getItem("schoolId"),
+          isIndependent: userDoc?.isIndependent ?? studentDoc?.isIndependent,
+        });
+        const unlocked = shouldUnlockStudentBillingTab({
+          eligibility,
+          selfFundedEnrollments: enrollments,
+        });
+        if (active) setDecision(unlocked ? "allow" : "deny");
+      } catch {
+        if (active) setDecision("deny");
+      }
+    };
+    void verifyEligibility();
+    return () => {
+      active = false;
+    };
+  }, [decision]);
+
+  if (decision === "checking") {
+    return <BrandLoader />;
+  }
+  return decision === "allow" ? (
     <BillingCenter role="student" />
   ) : (
     <Navigate to="/portal/student" replace />
   );
+};
 
 const LazyFallback = () => {
   return <BrandLoader />;
@@ -221,6 +296,7 @@ function AnimatedRoutes() {
 
         <Route path="/portal/parent" element={<ProtectedRoute allowedRoles={['PARENT']} redirectPath="/portal"><PortalLayout /></ProtectedRoute>}>
           <Route index element={<PortalHomeWithBilling role="parent" />} />
+          <Route path="learning-tracks" element={<ParentLearningTracksPage />} />
           <Route path="resources" element={<ResourceLibrary role="parent" />} />
           <Route path="assignments" element={<AssignmentCenter role="parent" />} />
           <Route path="milestones" element={<MilestoneCenter role="parent" />} />

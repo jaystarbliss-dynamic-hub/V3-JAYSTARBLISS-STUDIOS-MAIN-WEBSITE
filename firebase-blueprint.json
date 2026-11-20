@@ -190,6 +190,107 @@
         "popupFrequency": { "type": "string", "enum": ["ONCE_PER_BROWSER", "ONCE_PER_SESSION", "EVERY_N_DAYS"] }
       },
       "required": ["title", "placement", "status", "desktopImageUrl", "ctaLabel", "ctaTargetType", "sortOrder"]
+    },
+    "ProgrammeEnrollment": {
+      "title": "ProgrammeEnrollment",
+      "description": "Self-funded student programme application, admission approval, fee terms, and Paystack reconciliation record.",
+      "type": "object",
+      "properties": {
+        "studentUid": { "type": "string" },
+        "studentDocId": { "type": "string" },
+        "studentOriginType": { "type": "string", "enum": ["INDIVIDUAL", "SCHOOL_STUDENT"] },
+        "schoolId": { "type": "string" },
+        "programId": { "type": "string" },
+        "programSlug": { "type": "string" },
+        "programTitle": { "type": "string" },
+        "billingResponsibility": { "type": "string", "enum": ["STUDENT_SELF_FUNDED"] },
+        "enrollmentStatus": {
+          "type": "string",
+          "enum": ["PENDING_ADMIN_REVIEW", "APPROVED_PENDING_PAYMENT", "PARTIALLY_PAID", "ACTIVE", "RENEWAL_DUE", "REJECTED"]
+        },
+        "paymentStatus": { "type": "string", "enum": ["UNPAID", "PARTIALLY_PAID", "PAID"] },
+        "approvedFee": { "type": "number" },
+        "amountPaid": { "type": "number" },
+        "remainingBalance": { "type": "number" },
+        "billingCycle": { "type": "string", "enum": ["ONE_TIME", "MONTHLY", "TERMLY"] },
+        "allowDepositAccess": { "type": "boolean" },
+        "depositAmount": { "type": "number" },
+        "paidThrough": { "type": "string" },
+        "nextDueDate": { "type": "string" }
+      },
+      "required": ["studentUid", "programId", "programTitle", "billingResponsibility", "enrollmentStatus", "paymentStatus", "approvedFee", "amountPaid"]
+    },
+    "BillingSubscription": {
+      "title": "BillingSubscription",
+      "description": "Authoritative subscription entitlement record with 7-day grace window, lockdown schedule, and override/exemption controls.",
+      "type": "object",
+      "properties": {
+        "accountId": { "type": "string" },
+        "accountType": { "type": "string", "enum": ["SCHOOL", "PARENT", "INDIVIDUAL_STUDENT", "SELF_FUNDED_PROGRAMME"] },
+        "status": { "type": "string", "enum": ["ACTIVE", "DUE_SOON", "GRACE_PERIOD", "LOCKED", "PARTIALLY_PAID", "EXEMPT", "SUSPENDED", "CANCELLED"] },
+        "billingCycle": { "type": "string" },
+        "durationWeeks": { "type": "number" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "nextDueAt": { "type": "string" },
+        "lockdownAt": { "type": "string" },
+        "isExempt": { "type": "boolean" },
+        "overrideUnlockedUntil": { "type": "string" }
+      },
+      "required": ["accountId", "accountType", "status"]
+    },
+    "SubscriptionReminder": {
+      "title": "SubscriptionReminder",
+      "description": "Idempotent scheduled renewal reminder delivery ledger for 7-day pre-due, due date, and lockdown notices.",
+      "type": "object",
+      "properties": {
+        "subscriptionId": { "type": "string" },
+        "stage": { "type": "string", "enum": ["PRE_DUE_7D", "DUE_TODAY", "LOCKDOWN_ACTIVATED"] },
+        "recipientEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["SENT", "FAILED", "SKIPPED"] },
+        "attemptCount": { "type": "number" },
+        "sentAt": { "type": "string" }
+      },
+      "required": ["subscriptionId", "stage", "status"]
+    },
+    "AdminAuditLog": {
+      "title": "AdminAuditLog",
+      "description": "Immutable administrative audit log for manual payments, subscription overrides, exemptions, and financial operations.",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "actorUid": { "type": "string" },
+        "actorName": { "type": "string" },
+        "targetId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["action", "actorUid", "createdAt"]
+    },
+    "FinancialResetAuditLog": {
+      "title": "FinancialResetAuditLog",
+      "description": "Permanent superadmin audit trail for controlled test financial data reset operations.",
+      "type": "object",
+      "properties": {
+        "operationId": { "type": "string" },
+        "actorUid": { "type": "string" },
+        "projectId": { "type": "string" },
+        "backupRef": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["operationId", "actorUid", "projectId", "status"]
+    },
+    "FinancialResetBackup": {
+      "title": "FinancialResetBackup",
+      "description": "Immutable pre-reset backup snapshot metadata stored prior to controlled test financial data reset.",
+      "type": "object",
+      "properties": {
+        "operationId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "totalDocumentsBackedUp": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["operationId", "projectId", "createdAt"]
     }
   },
   "firestore": {
@@ -308,6 +409,30 @@
     "promotions/{promoId}": {
       "schema": { "$ref": "#/entities/Promotion" },
       "description": "Homepage carousel banners and first-visit promotional popup campaigns."
+    },
+    "programme_enrollments/{enrollmentId}": {
+      "schema": { "$ref": "#/entities/ProgrammeEnrollment" },
+      "description": "Self-funded student programme applications, admission fees, and payment reconciliation records."
+    },
+    "billingSubscriptions/{subId}": {
+      "schema": { "$ref": "#/entities/BillingSubscription" },
+      "description": "Authoritative subscription entitlement, grace period, and lockdown records."
+    },
+    "subscriptionReminders/{remId}": {
+      "schema": { "$ref": "#/entities/SubscriptionReminder" },
+      "description": "Idempotent scheduled renewal reminder delivery ledger."
+    },
+    "adminAuditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AdminAuditLog" },
+      "description": "Immutable audit log for manual payments, subscription overrides, and exemptions."
+    },
+    "financialResetAuditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/FinancialResetAuditLog" },
+      "description": "Permanent superadmin audit trail for controlled test financial data resets."
+    },
+    "financialResetBackups/{backupId}": {
+      "schema": { "$ref": "#/entities/FinancialResetBackup" },
+      "description": "Pre-reset backup snapshot archives for controlled test financial data resets."
     }
   }
 }

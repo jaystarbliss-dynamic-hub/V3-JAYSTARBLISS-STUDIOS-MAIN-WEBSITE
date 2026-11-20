@@ -38,6 +38,8 @@ import {
 } from '../../components/portal/StudentAnalyticsVisualizer';
 import { TypingMastersAcademyCard } from '../../components/portal/TypingMastersAcademyCard';
 import { useToast } from '../../contexts/ToastContext';
+import { useSubscriptionEntitlement } from '../../contexts/SubscriptionEntitlementContext';
+import { PortalLockdownView } from '../../components/portal/PortalLockdownView';
 import {
   calculateGradeLetter,
   calculateScorePercentage,
@@ -196,6 +198,7 @@ const formatDate = (value?: string) => {
 
 export const StudentDashboard: React.FC = () => {
   const toast = useToast();
+  const { entitlement, loading: entitlementLoading } = useSubscriptionEntitlement();
 
   const [student, setStudent] = useState<StudentInfo | null>(null);
   const [modules, setModules] = useState<ProgramModule[]>([]);
@@ -936,8 +939,13 @@ export const StudentDashboard: React.FC = () => {
   };
 
   useEffect(() => {
+    if (entitlementLoading) return;
+    if (entitlement?.isLocked) {
+      setLoading(false);
+      return;
+    }
     fetchStudentData();
-  }, []);
+  }, [entitlementLoading, entitlement?.isLocked]);
 
   // Real Dynamic Milestone Calculations
   const completedMilestonesCount = useMemo(() => {
@@ -1151,7 +1159,11 @@ export const StudentDashboard: React.FC = () => {
 
   const schoolDisplayName = student?.schoolName || student?.school || sessionStorage.getItem('studentSchoolName');
 
-  if (loading) {
+  if (entitlement?.isLocked) {
+    return <PortalLockdownView entitlement={entitlement} />;
+  }
+
+  if (loading || entitlementLoading) {
     return (
       <div className="min-h-[360px] flex items-center justify-center p-8">
         <div className="text-center">

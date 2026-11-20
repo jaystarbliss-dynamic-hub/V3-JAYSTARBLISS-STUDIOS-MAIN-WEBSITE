@@ -13,6 +13,10 @@
 [functions]
   directory = "netlify/functions"
 
+[[edge_functions]]
+  path = "/programs/*"
+  function = "social-meta"
+
 # Legacy domain migration: permanently redirect the old .name.ng host to the new .com domain.
 # Keep these hostname-specific rules before the API proxy and SPA fallback rules.
 [[redirects]]

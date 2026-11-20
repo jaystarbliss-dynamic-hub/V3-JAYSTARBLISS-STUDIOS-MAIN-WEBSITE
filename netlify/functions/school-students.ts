@@ -1,6 +1,7 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb, hasAdminAuth, hasAdminDb, applyRequestDatabaseHeader } from '../../api/_lib/firebase-admin';
 import { normalizeClassName } from '../../api/_lib/jdi-assessment.js';
+import { enforceEntitlementOrLock } from '../../api/_lib/subscription-service';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -52,7 +53,10 @@ export const handler: Handler = async event => {
     const token = bearer(event);
     if (!token) return json(401, { error: 'Authentication required.' });
 
-    const decoded = await adminAuth.verifyIdToken(token);
+    const entitlementGuard = await enforceEntitlementOrLock(event);
+    if (!entitlementGuard.ok) return entitlementGuard.response;
+
+    const decoded = entitlementGuard.decoded;
     const callerSnap = await adminDb.collection('users').doc(decoded.uid).get();
     if (!callerSnap.exists) return json(403, { error: 'Portal profile not found.' });
 

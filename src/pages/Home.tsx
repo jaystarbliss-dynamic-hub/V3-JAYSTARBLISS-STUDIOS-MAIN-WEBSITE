@@ -19,7 +19,7 @@ const Home: React.FC = () => {
         title="Learn. Build. Create. Grow." 
         description="Jaystarbliss Studios empowers the next generation through practical tech education, coding programs for kids, and scalable software solutions in Lagos, Nigeria."
         keywords="Jaystarbliss Studios, coding for kids, robotics classes Lagos, tech education Nigeria, software development studio"
-        canonical="https://jaystarbliss-studios.name.ng/"
+        canonical="https://jaystarblissstudios.com/"
       />
       <Hero />
       <CorePillars />

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { School, GraduationCap, Users, Mail, Lock, Eye, EyeOff, UserCheck, ShieldCheck, ArrowLeft } from 'lucide-react';
 import { 
   signInWithEmailAndPassword, 
@@ -22,6 +22,10 @@ import { useStandalonePWA } from '../utils/pwa';
 import portalWallpaper from '../assets/jdi login bg.png';
 import { getFriendlyErrorMessage, logInternalDiagnostic } from '../utils/friendlyErrors';
 import { reconcileParentAndChildrenAccount } from '../lib/usernameRegistry';
+import {
+  buildPortalProgramExplorePath,
+  validateSameOriginReturnPath,
+} from '../lib/sharing';
 import './Portal.css';
 import './SecurePortalTheme.css';
 
@@ -55,10 +59,59 @@ async function computeSha256(message: string): Promise<string> {
 }
 
 const SecurePortalLogin: React.FC = () => {
-  const navigate = useNavigate(); 
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { theme } = useTheme(); 
   const { toast } = useToast();
   const isStandalone = useStandalonePWA();
+  const rawReturnTo = searchParams.get('returnTo');
+  const queryProgramId = searchParams.get('programId');
+  const queryProgramSlug = searchParams.get('programSlug');
+
+  const resolvePostLoginRoute = (
+    role: 'student' | 'parent',
+    studentType?: string
+  ): string => {
+    const isParentManagedChild = role === 'student' && studentType === 'parent';
+    const safeReturn = validateSameOriginReturnPath(rawReturnTo);
+    if (safeReturn) {
+      if (
+        isParentManagedChild &&
+        (safeReturn.includes('tab=explore') || safeReturn.includes('/portal/student/payments'))
+      ) {
+        return '/portal/student';
+      }
+      if (role === 'parent' && safeReturn.startsWith('/portal/student/courses')) {
+        return buildPortalProgramExplorePath({
+          role: 'parent',
+          programId: queryProgramId,
+          programSlug: queryProgramSlug,
+        });
+      }
+      if (role === 'student' && safeReturn.startsWith('/portal/student')) {
+        return safeReturn;
+      }
+      if (role === 'parent' && safeReturn.startsWith('/portal/parent')) {
+        return safeReturn;
+      }
+    }
+    if (!isParentManagedChild && (queryProgramId || queryProgramSlug)) {
+      return buildPortalProgramExplorePath({
+        role,
+        programId: queryProgramId,
+        programSlug: queryProgramSlug,
+      });
+    }
+    return role === 'parent' ? '/portal/parent' : '/portal/student';
+  };
+
+  const registerLinkHref = (() => {
+    const params = new URLSearchParams();
+    if (queryProgramId) params.set('programId', queryProgramId);
+    if (queryProgramSlug) params.set('programSlug', queryProgramSlug);
+    const qs = params.toString();
+    return qs ? `/register?${qs}` : '/register';
+  })();
   const [portalMode, setPortalMode] = useState<PortalMode>('institute');
   const [instituteTab, setInstituteTab] = useState<InstituteRole>('student');
   const [identifier, setIdentifier] = useState(''); 
@@ -118,14 +171,14 @@ const SecurePortalLogin: React.FC = () => {
         schoolId: data.schoolId || '', 
         studentRegistrationType: type 
       }); 
-      navigate('/portal/student'); 
+      navigate(resolvePostLoginRoute('student', type)); 
       return;
     }
     storeSession('parent', user.uid, data.name || user.displayName || 'Parent', { 
       userEmail: user.email || '', 
       schoolId: data.schoolId || '' 
     }); 
-    navigate('/portal/parent');
+    navigate(resolvePostLoginRoute('parent'));
   };
 
   const loginStudentWithFallback = async () => {
@@ -153,7 +206,7 @@ const SecurePortalLogin: React.FC = () => {
           studentRegistrationType: type
         });
         toast.success(`Welcome ${String(name).split(' ')[0]}! Logged in successfully.`);
-        navigate('/portal/student');
+        navigate(resolvePostLoginRoute('student', type));
         return;
       }
     } catch {
@@ -651,7 +704,13 @@ const SecurePortalLogin: React.FC = () => {
     }
 
     toast.success(`Welcome ${String(studentName).split(' ')[0]}! Logged in successfully.`);
-    navigate('/portal/student');
+    const resolvedFallbackType =
+      sessionStorage.getItem('studentRegistrationType') === 'parent'
+        ? 'parent'
+        : sessionStorage.getItem('studentRegistrationType') === 'school' || Boolean(schoolId)
+        ? 'school'
+        : 'individual';
+    navigate(resolvePostLoginRoute('student', resolvedFallbackType));
   };
 
   const loginManagedAccount = async (target: 'school' | 'staff' | 'client') => {
@@ -1394,7 +1453,7 @@ const SecurePortalLogin: React.FC = () => {
         )}
 
         <div className="text-center pt-2.5 pb-0.5 text-xs text-slate-200">
-          Are You New Member? <Link to="/register" className="text-white font-bold hover:underline ml-1">Sign UP</Link>
+          Are You New Member? <Link to={registerLinkHref} className="text-white font-bold hover:underline ml-1">Sign UP</Link>
         </div>
         {!isStandalone && (
           <div className="text-center pt-1.5 pb-0.5">

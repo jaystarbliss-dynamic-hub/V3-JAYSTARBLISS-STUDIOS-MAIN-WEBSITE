@@ -1,6 +1,7 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
 import type { QuerySnapshot } from 'firebase-admin/firestore';
+import { enforceEntitlementOrLock } from '../../api/_lib/subscription-service';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({ statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(body) });
 const token = (event: any) => { const h = event.headers?.authorization || event.headers?.Authorization || ''; return h.startsWith('Bearer ') ? h.slice(7) : ''; };
@@ -15,7 +16,9 @@ export const handler: Handler = async (event) => {
     }
     const raw = token(event);
     if (!raw) return json(401, { error: 'Authentication required.' });
-    const decoded = await adminAuth.verifyIdToken(raw);
+    const entitlementGuard = await enforceEntitlementOrLock(event);
+    if (!entitlementGuard.ok) return entitlementGuard.response;
+    const decoded = entitlementGuard.decoded;
     const userSnap = await adminDb.collection('users').doc(decoded.uid).get();
     if (!userSnap.exists) return json(403, { error: 'Portal profile not found.' });
     const user = userSnap.data() || {};

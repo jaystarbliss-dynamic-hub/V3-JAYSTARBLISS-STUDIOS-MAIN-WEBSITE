@@ -45,14 +45,19 @@ import {
 import { CANONICAL_CLASSES, classesMatch, normalizeClassList, normalizeClassName } from '../../lib/classes';
 import {
   type AuthorizedSchoolOption,
+  type MeetingLinkUpdateScope,
   type PrivateStudentOption,
   SCHEDULE_DAYS_OF_WEEK,
   type TutorSchedulingScope,
   addMinutesToTime,
   calculateDurationMinutes,
   canTutorManageSchedule,
+  getLagosDateKey,
+  isHistoricalOccurrence,
   loadSchedulingDirectory,
+  resolveOccurrenceMeetingLink,
   updateScheduleMeetingLink,
+  updateScheduleMeetingLinkWithScope,
   validateMeetingLink,
 } from '../../lib/scheduleEngine';
 
@@ -76,6 +81,11 @@ export type Schedule = {
   tutorName?: string;
   tutorEmail?: string;
   meetingLink?: string;
+  defaultMeetingLink?: string;
+  linkSource?: 'INHERITED' | 'CUSTOM';
+  meetingLinkUpdatedByUid?: string;
+  meetingLinkUpdatedByName?: string;
+  meetingLinkUpdatedAt?: string;
   platform?: string;
   schoolId?: string;
   schoolName?: string;
@@ -178,10 +188,11 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
     applyLinkToSeries: true,
   });
 
-  // Quick Meeting Link Modal
+  // Quick Meeting Link Modal (Per-Session / Selected Future / Series Default)
   const [linkModalSchedule, setLinkModalSchedule] = useState<Schedule | null>(null);
   const [linkModalUrl, setLinkModalUrl] = useState('');
-  const [linkModalApplySeries, setLinkModalApplySeries] = useState(true);
+  const [linkModalScope, setLinkModalScope] = useState<MeetingLinkUpdateScope>('SINGLE');
+  const [linkModalSelectedIds, setLinkModalSelectedIds] = useState<string[]>([]);
   const [linkSaving, setLinkSaving] = useState(false);
 
   // Create Schedule / Timetable Modal (School & Program OR Private Student)
@@ -595,6 +606,8 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
                 occurrenceIndex: w + 1,
                 occurrenceTotal: numWeeks,
                 meetingLink: normalizedLink,
+                defaultMeetingLink: normalizedLink,
+                linkSource: 'INHERITED',
                 platform,
                 deliveryMode: normalizedLink ? 'online' : 'physical',
                 tutorId: actorUid,
@@ -642,6 +655,8 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
                 occurrenceIndex: w + 1,
                 occurrenceTotal: numWeeks,
                 meetingLink: normalizedLink,
+                defaultMeetingLink: normalizedLink,
+                linkSource: 'INHERITED',
                 platform,
                 deliveryMode: 'online',
                 tutorId: actorUid,
@@ -682,10 +697,24 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
   };
 
   const openQuickLinkModal = (r: Schedule) => {
+    const resolved = resolveOccurrenceMeetingLink(r);
     setLinkModalSchedule(r);
-    setLinkModalUrl(r.meetingLink || '');
-    setLinkModalApplySeries(Boolean(r.scheduleGroupId));
+    setLinkModalUrl(resolved.effectiveLink || '');
+    setLinkModalScope('SINGLE');
+    setLinkModalSelectedIds([r.id]);
   };
+
+  const upcomingSeriesSiblings = useMemo(() => {
+    if (!linkModalSchedule?.scheduleGroupId) return [];
+    const todayLagos = getLagosDateKey(new Date());
+    return rows
+      .filter(
+        (s) =>
+          s.scheduleGroupId === linkModalSchedule.scheduleGroupId &&
+          !isHistoricalOccurrence(s, todayLagos)
+      )
+      .sort((a, b) => `${a.date} ${a.startTime || ''}`.localeCompare(`${b.date} ${b.startTime || ''}`));
+  }, [linkModalSchedule, rows]);
 
   const handleSaveMeetingLink = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -701,21 +730,46 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
         user?.displayName ||
         'Assigned Tutor';
 
-      const updatedCount = await updateScheduleMeetingLink({
+      const result = await updateScheduleMeetingLinkWithScope({
         scheduleId: linkModalSchedule.id,
         scheduleGroupId: linkModalSchedule.scheduleGroupId,
         meetingLink: linkModalUrl,
-        applyToSeries: linkModalApplySeries && Boolean(linkModalSchedule.scheduleGroupId),
+        scope: linkModalScope,
+        selectedOccurrenceIds:
+          linkModalScope === 'SELECTED_FUTURE'
+            ? linkModalSelectedIds.length
+              ? linkModalSelectedIds
+              : [linkModalSchedule.id]
+            : undefined,
         actorUid,
         actorName,
         actorRole: 'TUTOR',
       });
 
-      toast.success(
-        updatedCount > 1
-          ? `Meeting link updated across ${updatedCount} sessions in this series.`
-          : 'Class meeting link updated.'
-      );
+      if (result.updatedCount === 0 && result.skippedHistoricalCount > 0) {
+        toast.info('Past or completed sessions cannot have their meeting link overwritten.');
+      } else {
+        const extraNotes: string[] = [];
+        if (result.skippedCustomOverrideCount > 0) {
+          extraNotes.push(
+            `${result.skippedCustomOverrideCount} custom session link${result.skippedCustomOverrideCount === 1 ? '' : 's'} preserved`
+          );
+        }
+        if (result.skippedHistoricalCount > 0) {
+          extraNotes.push(
+            `${result.skippedHistoricalCount} past/completed session${result.skippedHistoricalCount === 1 ? '' : 's'} untouched`
+          );
+        }
+        const suffix = extraNotes.length ? ` (${extraNotes.join('; ')})` : '';
+        toast.success(
+          linkModalScope === 'RESET_TO_DEFAULT'
+            ? `Session reverted to the series default meeting link.${suffix}`
+            : result.updatedCount > 1
+            ? `Meeting link updated for ${result.updatedCount} upcoming sessions.${suffix}`
+            : `Meeting link updated for this session.${suffix}`
+        );
+      }
+
       setLinkModalSchedule(null);
       await load();
     } catch (err: any) {
@@ -726,14 +780,15 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
   };
 
   const openEdit = (r: Schedule) => {
+    const resolved = resolveOccurrenceMeetingLink(r);
     setEditing(r);
     setForm({
       date: r.date,
       startTime: r.startTime || '',
       endTime: r.endTime || '',
       title: r.title || '',
-      meetingLink: r.meetingLink || '',
-      applyLinkToSeries: Boolean(r.scheduleGroupId),
+      meetingLink: resolved.effectiveLink || '',
+      applyLinkToSeries: false,
     });
   };
 
@@ -883,6 +938,8 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
         auth.currentUser?.displayName ||
         'Assigned Tutor';
 
+      const existingDefault = String(editing.defaultMeetingLink || '').trim();
+      const isCustomLink = Boolean(cleanUrl && existingDefault && cleanUrl !== existingDefault);
       await updateDoc(doc(db, 'classSchedules', editing.id), {
         date: form.date,
         dayOfWeek: new Date(`${form.date}T12:00:00`).toLocaleDateString('en-US', {
@@ -893,12 +950,16 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
         durationMinutes: calculateDurationMinutes(form.startTime, form.endTime),
         title: form.title.trim() || editing.title || 'Class session',
         meetingLink: cleanUrl,
+        linkSource: isCustomLink ? 'CUSTOM' : 'INHERITED',
         platform: linkCheck.platform,
         updatedAt: serverTimestamp(),
         editedBy: actorUid,
         updatedByUid: actorUid,
         updatedByName: actorName,
         updatedByRole: 'TUTOR',
+        meetingLinkUpdatedByUid: actorUid,
+        meetingLinkUpdatedByName: actorName,
+        meetingLinkUpdatedAt: new Date().toISOString(),
       });
 
       if (form.applyLinkToSeries && editing.scheduleGroupId) {
@@ -906,7 +967,7 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
           scheduleId: editing.id,
           scheduleGroupId: editing.scheduleGroupId,
           meetingLink: cleanUrl,
-          applyToSeries: true,
+          scope: 'ALL_FUTURE_INHERITED',
           actorUid: actorUid || undefined,
           actorName,
           actorRole: 'TUTOR',
@@ -1333,7 +1394,8 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {weekRows.map((r) => {
                 const status = String(r.status || 'SCHEDULED').toUpperCase();
-                const linkCheck = validateMeetingLink(r.meetingLink);
+                const resolvedLink = resolveOccurrenceMeetingLink(r);
+                const linkCheck = validateMeetingLink(resolvedLink.effectiveLink);
                 const isSchoolRow = Boolean(r.schoolId) || String(r.targetType || '').toLowerCase() === 'school';
                 const durationMins =
                   r.durationMinutes || calculateDurationMinutes(r.startTime || '', r.endTime || '');
@@ -1398,17 +1460,29 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
 
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
                         {linkCheck.valid ? (
-                          <span className="text-[#1E293B] dark:text-slate-200 font-bold inline-flex items-center gap-1">
+                          <span className="text-[#1E293B] dark:text-slate-200 font-bold inline-flex items-center gap-1.5">
                             <Video size={12} /> {linkCheck.platform} Link Active
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                                resolvedLink.linkSource === 'CUSTOM'
+                                  ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+                                  : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                              }`}
+                            >
+                              {resolvedLink.linkSource === 'CUSTOM' ? 'Custom session link' : 'Series default'}
+                            </span>
                           </span>
                         ) : (
                           <span className="text-slate-500 dark:text-slate-400 font-semibold inline-flex items-center gap-1">
                             <Link2 size={12} /> Meeting link not set
                           </span>
                         )}
-                        {r.updatedByName && (
+                        {(r.meetingLinkUpdatedByName || r.updatedByName) && (
                           <span>
-                            Last updated by <strong className="text-slate-700 dark:text-slate-200">{r.updatedByName}</strong>
+                            Link updated by{' '}
+                            <strong className="text-slate-700 dark:text-slate-200">
+                              {r.meetingLinkUpdatedByName || r.updatedByName}
+                            </strong>
                           </span>
                         )}
                       </div>
@@ -2060,24 +2134,25 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
         </div>
       )}
 
-      {/* QUICK MEETING LINK CONFIGURATION MODAL */}
+      {/* QUICK MEETING LINK CONFIGURATION MODAL (Per-Session / Selected Future / Series Default) */}
       {linkModalSchedule && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <form
             onSubmit={handleSaveMeetingLink}
-            className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-2xl"
+            className="w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-2xl max-h-[90dvh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[10px] uppercase tracking-wider font-black text-[#1E293B] dark:text-slate-300">
-                  Online Classroom Link
+                  Per-Session Classroom Link
                 </p>
                 <h3 className="text-base font-black text-slate-900 dark:text-white">
                   Configure Joining Link
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {linkModalSchedule.programName || linkModalSchedule.title} ·{' '}
-                  {linkModalSchedule.schoolName || linkModalSchedule.studentName}
+                  {linkModalSchedule.schoolName || linkModalSchedule.studentName} ·{' '}
+                  {label(linkModalSchedule.date)}
                 </p>
               </div>
               <button type="button" onClick={() => setLinkModalSchedule(null)}>
@@ -2085,40 +2160,164 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
               </button>
             </div>
 
+            {linkModalSchedule.defaultMeetingLink && (
+              <div className="rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 px-3 py-2 text-[11px] text-slate-600 dark:text-slate-400">
+                <span className="font-bold text-slate-800 dark:text-slate-200">Series default link:</span>{' '}
+                <span className="break-all font-mono">{linkModalSchedule.defaultMeetingLink}</span>
+              </div>
+            )}
+
+            {linkModalScope !== 'RESET_TO_DEFAULT' && (
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                  Meeting URL (Microsoft Teams, Google Meet, Zoom, etc.)
+                </label>
+                <input
+                  type="text"
+                  value={linkModalUrl}
+                  onChange={(e) => setLinkModalUrl(e.target.value)}
+                  placeholder="https://teams.microsoft.com/l/meetup-join/..."
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2.5 text-sm"
+                />
+                {linkModalUrl.trim() && (
+                  quickLinkValidation.valid ? (
+                    <p className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200 flex items-center gap-1">
+                      <CheckCircle2 size={12} /> Valid {quickLinkValidation.platform} HTTPS link
+                    </p>
+                  ) : (
+                    <p className="text-[11px] font-bold text-[#B91C1C] flex items-center gap-1">
+                      <AlertCircle size={12} /> {quickLinkValidation.error}
+                    </p>
+                  )
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-                Meeting URL (Google Meet, Zoom, Microsoft Teams, etc.)
-              </label>
-              <input
-                type="text"
-                value={linkModalUrl}
-                onChange={(e) => setLinkModalUrl(e.target.value)}
-                placeholder="https://meet.google.com/..."
-                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2.5 text-sm"
-              />
-              {linkModalUrl.trim() && (
-                quickLinkValidation.valid ? (
-                  <p className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200 flex items-center gap-1">
-                    <CheckCircle2 size={12} /> Valid {quickLinkValidation.platform} link
-                  </p>
-                ) : (
-                  <p className="text-[11px] font-bold text-[#B91C1C] flex items-center gap-1">
-                    <AlertCircle size={12} /> {quickLinkValidation.error}
-                  </p>
-                )
-              )}
+              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Which session(s) should use this link?
+              </p>
+              <div className="space-y-1.5">
+                <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 p-2.5 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                  <input
+                    type="radio"
+                    name="linkScope"
+                    checked={linkModalScope === 'SINGLE'}
+                    onChange={() => setLinkModalScope('SINGLE')}
+                    className="mt-0.5 text-[#B91C1C]"
+                  />
+                  <div>
+                    <p className="font-bold text-slate-900 dark:text-white">
+                      This session only ({label(linkModalSchedule.date)})
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Sets a custom weekly link for this date without touching any other session.
+                    </p>
+                  </div>
+                </label>
+
+                {linkModalSchedule.scheduleGroupId && (
+                  <>
+                    <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 p-2.5 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <input
+                        type="radio"
+                        name="linkScope"
+                        checked={linkModalScope === 'SELECTED_FUTURE'}
+                        onChange={() => setLinkModalScope('SELECTED_FUTURE')}
+                        className="mt-0.5 text-[#B91C1C]"
+                      />
+                      <div>
+                        <p className="font-bold text-slate-900 dark:text-white">
+                          Selected upcoming dates in this series
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          Choose specific upcoming class dates to assign this link to.
+                        </p>
+                      </div>
+                    </label>
+
+                    <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 p-2.5 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <input
+                        type="radio"
+                        name="linkScope"
+                        checked={linkModalScope === 'ALL_FUTURE_INHERITED'}
+                        onChange={() => setLinkModalScope('ALL_FUTURE_INHERITED')}
+                        className="mt-0.5 text-[#B91C1C]"
+                      />
+                      <div>
+                        <p className="font-bold text-slate-900 dark:text-white">
+                          Update default link for future sessions
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          Updates future inherited sessions while preserving custom weekly overrides and past/completed classes.
+                        </p>
+                      </div>
+                    </label>
+
+                    {linkModalSchedule.defaultMeetingLink &&
+                      resolveOccurrenceMeetingLink(linkModalSchedule).linkSource === 'CUSTOM' && (
+                        <label className="flex items-start gap-2.5 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-2.5 text-xs cursor-pointer">
+                          <input
+                            type="radio"
+                            name="linkScope"
+                            checked={linkModalScope === 'RESET_TO_DEFAULT'}
+                            onChange={() => setLinkModalScope('RESET_TO_DEFAULT')}
+                            className="mt-0.5 text-[#B91C1C]"
+                          />
+                          <div>
+                            <p className="font-bold text-slate-900 dark:text-white">
+                              Reset this session to the series default link
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              Removes this date&apos;s custom override and inherits the series default.
+                            </p>
+                          </div>
+                        </label>
+                      )}
+                  </>
+                )}
+              </div>
             </div>
 
-            {linkModalSchedule.scheduleGroupId && (
-              <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={linkModalApplySeries}
-                  onChange={(e) => setLinkModalApplySeries(e.target.checked)}
-                  className="rounded border-slate-300 text-[#B91C1C]"
-                />
-                <span>Apply this meeting link to all recurring sessions in this schedule</span>
-              </label>
+            {linkModalScope === 'SELECTED_FUTURE' && upcomingSeriesSiblings.length > 0 && (
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-2 max-h-44 overflow-y-auto bg-slate-50/50 dark:bg-slate-950/30">
+                <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                  Select upcoming dates ({linkModalSelectedIds.length} selected):
+                </p>
+                <div className="space-y-1">
+                  {upcomingSeriesSiblings.map((sib) => {
+                    const checked = linkModalSelectedIds.includes(sib.id);
+                    const sibResolved = resolveOccurrenceMeetingLink(sib);
+                    return (
+                      <label
+                        key={sib.id}
+                        className="flex items-center justify-between gap-2 text-xs py-1 px-2 rounded-lg hover:bg-white dark:hover:bg-slate-900 cursor-pointer"
+                      >
+                        <span className="inline-flex items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              setLinkModalSelectedIds((prev) =>
+                                e.target.checked
+                                  ? Array.from(new Set([...prev, sib.id]))
+                                  : prev.filter((id) => id !== sib.id)
+                              );
+                            }}
+                            className="rounded border-slate-300 text-[#B91C1C]"
+                          />
+                          <span>
+                            {label(sib.date)} · {sib.startTime || '—'}–{sib.endTime || '—'}
+                          </span>
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-500">
+                          {sibResolved.linkSource === 'CUSTOM' ? 'Custom' : 'Default'}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -2131,11 +2330,13 @@ export const StaffClassSchedulesManager: React.FC<Props> = ({
               </button>
               <button
                 type="submit"
-                disabled={linkSaving}
-                className="px-5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-black inline-flex items-center gap-1.5 cursor-pointer"
+                disabled={linkSaving || (linkModalScope !== 'RESET_TO_DEFAULT' && Boolean(linkModalUrl.trim()) && !quickLinkValidation.valid)}
+                className="px-5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 disabled:opacity-50 text-white text-xs font-black inline-flex items-center gap-1.5 cursor-pointer"
               >
                 {linkSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                <span>Save Meeting Link</span>
+                <span>
+                  {linkModalScope === 'RESET_TO_DEFAULT' ? 'Reset to Default' : 'Save Meeting Link'}
+                </span>
               </button>
             </div>
           </form>

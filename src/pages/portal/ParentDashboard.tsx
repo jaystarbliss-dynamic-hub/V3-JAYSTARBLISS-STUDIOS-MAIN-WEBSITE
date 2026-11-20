@@ -48,6 +48,8 @@ import {
 import SEO from '../../components/ui/SEO';
 import DashboardGreeting from '../../components/portal/DashboardGreeting';
 import { useToast } from '../../contexts/ToastContext';
+import { useSubscriptionEntitlement } from '../../contexts/SubscriptionEntitlementContext';
+import { PortalLockdownView } from '../../components/portal/PortalLockdownView';
 import { FintechTransactionDetailsModal } from '../../components/portal/FintechTransactionDetailsModal';
 import type { TransactionReceiptData } from '../../lib/receiptGenerator';
 import { getEffectiveAuth } from '../../utils/impersonation';
@@ -132,6 +134,7 @@ const formatDateShort = (val: unknown): string => {
 const ParentDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { entitlement, loading: entitlementLoading } = useSubscriptionEntitlement();
 
   const [children, setChildren] = useState<ChildRecord[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
@@ -158,8 +161,13 @@ const ParentDashboard: React.FC = () => {
   const [enrollError, setEnrollError] = useState('');
   const [selectedTx, setSelectedTx] = useState<TransactionReceiptData | null>(null);
 
+  const lockedChildIdsKey = (entitlement?.lockedChildIds || []).join(',');
+  const allChildrenLocked = Boolean(entitlement?.isLocked && entitlement?.allChildrenLocked);
+
   useEffect(() => {
+    if (entitlementLoading) return;
     let cancelled = false;
+    const lockedChildSet = new Set(entitlement?.lockedChildIds || []);
     const fetchParentData = async () => {
       setLoading(true);
       setEnrollError('');
@@ -302,11 +310,23 @@ const ParentDashboard: React.FC = () => {
           setExpandedChildId(childList[0].id);
         }
 
+        const unlockedChildList = childList.filter((c) => {
+          const cAny = c as any;
+          const keys = [c.id, cAny.linkedStudentId, cAny.studentDocId, cAny.firebaseUid]
+            .filter(Boolean)
+            .map(String);
+          return !keys.some((k) => lockedChildSet.has(k));
+        });
+
         const [paymentResult, enrollmentResult, schedSnap, linkedProfiles] = await Promise.allSettled([
           getDocs(query(collection(db, 'payments'), where('parentId', '==', userUid), limit(50))),
           getDocs(query(collection(db, 'enrollment_requests'), where('parentId', '==', userUid), limit(25))),
-          getDocs(collection(db, 'classSchedules')),
-          resolveParentLinkedChildren(userUid, userEmail),
+          allChildrenLocked || unlockedChildList.length === 0
+            ? Promise.resolve(null)
+            : getDocs(collection(db, 'classSchedules')),
+          allChildrenLocked || unlockedChildList.length === 0
+            ? Promise.resolve([])
+            : resolveParentLinkedChildren(userUid, userEmail),
         ]);
 
         const fullProgMap = await fetchAllProgramsMap().catch(() => new Map<string, ProgramRecord>());
@@ -340,9 +360,9 @@ const ParentDashboard: React.FC = () => {
           setEnrollments([]);
         }
 
-        if (schedSnap.status === 'fulfilled') {
+        if (schedSnap.status === 'fulfilled' && schedSnap.value && unlockedChildList.length > 0) {
           const allScheds = schedSnap.value.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-          const childContexts: StudentEnrollmentContext[] = childList.map((c) => {
+          const childContexts: StudentEnrollmentContext[] = unlockedChildList.map((c) => {
             const cAny = c as any;
             const cSchoolId = String(cAny.schoolId || '').trim();
             const cSchoolName = String(cAny.schoolName || cAny.school || '').trim();
@@ -375,8 +395,8 @@ const ParentDashboard: React.FC = () => {
             };
           });
           const parentScheds = allScheds.filter((s: any) => {
-            if (userUid && (s.parentId === userUid || s.parentId === userEmail)) return true;
-            if (userEmail && s.parentEmail && s.parentEmail.toLowerCase() === userEmail) return true;
+            const targetSid = String(s.studentId || s.childId || '').trim();
+            if (targetSid && lockedChildSet.has(targetSid)) return false;
             return childContexts.some((ctx) => doesScheduleMatchStudent(s, ctx));
           });
           setSchedules(parentScheds);
@@ -384,36 +404,53 @@ const ParentDashboard: React.FC = () => {
           setSchedules([]);
         }
 
-        const progressResults = await Promise.allSettled(
-          childList.map(async (child) => {
-            const snap = await getDocs(
-              query(collection(db, 'studentModules'), where('studentId', '==', child.id), limit(50))
-            );
-            let completed = 0;
-            snap.forEach((moduleDoc) => {
-              if (moduleDoc.data().completed) completed += 1;
-            });
-            return [child.id, { completed, total: snap.size }] as const;
-          })
-        );
+        if (unlockedChildList.length > 0 && !allChildrenLocked) {
+          const progressResults = await Promise.allSettled(
+            unlockedChildList.map(async (child) => {
+              const snap = await getDocs(
+                query(collection(db, 'studentModules'), where('studentId', '==', child.id), limit(50))
+              );
+              let completed = 0;
+              snap.forEach((moduleDoc) => {
+                if (moduleDoc.data().completed) completed += 1;
+              });
+              return [child.id, { completed, total: snap.size }] as const;
+            })
+          );
 
-        if (!cancelled) {
-          const progressMap: Record<string, ProgressRecord> = {};
-          progressResults.forEach((result) => {
-            if (result.status === 'fulfilled') progressMap[result.value[0]] = result.value[1];
-          });
-          setChildProgress(progressMap);
-        }
-
-        if (linkedProfiles.status === 'fulfilled' && linkedProfiles.value.length > 0) {
-          const [assessRes, assignRes] = await Promise.allSettled([
-            fetchAssessmentsAndQuizzesForParent(linkedProfiles.value),
-            fetchAssignmentsForParent(linkedProfiles.value),
-          ]);
           if (!cancelled) {
-            if (assessRes.status === 'fulfilled') setAssessments(assessRes.value);
-            if (assignRes.status === 'fulfilled') setAssignments(assignRes.value);
+            const progressMap: Record<string, ProgressRecord> = {};
+            progressResults.forEach((result) => {
+              if (result.status === 'fulfilled') progressMap[result.value[0]] = result.value[1];
+            });
+            setChildProgress(progressMap);
           }
+
+          if (linkedProfiles.status === 'fulfilled' && linkedProfiles.value.length > 0) {
+            const unlockedProfiles = linkedProfiles.value.filter(
+              (p) =>
+                !lockedChildSet.has(p.id) &&
+                !lockedChildSet.has(p.studentUid || '') &&
+                !(p.allIds || []).some((aid) => lockedChildSet.has(aid))
+            );
+            if (unlockedProfiles.length > 0) {
+              const [assessRes, assignRes] = await Promise.allSettled([
+                fetchAssessmentsAndQuizzesForParent(unlockedProfiles),
+                fetchAssignmentsForParent(unlockedProfiles),
+              ]);
+              if (!cancelled) {
+                if (assessRes.status === 'fulfilled') setAssessments(assessRes.value);
+                if (assignRes.status === 'fulfilled') setAssignments(assignRes.value);
+              }
+            } else if (!cancelled) {
+              setAssessments([]);
+              setAssignments([]);
+            }
+          }
+        } else if (!cancelled) {
+          setChildProgress({});
+          setAssessments([]);
+          setAssignments([]);
         }
       } catch (error) {
         console.error('Error loading parent dashboard:', error);
@@ -426,7 +463,7 @@ const ParentDashboard: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [entitlementLoading, lockedChildIdsKey, allChildrenLocked]);
 
   const pendingEnrollmentCount = useMemo(
     () => enrollments.filter((item) => String(item.status || '').toLowerCase() === 'pending').length,
@@ -676,6 +713,10 @@ const ParentDashboard: React.FC = () => {
       />
 
       <DashboardGreeting role="Parent / Guardian" />
+
+      {entitlement?.isLocked && (
+        <PortalLockdownView entitlement={entitlement} compact />
+      )}
 
       {/* Compact Action Header Bar (replaces decorative hero banner) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">

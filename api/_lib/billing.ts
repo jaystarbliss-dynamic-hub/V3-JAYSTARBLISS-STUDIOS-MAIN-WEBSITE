@@ -4,20 +4,20 @@ export type BillingRole = "student" | "parent" | "school" | "tutor" | "staff" | 
 export interface FeePolicy { percentage:number; flat:number; cap:number; waiveFlatBelow:number; enabled:boolean; }
 export interface WithdrawalFeePolicy { percentage:number; flat:number; cap:number; enabled:boolean; }
 export interface PaymentPlan { id:string; name:string; role:"student"|"school"; baseAmount:number; durationWeeks:number; teachingModes:string[]; description:string; active:boolean; }
-export interface PaymentConfig { version:number; parentFeePolicy:FeePolicy; schoolFeePolicy:FeePolicy; withdrawalFeePolicy:WithdrawalFeePolicy; minimumWithdrawalAmount:number; plans:Record<string,PaymentPlan>; }
+export interface PaymentConfig { version:number; parentFeePolicy:FeePolicy; schoolFeePolicy:FeePolicy; studentSelfFundedFeePolicy?:FeePolicy; withdrawalFeePolicy:WithdrawalFeePolicy; minimumWithdrawalAmount:number; plans:Record<string,PaymentPlan>; }
 const defaultFeePolicy:FeePolicy={percentage:1.5,flat:100,cap:2000,waiveFlatBelow:2500,enabled:true};
 const defaultWithdrawalFeePolicy:WithdrawalFeePolicy={percentage:0,flat:0,cap:0,enabled:false};
-export const DEFAULT_PAYMENT_CONFIG:PaymentConfig={version:3,parentFeePolicy:{...defaultFeePolicy},schoolFeePolicy:{...defaultFeePolicy},withdrawalFeePolicy:{...defaultWithdrawalFeePolicy},minimumWithdrawalAmount:10000,plans:{
+export const DEFAULT_PAYMENT_CONFIG:PaymentConfig={version:3,parentFeePolicy:{...defaultFeePolicy},schoolFeePolicy:{...defaultFeePolicy},studentSelfFundedFeePolicy:{...defaultFeePolicy},withdrawalFeePolicy:{...defaultWithdrawalFeePolicy},minimumWithdrawalAmount:10000,plans:{
 plan_weekend:{id:"plan_weekend",name:"Weekend Coding Track",role:"student",baseAmount:45000,durationWeeks:4,teachingModes:["Weekend group class","Hybrid support"],description:"Structured weekend coding and project-based learning.",active:true},
 plan_mentorship:{id:"plan_mentorship",name:"1-on-1 Intensive Mentorship",role:"student",baseAmount:120000,durationWeeks:4,teachingModes:["1-on-1 intensive","Private scheduled sessions"],description:"Dedicated mentor support with a personalised 4-week learning cycle.",active:true},
 plan_robotics:{id:"plan_robotics",name:"Digital & Technical Skills Track",role:"student",baseAmount:85000,durationWeeks:4,teachingModes:["Hands-on sessions","Hybrid support"],description:"Practical digital and technical skills learning.",active:true},
 school_standard:{id:"school_standard",name:"School Learning Partnership",role:"school",baseAmount:350000,durationWeeks:12,teachingModes:["On-site school delivery","Hybrid school delivery"],description:"School learning programmes and tutor support for partner schools.",active:true},
 school_cbt:{id:"school_cbt",name:"Assessment Portal & School Suite",role:"school",baseAmount:600000,durationWeeks:52,teachingModes:["School delivery","Hybrid assessment programme"],description:"School-wide assessments and teacher enablement suite.",active:true}}};
-const mergeConfig=(raw:Record<string,any>|undefined):PaymentConfig=>{const value=raw||{};const plans={...DEFAULT_PAYMENT_CONFIG.plans};Object.entries(value.plans||{}).forEach(([id,plan])=>{if(plan&&typeof plan==="object")plans[id]={...plans[id],...plan,id,teachingModes:Array.isArray(plan.teachingModes)?plan.teachingModes.filter((item:unknown):item is string=>typeof item==="string"):(plans[id]?.teachingModes||[])} as PaymentPlan});return {...DEFAULT_PAYMENT_CONFIG,...value,parentFeePolicy:{...DEFAULT_PAYMENT_CONFIG.parentFeePolicy,...(value.parentFeePolicy||{})},schoolFeePolicy:{...DEFAULT_PAYMENT_CONFIG.schoolFeePolicy,...(value.schoolFeePolicy||{})},withdrawalFeePolicy:{...DEFAULT_PAYMENT_CONFIG.withdrawalFeePolicy,...(value.withdrawalFeePolicy||{})},minimumWithdrawalAmount:Number(value.minimumWithdrawalAmount||DEFAULT_PAYMENT_CONFIG.minimumWithdrawalAmount),plans};};
+const mergeConfig=(raw:Record<string,any>|undefined):PaymentConfig=>{const value=raw||{};const plans={...DEFAULT_PAYMENT_CONFIG.plans};Object.entries(value.plans||{}).forEach(([id,plan])=>{if(plan&&typeof plan==="object")plans[id]={...plans[id],...plan,id,teachingModes:Array.isArray(plan.teachingModes)?plan.teachingModes.filter((item:unknown):item is string=>typeof item==="string"):(plans[id]?.teachingModes||[])} as PaymentPlan});return {...DEFAULT_PAYMENT_CONFIG,...value,parentFeePolicy:{...DEFAULT_PAYMENT_CONFIG.parentFeePolicy,...(value.parentFeePolicy||{})},schoolFeePolicy:{...DEFAULT_PAYMENT_CONFIG.schoolFeePolicy,...(value.schoolFeePolicy||{})},studentSelfFundedFeePolicy:{...DEFAULT_PAYMENT_CONFIG.parentFeePolicy,...(value.parentFeePolicy||{}),...(value.studentSelfFundedFeePolicy||{})},withdrawalFeePolicy:{...DEFAULT_PAYMENT_CONFIG.withdrawalFeePolicy,...(value.withdrawalFeePolicy||{})},minimumWithdrawalAmount:Number(value.minimumWithdrawalAmount||DEFAULT_PAYMENT_CONFIG.minimumWithdrawalAmount),plans};};
 export async function getPaymentConfig(){const snap=await adminDb.collection("payment_config").doc("settings").get();return mergeConfig(snap.exists?snap.data():undefined);}
 export function calculateCustomerCharge(baseAmount:number,policy:FeePolicy){const base=Math.max(0,Number(baseAmount)||0);if(!policy.enabled||base<=0)return{baseAmount:base,transactionFee:0,totalAmount:base};const percentage=Math.max(0,Number(policy.percentage)||0)/100;const flat=base<Number(policy.waiveFlatBelow||0)?0:Math.max(0,Number(policy.flat)||0);const cap=Number(policy.cap)>0?Number(policy.cap):Number.POSITIVE_INFINITY;const rawFeeOnBase=base*percentage+flat;let total:number;if(rawFeeOnBase>cap)total=base+cap;else total=(base+flat)/Math.max(.000001,1-percentage)+.01;total=Math.ceil(total*100)/100;return{baseAmount:base,transactionFee:Math.max(0,Number((total-base).toFixed(2))),totalAmount:total};}
 export function calculateWithdrawalFee(amount:number,policy:WithdrawalFeePolicy){const gross=Math.max(0,Number(amount)||0);if(!policy.enabled||gross<=0)return{grossAmount:gross,serviceFee:0,netAmount:gross};const pct=gross*(Math.max(0,Number(policy.percentage)||0)/100);const flat=Math.max(0,Number(policy.flat)||0);const uncapped=pct+flat;const cap=Number(policy.cap)>0?Number(policy.cap):Number.POSITIVE_INFINITY;const serviceFee=Math.min(uncapped,cap);return{grossAmount:gross,serviceFee:Number(serviceFee.toFixed(2)),netAmount:Number(Math.max(0,gross-serviceFee).toFixed(2))};}
-export function getFeePolicy(config:PaymentConfig,role:"parent"|"school"){return role==="school"?config.schoolFeePolicy:config.parentFeePolicy;}
+export function getFeePolicy(config:PaymentConfig,role:"parent"|"school"|"student_self_funded"){if(role==="school")return config.schoolFeePolicy;if(role==="student_self_funded")return config.studentSelfFundedFeePolicy||config.parentFeePolicy;return config.parentFeePolicy;}
 export function normaliseRole(value:unknown):BillingRole{const role=String(value||"").toLowerCase();if(role==="super_admin"||role==="superadmin"||role==="owner")return"superadmin";if(role==="school"||role==="school_admin"||role==="schooladmin"||role==="partner_school"||role==="institution")return"school";if(role==="administrator"||role==="admin"||role.includes("admin"))return"admin";if(role==="tutor"||role==="instructor")return"tutor";if(role==="staff")return"staff";if(role==="parent")return"parent";return"student";}
 export async function getUserRecord(uid:string,email?:string){const snap=await adminDb.collection("users").doc(uid).get();if(snap.exists){const data=snap.data()||{};if(email&&!data.email)data.email=email;if(String(data.email||email||"").toLowerCase()==="johnrufai242@gmail.com"){return{uid,email:data.email||email,role:"SUPER_ADMIN",accountStatus:"ACTIVE",...data};}return{uid,...data};}const superAdminEmails=["johnrufai242@gmail.com"];if(email&&superAdminEmails.includes(email.toLowerCase())){return{uid,email,role:"SUPER_ADMIN",accountStatus:"ACTIVE"};}return{uid,role:"",accountStatus:"DISABLED"};}
 export function isPrivilegedRole(role:BillingRole){return["admin","superadmin"].includes(role);}
@@ -224,4 +224,188 @@ export async function resolveTrustedStudentFeeAndTutor(params: {
     programName: resolvedProgramName
   };
 }
+
+export const PAYABLE_PROGRAMME_ENROLLMENT_STATUSES = [
+  "APPROVED_AWAITING_PAYMENT",
+  "APPROVED_PENDING_PAYMENT",
+  "PARTIALLY_PAID",
+  "ACTIVE",
+  "RENEWAL_DUE",
+] as const;
+
+export interface StudentProgrammePayableResult {
+  payableAmount: number;
+  resolvedOption: "full" | "deposit" | "balance" | "renewal";
+  isRenewal: boolean;
+}
+
+export function computeStudentProgrammePayableAmount(params: {
+  enrollment: Record<string, any>;
+  paymentOption?: "full" | "deposit" | "balance" | "renewal";
+}): StudentProgrammePayableResult {
+  const e = params.enrollment || {};
+  const status = String(e.enrollmentStatus || "").toUpperCase();
+  const approvedFee = Math.max(0, Number(e.approvedFee || 0));
+  const amountPaid = Math.max(0, Number(e.amountPaid || 0));
+  const remainingRaw = e.remainingBalance !== undefined && e.remainingBalance !== null
+    ? Number(e.remainingBalance)
+    : Math.max(0, approvedFee - amountPaid);
+  const remainingBalance = Math.max(0, Number.isFinite(remainingRaw) ? remainingRaw : 0);
+  const allowDepositAccess = Boolean(e.allowDepositAccess);
+  const depositAmount = Math.max(0, Number(e.depositAmount || 0));
+  const billingCycle = String(e.billingCycle || "ONE_TIME").toUpperCase();
+  const isRecurring = billingCycle === "MONTHLY" || billingCycle === "TERMLY";
+
+  if (approvedFee <= 0) {
+    return { payableAmount: 0, resolvedOption: "full", isRenewal: false };
+  }
+
+  if (
+    status !== "APPROVED_AWAITING_PAYMENT" &&
+    status !== "APPROVED_PENDING_PAYMENT" &&
+    status !== "PARTIALLY_PAID" &&
+    status !== "ACTIVE" &&
+    status !== "RENEWAL_DUE"
+  ) {
+    return { payableAmount: 0, resolvedOption: "full", isRenewal: false };
+  }
+
+  // Renewal payment (when cycle is recurring and currently due or explicitly requested when settled)
+  if (
+    status === "RENEWAL_DUE" ||
+    (params.paymentOption === "renewal" && isRecurring && remainingBalance <= 0)
+  ) {
+    return {
+      payableAmount: Number(approvedFee.toFixed(2)),
+      resolvedOption: "renewal",
+      isRenewal: true,
+    };
+  }
+
+  // Remaining balance after a partial payment / deposit
+  if (amountPaid > 0 && remainingBalance > 0) {
+    return {
+      payableAmount: Number(remainingBalance.toFixed(2)),
+      resolvedOption: "balance",
+      isRenewal: false,
+    };
+  }
+
+  // Already paid in full and not due for renewal
+  if (remainingBalance <= 0) {
+    return { payableAmount: 0, resolvedOption: "full", isRenewal: false };
+  }
+
+  // Deposit option when enabled and student hasn't paid yet
+  if (
+    params.paymentOption === "deposit" &&
+    allowDepositAccess &&
+    depositAmount > 0 &&
+    depositAmount < approvedFee &&
+    amountPaid === 0
+  ) {
+    return {
+      payableAmount: Number(depositAmount.toFixed(2)),
+      resolvedOption: "deposit",
+      isRenewal: false,
+    };
+  }
+
+  return {
+    payableAmount: Number(remainingBalance.toFixed(2)),
+    resolvedOption: "full",
+    isRenewal: false,
+  };
+}
+
+export interface ReconciledProgrammeEnrollmentState {
+  newAmountPaid: number;
+  newRemainingBalance: number;
+  newPaymentStatus: "PAID" | "PARTIALLY_PAID";
+  newEnrollmentStatus: "ACTIVE" | "PARTIALLY_PAID";
+  paidThroughIso: string | null;
+  nextDueDateIso: string | null;
+  accessUnlocked: boolean;
+}
+
+export function computeReconciledProgrammeEnrollmentState(params: {
+  enrollment: Record<string, any>;
+  baseAmountPaidNow: number;
+  isRenewal?: boolean;
+  paidAt: Date;
+}): ReconciledProgrammeEnrollmentState {
+  const e = params.enrollment || {};
+  const approvedFee = Math.max(0, Number(e.approvedFee || 0));
+  const previousPaid = Math.max(0, Number(e.amountPaid || 0));
+  const paidNow = Math.max(0, Number(params.baseAmountPaidNow || 0));
+  const allowDepositAccess = Boolean(e.allowDepositAccess);
+  const depositAmount = Math.max(0, Number(e.depositAmount || 0));
+  const billingCycle = String(e.billingCycle || "ONE_TIME").toUpperCase();
+  const durationWeeks = Math.max(1, Number(e.durationWeeks || (billingCycle === "MONTHLY" ? 4 : billingCycle === "TERMLY" ? 12 : 8)));
+
+  let newAmountPaid: number;
+  let newRemainingBalance: number;
+
+  if (params.isRenewal) {
+    newAmountPaid = Number((previousPaid + paidNow).toFixed(2));
+    newRemainingBalance = Math.max(0, Number((approvedFee - paidNow).toFixed(2)));
+  } else {
+    newAmountPaid = Number((previousPaid + paidNow).toFixed(2));
+    newRemainingBalance = Math.max(0, Number((approvedFee - newAmountPaid).toFixed(2)));
+  }
+
+  const fullySettled = newRemainingBalance <= 0.01;
+  if (fullySettled) {
+    newRemainingBalance = 0;
+  }
+
+  const meetsDepositUnlock =
+    allowDepositAccess &&
+    depositAmount > 0 &&
+    newAmountPaid + 0.01 >= depositAmount;
+
+  const accessUnlocked = fullySettled || meetsDepositUnlock;
+  const newPaymentStatus: "PAID" | "PARTIALLY_PAID" = fullySettled ? "PAID" : "PARTIALLY_PAID";
+  const newEnrollmentStatus: "ACTIVE" | "PARTIALLY_PAID" = fullySettled
+    ? "ACTIVE"
+    : accessUnlocked
+    ? "ACTIVE"
+    : "PARTIALLY_PAID";
+
+  // Compute paidThrough & nextDueDate for recurring or fixed duration cycles
+  const anchorMs = (() => {
+    if (params.isRenewal && e.paidThrough) {
+      const existingEnd = new Date(e.paidThrough).getTime();
+      if (Number.isFinite(existingEnd) && existingEnd > params.paidAt.getTime()) {
+        return existingEnd;
+      }
+    }
+    return params.paidAt.getTime();
+  })();
+
+  const cycleDays =
+    billingCycle === "MONTHLY"
+      ? 30
+      : billingCycle === "TERMLY"
+      ? 90
+      : durationWeeks * 7;
+
+  const paidThroughDate = new Date(anchorMs + cycleDays * 24 * 60 * 60 * 1000);
+  const paidThroughIso = accessUnlocked ? paidThroughDate.toISOString() : (e.paidThrough ? String(e.paidThrough) : null);
+  const nextDueDateIso =
+    accessUnlocked && (billingCycle === "MONTHLY" || billingCycle === "TERMLY")
+      ? paidThroughDate.toISOString()
+      : null;
+
+  return {
+    newAmountPaid,
+    newRemainingBalance,
+    newPaymentStatus,
+    newEnrollmentStatus,
+    paidThroughIso,
+    nextDueDateIso,
+    accessUnlocked,
+  };
+}
+
 

@@ -25,6 +25,7 @@ import {
   calculateDurationMinutes,
   doesScheduleMatchStudent,
   resolveFullStudentEnrollmentContext,
+  resolveOccurrenceMeetingLink,
   validateMeetingLink,
 } from '../../lib/scheduleEngine';
 
@@ -42,6 +43,8 @@ type Schedule = {
   programmeName?: string;
   tutorName?: string;
   meetingLink?: string;
+  defaultMeetingLink?: string;
+  linkSource?: 'INHERITED' | 'CUSTOM';
   platform?: string;
   studentId?: string;
   studentName?: string;
@@ -534,7 +537,8 @@ const PortalCalendar: React.FC = () => {
                             <div className="px-5 pb-4 space-y-2.5">
                               {rows.map((session: Schedule) => {
                                 const status = norm(session.status || 'scheduled');
-                                const linkCheck = validateMeetingLink(session.meetingLink);
+                                const resolvedLink = resolveOccurrenceMeetingLink(session);
+                                const linkCheck = validateMeetingLink(resolvedLink.effectiveLink);
                                 const durationMins =
                                   session.durationMinutes ||
                                   calculateDurationMinutes(
@@ -619,8 +623,13 @@ const PortalCalendar: React.FC = () => {
                                                 : ''}
                                             </span>
                                           ) : (
-                                            <span className="text-[11px] text-slate-600 dark:text-slate-300 inline-flex items-center gap-1">
+                                            <span className="text-[11px] text-slate-600 dark:text-slate-300 inline-flex items-center gap-1.5">
                                               <Video size={12} /> {linkCheck.platform}
+                                              {linkCheck.valid && resolvedLink.linkSource === 'CUSTOM' && (
+                                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                                  Session-specific link
+                                                </span>
+                                              )}
                                             </span>
                                           )}
                                         </div>

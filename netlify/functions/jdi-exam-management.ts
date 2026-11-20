@@ -8,6 +8,7 @@ import {
   hasAdminDb,
 } from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { enforceEntitlementOrLock } from "../../api/_lib/subscription-service";
 
 function getAllAdminDbs() {
   const defaultDb = getDefaultAdminDb();
@@ -347,6 +348,16 @@ async function collectEligibleExamRecipients(exam: any): Promise<string[]> {
 export const handler: Handler = async event => {
   try {
     const c = await authUser(event);
+    if (schoolRoles.includes(c.role)) {
+      const lockResponse = await enforceEntitlementOrLock({
+        uid: c.uid,
+        role: c.role,
+        email: c.email,
+        userRecord: c.user,
+        resourceLabel: "examinations and results",
+      });
+      if (lockResponse) return lockResponse;
+    }
     const method = event.httpMethod || "GET";
     const body = event.body ? JSON.parse(event.body || "{}") : {};
     const action = String(body.action || "");

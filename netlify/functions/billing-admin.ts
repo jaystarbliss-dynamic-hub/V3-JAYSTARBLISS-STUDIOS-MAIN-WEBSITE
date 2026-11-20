@@ -12,6 +12,21 @@ import {
 } from "../../api/_lib/billing";
 import { FieldValue } from "firebase-admin/firestore";
 import { createPortalNotification } from "../../api/_lib/email";
+import {
+  type BillingSubscriptionRecord,
+  evaluateSubscriptionState,
+  formatLagosDate,
+  parseDateSafe,
+  resolvePlanDurationWeeks,
+} from "../../api/_lib/subscription-core";
+import {
+  buildCanonicalSubscriptionWritePayload,
+  normalizeSubscriptionFromSource,
+} from "../../api/_lib/subscription-service";
+import {
+  computeManualPaymentRecordAndTransition,
+  type ManualPaymentTargetType,
+} from "../../api/_lib/manual-payment-core";
 
 const tokenFromEvent = (event: any) => {
   const header = event.headers?.authorization || event.headers?.Authorization || "";
@@ -147,6 +162,8 @@ export const handler: Handler = async event => {
         const schoolAdminUsersSnap = await adminDb.collection("users").where("schoolId", "==", schoolId).get();
         if (!schoolAdminUsersSnap.empty) {
           for (const userDoc of schoolAdminUsersSnap.docs) {
+            const uRole = normaliseRole(userDoc.data()?.role);
+            if (uRole !== "school") continue;
             await userDoc.ref.set({
               billing: billingPayload,
               updatedAt: new Date().toISOString()
@@ -685,6 +702,976 @@ export const handler: Handler = async event => {
       }
     }
 
+    // =========================================================================
+    // PART 6: RECORD MANUAL PAYMENT (Authoritative, Audited, Full/Partial)
+    // =========================================================================
+    if (action === "record_manual_payment") {
+      const targetTypeRaw = String(body.targetType || "SCHOOL").trim().toUpperCase();
+      const targetType = (
+        ["SCHOOL", "PARENT", "INDIVIDUAL_STUDENT", "PROGRAMME_ENROLLMENT"].includes(targetTypeRaw)
+          ? targetTypeRaw
+          : "SCHOOL"
+      ) as ManualPaymentTargetType;
+      const targetId = String(
+        body.targetId || body.schoolId || body.parentId || body.studentId || body.programmeEnrollmentId || ""
+      ).trim();
+      const payAmount = Number(String(body.amount ?? 0).replace(/[^0-9.]/g, ""));
+      const rawRef = String(body.reference || "").trim();
+      const reference = rawRef || `MAN-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const paymentMethod = String(body.paymentMethod || "bank_transfer").trim();
+      const paymentDateIso = body.paymentDate ? new Date(String(body.paymentDate)).toISOString() : new Date().toISOString();
+      const notes = String(body.notes || "").trim();
+      const proofUrl = body.proofUrl ? String(body.proofUrl).trim() : null;
+      const childId = String(body.childId || body.studentId || "").trim();
+      const feeItemId = body.feeItemId ? String(body.feeItemId).trim() : null;
+      const billingCycleId = body.billingCycleId ? String(body.billingCycleId).trim() : null;
+      const overrideEffectiveStartAt = body.overrideEffectiveStartAt ? String(body.overrideEffectiveStartAt) : null;
+
+      if (!targetId) return response(400, { error: "Target account ID is required." });
+      if (!Number.isFinite(payAmount) || payAmount <= 0) {
+        return response(400, { error: "Enter a valid manual payment amount greater than 0." });
+      }
+      if (proofUrl && !/^https?:\/\//i.test(proofUrl)) {
+        return response(400, { error: "Optional payment proof URL must start with http:// or https://." });
+      }
+
+      const actorName = String((adminUser as any)?.fullName || (adminUser as any)?.name || email || "Finance Administrator");
+      const paymentRef = adminDb.collection("payments").doc(reference);
+
+      let resultSummary: Record<string, any> = {};
+      let notifyUid = "";
+      let notifyEmail = "";
+      let notifyTitle = "Manual Payment Confirmed";
+      let notifyBody = "";
+
+      await adminDb.runTransaction(async (transaction) => {
+        const existingPaySnap = await transaction.get(paymentRef);
+        if (existingPaySnap.exists) {
+          throw new Error("DUPLICATE_PAYMENT_REFERENCE");
+        }
+
+        if (targetType === "SCHOOL") {
+          const schoolRef = adminDb.collection("schools").doc(targetId);
+          const subId = `school_${targetId}`;
+          const subRef = adminDb.collection("billingSubscriptions").doc(subId);
+          const [schoolSnap, subSnap] = await Promise.all([
+            transaction.get(schoolRef),
+            transaction.get(subRef),
+          ]);
+          if (!schoolSnap.exists) throw new Error("SCHOOL_NOT_FOUND");
+          const sData = schoolSnap.data() || {};
+          const existingBilling = sData.billing || {};
+          const existingSub = subSnap.exists ? subSnap.data() || {} : null;
+
+          const contractAmount = Number(
+            body.contractAmount || existingSub?.amount || existingBilling.baseAmount || payAmount
+          );
+          const wasPartial =
+            isPartiallyPaidStatus(existingSub?.status) || isPartiallyPaidStatus(existingBilling.status);
+          const priorPaid = wasPartial
+            ? Number(existingSub?.amountPaid ?? existingBilling.amountPaid ?? 0)
+            : 0;
+          const durationWeeks = resolvePlanDurationWeeks({
+            durationWeeks: body.durationWeeks || existingSub?.durationWeeks || existingBilling.durationWeeks,
+            cycle: body.cycle || existingSub?.billingCycle || existingBilling.cycle || "termly",
+            fallbackWeeks: 12,
+          });
+          const schoolName = String(sData.schoolName || sData.name || "Partner School");
+          const schoolEmail = String(sData.contactEmail || sData.email || body.email || "");
+
+          const computed = computeManualPaymentRecordAndTransition({
+            targetType: "SCHOOL",
+            targetId,
+            accountName: schoolName,
+            recipientEmail: schoolEmail,
+            schoolId: targetId,
+            subscriptionId: subId,
+            feeItemId,
+            billingCycleId,
+            billingResponsibility: "SCHOOL",
+            accountType: "SCHOOL",
+            planId: String(existingSub?.planId || existingBilling.planId || "school_subscription"),
+            planName: String(body.planName || existingSub?.planName || existingBilling.planName || "School Institutional Subscription"),
+            amount: payAmount,
+            contractAmount,
+            priorAmountPaid: priorPaid,
+            paymentMethod,
+            paymentDate: paymentDateIso,
+            reference,
+            notes,
+            proofUrl,
+            cycle: body.cycle || existingBilling.cycle || (durationWeeks >= 12 ? "termly" : "monthly"),
+            durationWeeks,
+            existingPeriodEndAt: existingSub?.currentPeriodEndAt || existingSub?.nextDueAt || existingBilling.nextDueDate || existingBilling.paidThrough,
+            existingGraceEndsAt: existingSub?.graceEndsAt || null,
+            overrideEffectiveStartAt,
+            verifiedByUid: decoded.uid,
+            verifiedByName: actorName,
+            verifiedByEmail: email,
+          });
+
+          transaction.create(paymentRef, computed.paymentRecord);
+          transaction.set(
+            subRef,
+            buildCanonicalSubscriptionWritePayload({
+              id: subId,
+              accountType: "SCHOOL",
+              accountId: targetId,
+              accountName: schoolName,
+              recipientEmail: schoolEmail || null,
+              schoolId: targetId,
+              billingResponsibility: "SCHOOL",
+              status: computed.subscriptionPatch.status,
+              planId: String(existingSub?.planId || existingBilling.planId || "school_subscription"),
+              planName: String(body.planName || existingSub?.planName || existingBilling.planName || "School Institutional Subscription"),
+              amount: computed.subscriptionPatch.amount,
+              amountPaid: computed.subscriptionPatch.amountPaid,
+              remainingBalance: computed.subscriptionPatch.remainingBalance,
+              currency: "NGN",
+              billingCycle: durationWeeks >= 12 ? "termly" : "monthly",
+              durationWeeks,
+              currentPeriodStartAt: computed.subscriptionPatch.currentPeriodStartAt,
+              currentPeriodEndAt: computed.subscriptionPatch.currentPeriodEndAt,
+              nextDueAt: computed.subscriptionPatch.nextDueAt,
+              graceEndsAt: computed.subscriptionPatch.graceEndsAt,
+              lastSuccessfulPaymentAt: computed.subscriptionPatch.lastSuccessfulPaymentAt,
+              lastPaymentReference: reference,
+            }),
+            { merge: true }
+          );
+          transaction.set(
+            schoolRef,
+            {
+              billing: {
+                ...existingBilling,
+                baseAmount: computed.subscriptionPatch.amount,
+                amountPaid: computed.subscriptionPatch.amountPaid,
+                remainingBalance: computed.subscriptionPatch.remainingBalance,
+                status: computed.isPartial ? "PARTIALLY_PAID" : "PAID",
+                cycle: durationWeeks >= 12 ? "termly" : "monthly",
+                durationWeeks,
+                lastPaidAt: paymentDateIso,
+                lastPaymentReference: reference,
+                paidThrough: computed.subscriptionPatch.currentPeriodEndAt,
+                nextDueDate: computed.subscriptionPatch.nextDueAt,
+                updatedAt: new Date().toISOString(),
+                updatedBy: decoded.uid,
+              },
+              paymentStatus: computed.isPartial ? "PARTIALLY_PAID" : "PAID",
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
+
+          notifyUid = String(sData.adminUid || sData.userId || targetId);
+          notifyEmail = schoolEmail;
+          notifyBody = `A manual payment of ₦${payAmount.toLocaleString()} (ref: ${reference}) for ${schoolName} has been verified.${computed.isPartial ? ` Remaining balance: ₦${computed.remainingBalance.toLocaleString()}.` : ` Paid through ${formatLagosDate(computed.subscriptionPatch.nextDueAt) || "next cycle"}.`}`;
+          resultSummary = {
+            reference,
+            subscriptionId: subId,
+            status: computed.subscriptionPatch.status,
+            accessUnlocked: computed.accessUnlocked,
+            remainingBalance: computed.remainingBalance,
+            nextDueAt: computed.subscriptionPatch.nextDueAt,
+          };
+        } else if (targetType === "PROGRAMME_ENROLLMENT") {
+          const enrollRef = adminDb.collection("programme_enrollments").doc(targetId);
+          const subId = `prog_enr_${targetId}`;
+          const subRef = adminDb.collection("billingSubscriptions").doc(subId);
+          const [enrollSnap, subSnap] = await Promise.all([
+            transaction.get(enrollRef),
+            transaction.get(subRef),
+          ]);
+          if (!enrollSnap.exists) throw new Error("PROGRAMME_ENROLLMENT_NOT_FOUND");
+          const eData = enrollSnap.data() || {};
+          const existingSub = subSnap.exists ? subSnap.data() || {} : null;
+          const studentUid = String(eData.studentUid || "");
+          const studentDocId = String(eData.studentDocId || studentUid);
+          const studentName = String(eData.studentName || "Student");
+          const programId = String(eData.programId || "");
+          const programTitle = String(eData.programTitle || "Programme");
+
+          const indRef = studentDocId ? adminDb.collection("individualStudents").doc(studentDocId) : null;
+          const stdRef = studentDocId ? adminDb.collection("students").doc(studentDocId) : null;
+          const [indSnap, stdSnap] = await Promise.all([
+            indRef ? transaction.get(indRef) : Promise.resolve(null),
+            stdRef ? transaction.get(stdRef) : Promise.resolve(null),
+          ]);
+
+          const contractAmount = Number(body.contractAmount || eData.approvedFee || existingSub?.amount || payAmount);
+          const priorPaid = Number(eData.amountPaid || existingSub?.amountPaid || 0);
+          const durationWeeks = resolvePlanDurationWeeks({
+            durationWeeks: body.durationWeeks || eData.durationWeeks || existingSub?.durationWeeks,
+            cycle: eData.billingCycle,
+            fallbackWeeks: 8,
+          });
+
+          const computed = computeManualPaymentRecordAndTransition({
+            targetType: "PROGRAMME_ENROLLMENT",
+            targetId: studentUid || targetId,
+            accountName: studentName,
+            recipientEmail: String(eData.studentEmail || body.email || ""),
+            studentId: studentDocId,
+            studentName,
+            programmeEnrollmentId: targetId,
+            programmeId: programId || null,
+            programmeName: programTitle,
+            subscriptionId: subId,
+            feeItemId,
+            billingCycleId,
+            billingResponsibility: "STUDENT_SELF_FUNDED",
+            accountType: "STUDENT_SELF_FUNDED_PROGRAMME",
+            planId: `prog_enr_${programId || targetId}`,
+            planName: programTitle,
+            amount: payAmount,
+            contractAmount,
+            priorAmountPaid: priorPaid,
+            allowDepositAccess: Boolean(eData.allowDepositAccess),
+            depositAmount: Number(eData.depositAmount || 0),
+            paymentMethod,
+            paymentDate: paymentDateIso,
+            reference,
+            notes,
+            proofUrl,
+            cycle: eData.billingCycle || (durationWeeks >= 12 ? "termly" : "monthly"),
+            durationWeeks,
+            existingPeriodEndAt: existingSub?.currentPeriodEndAt || eData.paidThrough || eData.nextDueDate,
+            existingGraceEndsAt: existingSub?.graceEndsAt || null,
+            overrideEffectiveStartAt,
+            verifiedByUid: decoded.uid,
+            verifiedByName: actorName,
+            verifiedByEmail: email,
+          });
+
+          transaction.create(paymentRef, computed.paymentRecord);
+          transaction.set(
+            enrollRef,
+            {
+              amountPaid: computed.cumulativePaid,
+              remainingBalance: computed.remainingBalance,
+              paymentStatus: computed.isPartial ? "PARTIALLY_PAID" : "PAID",
+              enrollmentStatus: computed.accessUnlocked ? "ACTIVE" : "APPROVED_AWAITING_PAYMENT",
+              paidThrough: computed.subscriptionPatch.currentPeriodEndAt,
+              nextDueDate: computed.subscriptionPatch.nextDueAt,
+              lastPaymentReference: reference,
+              lastPaidAt: paymentDateIso,
+              paymentHistory: FieldValue.arrayUnion({
+                reference,
+                amount: payAmount,
+                paymentSource: "MANUAL_ADMIN",
+                verificationStatus: "ADMIN_VERIFIED",
+                verifiedBy: decoded.uid,
+                paidAt: paymentDateIso,
+                channel: paymentMethod,
+                status: computed.isPartial ? "PARTIALLY_PAID" : "PAID",
+              }),
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
+          transaction.set(
+            subRef,
+            buildCanonicalSubscriptionWritePayload({
+              id: subId,
+              accountType: "STUDENT_SELF_FUNDED_PROGRAMME",
+              accountId: studentUid || targetId,
+              accountName: studentName,
+              recipientEmail: String(eData.studentEmail || "") || null,
+              studentId: studentDocId,
+              studentName,
+              programmeEnrollmentId: targetId,
+              billingResponsibility: "STUDENT_SELF_FUNDED",
+              status: computed.subscriptionPatch.status,
+              planId: `prog_enr_${programId || targetId}`,
+              planName: programTitle,
+              programmeId: programId || null,
+              programmeName: programTitle,
+              amount: computed.subscriptionPatch.amount,
+              amountPaid: computed.subscriptionPatch.amountPaid,
+              remainingBalance: computed.subscriptionPatch.remainingBalance,
+              allowDepositAccess: Boolean(eData.allowDepositAccess),
+              depositAmount: Number(eData.depositAmount || 0),
+              currency: "NGN",
+              billingCycle: String(eData.billingCycle || (durationWeeks >= 12 ? "termly" : "monthly")),
+              durationWeeks,
+              currentPeriodStartAt: computed.subscriptionPatch.currentPeriodStartAt,
+              currentPeriodEndAt: computed.subscriptionPatch.currentPeriodEndAt,
+              nextDueAt: computed.subscriptionPatch.nextDueAt,
+              graceEndsAt: computed.subscriptionPatch.graceEndsAt,
+              lastSuccessfulPaymentAt: computed.subscriptionPatch.lastSuccessfulPaymentAt,
+              lastPaymentReference: reference,
+            }),
+            { merge: true }
+          );
+
+          if (computed.accessUnlocked && programId && studentUid) {
+            const activationFields = {
+              selectedProgramIds: FieldValue.arrayUnion(programId),
+              assignedProgramIds: FieldValue.arrayUnion(programId),
+              selfFundedProgramIds: FieldValue.arrayUnion(programId),
+              enrolledPrograms: FieldValue.arrayUnion(programTitle),
+              updatedAt: new Date().toISOString(),
+            };
+            transaction.set(adminDb.collection("users").doc(studentUid), activationFields, { merge: true });
+            if (indRef && indSnap?.exists) transaction.set(indRef, activationFields, { merge: true });
+            if (stdRef && stdSnap?.exists) transaction.set(stdRef, activationFields, { merge: true });
+          }
+
+          notifyUid = studentUid;
+          notifyEmail = String(eData.studentEmail || "");
+          notifyBody = `Your manual payment of ₦${payAmount.toLocaleString()} for ${programTitle} (ref: ${reference}) has been verified.`;
+          resultSummary = {
+            reference,
+            subscriptionId: subId,
+            status: computed.subscriptionPatch.status,
+            accessUnlocked: computed.accessUnlocked,
+            remainingBalance: computed.remainingBalance,
+            nextDueAt: computed.subscriptionPatch.nextDueAt,
+          };
+        } else if (targetType === "PARENT") {
+          const parentRef = adminDb.collection("users").doc(targetId);
+          const effectiveSubId = childId ? `parent_${targetId}_child_${childId}` : `parent_${targetId}`;
+          const subRef = adminDb.collection("billingSubscriptions").doc(effectiveSubId);
+          const indRef = childId ? adminDb.collection("individualStudents").doc(childId) : null;
+          const stdRef = childId ? adminDb.collection("students").doc(childId) : null;
+
+          const [parentSnap, subSnap, indSnap, stdSnap] = await Promise.all([
+            transaction.get(parentRef),
+            transaction.get(subRef),
+            indRef ? transaction.get(indRef) : Promise.resolve(null),
+            stdRef ? transaction.get(stdRef) : Promise.resolve(null),
+          ]);
+          const parentData = parentSnap.exists ? parentSnap.data() || {} : {};
+          const existingSub = subSnap.exists ? subSnap.data() || {} : null;
+          const childData = indSnap?.exists ? indSnap.data() || {} : stdSnap?.exists ? stdSnap.data() || {} : null;
+
+          const childName = String(
+            body.childName || childData?.fullName || childData?.name || existingSub?.studentName || ""
+          ).trim();
+          const parentName = String(parentData.fullName || parentData.name || body.accountName || "Parent");
+          const parentEmail = String(parentData.email || body.email || "");
+          const planName = String(
+            body.planName || childData?.programName || childData?.plan || existingSub?.planName || "Family Programme Tuition"
+          );
+          const contractAmount = Number(
+            body.contractAmount ||
+              existingSub?.amount ||
+              childData?.tuitionFee ||
+              childData?.fee ||
+              parentData.billing?.baseAmount ||
+              payAmount
+          );
+          const wasPartial =
+            isPartiallyPaidStatus(existingSub?.status) ||
+            isPartiallyPaidStatus(childData?.paymentStatus || parentData.billing?.status);
+          const priorPaid = wasPartial
+            ? Number(existingSub?.amountPaid ?? childData?.amountPaid ?? parentData.billing?.amountPaid ?? 0)
+            : 0;
+          const durationWeeks = resolvePlanDurationWeeks({
+            durationWeeks: body.durationWeeks || existingSub?.durationWeeks || childData?.durationWeeks || parentData.billing?.durationWeeks,
+            cycle: body.cycle || existingSub?.billingCycle || parentData.billing?.cycle || "monthly",
+            fallbackWeeks: 4,
+          });
+
+          const computed = computeManualPaymentRecordAndTransition({
+            targetType: "PARENT",
+            targetId,
+            accountName: childName || parentName,
+            recipientEmail: parentEmail,
+            parentId: targetId,
+            studentId: childId || null,
+            studentName: childName || null,
+            programmeName: planName,
+            planName,
+            subscriptionId: effectiveSubId,
+            feeItemId,
+            billingCycleId,
+            billingResponsibility: "PARENT",
+            accountType: childId ? "PARENT_CHILD" : "PARENT",
+            amount: payAmount,
+            contractAmount,
+            priorAmountPaid: priorPaid,
+            paymentMethod,
+            paymentDate: paymentDateIso,
+            reference,
+            notes,
+            proofUrl,
+            cycle: body.cycle || (durationWeeks >= 12 ? "termly" : "monthly"),
+            durationWeeks,
+            existingPeriodEndAt:
+              existingSub?.currentPeriodEndAt ||
+              existingSub?.nextDueAt ||
+              childData?.nextDueDate ||
+              childData?.paidThrough ||
+              parentData.billing?.nextDueDate,
+            existingGraceEndsAt: existingSub?.graceEndsAt || null,
+            overrideEffectiveStartAt,
+            verifiedByUid: decoded.uid,
+            verifiedByName: actorName,
+            verifiedByEmail: email,
+          });
+
+          transaction.create(paymentRef, computed.paymentRecord);
+          transaction.set(
+            subRef,
+            buildCanonicalSubscriptionWritePayload({
+              id: effectiveSubId,
+              accountType: childId ? "PARENT_CHILD" : "PARENT",
+              accountId: childId || targetId,
+              accountName: childName || parentName,
+              recipientEmail: parentEmail || null,
+              parentId: targetId,
+              studentId: childId || null,
+              studentName: childName || null,
+              billingResponsibility: "PARENT",
+              status: computed.subscriptionPatch.status,
+              planName,
+              programmeName: planName,
+              amount: computed.subscriptionPatch.amount,
+              amountPaid: computed.subscriptionPatch.amountPaid,
+              remainingBalance: computed.subscriptionPatch.remainingBalance,
+              currency: "NGN",
+              billingCycle: durationWeeks >= 12 ? "termly" : "monthly",
+              durationWeeks,
+              currentPeriodStartAt: computed.subscriptionPatch.currentPeriodStartAt,
+              currentPeriodEndAt: computed.subscriptionPatch.currentPeriodEndAt,
+              nextDueAt: computed.subscriptionPatch.nextDueAt,
+              graceEndsAt: computed.subscriptionPatch.graceEndsAt,
+              lastSuccessfulPaymentAt: computed.subscriptionPatch.lastSuccessfulPaymentAt,
+              lastPaymentReference: reference,
+            }),
+            { merge: true }
+          );
+
+          if (childId) {
+            const childPatch = {
+              amountPaid: computed.subscriptionPatch.amountPaid,
+              remainingBalance: computed.subscriptionPatch.remainingBalance,
+              paymentStatus: computed.isPartial ? "PARTIALLY_PAID" : "PAID",
+              status: computed.accessUnlocked ? "ACTIVE" : "PARTIALLY_PAID",
+              lastPaidAt: paymentDateIso,
+              lastPaymentReference: reference,
+              paidThrough: computed.subscriptionPatch.currentPeriodEndAt,
+              nextDueDate: computed.subscriptionPatch.nextDueAt,
+              updatedAt: new Date().toISOString(),
+            };
+            if (indRef && indSnap?.exists) transaction.set(indRef, childPatch, { merge: true });
+            if (stdRef && stdSnap?.exists) transaction.set(stdRef, childPatch, { merge: true });
+          } else {
+            transaction.set(
+              parentRef,
+              {
+                billing: {
+                  ...(parentData.billing || {}),
+                  baseAmount: computed.subscriptionPatch.amount,
+                  amountPaid: computed.subscriptionPatch.amountPaid,
+                  remainingBalance: computed.subscriptionPatch.remainingBalance,
+                  status: computed.isPartial ? "PARTIALLY_PAID" : "PAID",
+                  lastPaidAt: paymentDateIso,
+                  lastPaymentReference: reference,
+                  paidThrough: computed.subscriptionPatch.currentPeriodEndAt,
+                  nextDueDate: computed.subscriptionPatch.nextDueAt,
+                  updatedAt: new Date().toISOString(),
+                },
+              },
+              { merge: true }
+            );
+          }
+
+          notifyUid = targetId;
+          notifyEmail = parentEmail;
+          notifyBody = `Manual payment of ₦${payAmount.toLocaleString()} for ${childName || "your family account"} (ref: ${reference}) has been verified.`;
+          resultSummary = {
+            reference,
+            subscriptionId: effectiveSubId,
+            status: computed.subscriptionPatch.status,
+            accessUnlocked: computed.accessUnlocked,
+            remainingBalance: computed.remainingBalance,
+            nextDueAt: computed.subscriptionPatch.nextDueAt,
+          };
+        } else {
+          // INDIVIDUAL_STUDENT
+          const userRef = adminDb.collection("users").doc(targetId);
+          const indRef = adminDb.collection("individualStudents").doc(childId || targetId);
+          const stdRef = adminDb.collection("students").doc(childId || targetId);
+          const subId = `student_${targetId}`;
+          const subRef = adminDb.collection("billingSubscriptions").doc(subId);
+
+          const [uSnap, indSnap, stdSnap, subSnap] = await Promise.all([
+            transaction.get(userRef),
+            transaction.get(indRef),
+            transaction.get(stdRef),
+            transaction.get(subRef),
+          ]);
+          const uData = uSnap.exists ? uSnap.data() || {} : {};
+          const sData = indSnap.exists ? indSnap.data() || {} : stdSnap.exists ? stdSnap.data() || {} : {};
+          const existingSub = subSnap.exists ? subSnap.data() || {} : null;
+
+          const studentName = String(uData.fullName || uData.name || sData.fullName || sData.name || body.accountName || "Student");
+          const studentEmail = String(uData.email || sData.email || body.email || "");
+          const planName = String(body.planName || sData.programName || sData.plan || existingSub?.planName || "Individual Student Subscription");
+          const contractAmount = Number(
+            body.contractAmount || existingSub?.amount || uData.billing?.baseAmount || sData.tuitionFee || sData.fee || payAmount
+          );
+          const wasPartial =
+            isPartiallyPaidStatus(existingSub?.status) || isPartiallyPaidStatus(uData.billing?.status || sData.paymentStatus);
+          const priorPaid = wasPartial
+            ? Number(existingSub?.amountPaid ?? uData.billing?.amountPaid ?? sData.amountPaid ?? 0)
+            : 0;
+          const durationWeeks = resolvePlanDurationWeeks({
+            durationWeeks: body.durationWeeks || existingSub?.durationWeeks || uData.billing?.durationWeeks || sData.durationWeeks,
+            cycle: body.cycle || existingSub?.billingCycle || uData.billing?.cycle || "monthly",
+            fallbackWeeks: 4,
+          });
+
+          const computed = computeManualPaymentRecordAndTransition({
+            targetType: "INDIVIDUAL_STUDENT",
+            targetId,
+            accountName: studentName,
+            recipientEmail: studentEmail,
+            studentId: childId || String(uData.studentDocId || targetId),
+            studentName,
+            planName,
+            programmeName: planName,
+            subscriptionId: subId,
+            feeItemId,
+            billingCycleId,
+            billingResponsibility: "STUDENT",
+            accountType: "INDIVIDUAL_STUDENT",
+            amount: payAmount,
+            contractAmount,
+            priorAmountPaid: priorPaid,
+            paymentMethod,
+            paymentDate: paymentDateIso,
+            reference,
+            notes,
+            proofUrl,
+            cycle: body.cycle || (durationWeeks >= 12 ? "termly" : "monthly"),
+            durationWeeks,
+            existingPeriodEndAt:
+              existingSub?.currentPeriodEndAt ||
+              existingSub?.nextDueAt ||
+              uData.billing?.nextDueDate ||
+              sData.nextDueDate ||
+              sData.paidThrough,
+            existingGraceEndsAt: existingSub?.graceEndsAt || null,
+            overrideEffectiveStartAt,
+            verifiedByUid: decoded.uid,
+            verifiedByName: actorName,
+            verifiedByEmail: email,
+          });
+
+          transaction.create(paymentRef, computed.paymentRecord);
+          transaction.set(
+            subRef,
+            buildCanonicalSubscriptionWritePayload({
+              id: subId,
+              accountType: "INDIVIDUAL_STUDENT",
+              accountId: targetId,
+              accountName: studentName,
+              recipientEmail: studentEmail || null,
+              studentId: childId || String(uData.studentDocId || targetId),
+              studentName,
+              billingResponsibility: "STUDENT",
+              status: computed.subscriptionPatch.status,
+              planName,
+              programmeName: planName,
+              amount: computed.subscriptionPatch.amount,
+              amountPaid: computed.subscriptionPatch.amountPaid,
+              remainingBalance: computed.subscriptionPatch.remainingBalance,
+              currency: "NGN",
+              billingCycle: durationWeeks >= 12 ? "termly" : "monthly",
+              durationWeeks,
+              currentPeriodStartAt: computed.subscriptionPatch.currentPeriodStartAt,
+              currentPeriodEndAt: computed.subscriptionPatch.currentPeriodEndAt,
+              nextDueAt: computed.subscriptionPatch.nextDueAt,
+              graceEndsAt: computed.subscriptionPatch.graceEndsAt,
+              lastSuccessfulPaymentAt: computed.subscriptionPatch.lastSuccessfulPaymentAt,
+              lastPaymentReference: reference,
+            }),
+            { merge: true }
+          );
+
+          const billingPatch = {
+            ...(uData.billing || {}),
+            baseAmount: computed.subscriptionPatch.amount,
+            amountPaid: computed.subscriptionPatch.amountPaid,
+            remainingBalance: computed.subscriptionPatch.remainingBalance,
+            status: computed.isPartial ? "PARTIALLY_PAID" : "PAID",
+            lastPaidAt: paymentDateIso,
+            lastPaymentReference: reference,
+            paidThrough: computed.subscriptionPatch.currentPeriodEndAt,
+            nextDueDate: computed.subscriptionPatch.nextDueAt,
+            updatedAt: new Date().toISOString(),
+          };
+          if (uSnap.exists) transaction.set(userRef, { billing: billingPatch, updatedAt: new Date().toISOString() }, { merge: true });
+          const studentDocPatch = {
+            amountPaid: computed.subscriptionPatch.amountPaid,
+            remainingBalance: computed.subscriptionPatch.remainingBalance,
+            paymentStatus: computed.isPartial ? "PARTIALLY_PAID" : "PAID",
+            status: computed.accessUnlocked ? "ACTIVE" : "PARTIALLY_PAID",
+            lastPaidAt: paymentDateIso,
+            lastPaymentReference: reference,
+            paidThrough: computed.subscriptionPatch.currentPeriodEndAt,
+            nextDueDate: computed.subscriptionPatch.nextDueAt,
+            updatedAt: new Date().toISOString(),
+          };
+          if (indSnap.exists) transaction.set(indRef, studentDocPatch, { merge: true });
+          if (stdSnap.exists) transaction.set(stdRef, studentDocPatch, { merge: true });
+
+          notifyUid = targetId;
+          notifyEmail = studentEmail;
+          notifyBody = `Your manual payment of ₦${payAmount.toLocaleString()} for ${planName} (ref: ${reference}) has been verified.`;
+          resultSummary = {
+            reference,
+            subscriptionId: subId,
+            status: computed.subscriptionPatch.status,
+            accessUnlocked: computed.accessUnlocked,
+            remainingBalance: computed.remainingBalance,
+            nextDueAt: computed.subscriptionPatch.nextDueAt,
+          };
+        }
+      });
+
+      // Immutable admin audit trail
+      await adminDb.collection("adminAuditLogs").add({
+        action: "RECORD_MANUAL_PAYMENT",
+        actorUid: decoded.uid,
+        actorEmail: email,
+        actorName,
+        targetType,
+        targetId,
+        reference,
+        amount: payAmount,
+        paymentMethod,
+        notes,
+        proofUrl,
+        resultSummary,
+        createdAt: new Date().toISOString(),
+      });
+
+      if (notifyUid) {
+        await createPortalNotification({
+          recipientId: notifyUid,
+          email: notifyEmail || undefined,
+          title: notifyTitle,
+          message: notifyBody,
+          type: "MANUAL_PAYMENT_VERIFIED",
+          data: resultSummary,
+        }).catch(() => undefined);
+      }
+
+      return response(200, { recorded: true, ...resultSummary });
+    }
+
+    // =========================================================================
+    // PART 9: SUBSCRIPTION GUARDRAILS & OVERRIDES MANAGEMENT
+    // =========================================================================
+    if (action === "list_subscriptions") {
+      const now = new Date();
+      const [canonicalSnap, schoolsSnap, usersSnap, enrollSnap, remindersSnap, auditSnap] =
+        await Promise.all([
+          adminDb.collection("billingSubscriptions").limit(1000).get(),
+          adminDb.collection("schools").limit(500).get(),
+          adminDb.collection("users").limit(1000).get(),
+          adminDb.collection("programme_enrollments").where("billingResponsibility", "==", "STUDENT_SELF_FUNDED").limit(500).get(),
+          adminDb.collection("subscriptionReminders").limit(150).get(),
+          adminDb.collection("adminAuditLogs").limit(150).get(),
+        ]);
+
+      const byId = new Map<string, any>();
+
+      const pushEntry = (sub: BillingSubscriptionRecord, source: "canonical" | "synthesized") => {
+        const evaluated = evaluateSubscriptionState({ subscription: sub, now });
+        byId.set(sub.id, {
+          ...sub,
+          source,
+          liveStatus: evaluated.status,
+          isLocked: evaluated.isLocked,
+          inGracePeriod: evaluated.inGracePeriod,
+          isDueSoon: evaluated.isDueSoon,
+          isExempt: evaluated.isExempt,
+          hasActiveOverride: evaluated.hasActiveOverride,
+          overrideExpiresAt: evaluated.overrideExpiresAt,
+          billingConfigIncomplete: evaluated.billingConfigIncomplete,
+          liveAmountDue: evaluated.amountDue,
+          dueDateFormatted: evaluated.dueDateFormatted,
+          graceEndsAtFormatted: evaluated.graceEndsAtFormatted,
+          daysUntilDue: evaluated.daysUntilDue,
+          graceDaysRemaining: evaluated.graceDaysRemaining,
+        });
+      };
+
+      for (const docSnap of canonicalSnap.docs) {
+        const d = { id: docSnap.id, ...(docSnap.data() || {}) } as Record<string, any>;
+        const sub = normalizeSubscriptionFromSource({
+          id: docSnap.id,
+          accountType: (String(d.accountType || "INDIVIDUAL_STUDENT").toUpperCase()) as BillingSubscriptionRecord["accountType"],
+          accountId: String(d.accountId || docSnap.id),
+          accountName: String(d.accountName || ""),
+          recipientEmail: String(d.recipientEmail || ""),
+          schoolId: d.schoolId || null,
+          parentId: d.parentId || null,
+          studentId: d.studentId || null,
+          studentName: d.studentName || null,
+          programmeEnrollmentId: d.programmeEnrollmentId || null,
+          billingResponsibility: d.billingResponsibility || "STUDENT",
+          canonicalDoc: d,
+        });
+        pushEntry(sub, "canonical");
+      }
+
+      for (const sDoc of schoolsSnap.docs) {
+        const subId = `school_${sDoc.id}`;
+        if (byId.has(subId)) continue;
+        const s = sDoc.data() || {};
+        const sub = normalizeSubscriptionFromSource({
+          id: subId,
+          accountType: "SCHOOL",
+          accountId: sDoc.id,
+          accountName: String(s.schoolName || s.name || "Partner School"),
+          recipientEmail: String(s.contactEmail || s.email || ""),
+          schoolId: sDoc.id,
+          billingResponsibility: "SCHOOL",
+          legacyBilling: s.billing || null,
+          fallbackPlanName: String(s.plan || "School Institutional Partnership"),
+        });
+        pushEntry(sub, "synthesized");
+      }
+
+      for (const uDoc of usersSnap.docs) {
+        const u = uDoc.data() || {};
+        const r = normaliseRole(u.role);
+        if (!["parent", "student"].includes(r)) continue;
+        if (r === "student" && (u.schoolId || u.parentId)) continue;
+        if (!u.billing || !Number(u.billing.baseAmount || 0)) continue;
+        const subId = r === "parent" ? `parent_${uDoc.id}` : `student_${uDoc.id}`;
+        if (byId.has(subId)) continue;
+        const sub = normalizeSubscriptionFromSource({
+          id: subId,
+          accountType: r === "parent" ? "PARENT" : "INDIVIDUAL_STUDENT",
+          accountId: uDoc.id,
+          accountName: String(u.fullName || u.name || u.email || "Account"),
+          recipientEmail: String(u.email || ""),
+          parentId: r === "parent" ? uDoc.id : null,
+          studentId: r === "student" ? String(u.studentDocId || uDoc.id) : null,
+          studentName: r === "student" ? String(u.fullName || u.name || "") : null,
+          billingResponsibility: r === "parent" ? "PARENT" : "STUDENT",
+          legacyBilling: u.billing,
+          fallbackPlanName: r === "parent" ? "Family Plan" : "Student Plan",
+        });
+        pushEntry(sub, "synthesized");
+      }
+
+      for (const eDoc of enrollSnap.docs) {
+        const subId = `prog_enr_${eDoc.id}`;
+        if (byId.has(subId)) continue;
+        const e = eDoc.data() || {};
+        if (["REJECTED", "CANCELLED"].includes(String(e.enrollmentStatus || "").toUpperCase())) continue;
+        const sub = normalizeSubscriptionFromSource({
+          id: subId,
+          accountType: "STUDENT_SELF_FUNDED_PROGRAMME",
+          accountId: String(e.studentUid || eDoc.id),
+          accountName: String(e.studentName || "Student"),
+          recipientEmail: String(e.studentEmail || ""),
+          studentId: String(e.studentDocId || e.studentUid || ""),
+          studentName: String(e.studentName || ""),
+          programmeEnrollmentId: eDoc.id,
+          billingResponsibility: "STUDENT_SELF_FUNDED",
+          legacyBilling: {
+            baseAmount: Number(e.approvedFee || 0),
+            amountPaid: Number(e.amountPaid || 0),
+            remainingBalance: Number(e.remainingBalance ?? e.approvedFee ?? 0),
+            status: e.paymentStatus || e.enrollmentStatus,
+            nextDueDate: e.nextDueDate || e.paidThrough,
+            paidThrough: e.paidThrough,
+            durationWeeks: Number(e.durationWeeks || 8),
+            planName: String(e.programTitle || "Programme"),
+            allowDepositAccess: Boolean(e.allowDepositAccess),
+            depositAmount: Number(e.depositAmount || 0),
+          },
+          fallbackPlanName: String(e.programTitle || "Programme"),
+        });
+        pushEntry(sub, "synthesized");
+      }
+
+      const subscriptions = Array.from(byId.values()).sort((a, b) => {
+        const weight = (s: any) =>
+          s.isLocked ? 0 : s.inGracePeriod ? 1 : s.isDueSoon ? 2 : s.liveStatus === "PARTIALLY_PAID" ? 3 : 4;
+        return weight(a) - weight(b);
+      });
+
+      const summary = {
+        total: subscriptions.length,
+        active: subscriptions.filter((s) => s.liveStatus === "ACTIVE").length,
+        dueSoon: subscriptions.filter((s) => s.isDueSoon).length,
+        inGracePeriod: subscriptions.filter((s) => s.inGracePeriod).length,
+        locked: subscriptions.filter((s) => s.isLocked).length,
+        exempt: subscriptions.filter((s) => s.isExempt).length,
+        partiallyPaid: subscriptions.filter((s) => s.liveStatus === "PARTIALLY_PAID").length,
+        totalOverdueBalance: Number(
+          subscriptions
+            .filter((s) => s.isLocked || s.inGracePeriod || s.liveStatus === "PARTIALLY_PAID")
+            .reduce((sum, s) => sum + Number(s.liveAmountDue || 0), 0)
+            .toFixed(2)
+        ),
+      };
+
+      const reminders = remindersSnap.docs
+        .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+        .sort((a: any, b: any) => String(b.lastAttemptAt || b.sentAt || "").localeCompare(String(a.lastAttemptAt || a.sentAt || "")))
+        .slice(0, 60);
+
+      const auditLogs = auditSnap.docs
+        .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+        .sort((a: any, b: any) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+        .slice(0, 60);
+
+      return response(200, {
+        summary,
+        subscriptions,
+        reminders,
+        auditLogs,
+        isSuperAdmin,
+      });
+    }
+
+    if (action === "apply_subscription_override") {
+      const subscriptionId = String(body.subscriptionId || "").trim();
+      const reason = String(body.reason || "").trim();
+      const active = body.active !== false;
+      const startsAt = parseDateSafe(body.startsAt) || new Date();
+      const expiresAt = parseDateSafe(body.expiresAt);
+
+      if (!subscriptionId) return response(400, { error: "subscriptionId is required." });
+      if (active && (!reason || !expiresAt || expiresAt.getTime() <= startsAt.getTime())) {
+        return response(400, { error: "Temporary override requires a reason and a future expiry date." });
+      }
+
+      const actorName = String((adminUser as any)?.fullName || (adminUser as any)?.name || email);
+      const nowIso = new Date().toISOString();
+      const overridePayload = active
+        ? {
+            active: true,
+            reason,
+            grantedByUid: decoded.uid,
+            grantedByName: actorName,
+            grantedAt: nowIso,
+            startsAt: startsAt.toISOString(),
+            expiresAt: expiresAt!.toISOString(),
+          }
+        : null;
+
+      await adminDb.collection("billingSubscriptions").doc(subscriptionId).set(
+        {
+          id: subscriptionId,
+          ...(body.accountType ? { accountType: body.accountType } : {}),
+          ...(body.accountId ? { accountId: body.accountId } : {}),
+          ...(body.accountName ? { accountName: body.accountName } : {}),
+          ...(body.billingResponsibility ? { billingResponsibility: body.billingResponsibility } : {}),
+          override: overridePayload,
+          updatedAt: nowIso,
+        },
+        { merge: true }
+      );
+
+      await adminDb.collection("adminAuditLogs").add({
+        action: active ? "SUBSCRIPTION_OVERRIDE_GRANTED" : "SUBSCRIPTION_OVERRIDE_REVOKED",
+        actorUid: decoded.uid,
+        actorEmail: email,
+        actorName,
+        targetType: "SUBSCRIPTION",
+        targetId: subscriptionId,
+        reason: reason || "Revoked override",
+        startsAt: active ? startsAt.toISOString() : null,
+        expiresAt: active && expiresAt ? expiresAt.toISOString() : null,
+        createdAt: nowIso,
+      });
+
+      return response(200, { updated: true, subscriptionId, override: overridePayload });
+    }
+
+    if (action === "set_subscription_exemption") {
+      const subscriptionId = String(body.subscriptionId || "").trim();
+      const exempt = Boolean(body.exempt);
+      const reason = String(body.reason || "").trim();
+      if (!subscriptionId) return response(400, { error: "subscriptionId is required." });
+      if (exempt && !reason) return response(400, { error: "An exemption reason is required." });
+
+      const actorName = String((adminUser as any)?.fullName || (adminUser as any)?.name || email);
+      const nowIso = new Date().toISOString();
+      const exemptionPayload = exempt
+        ? {
+            exempt: true,
+            reason,
+            grantedByUid: decoded.uid,
+            grantedByName: actorName,
+            grantedAt: nowIso,
+          }
+        : null;
+
+      await adminDb.collection("billingSubscriptions").doc(subscriptionId).set(
+        {
+          id: subscriptionId,
+          ...(body.accountType ? { accountType: body.accountType } : {}),
+          ...(body.accountId ? { accountId: body.accountId } : {}),
+          ...(body.accountName ? { accountName: body.accountName } : {}),
+          ...(body.billingResponsibility ? { billingResponsibility: body.billingResponsibility } : {}),
+          exemption: exemptionPayload,
+          status: exempt ? "EXEMPT" : "ACTIVE",
+          updatedAt: nowIso,
+        },
+        { merge: true }
+      );
+
+      await adminDb.collection("adminAuditLogs").add({
+        action: exempt ? "SUBSCRIPTION_EXEMPTION_GRANTED" : "SUBSCRIPTION_EXEMPTION_REMOVED",
+        actorUid: decoded.uid,
+        actorEmail: email,
+        actorName,
+        targetType: "SUBSCRIPTION",
+        targetId: subscriptionId,
+        reason: reason || "Exemption removed",
+        createdAt: nowIso,
+      });
+
+      return response(200, { updated: true, subscriptionId, exemption: exemptionPayload });
+    }
+
+    if (action === "update_subscription_status") {
+      const subscriptionId = String(body.subscriptionId || "").trim();
+      const nextStatus = String(body.status || "").trim().toUpperCase();
+      const reason = String(body.reason || "").trim();
+      if (!subscriptionId || !["ACTIVE", "SUSPENDED", "CANCELLED"].includes(nextStatus)) {
+        return response(400, { error: "Valid subscriptionId and status (ACTIVE, SUSPENDED, CANCELLED) are required." });
+      }
+      const actorName = String((adminUser as any)?.fullName || (adminUser as any)?.name || email);
+      const nowIso = new Date().toISOString();
+
+      await adminDb.collection("billingSubscriptions").doc(subscriptionId).set(
+        {
+          id: subscriptionId,
+          status: nextStatus,
+          ...(body.nextDueAt ? { nextDueAt: new Date(String(body.nextDueAt)).toISOString() } : {}),
+          updatedAt: nowIso,
+        },
+        { merge: true }
+      );
+
+      await adminDb.collection("adminAuditLogs").add({
+        action: `SUBSCRIPTION_STATUS_${nextStatus}`,
+        actorUid: decoded.uid,
+        actorEmail: email,
+        actorName,
+        targetType: "SUBSCRIPTION",
+        targetId: subscriptionId,
+        reason: reason || `Status updated to ${nextStatus}`,
+        createdAt: nowIso,
+      });
+
+      return response(200, { updated: true, subscriptionId, status: nextStatus });
+    }
+
     return response(400, { error: "Unsupported billing administrator action." });
   } catch (error) {
     const code = error instanceof Error ? error.message : "";
@@ -699,6 +1686,9 @@ export const handler: Handler = async event => {
     }
     if (code === "STUDENT_NOT_FOUND") {
       return response(404, { error: "Student record was not found." });
+    }
+    if (code === "PROGRAMME_ENROLLMENT_NOT_FOUND") {
+      return response(404, { error: "Programme enrolment record was not found." });
     }
     if (code === "PREVIOUS_TUTOR_INSUFFICIENT_BALANCE_FOR_REASSIGNMENT") {
       return response(409, { error: "Cannot reassign tutor wallet allocation because the previous tutor has already withdrawn those funds." });

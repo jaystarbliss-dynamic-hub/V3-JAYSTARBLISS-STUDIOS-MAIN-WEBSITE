@@ -25,6 +25,7 @@ import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
+import { resolveOccurrenceMeetingLink } from '../../lib/scheduleEngine';
 
 export interface ClassScheduleItem {
   id: string;
@@ -43,6 +44,8 @@ export interface ClassScheduleItem {
   classLevel?: string;
   classLevels?: string[];
   meetingLink?: string;
+  defaultMeetingLink?: string;
+  linkSource?: 'INHERITED' | 'CUSTOM';
   absenceReason?: string;
   rescheduleReason?: string;
   rescheduledDate?: string;
@@ -83,6 +86,7 @@ export interface GroupedSession {
   programId?: string;
   tutorName?: string;
   meetingLink?: string;
+  linkSource?: 'INHERITED' | 'CUSTOM';
   overallStatus: string;
   classRangeBadge: string;
   classLevels: string[];
@@ -226,6 +230,7 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
           // fallback
         }
 
+        const resolvedItemLink = resolveOccurrenceMeetingLink(item);
         sessionMap.set(groupKey, {
           sessionKey: groupKey,
           scheduleGroupId: item.scheduleGroupId,
@@ -238,7 +243,8 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
           programName,
           programId: item.programId,
           tutorName: item.tutorName,
-          meetingLink: item.meetingLink,
+          meetingLink: resolvedItemLink.effectiveLink || undefined,
+          linkSource: resolvedItemLink.linkSource,
           overallStatus: item.status || 'SCHEDULED',
           classRangeBadge: item.classLevel || 'All Classes',
           classLevels: [],
@@ -710,14 +716,21 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
                                 </span>
 
                                 {session.meetingLink && (
-                                  <a
-                                    href={session.meetingLink}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-[#B91C1C] dark:text-red-400 font-semibold hover:underline inline-flex items-center gap-1 text-[11px]"
-                                  >
-                                    <ExternalLink size={12} /> Virtual Room
-                                  </a>
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <a
+                                      href={session.meetingLink}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-[#B91C1C] dark:text-red-400 font-semibold hover:underline inline-flex items-center gap-1 text-[11px]"
+                                    >
+                                      <ExternalLink size={12} /> Virtual Room
+                                    </a>
+                                    {session.linkSource === 'CUSTOM' && (
+                                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                        Session-specific link
+                                      </span>
+                                    )}
+                                  </span>
                                 )}
                               </div>
                             </div>
@@ -768,6 +781,7 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
                                 const matchingOcc = session.occurrences.find(o => o.classLevel === lvl);
                                 const occStatus = matchingOcc?.status || session.overallStatus;
                                 const occTime = matchingOcc?.startTime && matchingOcc?.endTime ? `${matchingOcc.startTime} – ${matchingOcc.endTime}` : `${session.startTime} – ${session.endTime}`;
+                                const occLink = matchingOcc ? resolveOccurrenceMeetingLink(matchingOcc) : null;
 
                                 return (
                                   <div
@@ -784,6 +798,17 @@ export const SchoolClassScheduleTimeline: React.FC<SchoolClassScheduleTimelinePr
                                       <span className="text-slate-700 dark:text-slate-300 truncate">
                                         {session.title}
                                       </span>
+                                      {occLink?.effectiveLink && (
+                                        <a
+                                          href={occLink.effectiveLink}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-[#B91C1C] dark:text-red-400 font-semibold hover:underline inline-flex items-center gap-1 text-[11px] shrink-0"
+                                        >
+                                          <ExternalLink size={11} />
+                                          {occLink.linkSource === 'CUSTOM' ? 'Custom Link' : 'Join'}
+                                        </a>
+                                      )}
                                     </div>
 
                                     <div className="shrink-0 flex items-center gap-2">

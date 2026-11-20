@@ -1048,11 +1048,11 @@ const AdminSettings: React.FC = () => {
               <div className="p-4 sm:p-6 max-h-[75vh] overflow-y-auto bg-slate-900/40">
                 <PasswordResetEmailTemplate
                   recipientName="Administrator"
-                  recipientEmail={testEmailRecipient || 'admin@jaystarbliss-studios.name.ng'}
-                  resetUrl="https://jaystarbliss-studios.name.ng/portal?mode=resetPassword&token=demo_auth_action_code_preview"
+                  recipientEmail={testEmailRecipient || 'admin@jaystarblissstudios.com'}
+                  resetUrl="https://jaystarblissstudios.com/portal?mode=resetPassword&token=demo_auth_action_code_preview"
                   expiresIn="1 Hour (Single Use)"
                   supportWhatsapp={settings.supportWhatsapp || '+234 707 763 8925'}
-                  supportEmail={settings.supportEmail || 'support@jaystarbliss-studios.name.ng'}
+                  supportEmail={settings.supportEmail || 'support@jaystarblissstudios.com'}
                 />
               </div>
 

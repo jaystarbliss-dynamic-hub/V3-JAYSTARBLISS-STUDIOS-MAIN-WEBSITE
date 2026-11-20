@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { PROGRAM_CONTAINER_BACKGROUNDS } from '../../lib/programMedia';
 
 export interface Pathway {
   id: string;
@@ -70,8 +71,7 @@ export const LEARNING_SCHOOLS: LearningSchool[] = [
     tagline: 'Software Engineering, Web, Python, AI, Robotics & Digital Literacy',
     cardSummary:
       'Build real-world skills in software development, Python, AI, robotics, and modern digital fluency.',
-    image:
-      'https://images.pexels.com/photos/5473298/pexels-photo-5473298.jpeg?auto=compress&cs=tinysrgb&w=1400',
+    image: PROGRAM_CONTAINER_BACKGROUNDS.technology,
     accentText: 'text-red-500',
     accentBorder: 'border-red-500/40',
     accentGradient: 'from-slate-900 via-slate-900 to-slate-950',
@@ -142,8 +142,7 @@ export const LEARNING_SCHOOLS: LearningSchool[] = [
     tagline: 'Instrumental Mastery, Piano, Guitar, Vocals, Music Theory & Audio Production',
     cardSummary:
       'Master piano, keyboard, guitar, drums, violin, vocal performance, sight-reading, and digital music production.',
-    image:
-      'https://images.pexels.com/photos/164743/pexels-photo-164743.jpeg?auto=compress&cs=tinysrgb&w=1400',
+    image: PROGRAM_CONTAINER_BACKGROUNDS.music,
     accentText: 'text-red-500',
     accentBorder: 'border-red-500/40',
     accentGradient: 'from-slate-900 via-slate-900 to-slate-950',
@@ -200,8 +199,7 @@ export const LEARNING_SCHOOLS: LearningSchool[] = [
     tagline: 'Mathematics, Sciences, English, STEM & Exam Mastery (WAEC, JAMB, IGCSE, SAT)',
     cardSummary:
       'Achieve top-percentile mastery in Mathematics, Sciences, English, and national/international examinations.',
-    image:
-      'https://images.pexels.com/photos/5905709/pexels-photo-5905709.jpeg?auto=compress&cs=tinysrgb&w=1400',
+    image: PROGRAM_CONTAINER_BACKGROUNDS.academics,
     accentText: 'text-red-500',
     accentBorder: 'border-red-500/40',
     accentGradient: 'from-slate-900 via-slate-900 to-slate-950',
@@ -259,8 +257,7 @@ export const LEARNING_SCHOOLS: LearningSchool[] = [
     tagline: 'Graphic Design, Brand Identity, UI/UX Design, Illustration & Motion Media',
     cardSummary:
       'Turn creative ideas into studio-grade visual brand systems, digital illustrations, and interactive UI/UX prototypes.',
-    image:
-      'https://images.pexels.com/photos/7988079/pexels-photo-7988079.jpeg?auto=compress&cs=tinysrgb&w=1400',
+    image: PROGRAM_CONTAINER_BACKGROUNDS['design-graphics'],
     accentText: 'text-red-500',
     accentBorder: 'border-red-500/40',
     accentGradient: 'from-slate-900 via-slate-900 to-slate-950',

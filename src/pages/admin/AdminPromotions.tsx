@@ -18,6 +18,7 @@ import {
   X,
   Save,
   Calendar,
+  Share2,
 } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
@@ -26,10 +27,12 @@ import CloudinaryImageUpload from '../../components/common/CloudinaryImageUpload
 import {
   PRIMARY_PROGRAM_ROOTS,
   fetchAllProgramsMap,
-  isProgramPubliclyEnrollable,
+  isProgramCatalogDiscoverable,
+  getProgramBreadcrumbs,
   type CanonicalRootKey,
   type ProgramRecord,
 } from '../../lib/programHierarchy';
+import { buildCampaignShareUrl, copyTextToClipboard } from '../../lib/sharing';
 import {
   fetchAllPromotions,
   savePromotionCampaign,
@@ -145,6 +148,8 @@ export const AdminPromotions: React.FC = () => {
   const [draft, setDraft] = useState<EditorDraft>(() => createEmptyDraft('HOME_CAROUSEL', 1));
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  const [programsMap, setProgramsMap] = useState<Map<string, ProgramRecord>>(new Map());
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -154,10 +159,19 @@ export const AdminPromotions: React.FC = () => {
         fetchAllProgramsMap().catch(() => new Map<string, ProgramRecord>()),
       ]);
       setCampaigns(promoList);
-      const enrollableProgs = Array.from(progMap.values())
-        .filter((p) => isProgramPubliclyEnrollable(p))
-        .sort((a, b) => a.title.localeCompare(b.title));
-      setPrograms(enrollableProgs);
+      setProgramsMap(progMap);
+      const discoverableProgs = Array.from(progMap.values())
+        .filter((p) => isProgramCatalogDiscoverable(p, progMap))
+        .sort((a, b) => {
+          const pathA = getProgramBreadcrumbs(a.id, progMap)
+            .map((c) => c.title)
+            .join(' › ');
+          const pathB = getProgramBreadcrumbs(b.id, progMap)
+            .map((c) => c.title)
+            .join(' › ');
+          return pathA.localeCompare(pathB);
+        });
+      setPrograms(discoverableProgs);
     } catch (err: any) {
       console.error('Failed to load promotions:', err);
       setLoadError(err?.message || 'Unable to load promotions from Firestore.');
@@ -594,6 +608,31 @@ export const AdminPromotions: React.FC = () => {
 
                   <button
                     type="button"
+                    onClick={async () => {
+                      const shareUrl = buildCampaignShareUrl({
+                        id: promo.id,
+                        ctaTargetType: promo.ctaTargetType,
+                        programSlug: promo.programSlug,
+                        programId: promo.programId,
+                        programRootKey: promo.programRootKey,
+                        internalPath: promo.internalPath,
+                        externalUrl: promo.externalUrl,
+                      });
+                      const ok = await copyTextToClipboard(shareUrl);
+                      if (ok) {
+                        toast.success(`Share link copied: ${shareUrl}`);
+                      } else {
+                        toast.error('Could not copy share link.');
+                      }
+                    }}
+                    title="Copy campaign share link"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    <Share2 size={12} /> Copy Share Link
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => openEditModal(promo)}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
                   >
@@ -831,11 +870,16 @@ export const AdminPromotions: React.FC = () => {
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-semibold"
                     >
                       <option value="">Select a programme...</option>
-                      {programs.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.title}
-                        </option>
-                      ))}
+                      {programs.map((p) => {
+                        const crumbs = getProgramBreadcrumbs(p.id, programsMap);
+                        const label =
+                          crumbs.length > 1 ? crumbs.map((c) => c.title).join(' › ') : p.title;
+                        return (
+                          <option key={p.id} value={p.id}>
+                            {label}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                 )}

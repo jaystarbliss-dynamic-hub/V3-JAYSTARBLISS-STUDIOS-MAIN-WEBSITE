@@ -2,6 +2,7 @@ import type { Handler } from "@netlify/functions";
 import { adminAuth, adminDb, applyRequestDatabaseHeader } from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { enforceEntitlementOrLock } from "../../api/_lib/subscription-service";
 import {
   normalizeQuestions,
   isAssessmentStudentRole,
@@ -433,6 +434,8 @@ async function notifyStudentsOfPublishedExam(examId: string, examData: Record<st
 
 export const handler: Handler = async event => {
   try {
+    const entitlementGuard = await enforceEntitlementOrLock(event);
+    if ("response" in entitlementGuard) return entitlementGuard.response;
     const c = await caller(event);
     const method = event.httpMethod || "GET";
     const path = String(event.path || "");
