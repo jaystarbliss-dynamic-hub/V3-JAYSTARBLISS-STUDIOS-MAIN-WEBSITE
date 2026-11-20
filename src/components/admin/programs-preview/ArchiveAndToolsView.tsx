@@ -27,6 +27,7 @@ import {
   type PreviewProgramRecord,
 } from './types';
 import { UnassignedProgrammesView } from './UnassignedProgrammesView';
+import type { SyntheticAuditFinding } from './hierarchyUtils';
 
 interface ArchiveAndToolsViewProps {
   programs: PreviewProgramRecord[];
@@ -34,6 +35,7 @@ interface ArchiveAndToolsViewProps {
   onSelectTab: (tab: ArchiveToolsTabId) => void;
   backups: BackupSnapshot[];
   integrityFindings: IntegrityFinding[];
+  syntheticAuditFindings?: SyntheticAuditFinding[];
   onRestoreArchived: (programId: string) => void;
   onInspectProgram: (programId: string) => void;
   onEditProgram?: (programId: string) => void;
@@ -50,6 +52,7 @@ export const ArchiveAndToolsView: React.FC<ArchiveAndToolsViewProps> = ({
   onSelectTab,
   backups,
   integrityFindings,
+  syntheticAuditFindings = [],
   onRestoreArchived,
   onInspectProgram,
   onEditProgram,
@@ -442,28 +445,34 @@ export const ArchiveAndToolsView: React.FC<ArchiveAndToolsViewProps> = ({
             </div>
 
             <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-              {backups.map((snap) => (
-                <div
-                  key={snap.id}
-                  className="p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div>
-                    <div className="font-bold text-slate-900">{snap.label}</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">
-                      {formatDate(snap.createdAt)} • {snap.recordCount} records •{' '}
-                      {(snap.sizeBytes / 1024).toFixed(1)} KB
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadSnapshot(snap)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50"
-                  >
-                    <Download size={13} />
-                    <span>Download JSON</span>
-                  </button>
+              {backups.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500 bg-white">
+                  No backup snapshots created in this session yet. Click &ldquo;Create Snapshot&rdquo; above to export the current live Firestore catalogue.
                 </div>
-              ))}
+              ) : (
+                backups.map((snap) => (
+                  <div
+                    key={snap.id}
+                    className="p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div>
+                      <div className="font-bold text-slate-900">{snap.label}</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        {formatDate(snap.createdAt)} • {snap.recordCount} records •{' '}
+                        {(snap.sizeBytes / 1024).toFixed(1)} KB
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadSnapshot(snap)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50"
+                    >
+                      <Download size={13} />
+                      <span>Download JSON</span>
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -534,6 +543,54 @@ export const ArchiveAndToolsView: React.FC<ArchiveAndToolsViewProps> = ({
                   )}
                 </div>
               ))}
+            </div>
+
+            {/* Report-Only Synthetic / Seeded Data Audit */}
+            <div className="pt-4 border-t border-slate-200 space-y-2.5">
+              <div>
+                <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                  Report-Only Synthetic Data Audit ({syntheticAuditFindings.length} Flagged)
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Flags records matching legacy seed IDs or test indicators for manual review. No records are ever modified or deleted automatically.
+                </p>
+              </div>
+              {syntheticAuditFindings.length === 0 ? (
+                <div className="p-3.5 rounded-xl bg-emerald-50/50 border border-emerald-200 text-emerald-900 font-semibold flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                  <span>No suspected synthetic or demo seed records detected in live Firestore collections.</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {syntheticAuditFindings.map((item) => (
+                    <div
+                      key={`${item.collection}-${item.id}`}
+                      className="p-3 rounded-xl border border-amber-200 bg-amber-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-900">
+                          {item.title}{' '}
+                          <span className="font-mono text-[10px] text-slate-500">
+                            ({item.collection}/{item.id})
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-amber-900 mt-0.5">
+                          {item.reasons.join(' • ')}
+                        </div>
+                      </div>
+                      {item.collection === 'programs' && onEditProgram && (
+                        <button
+                          type="button"
+                          onClick={() => onEditProgram(item.id)}
+                          className="px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-slate-800 font-bold text-[11px] hover:bg-amber-50 shrink-0"
+                        >
+                          Review Record
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

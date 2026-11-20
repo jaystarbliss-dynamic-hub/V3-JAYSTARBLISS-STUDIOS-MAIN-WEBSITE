@@ -1,17 +1,31 @@
 import React, { useState } from 'react';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import MainLayout from '../components/layout/MainLayout';
 import SEO from '../components/ui/SEO';
-import { CheckCircle2, ArrowRight, ArrowLeft, Send, User, Briefcase, FileText } from 'lucide-react';
+import {
+  CheckCircle2,
+  ArrowRight,
+  User,
+  Briefcase,
+  FileText,
+  Camera,
+  Upload,
+  Loader2,
+} from 'lucide-react';
 import Button from '../components/ui/Button';
 import ProgressStepper from '../components/ui/ProgressStepper';
 import { WizardActionFooter } from '../components/ui/WizardActionFooter';
 import { useToast } from '../contexts/ToastContext';
 import { getFriendlyErrorMessage, logInternalDiagnostic } from '../utils/friendlyErrors';
+import { uploadImageToCloudinary } from '../lib/cloudinary';
+import {
+  buildCanonicalTutorApplicationPayload,
+  isValidTutorPhotoUrl,
+} from '../lib/tutorDirectory';
 
 const steps = [
-  { id: 'personal', title: 'Personal Info', subtitle: 'Contact details', icon: User },
+  { id: 'personal', title: 'Personal Info', subtitle: 'Photo & contact details', icon: User },
   { id: 'expertise', title: 'Expertise', subtitle: 'Skills & experience', icon: Briefcase },
   { id: 'background', title: 'Bio & Portfolio', subtitle: 'Review & submit', icon: FileText },
 ];
@@ -23,23 +37,57 @@ const TutorApplication: React.FC = () => {
     name: '',
     email: '',
     phone: '',
+    location: '',
+    photoURL: '',
     expertise: '',
     experience: '',
     ageGroup: '',
     subjects: '',
     availability: '',
     introduction: '',
-    portfolioLink: ''
+    portfolioLink: '',
   });
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [e.target.name]: e.target.value,
     });
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload a valid JPG, PNG, or WEBP photograph.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Profile photograph must be smaller than 5 MB.');
+      return;
+    }
+    setUploadingPhoto(true);
+    setError(null);
+    try {
+      const uploaded = await uploadImageToCloudinary(file);
+      const secureUrl = uploaded.secureUrl || uploaded.url;
+      setFormData((prev) => ({ ...prev, photoURL: secureUrl }));
+      toast.success('Profile photograph uploaded.');
+    } catch (err) {
+      logInternalDiagnostic('TutorApplication::PhotoUpload', err);
+      const msg = getFriendlyErrorMessage(err);
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setUploadingPhoto(false);
+      e.target.value = '';
+    }
   };
 
   const validateStep = (stepIdx: number): boolean => {
@@ -55,6 +103,12 @@ const TutorApplication: React.FC = () => {
       }
       if (!formData.phone.trim()) {
         setError('Please provide a contact phone number.');
+        return false;
+      }
+      if (!isValidTutorPhotoUrl(formData.photoURL)) {
+        setError(
+          'A clear uploaded profile photograph is mandatory before continuing your tutor application.'
+        );
         return false;
       }
       return true;
@@ -73,6 +127,10 @@ const TutorApplication: React.FC = () => {
     }
 
     if (stepIdx === 2) {
+      if (!isValidTutorPhotoUrl(formData.photoURL)) {
+        setError('A clear uploaded profile photograph is mandatory to submit your application.');
+        return false;
+      }
       if (!formData.introduction.trim()) {
         setError('Please write a brief introduction or teaching statement.');
         return false;
@@ -86,13 +144,13 @@ const TutorApplication: React.FC = () => {
   const handleNext = () => {
     if (validateStep(currentStep)) {
       setError(null);
-      setCurrentStep(prev => Math.min(steps.length - 1, prev + 1));
+      setCurrentStep((prev) => Math.min(steps.length - 1, prev + 1));
     }
   };
 
   const handleBack = () => {
     setError(null);
-    setCurrentStep(prev => Math.max(0, prev - 1));
+    setCurrentStep((prev) => Math.max(0, prev - 1));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -101,17 +159,42 @@ const TutorApplication: React.FC = () => {
 
     setLoading(true);
     setError(null);
-    
+
     try {
-      await addDoc(collection(db, 'inquiries'), {
-        type: 'TUTOR_APP',
-        ...formData,
-        status: 'NEW',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+      const subjectList = [
+        ...formData.subjects
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        ...(formData.expertise.trim() ? [formData.expertise.trim()] : []),
+      ];
+
+      const canonicalPayload = buildCanonicalTutorApplicationPayload({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        location: formData.location,
+        photoURL: formData.photoURL,
+        subjects: subjectList,
+        qualification: formData.expertise,
+        experienceYears: formData.experience,
+        timeSlot: formData.availability,
+        cvUrl: formData.portfolioLink,
+        bio: formData.introduction,
+        source: 'TUTOR_APPLICATION_PAGE',
       });
+
+      await addDoc(collection(db, 'tutor_applications'), {
+        ...canonicalPayload,
+        preferredAgeGroup: formData.ageGroup,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
       setSuccess(true);
-      toast.success('Your instructor application has been submitted successfully! We look forward to reviewing your profile.');
+      toast.success(
+        'Your tutor application has been submitted for administrative review.'
+      );
     } catch (err) {
       logInternalDiagnostic('TutorApplication::Submit', err);
       const friendly = getFriendlyErrorMessage(err);
@@ -124,9 +207,9 @@ const TutorApplication: React.FC = () => {
 
   return (
     <MainLayout>
-      <SEO 
-        title="Become a Tutor" 
-        description="Join our network of skilled instructors and mentors teaching coding, robotics, digital skills, and creative media at Jaystarbliss Studios." 
+      <SEO
+        title="Become a Tutor"
+        description="Join our network of skilled instructors and mentors teaching coding, robotics, digital skills, and creative media at Jaystarbliss Studios."
       />
 
       {/* Header Banner */}
@@ -140,7 +223,8 @@ const TutorApplication: React.FC = () => {
             Become a Tutor
           </h1>
           <p className="text-base sm:text-lg text-white/80 leading-relaxed font-normal max-w-2xl mx-auto">
-            Join our network of skilled professionals who are passionate about teaching, mentoring, and helping others grow.
+            Join our network of skilled professionals who are passionate about teaching, mentoring,
+            and helping others grow.
           </p>
         </div>
       </div>
@@ -148,16 +232,18 @@ const TutorApplication: React.FC = () => {
       {/* Form Area */}
       <div className="py-16 md:py-24 bg-brand-neutral dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-3xl">
-          
           <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-md p-8 sm:p-12 rounded-2xl border border-white/60 dark:border-white/10 shadow-sm">
             {success ? (
               <div className="text-center py-12">
                 <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-500 mx-auto mb-6">
                   <CheckCircle2 size={42} />
                 </div>
-                <h3 className="text-2xl sm:text-3xl font-extrabold text-brand-slate dark:text-white mb-3">Application Submitted!</h3>
+                <h3 className="text-2xl sm:text-3xl font-extrabold text-brand-slate dark:text-white mb-3">
+                  Application Submitted!
+                </h3>
                 <p className="text-slate-600 dark:text-slate-400 mb-8 text-base max-w-md mx-auto leading-relaxed">
-                  Thanks for applying. We've received your information and will review it shortly.
+                  Thank you for applying. Our academic team will review your credentials and
+                  photograph before publishing your profile to the tutor directory.
                 </p>
                 <Button to="/" variant="secondary" size="lg" rightIcon={<ArrowRight size={18} />}>
                   RETURN TO HOME
@@ -184,12 +270,68 @@ const TutorApplication: React.FC = () => {
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-6">
-                  {/* Step 1: Personal Information */}
+                  {/* Step 1: Personal Information & Mandatory Profile Photo */}
                   {currentStep === 0 && (
                     <div className="space-y-6 animate-in fade-in duration-200">
                       <div>
-                        <h4 className="text-lg font-bold text-brand-slate dark:text-white mb-1">Personal Information</h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Tell us how to contact you.</p>
+                        <h4 className="text-lg font-bold text-brand-slate dark:text-white mb-1">
+                          Personal Information &amp; Profile Photograph
+                        </h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          A clear headshot photograph is mandatory for all tutor applications.
+                        </p>
+                      </div>
+
+                      {/* Mandatory Cloudinary Profile Photo Upload */}
+                      <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-center shrink-0">
+                            {isValidTutorPhotoUrl(formData.photoURL) ? (
+                              <img
+                                src={formData.photoURL}
+                                alt="Applicant portrait preview"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Camera size={22} className="text-slate-400" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                              Profile Photograph <span className="text-brand-red">*</span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                              {isValidTutorPhotoUrl(formData.photoURL)
+                                ? 'Photograph uploaded and ready for review.'
+                                : 'Upload a clear portrait (JPG, PNG, or WEBP, max 5 MB).'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <label className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-slate hover:bg-slate-800 text-white text-xs font-bold cursor-pointer shrink-0 transition-colors">
+                          {uploadingPhoto ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin" />
+                              <span>Uploading...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload size={14} />
+                              <span>
+                                {isValidTutorPhotoUrl(formData.photoURL)
+                                  ? 'Replace Photo'
+                                  : 'Upload Photo'}
+                              </span>
+                            </>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            disabled={uploadingPhoto}
+                            onChange={handlePhotoUpload}
+                            className="hidden"
+                          />
+                        </label>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -223,7 +365,7 @@ const TutorApplication: React.FC = () => {
                           />
                         </div>
 
-                        <div className="space-y-2 md:col-span-2">
+                        <div className="space-y-2">
                           <label className="block text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">
                             Phone Number <span className="text-brand-red">*</span>
                           </label>
@@ -237,6 +379,20 @@ const TutorApplication: React.FC = () => {
                             className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-brand-red text-slate-900 dark:text-white text-sm"
                           />
                         </div>
+
+                        <div className="space-y-2">
+                          <label className="block text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">
+                            City / Location
+                          </label>
+                          <input
+                            type="text"
+                            name="location"
+                            placeholder="e.g., Lagos, Nigeria"
+                            value={formData.location}
+                            onChange={handleChange}
+                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-brand-red text-slate-900 dark:text-white text-sm"
+                          />
+                        </div>
                       </div>
                     </div>
                   )}
@@ -245,8 +401,12 @@ const TutorApplication: React.FC = () => {
                   {currentStep === 1 && (
                     <div className="space-y-6 animate-in fade-in duration-200">
                       <div>
-                        <h4 className="text-lg font-bold text-brand-slate dark:text-white mb-1">Professional Details</h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Share your teaching skills and subject mastery.</p>
+                        <h4 className="text-lg font-bold text-brand-slate dark:text-white mb-1">
+                          Professional Details
+                        </h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Share your teaching skills and subject mastery.
+                        </p>
                       </div>
 
                       <div className="space-y-4">
@@ -342,8 +502,12 @@ const TutorApplication: React.FC = () => {
                   {currentStep === 2 && (
                     <div className="space-y-6 animate-in fade-in duration-200">
                       <div>
-                        <h4 className="text-lg font-bold text-brand-slate dark:text-white mb-1">Introduction & Review</h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Tell us about your teaching philosophy and experience.</p>
+                        <h4 className="text-lg font-bold text-brand-slate dark:text-white mb-1">
+                          Introduction &amp; Review
+                        </h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Tell us about your teaching philosophy and experience.
+                        </p>
                       </div>
 
                       <div className="space-y-4">
@@ -377,11 +541,37 @@ const TutorApplication: React.FC = () => {
                         </div>
 
                         {/* Summary */}
-                        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
-                          <div className="font-bold text-brand-slate dark:text-white mb-1 uppercase tracking-wider">Application Summary</div>
-                          <div><span className="text-slate-500">Applicant:</span> <strong className="text-slate-900 dark:text-white">{formData.name}</strong></div>
-                          <div><span className="text-slate-500">Expertise:</span> <strong className="text-slate-900 dark:text-white">{formData.expertise}</strong></div>
-                          <div><span className="text-slate-500">Subjects:</span> <strong className="text-slate-900 dark:text-white">{formData.subjects}</strong></div>
+                        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center gap-4 text-xs">
+                          {isValidTutorPhotoUrl(formData.photoURL) && (
+                            <img
+                              src={formData.photoURL}
+                              alt={formData.name || 'Applicant'}
+                              className="w-12 h-12 rounded-lg object-cover shrink-0 border border-slate-200 dark:border-slate-700"
+                            />
+                          )}
+                          <div className="space-y-1">
+                            <div className="font-bold text-brand-slate dark:text-white uppercase tracking-wider">
+                              Application Summary
+                            </div>
+                            <div>
+                              <span className="text-slate-500">Applicant:</span>{' '}
+                              <strong className="text-slate-900 dark:text-white">
+                                {formData.name}
+                              </strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500">Expertise:</span>{' '}
+                              <strong className="text-slate-900 dark:text-white">
+                                {formData.expertise}
+                              </strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500">Subjects:</span>{' '}
+                              <strong className="text-slate-900 dark:text-white">
+                                {formData.subjects}
+                              </strong>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -394,9 +584,13 @@ const TutorApplication: React.FC = () => {
                     stepLabel={steps[currentStep].title}
                     isFirstStep={currentStep === 0}
                     isLastStep={currentStep === steps.length - 1}
-                    canProceed={!loading}
+                    canProceed={!loading && !uploadingPhoto}
                     isSubmitting={loading}
-                    primaryLabel={currentStep === steps.length - 1 ? 'Submit Application' : `Continue to Step ${currentStep + 2}`}
+                    primaryLabel={
+                      currentStep === steps.length - 1
+                        ? 'Submit Application'
+                        : `Continue to Step ${currentStep + 2}`
+                    }
                     onNext={currentStep < steps.length - 1 ? handleNext : undefined}
                     onBack={currentStep > 0 ? handleBack : undefined}
                     stickyMobile={true}
@@ -405,7 +599,6 @@ const TutorApplication: React.FC = () => {
               </div>
             )}
           </div>
-
         </div>
       </div>
     </MainLayout>

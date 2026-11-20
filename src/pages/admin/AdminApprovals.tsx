@@ -4,7 +4,7 @@ import { collection, doc, setDoc, addDoc, updateDoc, getDocs, limit, serverTimes
 import { 
   CheckCircle2, XCircle, Clock, ExternalLink, Award, 
   Calendar, Phone, Mail, Eye, ChevronDown, Search, Loader2, X,
-  Sparkles, UserCheck
+  Sparkles, UserCheck, AlertTriangle, ImageOff
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import SEO from '../../components/ui/SEO';
@@ -12,6 +12,7 @@ import { StudentEnrollmentApprovalModal } from '../../components/admin/StudentEn
 import { resolveRealName } from '../../utils/userNames';
 import { formatNormalizedClassDisplay, normalizeClassName } from '../../lib/classes';
 import { claimGlobalUsername, ensureUniqueGeneratedUsername } from '../../lib/usernameRegistry';
+import { isValidTutorPhotoUrl, type TutorPublicProfileStatus } from '../../lib/tutorDirectory';
 
 const AdminApprovals: React.FC = () => {
   const { toast } = useToast();
@@ -252,12 +253,18 @@ const AdminApprovals: React.FC = () => {
 
   const approveTutor = async (req: any) => {
     const tutorRealName = resolveRealName(req, req.email);
-    if (!window.confirm(`Approve tutor ${tutorRealName} and grant instructor permissions?`)) return;
+    const candidatePhotoUrl = String(req.photoURL || req.photoUrl || req.profilePhotoUrl || '').trim();
+    const hasValidPhoto = isValidTutorPhotoUrl(candidatePhotoUrl);
+    const confirmMsg = hasValidPhoto
+      ? `Approve tutor ${tutorRealName}, grant instructor permissions, and publish to Find a Tutor?`
+      : `Approve tutor ${tutorRealName}? Note: This applicant has no verified portrait photograph, so they will remain hidden from Find a Tutor until a photo is uploaded.`;
+    if (!window.confirm(confirmMsg)) return;
     setLoadingId(req.id);
     try {
       const cleanEmail = (req.email || '').toLowerCase().trim();
       const subjects = Array.isArray(req.subjects) ? req.subjects : (req.subjects || '').split(',').map((s: string) => s.trim()).filter(Boolean);
-      
+      const nextPublicStatus: TutorPublicProfileStatus = hasValidPhoto ? 'PUBLISHED' : 'PENDING_REVIEW';
+
       const tutorPayload = {
         name: tutorRealName,
         fullName: tutorRealName,
@@ -267,6 +274,7 @@ const AdminApprovals: React.FC = () => {
         location: req.location || '',
         qualification: req.qualification || '',
         cvUrl: req.cvUrl || '',
+        ...(hasValidPhoto ? { photoURL: candidatePhotoUrl } : {}),
         subjects,
         experienceYears: req.experienceYears || '1–3 Years',
         daysPerWeek: req.daysPerWeek || '',
@@ -276,17 +284,21 @@ const AdminApprovals: React.FC = () => {
         role: 'staff',
         status: 'ACTIVE',
         accountStatus: 'ACTIVE',
+        approvalStatus: 'approved',
+        publicProfileStatus: nextPublicStatus,
+        verified: true,
         updatedAt: serverTimestamp()
       };
 
-      // 1. Write to tutors/{req.id}
-      await setDoc(doc(db, 'tutors', req.id), {
+      // 1. Write to tutors/{req.uid || req.id}
+      const primaryTutorDocId = String(req.uid || req.userId || req.id).trim() || req.id;
+      await setDoc(doc(db, 'tutors', primaryTutorDocId), {
         ...tutorPayload,
         createdAt: serverTimestamp()
       }, { merge: true });
 
       // 2. Look up existing user account by email to update role ONLY if not already a PARENT or SCHOOL
-      let matchedUserId = '';
+      let matchedUserId = String(req.uid || req.userId || '').trim();
       if (cleanEmail) {
         try {
           const userQuery = query(collection(db, 'users'), where('email', '==', cleanEmail), limit(1));
@@ -300,13 +312,17 @@ const AdminApprovals: React.FC = () => {
                 role: 'staff',
                 name: tutorRealName,
                 fullName: tutorRealName,
+                ...(hasValidPhoto ? { photoURL: candidatePhotoUrl } : {}),
                 accountStatus: 'ACTIVE',
                 status: 'ACTIVE',
+                approvalStatus: 'approved',
+                publicProfileStatus: nextPublicStatus,
                 updatedAt: serverTimestamp()
               }, { merge: true });
 
               await setDoc(doc(db, 'tutors', matchedUserId), {
                 ...tutorPayload,
+                uid: matchedUserId,
                 userId: matchedUserId,
                 firebaseUid: matchedUserId
               }, { merge: true });
@@ -320,7 +336,8 @@ const AdminApprovals: React.FC = () => {
       await updateDoc(doc(db, 'tutor_applications', req.id), {
         name: tutorRealName,
         status: 'approved',
-        tutorId: matchedUserId || req.id,
+        publicProfileStatus: nextPublicStatus,
+        tutorId: matchedUserId || primaryTutorDocId,
         approvedAt: serverTimestamp()
       });
 
@@ -328,7 +345,11 @@ const AdminApprovals: React.FC = () => {
         setSelectedTutorDetail(null);
       }
 
-      toast.success(`Tutor ${tutorRealName} approved into faculty!`);
+      if (hasValidPhoto) {
+        toast.success(`Tutor ${tutorRealName} approved into faculty and published to Find a Tutor!`);
+      } else {
+        toast.info(`Tutor ${tutorRealName} approved for portal access, but kept hidden from Find a Tutor until a verified portrait photo is uploaded.`);
+      }
     } catch (e: any) {
       toast.error('Error: ' + e.message);
     } finally {
@@ -493,25 +514,48 @@ const AdminApprovals: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {/* TUTOR APPLICATIONS */}
-              {activeTab === 'tutors' && filteredTutors.map(req => (
+              {activeTab === 'tutors' && filteredTutors.map(req => {
+                const candidatePhoto = String(req.photoURL || req.photoUrl || req.profilePhotoUrl || '').trim();
+                const hasPhoto = isValidTutorPhotoUrl(candidatePhoto);
+                return (
                 <tr key={req.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-950/40 transition-colors">
-                  <td className="py-3 px-3.5 max-w-[200px]">
-                    <div className="font-bold text-slate-900 dark:text-white truncate">
-                      {resolveRealName(req, req.email)}
-                    </div>
-                    <div className="text-[11px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
-                      <Mail size={11} /> {req.email}
-                    </div>
-                    {req.phone && (
-                      <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5">
-                        <Phone size={10} /> {req.phone}
+                  <td className="py-3 px-3.5 max-w-[240px]">
+                    <div className="flex items-start gap-2.5">
+                      {hasPhoto ? (
+                        <img
+                          src={candidatePhoto}
+                          alt={resolveRealName(req, req.email)}
+                          className="h-10 w-10 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                        />
+                      ) : (
+                        <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0" title="Missing portrait photograph">
+                          <ImageOff size={15} />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 dark:text-white truncate">
+                          {resolveRealName(req, req.email)}
+                        </div>
+                        <div className="text-[11px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
+                          <Mail size={11} /> {req.email}
+                        </div>
+                        {req.phone && (
+                          <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5">
+                            <Phone size={10} /> {req.phone}
+                          </div>
+                        )}
+                        {req.qualification && (
+                          <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 mt-1">
+                            <Award size={10} /> {req.qualification}
+                          </div>
+                        )}
+                        {!hasPhoto && (
+                          <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 text-[9px] font-bold">
+                            <AlertTriangle size={9} /> Missing Photo — Cannot Publish Publicly
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {req.qualification && (
-                      <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 mt-1">
-                        <Award size={10} /> {req.qualification}
-                      </div>
-                    )}
+                    </div>
                   </td>
 
                   <td className="py-3 px-3.5 max-w-[240px]">
@@ -579,7 +623,8 @@ const AdminApprovals: React.FC = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
 
               {/* STUDENT REQUESTS */}
               {activeTab === 'students' && filteredStudents.map(req => (
@@ -683,11 +728,24 @@ const AdminApprovals: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-5 space-y-4 border border-slate-200 dark:border-slate-800 max-h-[92vh] overflow-y-auto text-xs">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div>
-                <h3 className="font-black text-sm text-slate-900 dark:text-white">
-                  Tutor Profile: {selectedTutorDetail.name}
-                </h3>
-                <p className="text-[11px] text-slate-400">Credentials and instructional background</p>
+              <div className="flex items-center gap-3 min-w-0">
+                {isValidTutorPhotoUrl(selectedTutorDetail.photoURL || selectedTutorDetail.photoUrl) ? (
+                  <img
+                    src={selectedTutorDetail.photoURL || selectedTutorDetail.photoUrl}
+                    alt={selectedTutorDetail.name}
+                    className="h-12 w-12 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                  />
+                ) : (
+                  <div className="h-12 w-12 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <ImageOff size={18} />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h3 className="font-black text-sm text-slate-900 dark:text-white truncate">
+                    Tutor Profile: {selectedTutorDetail.name}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">Credentials and instructional background</p>
+                </div>
               </div>
               <button 
                 type="button" 
@@ -697,6 +755,15 @@ const AdminApprovals: React.FC = () => {
                 <X size={16} />
               </button>
             </div>
+
+            {!isValidTutorPhotoUrl(selectedTutorDetail.photoURL || selectedTutorDetail.photoUrl) && (
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-[11px] flex items-start gap-2">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                <span>
+                  This applicant does not have a verified portrait photograph yet. Approving will grant staff portal access, but their profile will stay <strong>hidden from the public Find a Tutor directory</strong> until a verified photograph is uploaded.
+                </span>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <div className="p-2.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl">

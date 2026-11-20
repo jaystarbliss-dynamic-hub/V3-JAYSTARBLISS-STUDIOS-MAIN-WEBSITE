@@ -15,6 +15,8 @@ import {
   Radio, Mail, Send, Check, ShieldCheck, Sun, Moon, Eye, X, Database, RefreshCw 
 } from 'lucide-react';
 import { PasswordResetEmailTemplate } from '../../components/email/PasswordResetEmailTemplate';
+import { logBannerDiagnostic } from '../../lib/bannerDiagnostics';
+import { MARQUEE_BANNER_CACHE_KEY } from '../../components/ui/MarqueeBanner';
 
 const AdminSettings: React.FC = () => {
   const { theme, toggleTheme, isHighContrast, toggleHighContrast } = useTheme();
@@ -153,6 +155,21 @@ const AdminSettings: React.FC = () => {
         updatedAt: serverTimestamp(),
         updatedBy: user?.uid || 'unknown'
       }, { merge: true });
+
+      try {
+        sessionStorage.removeItem(MARQUEE_BANNER_CACHE_KEY);
+      } catch {
+        // ignore storage errors
+      }
+      logBannerDiagnostic('AdminSettings', 'marquee_banner_saved', {
+        docPath: 'settings/banner',
+        enabled: banner.enabled,
+        variant: banner.variant,
+        speed: banner.speed,
+        linkUrl: banner.linkUrl,
+        messagePreview: String(banner.message || '').slice(0, 80),
+        cacheCleared: true,
+      });
 
       // Save Cloudinary configuration specifically
       const cloudinaryRef = doc(db, 'settings', 'cloudinary');

@@ -8,6 +8,11 @@ import { auth, db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { startImpersonation } from '../../utils/impersonation';
 import { resolveRealName, isValidHumanName } from '../../utils/userNames';
+import {
+  isValidTutorPhotoUrl,
+  normalizeTutorPublicProfileStatus,
+  type TutorPublicProfileStatus,
+} from '../../lib/tutorDirectory';
 import StaffSchoolAssignments from './StaffSchoolAssignments';
 import { 
   UserCheck, Users, Key, Plus, Trash2, 
@@ -16,7 +21,7 @@ import {
   Settings, X, Copy, School, GraduationCap,
   Search, Filter, AlertTriangle, ArrowRight,
   ShieldAlert, RefreshCw, Award, BookMarked,
-  Layers, RotateCcw
+  Layers, RotateCcw, Globe, EyeOff, Clock, ImageOff
 } from 'lucide-react';
 
 export interface EnrichedStaff {
@@ -27,6 +32,8 @@ export interface EnrichedStaff {
   phone: string;
   role: string;
   accountStatus: string;
+  photoURL?: string;
+  publicProfileStatus: TutorPublicProfileStatus;
   specialization: string;
   department?: string;
   track?: string;
@@ -343,6 +350,22 @@ const AdminStaff: React.FC = () => {
         });
 
         const accountStatus = String(st.accountStatus || st.status || tutorData.status || 'ACTIVE').toUpperCase();
+        const normalizedAccountStatus = ['SUSPENDED', 'BANNED', 'DISABLED'].includes(accountStatus) ? accountStatus : 'ACTIVE';
+        const resolvedPhotoUrl = String(
+          tutorData.photoURL ||
+          tutorData.photoUrl ||
+          st.photoURL ||
+          st.photoUrl ||
+          appData.photoURL ||
+          appData.photoUrl ||
+          ''
+        ).trim();
+        const rawPublicStatus = tutorData.publicProfileStatus || st.publicProfileStatus;
+        const resolvedPublicStatus: TutorPublicProfileStatus = rawPublicStatus
+          ? normalizeTutorPublicProfileStatus(rawPublicStatus)
+          : isValidTutorPhotoUrl(resolvedPhotoUrl) && normalizedAccountStatus === 'ACTIVE'
+          ? 'PUBLISHED'
+          : 'PENDING_REVIEW';
 
         return {
           id: staffId,
@@ -351,7 +374,9 @@ const AdminStaff: React.FC = () => {
           email: staffEmail,
           phone: st.phone || st.phoneNumber || tutorData.phone || appData.phone || '',
           role: String(st.role || tutorData.role || 'STAFF').toUpperCase(),
-          accountStatus: ['SUSPENDED', 'BANNED', 'DISABLED'].includes(accountStatus) ? accountStatus : 'ACTIVE',
+          accountStatus: normalizedAccountStatus,
+          photoURL: resolvedPhotoUrl,
+          publicProfileStatus: resolvedPublicStatus,
           specialization,
           department: st.department || tutorData.department || '',
           track: st.track || tutorData.track || '',
@@ -436,6 +461,72 @@ const AdminStaff: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       toast.error('Failed to update account status: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Update public Find a Tutor directory visibility (strictly gated on valid portrait photograph)
+  const handleUpdatePublicVisibility = async (
+    staffMember: EnrichedStaff,
+    nextVisibility: TutorPublicProfileStatus
+  ) => {
+    if (nextVisibility === 'PUBLISHED' && !isValidTutorPhotoUrl(staffMember.photoURL)) {
+      toast.error(
+        `Cannot publish ${staffMember.fullName} to Find a Tutor without a verified portrait photograph.`
+      );
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      await Promise.all([
+        setDoc(
+          doc(db, 'tutors', staffMember.id),
+          {
+            uid: staffMember.id,
+            name: staffMember.fullName,
+            fullName: staffMember.fullName,
+            email: staffMember.email,
+            ...(isValidTutorPhotoUrl(staffMember.photoURL)
+              ? { photoURL: staffMember.photoURL }
+              : {}),
+            publicProfileStatus: nextVisibility,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        ),
+        setDoc(
+          doc(db, 'users', staffMember.id),
+          {
+            publicProfileStatus: nextVisibility,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        ).catch(() => {}),
+      ]);
+
+      setStaffList((prev) =>
+        prev.map((s) =>
+          s.id === staffMember.id ? { ...s, publicProfileStatus: nextVisibility } : s
+        )
+      );
+      setManagingStaff((prev) =>
+        prev && prev.id === staffMember.id
+          ? { ...prev, publicProfileStatus: nextVisibility }
+          : prev
+      );
+
+      const label =
+        nextVisibility === 'PUBLISHED'
+          ? 'Published on Find a Tutor'
+          : nextVisibility === 'HIDDEN'
+          ? 'Hidden from Find a Tutor'
+          : 'Pending Review';
+      toast.success(`${staffMember.fullName}: ${label}`);
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Failed to update directory visibility: ' + (err?.message || 'Unknown error'));
     } finally {
       setActionLoading(false);
     }
@@ -993,9 +1084,17 @@ const AdminStaff: React.FC = () => {
                     >
                       {/* Left: Avatar & Core Summary Info */}
                       <div className="flex min-w-0 items-center gap-3.5 sm:gap-4">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-700 text-sm font-black text-white shadow-xs">
-                          {(staff.fullName || 'F').charAt(0).toUpperCase()}
-                        </div>
+                        {isValidTutorPhotoUrl(staff.photoURL) ? (
+                          <img
+                            src={staff.photoURL}
+                            alt={staff.fullName}
+                            className="h-11 w-11 shrink-0 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 shadow-xs"
+                          />
+                        ) : (
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-700 text-sm font-black text-white shadow-xs">
+                            {(staff.fullName || 'F').charAt(0).toUpperCase()}
+                          </div>
+                        )}
 
                         <div className="min-w-0 space-y-1">
                           {/* Name & Badges */}
@@ -1027,6 +1126,22 @@ const AdminStaff: React.FC = () => {
                               )}
                               {staff.accountStatus}
                             </span>
+
+                            {/* Public Directory Visibility Badge */}
+                            {staff.publicProfileStatus === 'PUBLISHED' && isValidTutorPhotoUrl(staff.photoURL) ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+                                <Globe size={10} /> Public Directory
+                              </span>
+                            ) : staff.publicProfileStatus === 'HIDDEN' ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                <EyeOff size={10} /> Hidden
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                                {!isValidTutorPhotoUrl(staff.photoURL) ? <ImageOff size={10} /> : <Clock size={10} />}
+                                {!isValidTutorPhotoUrl(staff.photoURL) ? 'No Photo' : 'Pending Public'}
+                              </span>
+                            )}
                           </div>
 
                           {/* Teaching Subjects / Specialization Chips */}
@@ -1122,9 +1237,17 @@ const AdminStaff: React.FC = () => {
             {/* Modal Header */}
             <div className="flex items-start justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
               <div className="flex items-center gap-3.5 min-w-0">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-700 text-lg font-black text-white shadow-xs">
-                  {(managingStaff.fullName || 'F').charAt(0).toUpperCase()}
-                </div>
+                {isValidTutorPhotoUrl(managingStaff.photoURL) ? (
+                  <img
+                    src={managingStaff.photoURL}
+                    alt={managingStaff.fullName}
+                    className="h-12 w-12 shrink-0 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 shadow-xs"
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-700 text-lg font-black text-white shadow-xs">
+                    {(managingStaff.fullName || 'F').charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-lg font-black text-slate-900 dark:text-white truncate">
@@ -1377,6 +1500,93 @@ const AdminStaff: React.FC = () => {
                   No students currently assigned to this mentor. You can assign students to faculty in the Students directory.
                 </p>
               )}
+            </div>
+
+            {/* Public Tutor Directory Visibility */}
+            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/50 space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Globe size={15} className="text-brand-red" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    Public Tutor Directory Visibility
+                  </h3>
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Current: {managingStaff.publicProfileStatus.replace('_', ' ')}
+                </span>
+              </div>
+
+              {!isValidTutorPhotoUrl(managingStaff.photoURL) && (
+                <div className="flex items-start gap-2 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 p-2.5 text-[11px] text-amber-800 dark:text-amber-200">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  <span>
+                    No verified portrait photograph on file. This instructor cannot be published to <strong>Find a Tutor</strong> until they upload a portrait in Portal Settings.
+                  </span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  disabled={
+                    actionLoading ||
+                    managingStaff.publicProfileStatus === 'PUBLISHED' ||
+                    !isValidTutorPhotoUrl(managingStaff.photoURL)
+                  }
+                  onClick={() => void handleUpdatePublicVisibility(managingStaff, 'PUBLISHED')}
+                  className={`flex flex-col p-2.5 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+                    managingStaff.publicProfileStatus === 'PUBLISHED'
+                      ? 'border-sky-400 bg-sky-50/60 dark:border-sky-700 dark:bg-sky-950/30'
+                      : 'border-slate-200 bg-white hover:border-sky-500 dark:border-slate-800 dark:bg-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-sky-600 dark:text-sky-400">
+                    <Globe size={14} />
+                    <span className="text-xs font-bold">Published</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Visible on public Find a Tutor
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={actionLoading || managingStaff.publicProfileStatus === 'PENDING_REVIEW'}
+                  onClick={() => void handleUpdatePublicVisibility(managingStaff, 'PENDING_REVIEW')}
+                  className={`flex flex-col p-2.5 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+                    managingStaff.publicProfileStatus === 'PENDING_REVIEW'
+                      ? 'border-amber-400 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-950/30'
+                      : 'border-slate-200 bg-white hover:border-amber-500 dark:border-slate-800 dark:bg-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                    <Clock size={14} />
+                    <span className="text-xs font-bold">Pending Review</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Held from public directory
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={actionLoading || managingStaff.publicProfileStatus === 'HIDDEN'}
+                  onClick={() => void handleUpdatePublicVisibility(managingStaff, 'HIDDEN')}
+                  className={`flex flex-col p-2.5 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+                    managingStaff.publicProfileStatus === 'HIDDEN'
+                      ? 'border-slate-400 bg-slate-100 dark:border-slate-600 dark:bg-slate-800'
+                      : 'border-slate-200 bg-white hover:border-slate-500 dark:border-slate-800 dark:bg-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                    <EyeOff size={14} />
+                    <span className="text-xs font-bold">Hidden</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Unlisted while active internally
+                  </p>
+                </button>
+              </div>
             </div>
 
             {/* Account Status & Operations Grid */}

@@ -1,0 +1,954 @@
+# JAYSTARBLISS STUDIOS — PROMOTIONS, PROGRAMME CATALOGUE, TUTOR DIRECTORY & DEMO-DATA CLEANUP
+
+## PROJECT CONTEXT
+
+You are working on the existing Jaystarbliss Studios V3 main website repository.
+
+Repository:
+`https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE`
+
+Default branch: `main`.
+
+This is an existing, functioning production-oriented React application. Do not rebuild it, replace its architecture, or create a parallel implementation.
+
+### Existing technology stack
+
+- React 19
+- TypeScript
+- Vite
+- Tailwind CSS
+- React Router
+- Firebase Authentication
+- Firebase Firestore
+- Netlify Functions
+- Cloudinary for image uploads and delivery
+- Motion for animations
+- Lucide React icons
+
+Use the existing components, contexts, utilities, Firebase configuration, Cloudinary integration, authentication mechanisms and design system wherever possible.
+
+The website uses the Jaystarbliss Studios brand identity. Maintain its established slate, red and off-white colour palette, typography, visual language, dark mode and light mode.
+
+## CRITICAL IMPLEMENTATION RULES
+
+1. Inspect the relevant existing implementation before modifying it.
+2. Do not overwrite working features with simplified replacements.
+3. Do not modify the existing protected homepage Orb Hero or Galaxy Orbit animation.
+4. Do not replace Cloudinary with Firebase Storage or introduce another image hosting service.
+5. Do not introduce artificial programme, tutor, student or proposal records.
+6. Do not silently replace failed Firestore requests with mock data.
+7. Do not delete existing real programme records, tutor accounts, applications, proposals or student data.
+8. Preserve existing document IDs, authentication identities and relationships.
+9. Any migration of existing programme hierarchy data must have a dry-run preview and an actual backup before execution.
+10. Do not modify unrelated billing, payment, assessment, portal authentication or school-management functionality.
+11. Do not commit, push, merge, deploy or publish changes without explicit authorization.
+12. Do not consider an interface complete until its Firestore integration, access control and responsive behaviour have been implemented and tested.
+
+---
+
+# PHASE 1 — BUILD A PROPER ADVERTISEMENT AND PROMOTIONAL CAMPAIGN SYSTEM
+
+## 1.1 Create a new Promotions & Advertisements administration section
+
+Create a dedicated administrative page, preferably:
+
+`src/pages/admin/AdminPromotions.tsx`
+
+Add its navigation entry to the existing Website & Pages CMS group in `AdminLayout.tsx`.
+
+Add the corresponding lazy-loaded route to `App.tsx` and update `adminRbac.ts` so that authorized Super Administrators and designated CMS/Marketing Administrators can access it.
+
+Do not allow ordinary students, tutors or parents to access this management interface.
+
+The page should offer a practical campaign-management workspace.
+
+Administrators must be able to:
+
+- Create a new advertisement or promotional campaign.
+- Edit an existing campaign.
+- Upload promotional artwork directly to Cloudinary.
+- Upload separate desktop and mobile artwork.
+- Preview artwork in desktop and mobile layouts.
+- Configure the campaign heading and description where applicable.
+- Configure the CTA button's label.
+- Configure exactly where the CTA leads.
+- Choose where the campaign appears.
+- Set its publication status and scheduling dates.
+- Reorder homepage advertisements.
+- Pause, resume, archive or delete campaigns.
+- Preview a campaign before publishing.
+
+The management interface must clearly distinguish between homepage promotions and popup campaigns.
+
+## 1.2 Firestore campaign model
+
+Use a dedicated `promotions` collection.
+
+Create a properly typed campaign interface.
+
+Suggested fields:
+
+- `id`
+- `title`
+- `description`
+- `placement`
+- `status`
+- `desktopImageUrl`
+- `mobileImageUrl`
+- `imageAlt`
+- `ctaLabel`
+- `ctaTargetType`
+- `internalPath`
+- `programRootKey`
+- `programSlug`
+- `externalUrl`
+- `sortOrder`
+- `startAt`
+- `endAt`
+- `popupFrequency`
+- `popupDelayMs`
+- `createdAt`
+- `updatedAt`
+- `createdBy`
+- `updatedBy`
+
+Supported placements:
+
+- `HOME_CAROUSEL`
+- `FIRST_VISIT_POPUP`
+
+Supported statuses:
+
+- `DRAFT`
+- `SCHEDULED`
+- `ACTIVE`
+- `PAUSED`
+- `ARCHIVED`
+
+Handle expired campaigns correctly. A campaign must not appear merely because its Firestore status says ACTIVE when its end date has already passed.
+
+Use proper Firestore Timestamp handling and consistent date-time conversion.
+
+## 1.3 Homepage promotional carousel
+
+Create a dedicated reusable component:
+
+`src/components/home/HomePromotionsCarousel.tsx`
+
+It must be inserted in the existing homepage at this exact position:
+
+`Hero → CorePillars → HomePromotionsCarousel → FeaturedPrograms`
+
+In other words, the new promotional section must appear:
+
+- Immediately after OUR ECOSYSTEM.
+- Immediately before THE LEARNING ECOSYSTEM.
+
+Modify `src/pages/Home.tsx` without redesigning or disturbing the existing homepage hero and ecosystem sections.
+
+The carousel should:
+
+- Fetch only active, published and date-valid homepage campaigns.
+- Automatically rotate between multiple campaigns.
+- Use a reasonable rotation interval, approximately 5–7 seconds.
+- Include manual previous/next navigation.
+- Include unobtrusive slide indicators.
+- Support touch swiping on phones.
+- Pause automatic rotation when hovered or focused.
+- Respect reduced-motion accessibility preferences.
+- Never rotate unnecessarily when only one advertisement exists.
+- Display a loading state without showing fake advertisements.
+- Disappear cleanly when no active campaign exists.
+- Preserve the existing website spacing, layout and visual consistency.
+
+Use responsive artwork rather than forcing a desktop image into a mobile container.
+
+Recommended artwork dimensions:
+
+- Desktop: 1600 × 600 px.
+- Mobile: 1080 × 720 px.
+
+The administrator must be able to upload both versions. A single image may be used when a mobile version is unavailable.
+
+Do not crop away important text, logos or CTA artwork.
+
+## 1.4 Configurable advertisement CTAs
+
+Every advertisement must have its own configurable CTA.
+
+Examples:
+
+- Register Now
+- Apply Now
+- Explore Programme
+- View Event
+- Learn More
+- Check Availability
+- Join the Programme
+
+Support the following CTA destination types:
+
+### A. Programme catalogue
+
+When selected, the administrator must be able to choose one of the four canonical programme roots.
+
+The CTA must lead directly into the actual programme catalogue, not simply to the general programme landing page.
+
+Use the appropriate existing React Router destination:
+
+`/programs?tab=catalog&category=technology#catalog-section`
+
+The corresponding root keys must work for:
+
+- Technology
+- Music
+- Academics
+- Design and Graphics
+
+### B. Individual programme
+
+Allow the administrator to select a specific published programme and link directly to its detail page.
+
+Use its actual slug or document ID as appropriate.
+
+### C. Internal website page
+
+Allow a valid internal route such as `/register`, `/school-partnership` or `/contact`.
+
+### D. External destination
+
+Allow a valid external HTTPS registration or event link.
+
+Validate URL schemes. Do not permit unsafe external protocols.
+
+The button text and destination must be independently configurable.
+
+A user clicking an advertisement must always reach the destination specified by the administrator.
+
+## 1.5 First-visit promotional popup
+
+Implement the second promotional placement: `FIRST_VISIT_POPUP`.
+
+This is separate from the homepage carousel.
+
+The administrator should be able to create a popup campaign promoting:
+
+- Upcoming events.
+- Special programmes.
+- Registration opportunities.
+- New classes.
+- Ongoing courses.
+- Limited-time offers.
+- Important announcements.
+
+Requirements:
+
+1. Display the popup after a brief delay rather than immediately obstructing the page.
+2. Display it only when a valid active popup campaign exists.
+3. By default, display each campaign once per browser.
+4. Support alternative frequency settings such as once per session or once every specified number of days.
+5. Track dismissal and display frequency using campaign-specific browser storage keys.
+6. Do not repeatedly display the same campaign after every page navigation.
+7. Provide a clear close button.
+8. Support closing with the Escape key.
+9. Provide appropriate focus handling and accessible dialog semantics.
+10. Make the popup responsive on desktop and mobile.
+11. Do not trigger popups on administrative or authenticated portal routes.
+12. Respect reduced-motion settings.
+
+An administrator should be able to select popup image artwork, CTA label, CTA destination, display frequency, publication dates and activation status.
+
+Do not automatically redirect users when a popup opens.
+
+## 1.6 Preserve the existing MarqueeBanner
+
+The existing `src/components/ui/MarqueeBanner.tsx` is a fixed-bottom system announcement feature.
+
+Preserve it.
+
+Do not replace its functionality or merge the new promotional carousel into its existing settings document.
+
+The new promotional system must be independent.
+
+---
+
+# PHASE 2 — FIX THE PROGRAMME CATALOGUE AND ROOT PROGRAMME FILTERING
+
+This is a priority.
+
+Inspect:
+
+- `src/pages/Programs.tsx`
+- `src/lib/programHierarchy.ts`
+- `src/pages/admin/AdminProgramForm.tsx`
+- `src/components/admin/ProgramHierarchySelector.tsx`
+- `src/pages/portal/PortalSettings.tsx`
+- `src/components/home/FeaturedPrograms.tsx`
+
+## 2.1 Establish the four canonical root programmes
+
+The platform has exactly four primary programme roots:
+
+1. Technology
+2. Music
+3. Academics
+4. Design and Graphics
+
+Use the existing `PRIMARY_PROGRAM_ROOTS` in `programHierarchy.ts` as the authoritative definition.
+
+Do not create a second independent taxonomy.
+
+Every nested programme, structural container, sub-programme and enrollable course must be associated with its correct root.
+
+The relationship must use the existing hierarchy fields:
+
+- `parentProgramId`
+- `rootProgramId`
+- `ancestorIds`
+- `primaryRootKey`
+- `categoryId`
+- `nodeType`
+
+## 2.2 Fix the public catalogue filter
+
+The current public filter performs literal category-string comparisons.
+
+This is insufficient.
+
+Implement a proper root-resolution helper that can resolve the canonical root of any programme by traversing its actual parent hierarchy.
+
+The helper must:
+
+1. Start from the programme being inspected.
+2. Follow its `parentProgramId` links.
+3. Resolve its actual root programme.
+4. Identify the root using the canonical definitions in `PRIMARY_PROGRAM_ROOTS`.
+5. Derive the root key and category from that root.
+6. Handle deeply nested programmes.
+7. Prevent circular hierarchy traversal.
+8. Detect missing or invalid parent references.
+9. Avoid assigning an uncertain programme to an arbitrary root.
+
+A child programme nested three or four levels beneath Technology must still appear under Technology.
+
+Likewise, Music, Academics and Design and Graphics must work independently.
+
+Do not rely exclusively on a child's `categoryId`.
+
+Do not treat `DIGITAL_AND_TECHNOLOGY` as an unrelated fifth programme category.
+
+Create a single, consistent mapping between the four roots and the catalogue filters.
+
+Use the existing hierarchy utilities where possible instead of duplicating their functionality.
+
+## 2.3 Correct programme creation and editing
+
+Update `AdminProgramForm.tsx`.
+
+When an administrator chooses a parent programme:
+
+- Automatically resolve its root programme.
+- Inherit the correct primary root identity.
+- Inherit the appropriate root category.
+- Update `rootProgramId`.
+- Update `ancestorIds`.
+- Preserve the correct parent ID.
+- Recalculate descendant relationships when a parent changes.
+
+Do not allow category information to drift away from the actual parent hierarchy.
+
+If a programme is assigned to a structural container under Technology, it must remain part of Technology even when its direct parent does not have a title containing the word Technology.
+
+Preserve the existing node types:
+
+- `CONTAINER`
+- `ENROLLABLE`
+- `HYBRID`
+
+A structural container must not be presented as a registerable course unless its existing enrolment configuration explicitly allows that behaviour.
+
+## 2.4 Remove conflicting static tutor programme categories
+
+Inspect the `DEFAULT_PROGRAMME_CATALOG` in `PortalSettings.tsx`.
+
+It currently introduces alternative programme IDs and hardcoded teaching fields such as `prog-tech`, `prog-creative`, `prog-academics` and `prog-music-arts`.
+
+Remove this competing runtime fallback taxonomy.
+
+Tutor teaching selections should derive from the actual canonical root programmes and their real Firestore descendants.
+
+If a root has no children, show an appropriate empty state rather than manufacturing teaching categories.
+
+Preserve existing legitimate tutor subject selections wherever they can be mapped safely.
+
+Do not delete existing teaching records.
+
+## 2.5 Programme catalogue navigation
+
+When a user arrives from an advertisement or programme card, the website must be able to open the actual catalogue view directly.
+
+Update the URL handling in `Programs.tsx` so:
+
+`/programs?tab=catalog&category=technology#catalog-section`
+
+opens the catalogue, selects Technology and scrolls to the catalogue section.
+
+Repeat for all four roots.
+
+Do not route catalogue CTAs to the general ecosystem view.
+
+Where appropriate, update the existing links in `FeaturedPrograms.tsx` to use the direct catalogue destination.
+
+## 2.6 Programme sorting
+
+The public catalogue must list the newest published programmes first.
+
+Implement reliable date parsing that supports both Firestore Timestamp values and existing ISO date strings.
+
+Use:
+
+1. `publishedAt`, when available.
+2. Otherwise `createdAt`.
+3. A deterministic fallback for legacy records without those values.
+
+Do not use hierarchy `sortOrder` as the primary publication sort.
+
+When an existing programme is republished, maintain a sensible publication timestamp.
+
+Use stable sorting so items with identical dates do not jump unpredictably.
+
+## 2.7 Smaller and more compact programme cards
+
+The current catalogue cards consume too much screen space.
+
+Redesign them to reduce their overall visual footprint by approximately 40–50%, especially on mobile devices.
+
+Prioritize:
+
+- Smaller cover-image height.
+- Reduced internal padding.
+- More compact typography.
+- Reduced spacing between card elements.
+- Shorter metadata presentation.
+- Compact CTA buttons.
+- More efficient responsive grid columns.
+
+Prefer a two-column mobile layout when the available viewport width can accommodate it without making the cards difficult to read.
+
+For very narrow phones, preserve a readable layout rather than forcing unusably small cards.
+
+Do not use CSS scaling or transforms that make the text and controls inaccessible.
+
+Keep the existing brand design.
+
+## 2.8 Programme labels and availability indicators
+
+Introduce properly managed programme indicators.
+
+The labels must support:
+
+- HOT
+- IN SESSION
+- LIMITED TIME
+
+Use explicit administrative fields and, where appropriate, date-based status calculations.
+
+For example:
+
+- HOT: administrator-controlled promotional flag.
+- IN SESSION: determined by actual session start and end dates.
+- LIMITED TIME: determined by an enrolment deadline or explicit availability configuration.
+
+Do not infer these labels solely from the programme title or description.
+
+Use restrained brand styling.
+
+Avoid oversized, colourful, rounded pill badges.
+
+Prefer compact uppercase text, subtle borders or understated typography using existing brand colours.
+
+Place indicators neatly within each programme card.
+
+Allow administrators to manage these fields from the existing programme editing interface.
+
+---
+
+# PHASE 3 — REMOVE DEMO DATA FROM LIVE ADMIN AND PORTAL INTERFACES
+
+This is a data-integrity requirement.
+
+Inspect:
+
+- `src/pages/admin/AdminPrograms.tsx`
+- `src/pages/admin/ProgramsCoursesPreviewPage.tsx`
+- `src/components/admin/programs-preview/mockData.ts`
+- `src/components/admin/programs-preview/TutorProposalsView.tsx`
+- `src/pages/portal/PortalSettings.tsx`
+- `src/App.tsx`
+
+## 3.1 Remove automatic mock-data fallbacks
+
+The live admin application must never display artificial programmes or tutor proposals when Firestore is empty or inaccessible.
+
+In particular:
+
+`AdminPrograms.tsx` currently imports:
+
+- `INITIAL_DEMO_PROGRAMS`
+- `INITIAL_DEMO_PROPOSALS`
+
+It uses these records when collections are empty or listeners fail.
+
+It also merges demo root programmes into actual Firestore records when those roots are missing.
+
+Remove these behaviours.
+
+Do not merge artificial records into real Firestore results.
+
+## 3.2 Correct the ProgramsCoursesPreviewPage state initialization
+
+`ProgramsCoursesPreviewPage.tsx` initializes its state with demo data.
+
+Its synchronization logic also ignores empty external arrays because it requires `externalPrograms.length > 0` and `externalProposals.length > 0`.
+
+Correct this.
+
+An explicitly supplied empty array must be treated as a real empty Firestore result, not an instruction to restore mock records.
+
+Use separate loading, loaded-empty and error states.
+
+## 3.3 Remove demo backup and reset functionality from production
+
+Inspect the initial backup snapshot and `handleResetDemoData`.
+
+The live production workspace must not initialize itself with a fake programme baseline.
+
+Remove the production-facing reset-demo operation.
+
+Keep genuine backup, restore, archive and hierarchy-integrity functionality where applicable.
+
+Backups must represent real programme records.
+
+If reusable helper functions currently reside in `mockData.ts`, separate those utilities from the artificial fixture records so that working hierarchy tools are preserved.
+
+Do not unnecessarily remove the entire programme-management workspace.
+
+## 3.4 Inspect the public preview route
+
+The application currently exposes:
+
+`/portal-preview/programs-courses`
+
+as a route that renders the preview workspace without the normal admin protection.
+
+Remove this from the public production experience or protect it appropriately.
+
+Do not let a demo workspace appear to be the live Jaystarbliss portal.
+
+## 3.5 Correct the tutor programme proposal collection mismatch
+
+This is particularly important.
+
+The tutor submission service in `programHierarchy.ts` writes proposals to:
+
+`programProposals`
+
+The corresponding Firestore rules also define:
+
+`programProposals`
+
+However, `AdminPrograms.tsx` currently listens to:
+
+`tutor_program_proposals`
+
+Unify the administrative proposal reader and writer with the established `programProposals` collection.
+
+The admin must display the actual tutor-submitted proposals.
+
+Make sure:
+
+- Tutor submissions are visible to authorized administrators.
+- Proposal status updates are persisted.
+- Requests for changes are persisted.
+- Rejections are persisted.
+- Approved proposals create the appropriate programme records.
+- Review notes and reviewer details remain associated with the proposal.
+- Existing proposal identities are preserved.
+
+Do not create a second proposal collection merely to make the admin screen work.
+
+Verify that the Firestore rules and collection paths agree.
+
+## 3.6 Genuine empty and error states
+
+When a collection is empty, show a proper empty state.
+
+For example:
+
+"No programmes have been created yet."
+
+Provide an appropriate administrator action to create the first real programme.
+
+When Firestore fails, display an informative error and a retry option.
+
+Never display fake tutors, fake students, fake courses or fake proposals as a fallback for an error.
+
+## 3.7 Audit existing synthetic Firestore records safely
+
+Perform a report-only audit for records explicitly marked as demo or sample data, including known demo identifiers and placeholder asset references.
+
+Do not bulk-delete records just because they look unfamiliar.
+
+Produce a list of confirmed synthetic records with their collection and document IDs.
+
+Only remove a record after it has been conclusively identified as synthetic and after a backup and explicit administrator confirmation.
+
+Existing genuine users, tutor applications and programmes must remain untouched.
+
+The existing `src/lib/seedFirestore.ts` already documents that artificial records should not be automatically injected. Preserve that principle.
+
+---
+
+# PHASE 4 — MANDATORY TUTOR PROFILE PHOTOGRAPHS AND DIRECTORY CLEANUP
+
+Inspect:
+
+- `src/pages/Register.tsx`
+- `src/pages/TutorApplication.tsx`
+- `src/pages/admin/AdminApprovals.tsx`
+- `src/pages/admin/AdminStaff.tsx`
+- `src/pages/FindTutor.tsx`
+- `src/pages/portal/PortalSettings.tsx`
+- `src/components/common/CloudinaryImageUpload.tsx`
+- `src/components/admin/PhotoUpload.tsx`
+- `src/lib/cloudinary.ts`
+
+## 4.1 Require a profile photograph during tutor registration
+
+Every tutor must provide an actual profile photograph.
+
+Add a mandatory photograph field to the tutor registration process.
+
+Use the existing Cloudinary image-upload infrastructure.
+
+The upload must:
+
+- Upload the image to Cloudinary.
+- Return the secure image URL.
+- Validate that a valid image was uploaded.
+- Save the resulting `photoURL` in the tutor's registration data.
+- Prevent submission when no valid photograph is attached.
+
+Do not use generated portraits, generic stock photos or initials to bypass the requirement.
+
+Keep the image upload interface consistent with the existing website.
+
+Apply the same requirement to the older Tutor Application page where that route remains supported.
+
+## 4.2 Unify tutor application submission
+
+The registration process and the older Tutor Application page must not create incompatible application records.
+
+Use one canonical tutor application workflow based on the existing `tutor_applications` collection.
+
+Ensure all application records contain a consistent schema, including:
+
+- Applicant identity.
+- Contact details.
+- Profile photograph URL.
+- Subjects and specializations.
+- Experience.
+- Qualifications.
+- Biography.
+- Application status.
+- Creation timestamp.
+- Relevant account UID where available.
+
+The status used for newly submitted applications must match the existing approval queue's expected pending status.
+
+The legacy tutor-application page must not send incompatible tutor application records to the general `inquiries` collection.
+
+Update its Firestore handling and rules accordingly.
+
+Preserve legitimate historic records and produce a safe compatibility or migration plan where required.
+
+## 4.3 Correct public tutor publication rules
+
+Tutor account creation and public tutor publication must be separate concepts.
+
+Registration should not automatically make a newly submitted or pending tutor visible on the public website.
+
+Use an explicit public publication status, such as:
+
+- `PENDING_REVIEW`
+- `PUBLISHED`
+- `HIDDEN`
+
+An administrator must approve the tutor and ensure a valid photograph exists before the public profile is published.
+
+The tutor's account permissions must remain governed by the existing authentication and role systems. Do not disable legitimate portal access merely because a public profile has not been published.
+
+When an administrator approves a tutor, synchronize the relevant profile information and image URL into the correct canonical tutor records.
+
+## 4.4 Improve Find a Dedicated Mentor
+
+The public directory currently merges records from `users`, `tutors` and `staff`.
+
+This can introduce duplicate, incomplete or unapproved entries.
+
+Use the actual approved tutor records as the authoritative public directory source.
+
+Use the appropriate UID or email matching for legacy record reconciliation.
+
+Only display tutors who:
+
+- Have an approved/publication status.
+- Are active.
+- Have a valid profile photograph.
+- Have an identifiable display name.
+- Have sufficient public profile information.
+
+Do not display pending applicants or unrelated staff records.
+
+Do not display initials as a substitute for a mandatory photograph.
+
+Use an explicit empty state when no qualified tutors have published profiles.
+
+Do not expose private contact information unnecessarily.
+
+## 4.5 Add tutor profile image editing
+
+Add a profile photograph upload/editor to the existing tutor profile section in `PortalSettings.tsx`.
+
+Use Cloudinary.
+
+When an approved tutor updates their profile image, synchronize the relevant canonical profile record.
+
+Ensure that an existing approved tutor who has no photograph is not publicly listed until their profile satisfies the publication requirements.
+
+## 4.6 Reduce tutor card dimensions
+
+The tutor cards in `FindTutor.tsx` are too large.
+
+Reduce their overall visual footprint by approximately 40–50%.
+
+Make the directory more compact through:
+
+- Smaller profile photographs.
+- Reduced card padding.
+- Smaller headings and descriptions.
+- Reduced vertical spacing.
+- More compact specialization presentation.
+- Efficient card-footer placement.
+- Better responsive grid behaviour.
+
+Keep the tutor photograph clearly visible.
+
+Do not sacrifice readable text, accessible buttons or essential tutor details.
+
+Use the existing brand colours and typography.
+
+---
+
+# PHASE 5 — FIRESTORE SECURITY, ROUTING AND DATA CONSISTENCY
+
+Inspect:
+
+- `firestore.rules`
+- `firestore.indexes.json`
+- `src/utils/adminRbac.ts`
+- `src/App.tsx`
+- `src/components/admin/AdminLayout.tsx`
+- `src/lib/programHierarchy.ts`
+
+This phase is mandatory, not optional.
+
+## 5.1 Promotions security
+
+Add appropriate rules for the new `promotions` collection.
+
+Requirements:
+
+- Authorized administrators can create, edit, pause, archive and delete campaigns.
+- Public visitors can only read campaigns eligible for public display.
+- Draft and private administrative campaign data must not become publicly accessible.
+- Tutors, students and parents cannot modify promotional campaigns.
+- Do not grant unrestricted write permissions to authenticated users.
+
+Ensure public queries include the conditions necessary for Firestore rules to authorize them.
+
+## 5.2 Firestore indexes
+
+Add required composite indexes for promotional campaign retrieval, ordering and scheduling.
+
+Do not overwrite existing indexes.
+
+Do not introduce indexes that are not needed by the actual queries.
+
+## 5.3 Programme and proposal consistency
+
+Ensure all programme-management components use the same established Firestore sources.
+
+Ensure tutor submissions, admin review, proposal approval and programme publication all agree on collection names and field schemas.
+
+Do not silently catch permission errors and substitute sample records.
+
+## 5.4 Admin access control
+
+The new Promotions page must use the existing protected admin routing architecture.
+
+Update `adminRbac.ts` path permissions and corresponding navigation groups.
+
+Do not grant Finance Administrators access merely because the new feature belongs to administration.
+
+Preserve the existing administrative scope separation.
+
+---
+
+# PHASE 6 — RESPONSIVE DESIGN AND VISUAL QUALITY
+
+The website must remain visually cohesive.
+
+Use the existing design tokens and brand identity.
+
+Avoid introducing an entirely new visual language.
+
+### Programme cards
+
+- Compact.
+- Consistent image treatment.
+- Reduced whitespace.
+- Appropriate text hierarchy.
+- Subtle availability labels.
+- Usable CTAs.
+
+### Tutor cards
+
+- Compact.
+- Professional portrait presentation.
+- Concise information.
+- Consistent card dimensions.
+- Accessible actions.
+
+### Promotional banners
+
+- Proper aspect ratios.
+- Separate responsive artwork.
+- Smooth transitions.
+- Consistent button styles.
+- No image stretching.
+- No clipping of important campaign content.
+
+Test:
+
+- 320px
+- 360px
+- 390px
+- 430px
+- 768px
+- 1024px
+- 1440px and above
+
+Check both dark and light modes.
+
+Do not disturb the homepage orbital hero, navigation or existing ecosystem layout.
+
+---
+
+# PHASE 7 — TESTING AND ACCEPTANCE CRITERIA
+
+Do not declare the implementation complete merely because the pages render.
+
+Run the existing project checks:
+
+- `npm run build`
+- `npm run lint`
+- `npm run test:admin`
+- `npm run test:portal-login`
+- `npm run test:assessment`
+- `npm run test:friendly-errors`
+
+Add focused tests for the new behaviour.
+
+### Programme hierarchy tests
+
+Verify that:
+
+1. A direct child of Technology appears under Technology.
+2. A deeply nested Technology programme also appears under Technology.
+3. The same behaviour works for Music.
+4. The same behaviour works for Academics.
+5. The same behaviour works for Design and Graphics.
+6. Invalid parents do not produce arbitrary root assignments.
+7. Circular hierarchy data cannot cause infinite traversal.
+8. Structural containers do not accidentally appear as registerable courses.
+9. Newer published programmes appear before older ones.
+10. Direct catalogue URLs select the correct root and view.
+
+### Promotions tests
+
+Verify that:
+
+1. An active homepage campaign appears in the carousel.
+2. A draft campaign does not appear.
+3. An expired campaign does not appear.
+4. Automatic rotation works when multiple campaigns exist.
+5. Manual navigation works.
+6. Mobile artwork is used when available.
+7. A CTA to Technology opens the actual Technology catalogue.
+8. A CTA to an individual programme opens its correct programme detail page.
+9. External HTTPS CTAs work correctly.
+10. A first-visit popup respects its display frequency.
+11. Dismissing a popup prevents unwanted immediate repetition.
+
+### Demo-data tests
+
+Verify that:
+
+1. An empty Firestore programmes collection displays a real empty state.
+2. An empty proposals collection displays a real empty state.
+3. A Firestore error displays an actual error state.
+4. No mock proposals are loaded.
+5. No demo root programmes are merged into live data.
+6. The production preview route no longer exposes a demo workspace.
+
+### Tutor tests
+
+Verify that:
+
+1. Tutor registration cannot proceed without a photograph.
+2. The photograph is uploaded to Cloudinary.
+3. Its secure URL is saved correctly.
+4. Pending applicants do not appear publicly.
+5. Approved tutors with photographs appear.
+6. Tutors without photographs do not appear.
+7. The same tutor is not duplicated by records in different collections.
+8. Existing tutor profile updates remain functional.
+
+---
+
+# FINAL IMPLEMENTATION REPORT
+
+When finished, provide a clear report covering:
+
+1. Files created.
+2. Files modified.
+3. Programme filtering bug and its resolution.
+4. Proposal collection mismatch and its resolution.
+5. Demo-data sources removed from live runtime.
+6. Promotion and popup implementation.
+7. Firestore rules and index changes.
+8. Tutor photograph and publication workflow.
+9. Responsive design changes.
+10. Tests executed and their results.
+11. Any existing data inconsistencies that require administrator attention.
+
+Do not claim a feature works unless it has actually been tested.
+
+Do not delete existing real data to make the new implementation appear clean.
+
+Do not commit, push, deploy or publish anything without explicit approval.
+
+The final result must extend the existing Jaystarbliss Studios website cleanly, using its current architecture and authoritative data sources.
+
+**Priority order:** Programme hierarchy and data consistency → removal of demo data → promotions and popup system → tutor profile integrity → visual compaction and responsive QA.

@@ -34,7 +34,7 @@ const DEFAULT_FOUR_CORE_PROGRAMS: CoreProgramCardItem[] = [
     deliveryFormat: 'ONLINE / IN-PERSON',
     image:
       'https://images.pexels.com/photos/5473298/pexels-photo-5473298.jpeg?auto=compress&cs=tinysrgb&w=1400',
-    link: '/programs?category=technology#programs-content',
+    link: '/programs?tab=catalog&category=technology#catalog-section',
   },
   {
     id: 'core-music',
@@ -47,7 +47,7 @@ const DEFAULT_FOUR_CORE_PROGRAMS: CoreProgramCardItem[] = [
     deliveryFormat: 'ONLINE / IN-PERSON',
     image:
       'https://images.pexels.com/photos/164743/pexels-photo-164743.jpeg?auto=compress&cs=tinysrgb&w=1400',
-    link: '/programs?category=music#programs-content',
+    link: '/programs?tab=catalog&category=music#catalog-section',
   },
   {
     id: 'core-academics',
@@ -60,7 +60,7 @@ const DEFAULT_FOUR_CORE_PROGRAMS: CoreProgramCardItem[] = [
     deliveryFormat: 'ONLINE / IN-PERSON',
     image:
       'https://images.pexels.com/photos/5905709/pexels-photo-5905709.jpeg?auto=compress&cs=tinysrgb&w=1400',
-    link: '/programs?category=academics#programs-content',
+    link: '/programs?tab=catalog&category=academics#catalog-section',
   },
   {
     id: 'core-design-graphics',
@@ -73,7 +73,7 @@ const DEFAULT_FOUR_CORE_PROGRAMS: CoreProgramCardItem[] = [
     deliveryFormat: 'ONLINE / IN-PERSON',
     image:
       'https://images.pexels.com/photos/7988079/pexels-photo-7988079.jpeg?auto=compress&cs=tinysrgb&w=1400',
-    link: '/programs?category=design-graphics#programs-content',
+    link: '/programs?tab=catalog&category=design-graphics#catalog-section',
   },
 ];
 

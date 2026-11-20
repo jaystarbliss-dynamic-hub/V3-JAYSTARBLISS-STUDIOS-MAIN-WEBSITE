@@ -20,6 +20,8 @@ import {
   Send,
   X,
   Check,
+  Camera,
+  Upload,
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { auth, db } from '../../lib/firebase';
@@ -41,13 +43,17 @@ import ChangePasswordModal from '../../components/portal/ChangePasswordModal';
 import SEO from '../../components/ui/SEO';
 import { checkUsernameAvailability, claimGlobalUsername, normalizeUsername } from '../../lib/usernameRegistry';
 import { getEffectiveAuth } from '../../utils/impersonation';
+import { uploadImageToCloudinary } from '../../lib/cloudinary';
+import { isValidTutorPhotoUrl } from '../../lib/tutorDirectory';
 import {
   type ProgramRecord,
   type ProgramNodeType,
   type ProgramDeliveryOption,
   type TutorProgramProposal,
+  PRIMARY_PROGRAM_ROOTS,
   fetchAllProgramsMap,
   getProgramBreadcrumbs,
+  resolveProgramCanonicalRoot,
   submitTutorProgramProposal,
   fetchTutorProgramProposals,
 } from '../../lib/programHierarchy';
@@ -61,56 +67,6 @@ interface TeachingProgrammeOption {
   fields: Array<{ id: string; title: string; parentId: string }>;
 }
 
-const DEFAULT_PROGRAMME_CATALOG: TeachingProgrammeOption[] = [
-  {
-    id: 'prog-tech',
-    title: 'Technology & Engineering Programme',
-    description: 'Software development, robotics, data science, and digital literacy tracks.',
-    fields: [
-      { id: 'field-web-dev', title: 'Web Development (HTML, CSS, JavaScript & React)', parentId: 'prog-tech' },
-      { id: 'field-python-ai', title: 'Python Programming & Artificial Intelligence', parentId: 'prog-tech' },
-      { id: 'field-scratch-kids', title: 'Coding for Kids (Scratch & Block Programming)', parentId: 'prog-tech' },
-      { id: 'field-robotics-iot', title: 'Robotics, Arduino & Physical Computing', parentId: 'prog-tech' },
-      { id: 'field-digital-lit', title: 'Digital Literacy & Computer Fundamentals', parentId: 'prog-tech' },
-      { id: 'field-game-dev', title: 'Game Design & Development', parentId: 'prog-tech' },
-      { id: 'field-cybersecurity', title: 'Cybersecurity & Online Safety', parentId: 'prog-tech' },
-    ],
-  },
-  {
-    id: 'prog-creative',
-    title: 'Creative & Design Programme',
-    description: 'Visual communication, UI/UX product design, animation, and multimedia.',
-    fields: [
-      { id: 'field-ui-ux', title: 'UI/UX & Digital Product Design (Figma)', parentId: 'prog-creative' },
-      { id: 'field-graphics', title: 'Graphic Design & Visual Branding', parentId: 'prog-creative' },
-      { id: 'field-animation', title: '2D/3D Animation & Motion Graphics', parentId: 'prog-creative' },
-      { id: 'field-media-prod', title: 'Video Editing & Digital Media Production', parentId: 'prog-creative' },
-    ],
-  },
-  {
-    id: 'prog-academics',
-    title: 'Core Academics & STEM Programme',
-    description: 'Mathematics, sciences, language arts, and examination preparation.',
-    fields: [
-      { id: 'field-math', title: 'Mathematics & Quantitative Reasoning', parentId: 'prog-academics' },
-      { id: 'field-sciences', title: 'Integrated Science, Physics & Chemistry', parentId: 'prog-academics' },
-      { id: 'field-english', title: 'English Language, Literacy & Public Speaking', parentId: 'prog-academics' },
-      { id: 'field-exam-prep', title: 'STEM Competition & Examination Prep', parentId: 'prog-academics' },
-    ],
-  },
-  {
-    id: 'prog-music-arts',
-    title: 'Music & Performing Arts Programme',
-    description: 'Instrumental training, music theory, vocal coaching, and audio production.',
-    fields: [
-      { id: 'field-piano-keys', title: 'Piano & Keyboard Performance', parentId: 'prog-music-arts' },
-      { id: 'field-guitar-strings', title: 'Guitar, Violin & String Instruments', parentId: 'prog-music-arts' },
-      { id: 'field-music-theory', title: 'Music Theory, Ear Training & Composition', parentId: 'prog-music-arts' },
-      { id: 'field-audio-prod', title: 'Digital Audio Production & Sound Engineering', parentId: 'prog-music-arts' },
-    ],
-  },
-];
-
 export const PortalSettings: React.FC = () => {
   const location = useLocation();
   const { theme, toggleTheme, isHighContrast, toggleHighContrast } = useTheme();
@@ -122,6 +78,8 @@ export const PortalSettings: React.FC = () => {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [photoURL, setPhotoURL] = useState('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
   const [sendingVerification, setSendingVerification] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -188,6 +146,8 @@ export const PortalSettings: React.FC = () => {
         if (data.username) setUsername(normalizeUsername(String(data.username)));
         if (data.phone) setPhone(String(data.phone));
         if (data.whatsapp || data.whatsappContact) setWhatsapp(String(data.whatsapp || data.whatsappContact));
+        if (data.photoURL || data.photoUrl) setPhotoURL(String(data.photoURL || data.photoUrl));
+        else if (user?.photoURL) setPhotoURL(user.photoURL);
         if (Array.isArray(data.teachingProgramIds)) {
           setSelectedProgramIds(data.teachingProgramIds.map(String));
         }
@@ -198,6 +158,16 @@ export const PortalSettings: React.FC = () => {
         }
         if (data.proficiencyLevel) {
           setProficiencyLevel(data.proficiencyLevel);
+        }
+        // Also check tutors/{uid} for latest photoURL when staff
+        if (resolvedRole === 'staff') {
+          const tutorSnap = await getDoc(doc(db, 'tutors', targetUid)).catch(() => null);
+          if (tutorSnap && tutorSnap.exists()) {
+            const tData = tutorSnap.data();
+            if (tData.photoURL && isValidTutorPhotoUrl(tData.photoURL)) {
+              setPhotoURL(String(tData.photoURL));
+            }
+          }
         }
       } catch (error) {
         console.warn('Could not load user profile settings:', error);
@@ -242,85 +212,80 @@ export const PortalSettings: React.FC = () => {
     } catch {}
   }, [pathRole, effectiveAuth.effectiveUid, effectiveAuth.effectiveEmail, effectiveAuth.effectiveName]);
 
-  // Build dynamic programme & teaching fields catalog combining Firestore hierarchy + default tracks
+  // Build dynamic programme & teaching fields catalog strictly from real Firestore records
   const programmeCatalog = useMemo<TeachingProgrammeOption[]>(() => {
-    const roots: ProgramRecord[] = [];
-    const childrenByParent = new Map<string, ProgramRecord[]>();
-
-    for (const prog of programsMap.values()) {
-      if (prog.isArchived) continue;
-      if (!prog.parentProgramId) {
-        roots.push(prog);
-      } else {
-        const list = childrenByParent.get(prog.parentProgramId) || [];
-        list.push(prog);
-        childrenByParent.set(prog.parentProgramId, list);
-      }
+    const activePrograms = Array.from(programsMap.values()).filter((p) => !p.isArchived);
+    if (activePrograms.length === 0) {
+      return [];
     }
 
-    if (roots.length === 0) {
-      return DEFAULT_PROGRAMME_CATALOG;
-    }
-
-    const mappedRoots: TeachingProgrammeOption[] = roots.map((root) => {
-      const directChildren = childrenByParent.get(root.id) || [];
-      const allDescendants: Array<{ id: string; title: string; parentId: string }> = [];
-
-      const collectDescendants = (parentId: string) => {
-        const kids = childrenByParent.get(parentId) || [];
-        for (const k of kids) {
-          allDescendants.push({ id: k.id, title: k.title, parentId: root.id });
-          collectDescendants(k.id);
-        }
-      };
-      collectDescendants(root.id);
-
-      // If a root has no children in Firestore yet, match default fields by title keyword
-      if (allDescendants.length === 0 && directChildren.length === 0) {
-        const lowerTitle = root.title.toLowerCase();
-        const fallbackMatch =
-          DEFAULT_PROGRAMME_CATALOG.find(
-            (d) =>
-              lowerTitle.includes('tech') || lowerTitle.includes('coding')
-                ? d.id === 'prog-tech'
-                : lowerTitle.includes('creative') || lowerTitle.includes('design')
-                ? d.id === 'prog-creative'
-                : lowerTitle.includes('music')
-                ? d.id === 'prog-music-arts'
-                : lowerTitle.includes('academic')
-                ? d.id === 'prog-academics'
-                : false
-          ) || DEFAULT_PROGRAMME_CATALOG[0];
-
-        return {
-          id: root.id,
-          title: root.title,
-          description: root.description || fallbackMatch.description,
-          fields: fallbackMatch.fields.map((f) => ({ ...f, parentId: root.id })),
-        };
+    const groupedByRoot = new Map<
+      string,
+      {
+        id: string;
+        title: string;
+        description: string;
+        fields: Array<{ id: string; title: string; parentId: string }>;
       }
+    >();
 
-      return {
-        id: root.id,
-        title: root.title,
-        description: root.description || 'Configure the specific fields and courses you teach under this programme.',
-        fields: allDescendants,
-      };
-    });
-
-    // Ensure standard studio programmes are also available if not already represented
-    for (const defProg of DEFAULT_PROGRAMME_CATALOG) {
-      const alreadyExists = mappedRoots.some(
-        (r) =>
-          r.id === defProg.id ||
-          r.title.toLowerCase() === defProg.title.toLowerCase()
+    // Register real Firestore root documents first
+    for (const rootDef of PRIMARY_PROGRAM_ROOTS) {
+      const firestoreRoot = activePrograms.find(
+        (p) =>
+          p.id === rootDef.canonicalId ||
+          p.primaryRootKey === rootDef.key ||
+          (p.isPrimaryRoot &&
+            p.title.trim().toLowerCase() === rootDef.title.toLowerCase())
       );
-      if (!alreadyExists) {
-        mappedRoots.push(defProg);
+      if (firestoreRoot) {
+        groupedByRoot.set(rootDef.key, {
+          id: firestoreRoot.id,
+          title: firestoreRoot.title,
+          description: firestoreRoot.shortDescription || rootDef.shortDescription,
+          fields: [],
+        });
       }
     }
 
-    return mappedRoots;
+    // Attach every non-root active Firestore programme to its resolved canonical root
+    for (const prog of activePrograms) {
+      const resolution = resolveProgramCanonicalRoot(prog, programsMap);
+      if (!resolution.rootKey || !resolution.rootDefinition) continue;
+      const rootDef = resolution.rootDefinition;
+      const isRootItself =
+        prog.isPrimaryRoot ||
+        prog.id === rootDef.canonicalId ||
+        (!prog.parentProgramId && prog.primaryRootKey === rootDef.key);
+
+      if (!groupedByRoot.has(rootDef.key)) {
+        groupedByRoot.set(rootDef.key, {
+          id: resolution.rootProgram?.id || rootDef.canonicalId,
+          title: resolution.rootProgram?.title || rootDef.title,
+          description:
+            resolution.rootProgram?.shortDescription || rootDef.shortDescription,
+          fields: [],
+        });
+      }
+
+      if (!isRootItself) {
+        const entry = groupedByRoot.get(rootDef.key)!;
+        if (!entry.fields.some((f) => f.id === prog.id)) {
+          entry.fields.push({
+            id: prog.id,
+            title: prog.title,
+            parentId: entry.id,
+          });
+        }
+      }
+    }
+
+    return PRIMARY_PROGRAM_ROOTS.map((r) => groupedByRoot.get(r.key))
+      .filter((item): item is TeachingProgrammeOption => Boolean(item))
+      .map((group) => ({
+        ...group,
+        fields: group.fields.sort((a, b) => a.title.localeCompare(b.title)),
+      }));
   }, [programsMap]);
 
   const parentOptions = useMemo(() => {
@@ -490,6 +455,49 @@ export const PortalSettings: React.FC = () => {
     }
   };
 
+  const handleTutorPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload a valid image file (JPG, PNG, or WEBP).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Profile photograph must be smaller than 5 MB.');
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const uploaded = await uploadImageToCloudinary(file);
+      const secureUrl = uploaded.secureUrl || uploaded.url;
+      setPhotoURL(secureUrl);
+
+      const user = auth.currentUser;
+      if (user) {
+        await updateProfile(user, { photoURL: secureUrl }).catch(() => undefined);
+        await setDoc(
+          doc(db, 'users', user.uid),
+          { photoURL: secureUrl, updatedAt: new Date().toISOString() },
+          { merge: true }
+        );
+        if (role === 'staff') {
+          await setDoc(
+            doc(db, 'tutors', user.uid),
+            { photoURL: secureUrl, updatedAt: new Date().toISOString() },
+            { merge: true }
+          ).catch(() => undefined);
+        }
+      }
+      toast.success('Profile photograph updated successfully.');
+    } catch (err: any) {
+      console.error('Tutor photo upload failed:', err);
+      toast.error(err?.message || 'Unable to upload profile photograph. Please try again.');
+    } finally {
+      setUploadingPhoto(false);
+      e.target.value = '';
+    }
+  };
+
   const handleSaveProfile = async (event: React.FormEvent) => {
     event.preventDefault();
     const user = auth.currentUser;
@@ -501,6 +509,7 @@ export const PortalSettings: React.FC = () => {
       const cleanEmail = email.trim().toLowerCase();
       const cleanPhone = phone.trim();
       const cleanWhatsapp = whatsapp.trim();
+      const cleanPhoto = photoURL.trim();
       if (!cleanName || !cleanEmail) throw new Error('Full name and email are required.');
       if (role === 'student' && (cleanUsername.length < 3 || cleanUsername.length > 30)) {
         throw new Error('Student username must be 3–30 characters.');
@@ -516,7 +525,10 @@ export const PortalSettings: React.FC = () => {
         }
       }
 
-      await updateProfile(user, { displayName: cleanName });
+      await updateProfile(user, {
+        displayName: cleanName,
+        ...(isValidTutorPhotoUrl(cleanPhoto) ? { photoURL: cleanPhoto } : {}),
+      });
       sessionStorage.setItem('userName', cleanName);
 
       if (cleanEmail !== (user.email || '').toLowerCase()) {
@@ -537,15 +549,35 @@ export const PortalSettings: React.FC = () => {
         sessionStorage.setItem('studentUsername', cleanUsername);
       }
 
-      await updateDoc(doc(db, 'users', user.uid), {
-        name: cleanName,
-        ...(cleanUsername ? { username: cleanUsername } : {}),
-        email: cleanEmail,
-        phone: cleanPhone,
-        whatsapp: cleanWhatsapp,
-        whatsappContact: cleanWhatsapp,
-        updatedAt: new Date().toISOString()
-      });
+      await setDoc(
+        doc(db, 'users', user.uid),
+        {
+          name: cleanName,
+          ...(cleanUsername ? { username: cleanUsername } : {}),
+          ...(isValidTutorPhotoUrl(cleanPhoto) ? { photoURL: cleanPhoto } : {}),
+          email: cleanEmail,
+          phone: cleanPhone,
+          whatsapp: cleanWhatsapp,
+          whatsappContact: cleanWhatsapp,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      if (role === 'staff') {
+        await setDoc(
+          doc(db, 'tutors', user.uid),
+          {
+            name: cleanName,
+            fullName: cleanName,
+            phone: cleanPhone,
+            whatsapp: cleanWhatsapp,
+            ...(isValidTutorPhotoUrl(cleanPhoto) ? { photoURL: cleanPhoto } : {}),
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        ).catch((error) => console.warn('Tutor profile sync skipped:', error));
+      }
 
       if (cleanUsername) {
         await claimGlobalUsername(cleanUsername, {
@@ -623,6 +655,54 @@ export const PortalSettings: React.FC = () => {
                 <div><h2 className="text-base font-bold text-slate-900 dark:text-white">Profile Details</h2><p className="text-xs text-slate-500">Your contact information used across the portal.</p></div>
                 <span className="text-xs font-bold text-[#1E293B] dark:text-slate-300 capitalize">{role === 'staff' ? 'Tutor' : role}</span>
               </div>
+
+              {role === 'staff' && (
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 shrink-0 flex items-center justify-center">
+                      {isValidTutorPhotoUrl(photoURL) ? (
+                        <img
+                          src={photoURL}
+                          alt={fullName || 'Tutor profile photo'}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Camera size={22} className="text-slate-400" />
+                      )}
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-black text-slate-900 dark:text-white">
+                        Public Tutor Profile Photograph
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {isValidTutorPhotoUrl(photoURL)
+                          ? 'Your verified portrait is linked to your tutor profile and Find a Tutor listing.'
+                          : 'A clear portrait photograph is mandatory before your profile can be published on Find a Tutor.'}
+                      </p>
+                    </div>
+                  </div>
+                  <label className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white text-xs font-bold cursor-pointer shrink-0 transition-colors">
+                    {uploadingPhoto ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin" />
+                        <span>Uploading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={13} />
+                        <span>{isValidTutorPhotoUrl(photoURL) ? 'Change Photo' : 'Upload Photo'}</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      disabled={uploadingPhoto}
+                      onChange={handleTutorPhotoUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <label className="block"><span className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">Full Name</span><input required value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Your full name" className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-red" /></label>
@@ -837,24 +917,30 @@ export const PortalSettings: React.FC = () => {
                           </div>
 
                           <div className="flex flex-wrap gap-2">
-                            {prog.fields.map((field) => {
-                              const active = selectedFieldNames.includes(field.title);
-                              return (
-                                <button
-                                  key={field.id}
-                                  type="button"
-                                  onClick={() => toggleFieldSelection(field.title, prog.id)}
-                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer inline-flex items-center gap-1.5 ${
-                                    active
-                                      ? 'bg-[#1E293B] text-white border-[#1E293B] dark:bg-white dark:text-[#1E293B] dark:border-white shadow-2xs'
-                                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400'
-                                  }`}
-                                >
-                                  {active && <Check size={12} />}
-                                  <span>{field.title}</span>
-                                </button>
-                              );
-                            })}
+                            {prog.fields.length === 0 ? (
+                              <p className="text-[11px] text-slate-500">
+                                No sub-programmes have been published under {prog.title} yet. You can add a custom teaching field below or propose a sub-programme.
+                              </p>
+                            ) : (
+                              prog.fields.map((field) => {
+                                const active = selectedFieldNames.includes(field.title);
+                                return (
+                                  <button
+                                    key={field.id}
+                                    type="button"
+                                    onClick={() => toggleFieldSelection(field.title, prog.id)}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                                      active
+                                        ? 'bg-[#1E293B] text-white border-[#1E293B] dark:bg-white dark:text-[#1E293B] dark:border-white shadow-2xs'
+                                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                                    }`}
+                                  >
+                                    {active && <Check size={12} />}
+                                    <span>{field.title}</span>
+                                  </button>
+                                );
+                              })
+                            )}
                           </div>
                         </div>
                       ))}

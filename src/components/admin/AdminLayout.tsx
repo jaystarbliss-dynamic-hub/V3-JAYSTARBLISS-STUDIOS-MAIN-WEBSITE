@@ -10,7 +10,7 @@ import {
   Bell, Activity, Search, ChevronsUpDown,
   ExternalLink, CalendarDays, Library, ShieldCheck,
   SlidersHorizontal, Trophy, Radio, GraduationCap, Award,
-  HelpCircle, Headphones, PanelLeftClose
+  HelpCircle, Headphones, PanelLeftClose, Megaphone
 } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -59,6 +59,7 @@ function resolveAdminPageTitle(pathname: string, flatNavList: NavItem[]): string
   if (clean.startsWith('/admin/portfolio/')) return 'Edit Case Study';
   if (clean === '/admin/pages/new') return 'Create Page';
   if (clean.startsWith('/admin/pages/')) return 'Edit Page';
+  if (clean === '/admin/promotions') return 'Promotions & Ads';
   if (clean === '/admin/schools/onboard') return 'Onboard School';
   if (clean === '/admin/parents') return 'Parents';
   if (clean === '/admin/reports') return 'Reports';
@@ -217,6 +218,7 @@ const AdminLayout: React.FC = () => {
       sectionTitle: "Website & Pages CMS",
       items: [
         { name: "Pages & Section CMS", href: "/admin/pages", icon: Layers, desc: "Live content & visual sections editor" },
+        { name: "Promotions & Ads", href: "/admin/promotions", icon: Megaphone, desc: "Homepage banners & popup campaigns" },
         { name: "Programs & Courses", href: "/admin/programs", icon: BookOpen, desc: "Curriculum tracks, stages & syllabi" },
         { name: "Services Catalog", href: "/admin/services", icon: Briefcase, desc: "Custom software & institutional solutions" },
         { name: "Portfolio Showcase", href: "/admin/portfolio", icon: FolderOpen, desc: "Client deliverables & case studies" },
@@ -333,6 +335,7 @@ const AdminLayout: React.FC = () => {
         sectionTitle: "Website & Pages CMS",
         items: [
           { name: "Pages & Section CMS", href: "/admin/pages", icon: Layers, desc: "Live content & visual sections editor" },
+          { name: "Promotions & Ads", href: "/admin/promotions", icon: Megaphone, desc: "Homepage banners & popup campaigns" },
           { name: "Programs & Courses", href: "/admin/programs", icon: BookOpen, desc: "Curriculum tracks, stages & syllabi" },
           { name: "Services Catalog", href: "/admin/services", icon: Briefcase, desc: "Custom software & institutional solutions" },
           { name: "Portfolio Showcase", href: "/admin/portfolio", icon: FolderOpen, desc: "Client deliverables & case studies" },

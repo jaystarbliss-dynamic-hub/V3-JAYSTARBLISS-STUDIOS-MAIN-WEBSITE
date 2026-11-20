@@ -19,10 +19,12 @@ import {
   getAllDescendants,
   getDirectChildren,
   getProgramBreadcrumbs,
+  resolveProgramCanonicalRoot,
   slugifyTitle,
   type ProgramNodeType,
   type ProgramDeliveryOption,
 } from '../../../lib/programHierarchy';
+import { uploadImageToCloudinary } from '../../../lib/cloudinary';
 import {
   CATEGORY_OPTIONS,
   DELIVERY_FORMAT_OPTIONS,
@@ -115,11 +117,17 @@ export const ProgrammeEditorView: React.FC<ProgrammeEditorViewProps> = ({
   );
   const [displayPricingText, setDisplayPricingText] = useState('');
 
-  // Step 5: Features & Access
+  // Step 5: Features, Access & Managed Catalogue Indicators
   const [hasEdclub, setHasEdclub] = useState<boolean>(false);
   const [isGeneralProgram, setIsGeneralProgram] = useState<boolean>(false);
   const [hasResources, setHasResources] = useState<boolean>(true);
   const [hasAssessments, setHasAssessments] = useState<boolean>(true);
+  const [isHot, setIsHot] = useState<boolean>(false);
+  const [isLimitedTime, setIsLimitedTime] = useState<boolean>(false);
+  const [sessionStartAt, setSessionStartAt] = useState<string>('');
+  const [sessionEndAt, setSessionEndAt] = useState<string>('');
+  const [enrolmentDeadline, setEnrolmentDeadline] = useState<string>('');
+  const [uploadingCover, setUploadingCover] = useState<boolean>(false);
 
   const [validationAttempted, setValidationAttempted] = useState(false);
 
@@ -172,12 +180,32 @@ export const ProgrammeEditorView: React.FC<ProgrammeEditorViewProps> = ({
       setIsGeneralProgram(Boolean(editingProgram.isGeneralProgram));
       setHasResources(editingProgram.hasResources !== false);
       setHasAssessments(editingProgram.hasAssessments !== false);
+      setIsHot(Boolean(editingProgram.isHot));
+      setIsLimitedTime(Boolean(editingProgram.isLimitedTime));
+      setSessionStartAt(
+        typeof editingProgram.sessionStartAt === 'string'
+          ? editingProgram.sessionStartAt.slice(0, 10)
+          : ''
+      );
+      setSessionEndAt(
+        typeof editingProgram.sessionEndAt === 'string'
+          ? editingProgram.sessionEndAt.slice(0, 10)
+          : ''
+      );
+      setEnrolmentDeadline(
+        typeof editingProgram.enrolmentDeadline === 'string'
+          ? editingProgram.enrolmentDeadline.slice(0, 10)
+          : ''
+      );
     } else {
       const parent = initialParentId ? programsMap.get(initialParentId) : null;
+      const parentRoot = parent ? resolveProgramCanonicalRoot(parent, programsMap) : null;
       const siblings = getDirectChildren(initialParentId || null, programsMap.values());
       setTitle('');
       setSlug('');
-      setCategoryId(parent?.categoryId || 'DIGITAL_AND_TECHNOLOGY');
+      setCategoryId(
+        parentRoot?.rootDefinition?.categoryId || parent?.categoryId || 'DIGITAL_AND_TECHNOLOGY'
+      );
       setShortDescription('');
       setFullDescription('');
       setFeaturedImage('');
@@ -210,6 +238,11 @@ export const ProgrammeEditorView: React.FC<ProgrammeEditorViewProps> = ({
       setIsGeneralProgram(false);
       setHasResources(true);
       setHasAssessments(true);
+      setIsHot(false);
+      setIsLimitedTime(false);
+      setSessionStartAt('');
+      setSessionEndAt('');
+      setEnrolmentDeadline('');
     }
     setActiveStep(1);
     setValidationAttempted(false);
@@ -251,16 +284,41 @@ export const ProgrammeEditorView: React.FC<ProgrammeEditorViewProps> = ({
     return errors;
   }, [title, slug, shortDescription]);
 
-  const handleImageFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setFeaturedImage(reader.result);
+    setUploadingCover(true);
+    try {
+      const uploaded = await uploadImageToCloudinary(file);
+      setFeaturedImage(uploaded.secureUrl || uploaded.url);
+    } catch (err) {
+      console.error('Cover upload failed:', err);
+    } finally {
+      setUploadingCover(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const inheritedRootResolution = useMemo(() => {
+    if (!parentProgramId) return null;
+    const parent = programsMap.get(parentProgramId);
+    if (!parent) return null;
+    return resolveProgramCanonicalRoot(parent, programsMap);
+  }, [parentProgramId, programsMap]);
+
+  const handleParentChange = (nextParentId: string) => {
+    setParentProgramId(nextParentId);
+    if (nextParentId) {
+      const parent = programsMap.get(nextParentId);
+      if (parent) {
+        const res = resolveProgramCanonicalRoot(parent, programsMap);
+        if (res.rootDefinition?.categoryId) {
+          setCategoryId(res.rootDefinition.categoryId);
+        } else if (parent.categoryId) {
+          setCategoryId(parent.categoryId);
+        }
       }
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleNodeTypeSelect = (nextType: ProgramNodeType) => {
@@ -291,11 +349,15 @@ export const ProgrammeEditorView: React.FC<ProgrammeEditorViewProps> = ({
 
     const effectiveEnrollable = nodeType === 'CONTAINER' ? false : isEnrollable;
 
+    const effectiveCategoryId =
+      inheritedRootResolution?.rootDefinition?.categoryId || categoryId;
+
     onSaveProgramme(
       {
         title: title.trim(),
         slug: slug.trim() || slugifyTitle(title.trim()),
-        categoryId,
+        categoryId: effectiveCategoryId,
+        primaryRootKey: inheritedRootResolution?.rootKey ?? editingProgram?.primaryRootKey ?? null,
         shortDescription: shortDescription.trim(),
         fullDescription: fullDescription.trim() || shortDescription.trim(),
         description: shortDescription.trim(),
@@ -349,6 +411,11 @@ export const ProgrammeEditorView: React.FC<ProgrammeEditorViewProps> = ({
         isGeneralProgram,
         hasResources,
         hasAssessments,
+        isHot,
+        isLimitedTime,
+        sessionStartAt: sessionStartAt || null,
+        sessionEndAt: sessionEndAt || null,
+        enrolmentDeadline: enrolmentDeadline || null,
       },
       targetStatus,
       editingProgram?.id
@@ -633,7 +700,7 @@ export const ProgrammeEditorView: React.FC<ProgrammeEditorViewProps> = ({
                   </label>
                   <select
                     value={parentProgramId}
-                    onChange={(e) => setParentProgramId(e.target.value)}
+                    onChange={(e) => handleParentChange(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm font-semibold text-slate-900"
                   >
                     <option value="">Top-Level Root Programme (No Parent)</option>
@@ -643,6 +710,11 @@ export const ProgrammeEditorView: React.FC<ProgrammeEditorViewProps> = ({
                       </option>
                     ))}
                   </select>
+                  {inheritedRootResolution?.rootDefinition && (
+                    <p className="text-[11px] text-emerald-700 font-semibold mt-1">
+                      Inherits canonical root: {inheritedRootResolution.rootDefinition.title}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -1065,6 +1137,91 @@ export const ProgrammeEditorView: React.FC<ProgrammeEditorViewProps> = ({
                   </label>
                 ))}
               </div>
+
+              {/* Managed Public Catalogue Indicators */}
+              <div className="pt-4 border-t border-slate-200 space-y-4">
+                <div>
+                  <h4 className="text-sm font-extrabold text-slate-900">
+                    Managed Catalogue Indicators
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Explicitly control HOT, IN SESSION, and LIMITED TIME indicators shown on public programme cards.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <label className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50">
+                    <div>
+                      <span className="font-bold text-slate-900 block">Mark as HOT</span>
+                      <span className="text-[11px] text-slate-500">
+                        Highlights high-demand or featured intake
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={isHot}
+                      onChange={(e) => setIsHot(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300 text-[#B91C1C]"
+                    />
+                  </label>
+
+                  <label className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50">
+                    <div>
+                      <span className="font-bold text-slate-900 block">Mark as LIMITED TIME</span>
+                      <span className="text-[11px] text-slate-500">
+                        Signals a short-window cohort or enrolment offer
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={isLimitedTime}
+                      onChange={(e) => setIsLimitedTime(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300 text-[#B91C1C]"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Session Start Date (IN SESSION)
+                    </label>
+                    <input
+                      type="date"
+                      value={sessionStartAt}
+                      onChange={(e) => setSessionStartAt(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Session End Date (IN SESSION)
+                    </label>
+                    <input
+                      type="date"
+                      value={sessionEndAt}
+                      onChange={(e) => setSessionEndAt(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Enrolment Deadline (LIMITED TIME)
+                    </label>
+                    <input
+                      type="date"
+                      value={enrolmentDeadline}
+                      onChange={(e) => setEnrolmentDeadline(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-900"
+                    />
+                  </div>
+                </div>
+              </div>
+              {uploadingCover && (
+                <p className="text-xs font-semibold text-indigo-700">
+                  Uploading cover image to Cloudinary...
+                </p>
+              )}
             </div>
           )}
         </div>

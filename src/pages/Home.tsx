@@ -3,6 +3,7 @@ import MainLayout from '../components/layout/MainLayout';
 import SEO from '../components/ui/SEO';
 import Hero from '../components/Hero';
 import CorePillars from '../components/home/CorePillars';
+import HomePromotionsCarousel from '../components/home/HomePromotionsCarousel';
 import FeaturedPrograms from '../components/home/FeaturedPrograms';
 import FeaturedServices from '../components/home/FeaturedServices';
 import FeaturedPortfolio from '../components/home/FeaturedPortfolio';
@@ -22,6 +23,7 @@ const Home: React.FC = () => {
       />
       <Hero />
       <CorePillars />
+      <HomePromotionsCarousel />
       <FeaturedPrograms />
       <FeaturedServices />
       <FeaturedPortfolio />

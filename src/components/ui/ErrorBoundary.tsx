@@ -22,6 +22,26 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    const msg = String(error?.message || '');
+    const isDynamicImportError =
+      msg.includes('Failed to fetch dynamically imported module') ||
+      msg.includes('Importing a module script failed') ||
+      msg.includes('Loading chunk');
+
+    if (isDynamicImportError && typeof window !== 'undefined') {
+      try {
+        const RELOAD_KEY = 'jbs_chunk_reload_ts';
+        const lastReload = Number(window.sessionStorage.getItem(RELOAD_KEY) || 0);
+        if (Date.now() - lastReload > 15000) {
+          window.sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+          window.location.reload();
+          return;
+        }
+      } catch {
+        // ignore storage errors and fall through to diagnostic UI
+      }
+    }
+
     logInternalDiagnostic('ErrorBoundary::ReactCrash', error, {
       componentStack: errorInfo?.componentStack || '',
     });

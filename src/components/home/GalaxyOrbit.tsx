@@ -1,8 +1,56 @@
-import React, { useEffect, useRef, Suspense, lazy } from 'react';
+import React, { Component, useEffect, useRef, Suspense, lazy } from 'react';
+import type { ReactNode } from 'react';
 import { Code, Monitor, Music, Paintbrush, Megaphone, Lightbulb } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import heroWatermarkLogo from '../../assets/FINAL_LOGO_JDI-removebg-preview.png';
 
-const LogoGlobe = lazy(() => import("./LogoGlobe"));
+const LogoGlobeFallback: React.FC = () => (
+  <div className="w-48 h-48 md:w-56 md:h-56 flex items-center justify-center relative">
+    <div className="absolute inset-0 rounded-full shadow-[0_0_60px_rgba(223,70,39,0.25)] bg-brand-red animate-ping opacity-15 pointer-events-none" />
+    <div className="relative z-10 w-36 h-36 md:w-44 md:h-44 rounded-full bg-[#0d1117] border border-brand-red/35 shadow-[0_0_40px_rgba(223,70,39,0.25)] flex items-center justify-center p-6">
+      <img
+        src={heroWatermarkLogo}
+        alt="Jaystarbliss Studios"
+        className="w-full h-full object-contain opacity-90 select-none pointer-events-none"
+      />
+    </div>
+  </div>
+);
+
+class GlobeErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch() {
+    // Gracefully degrade to static brand orb fallback without crashing Hero
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <LogoGlobeFallback />;
+    }
+    return this.props.children;
+  }
+}
+
+const LogoGlobe = lazy(async () => {
+  try {
+    return await import('./LogoGlobe');
+  } catch {
+    await new Promise((resolve) => window.setTimeout(resolve, 600));
+    try {
+      return await import('./LogoGlobe');
+    } catch {
+      return { default: LogoGlobeFallback };
+    }
+  }
+});
 
 const GalaxyOrbit: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -165,9 +213,11 @@ const GalaxyOrbit: React.FC = () => {
       <div ref={roRef} className="orbit-path path-outer" />
       
       <div className="z-20 relative flex items-center justify-center" onDoubleClick={() => navigate('/portal')}>
-        <Suspense fallback={<div className="w-48 h-48 md:w-56 md:h-56 rounded-full bg-brand-red/15 border border-brand-red/30 animate-pulse" />}>
-          <LogoGlobe />
-        </Suspense>
+        <GlobeErrorBoundary>
+          <Suspense fallback={<div className="w-48 h-48 md:w-56 md:h-56 rounded-full bg-brand-red/15 border border-brand-red/30 animate-pulse" />}>
+            <LogoGlobe />
+          </Suspense>
+        </GlobeErrorBoundary>
       </div>
 
       {/* PLANETS */}

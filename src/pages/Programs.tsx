@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
 import { getAllClientDatabases } from '../lib/firebase';
 import MainLayout from '../components/layout/MainLayout';
 import SEO from '../components/ui/SEO';
@@ -8,22 +8,17 @@ import { Card, CardContent, CardFooter } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { CardSkeleton } from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
-import { 
-  GraduationCap, 
-  Laptop, 
-  Palette, 
-  Music, 
-  Brain,
-  Gamepad2,
-  Baby,
-  Users,
-  BookOpen, 
-  Search, 
+import {
+  GraduationCap,
+  Laptop,
+  Palette,
+  Music,
+  Search,
   X,
   Layers,
   ArrowRight,
-  Compass,
-  UserCheck
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import StageArchitectureBanner from '../components/ecosystem/StageArchitectureBanner';
 import LearningSchoolsGrid from '../components/ecosystem/LearningSchoolsGrid';
@@ -33,98 +28,120 @@ import PageHeader from '../components/ui/PageHeader';
 import { pageHeaderImages, getProgramImage } from '../lib/stockImages';
 import { usePageSection } from '../lib/cms';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import {
+  type CanonicalRootKey,
+  type ProgramRecord,
+  type ProgramIndicatorLabel,
+  normalizeProgramRecord,
+  normalizeCanonicalRootKey,
+  resolveProgramCanonicalRoot,
+  sortProgramsNewestFirst,
+  isProgramPubliclyEnrollable,
+  computeProgramIndicators,
+} from '../lib/programHierarchy';
 
-function resolveProgramRouteSlug(program: any): string {
+function resolveProgramRouteSlug(program: ProgramRecord): string {
   const rawSlug = String(program?.slug || '').trim();
-  if (rawSlug && !rawSlug.startsWith('http://') && !rawSlug.startsWith('https://') && !rawSlug.includes('/')) {
+  if (
+    rawSlug &&
+    !rawSlug.startsWith('http://') &&
+    !rawSlug.startsWith('https://') &&
+    !rawSlug.includes('/')
+  ) {
     return rawSlug;
   }
   return String(program?.id || '');
 }
 
-const SCHOOL_FILTER_MAP: Record<string, { label: string; icon: React.FC<{ size?: number; className?: string }> }> = {
-  ALL: { label: 'All Four Programmes', icon: Layers },
-  'technology-programming': { label: 'Technology', icon: Laptop },
-  'music-performing-arts': { label: 'Music', icon: Music },
-  'academic-excellence': { label: 'Academics', icon: GraduationCap },
-  'creative-design': { label: 'Design and Graphics', icon: Palette },
+type CatalogFilterKey = 'ALL' | CanonicalRootKey;
+
+const CANONICAL_ROOT_FILTERS: Array<{
+  key: CatalogFilterKey;
+  label: string;
+  shortLabel: string;
+  icon: React.FC<{ size?: number; className?: string }>;
+}> = [
+  { key: 'ALL', label: 'All Four Programmes', shortLabel: 'All Programmes', icon: Layers },
+  { key: 'technology', label: 'Technology', shortLabel: 'Technology', icon: Laptop },
+  { key: 'music', label: 'Music', shortLabel: 'Music', icon: Music },
+  { key: 'academics', label: 'Academics', shortLabel: 'Academics', icon: GraduationCap },
+  {
+    key: 'design-graphics',
+    label: 'Design and Graphics',
+    shortLabel: 'Design & Graphics',
+    icon: Palette,
+  },
+];
+
+const INDICATOR_STYLE_MAP: Record<ProgramIndicatorLabel, string> = {
+  HOT: 'bg-[#B91C1C]/10 text-[#B91C1C] dark:bg-red-500/15 dark:text-red-300 border-[#B91C1C]/35 dark:border-red-400/35',
+  'IN SESSION':
+    'bg-emerald-600/10 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300 border-emerald-600/30 dark:border-emerald-400/35',
+  'LIMITED TIME':
+    'bg-amber-600/10 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 border-amber-600/35 dark:border-amber-400/35',
 };
 
-const CANONICAL_SCHOOL_MAP: Record<string, { schoolId: string; filterKey: string }> = {
-  'technology': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'tech-programming': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'technology-programming': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'tech': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'coding': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'digital_and_technology': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'digital-technology': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'digital-literacy': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'literacy': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'design-graphics': { schoolId: 'design-graphics', filterKey: 'creative-design' },
-  'creative-design': { schoolId: 'design-graphics', filterKey: 'creative-design' },
-  'creative-arts': { schoolId: 'design-graphics', filterKey: 'creative-design' },
-  'creative': { schoolId: 'design-graphics', filterKey: 'creative-design' },
-  'design': { schoolId: 'design-graphics', filterKey: 'creative-design' },
-  'music-performing-arts': { schoolId: 'music', filterKey: 'music-performing-arts' },
-  'music': { schoolId: 'music', filterKey: 'music-performing-arts' },
-  'instruments': { schoolId: 'music', filterKey: 'music-performing-arts' },
-  'academic-excellence': { schoolId: 'academics', filterKey: 'academic-excellence' },
-  'academics': { schoolId: 'academics', filterKey: 'academic-excellence' },
-  'academic': { schoolId: 'academics', filterKey: 'academic-excellence' },
-  'strategy-games': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'strategy': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'chess': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'young-creators': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'young': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'early-learners': { schoolId: 'technology', filterKey: 'technology-programming' },
-  'private-tutoring': { schoolId: 'academics', filterKey: 'academic-excellence' },
-  'tutoring': { schoolId: 'academics', filterKey: 'academic-excellence' },
-  'school-partnership': { schoolId: 'technology', filterKey: 'ALL' },
-  'school_programs': { schoolId: 'technology', filterKey: 'ALL' },
-  'school-programs': { schoolId: 'technology', filterKey: 'ALL' }
+const ROOT_LABEL_MAP: Record<CanonicalRootKey, string> = {
+  technology: 'Technology',
+  music: 'Music',
+  academics: 'Academics',
+  'design-graphics': 'Design & Graphics',
 };
 
 const Programs: React.FC = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const { data: heroData } = usePageSection('programs', 'hero', {
-    title: "One Ecosystem",
-    subtitle: "find a specialised learning pathway",
-    bannerImage: ''
+    title: 'One Ecosystem',
+    subtitle: 'find a specialised learning pathway',
+    bannerImage: '',
   });
-  const [activeView, setActiveView] = useState<'ecosystem' | 'roadmap' | 'pathfinder' | 'catalog'>('ecosystem');
+  const [activeView, setActiveView] = useState<'ecosystem' | 'roadmap' | 'pathfinder' | 'catalog'>(
+    'ecosystem'
+  );
   const [selectedSchoolId, setSelectedSchoolId] = useState<string>('technology');
-  const [programs, setPrograms] = useState<any[]>([]);
+  const [allPrograms, setAllPrograms] = useState<ProgramRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedSchoolFilter, setSelectedSchoolFilter] = useState<string>('ALL');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
+  const [selectedRootFilter, setSelectedRootFilter] = useState<CatalogFilterKey>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Handle URL hashes and query parameters (e.g. /programs?tab=roadmap or /programs#roadmap)
+  // Handle URL hashes and query parameters (e.g. /programs?tab=catalog&category=technology#catalog-section)
   useEffect(() => {
     const rawSchool = searchParams.get('school') || searchParams.get('category');
-    const rawTab = searchParams.get('tab') || searchParams.get('view');
+    const rawTab = (searchParams.get('tab') || searchParams.get('view') || '').toLowerCase();
     const rawHash = location.hash.replace(/^#/, '').toLowerCase();
 
-    let targetSchoolKey = rawSchool?.toLowerCase() || (rawHash && CANONICAL_SCHOOL_MAP[rawHash] ? rawHash : null);
+    const resolvedFromParam = normalizeCanonicalRootKey(rawSchool);
+    const resolvedFromHash = normalizeCanonicalRootKey(rawHash);
+    const resolvedRootKey = resolvedFromParam || resolvedFromHash;
 
     if (rawTab === 'roadmap' || rawHash === 'roadmap' || rawHash === 'visual-roadmap') {
       setActiveView('roadmap');
       setTimeout(() => {
-        const el = document.getElementById('roadmap-section') || document.getElementById('visual-roadmap');
+        const el =
+          document.getElementById('roadmap-section') || document.getElementById('visual-roadmap');
         if (el) el.scrollIntoView({ behavior: 'smooth' });
       }, 100);
       return;
     }
 
-    if (rawTab === 'catalog' || rawHash === 'catalog' || rawHash === 'courses') {
+    if (
+      rawTab === 'catalog' ||
+      rawHash === 'catalog' ||
+      rawHash === 'catalog-section' ||
+      rawHash === 'courses'
+    ) {
       setActiveView('catalog');
-      if (targetSchoolKey && CANONICAL_SCHOOL_MAP[targetSchoolKey]) {
-        setSelectedSchoolFilter(CANONICAL_SCHOOL_MAP[targetSchoolKey].filterKey);
+      setSelectedRootFilter(resolvedRootKey ?? 'ALL');
+      if (resolvedRootKey) {
+        setSelectedSchoolId(resolvedRootKey);
       }
       setTimeout(() => {
         const el = document.getElementById('catalog-section');
         if (el) el.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
+      }, 120);
       return;
     }
 
@@ -137,19 +154,25 @@ const Programs: React.FC = () => {
       return;
     }
 
-    if (targetSchoolKey && CANONICAL_SCHOOL_MAP[targetSchoolKey]) {
-      const match = CANONICAL_SCHOOL_MAP[targetSchoolKey];
+    if (resolvedRootKey) {
       setActiveView('ecosystem');
-      setSelectedSchoolId(match.schoolId);
-      setSelectedSchoolFilter(match.filterKey);
+      setSelectedSchoolId(resolvedRootKey);
+      setSelectedRootFilter(resolvedRootKey);
 
       setTimeout(() => {
-        const el = document.getElementById('school-hub') || document.getElementById('programs-content');
+        const el =
+          document.getElementById('school-hub') || document.getElementById('programs-content');
         if (el) {
           el.scrollIntoView({ behavior: 'smooth' });
         }
       }, 150);
-    } else if (rawHash === 'ecosystem' || rawHash === 'academies' || rawHash === 'programs' || rawHash === 'programs-content' || rawHash === 'programs-section') {
+    } else if (
+      rawHash === 'ecosystem' ||
+      rawHash === 'academies' ||
+      rawHash === 'programs' ||
+      rawHash === 'programs-content' ||
+      rawHash === 'programs-section'
+    ) {
       setActiveView('ecosystem');
       setTimeout(() => {
         const el = document.getElementById('programs-content');
@@ -158,57 +181,118 @@ const Programs: React.FC = () => {
     }
   }, [location.pathname, location.search, location.hash, searchParams]);
 
-  useEffect(() => {
-    const fetchPrograms = async () => {
-      try {
-        const dbs = getAllClientDatabases();
-        const merged = new Map<string, any>();
-        await Promise.all(
-          dbs.map(async (clientDb) => {
-            try {
-              const q = query(collection(clientDb, 'programs'), where('status', '==', 'PUBLISHED'));
-              const snapshot = await getDocs(q);
-              snapshot.docs.forEach((docSnap) => {
-                if (!merged.has(docSnap.id)) {
-                  merged.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
-                }
-              });
-            } catch {
-              // ignore secondary db error
-            }
-          })
-        );
-        setPrograms(Array.from(merged.values()));
-      } catch (error) {
-        console.error('Error fetching programs:', error);
-      } finally {
-        setLoading(false);
+  const fetchPrograms = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const dbs = getAllClientDatabases();
+      const merged = new Map<string, ProgramRecord>();
+      let succeededCount = 0;
+
+      await Promise.all(
+        dbs.map(async (clientDb) => {
+          try {
+            const snapshot = await getDocs(collection(clientDb, 'programs'));
+            succeededCount += 1;
+            snapshot.docs.forEach((docSnap) => {
+              if (!merged.has(docSnap.id)) {
+                merged.set(
+                  docSnap.id,
+                  normalizeProgramRecord(docSnap.id, docSnap.data() as Record<string, any>)
+                );
+              }
+            });
+          } catch {
+            // ignore secondary db error; tracked by succeededCount
+          }
+        })
+      );
+
+      if (succeededCount === 0) {
+        throw new Error('Could not reach the programme catalogue right now.');
       }
-    };
-    fetchPrograms();
+
+      setAllPrograms(Array.from(merged.values()));
+    } catch (error: any) {
+      console.error('Error fetching programs:', error);
+      setAllPrograms([]);
+      setLoadError(
+        error?.message || 'Unable to load programmes at the moment. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const filteredPrograms = programs.filter(p => {
-    const matchesCategory = selectedSchoolFilter === 'ALL' || (p.categoryId || '').toLowerCase().includes(selectedSchoolFilter.replace('-', '_')) || (p.schoolId || '') === selectedSchoolFilter;
-    const matchesSearch = !searchQuery || 
-      p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      p.shortDescription?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.targetAudience?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+  useEffect(() => {
+    void fetchPrograms();
+  }, [fetchPrograms, retryToken]);
+
+  const programsMap = useMemo(() => {
+    const map = new Map<string, ProgramRecord>();
+    allPrograms.forEach((p) => map.set(p.id, p));
+    return map;
+  }, [allPrograms]);
+
+  // Enrollable published programmes sorted newest-first with resolved canonical roots
+  const catalogEntries = useMemo(() => {
+    const enrollable = allPrograms.filter((p) => isProgramPubliclyEnrollable(p));
+    const sorted = sortProgramsNewestFirst(enrollable);
+    return sorted.map((program) => {
+      const resolution = resolveProgramCanonicalRoot(program, programsMap);
+      const indicators = computeProgramIndicators(program);
+      return {
+        program,
+        rootKey: resolution.rootKey,
+        rootTitle: resolution.rootKey ? ROOT_LABEL_MAP[resolution.rootKey] : 'Specialised Track',
+        indicators,
+      };
+    });
+  }, [allPrograms, programsMap]);
+
+  const filteredEntries = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return catalogEntries.filter(({ program, rootKey, rootTitle }) => {
+      const matchesRoot =
+        selectedRootFilter === 'ALL' ? true : rootKey === selectedRootFilter;
+      if (!matchesRoot) return false;
+      if (!q) return true;
+      return (
+        program.title.toLowerCase().includes(q) ||
+        program.shortDescription.toLowerCase().includes(q) ||
+        program.fullDescription.toLowerCase().includes(q) ||
+        program.whoIsItFor.toLowerCase().includes(q) ||
+        rootTitle.toLowerCase().includes(q)
+      );
+    });
+  }, [catalogEntries, selectedRootFilter, searchQuery]);
+
+  const handleSelectFilter = (nextFilter: CatalogFilterKey) => {
+    setSelectedRootFilter(nextFilter);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', 'catalog');
+    if (nextFilter === 'ALL') {
+      nextParams.delete('category');
+      nextParams.delete('school');
+    } else {
+      nextParams.set('category', nextFilter);
+      nextParams.delete('school');
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
 
   return (
     <MainLayout>
-      <SEO 
-        title="Our Learning Ecosystem | 4 Primary Programmes & Specialised Tracks" 
-        description="Explore the recursive learning ecosystem: Technology Programme, Design & Graphics Programme, Music Programme, and Academics Programme." 
+      <SEO
+        title="Our Learning Ecosystem | 4 Primary Programmes & Specialised Tracks"
+        description="Explore the recursive learning ecosystem: Technology Programme, Design & Graphics Programme, Music Programme, and Academics Programme."
       />
 
       {/* Hero Header */}
       <PageHeader
         eyebrow=""
-        title={heroData.title ? heroData.title.replace(/\.$/, '') : "One Ecosystem"}
-        description={heroData.subtitle || "find a specialised learning pathway"}
+        title={heroData.title ? heroData.title.replace(/\.$/, '') : 'One Ecosystem'}
+        description={heroData.subtitle || 'find a specialised learning pathway'}
         image={heroData.bannerImage}
         fallbackImage={pageHeaderImages.programs}
         size="lg"
@@ -220,7 +304,9 @@ const Programs: React.FC = () => {
             onClick={() => {
               setActiveView('pathfinder');
               setTimeout(() => {
-                const el = document.getElementById('pathfinder-section') || document.getElementById('programs-content');
+                const el =
+                  document.getElementById('pathfinder-section') ||
+                  document.getElementById('programs-content');
                 if (el) el.scrollIntoView({ behavior: 'smooth' });
               }, 60);
             }}
@@ -255,16 +341,17 @@ const Programs: React.FC = () => {
               title: 'Core Programmes',
               description: 'Explore the 4 primary programme pillars and nested pathways.',
               actionLabel: 'Explore programmes',
-              targetSectionId: 'programs-content'
+              targetSectionId: 'programs-content',
             },
             {
               id: 'roadmap',
               label: 'Visual Roadmap',
               number: '05',
               title: 'Visual Roadmap',
-              description: 'Interactive step-by-step milestone progression across all 5 mastery stages.',
+              description:
+                'Interactive step-by-step milestone progression across all 5 mastery stages.',
               actionLabel: 'Explore roadmap',
-              targetSectionId: 'roadmap-section'
+              targetSectionId: 'roadmap-section',
             },
             {
               id: 'pathfinder',
@@ -273,20 +360,21 @@ const Programs: React.FC = () => {
               title: 'Custom Pathfinder',
               description: 'Answer a few quick questions to build a tailored learning schedule.',
               actionLabel: 'Start pathfinder',
-              targetSectionId: 'pathfinder-section'
+              targetSectionId: 'pathfinder-section',
             },
             {
               id: 'catalog',
               label: 'Program Catalog',
-              number: String(programs.length || 24).padStart(2, '0'),
+              number: String(catalogEntries.length).padStart(2, '0'),
               title: 'Program Catalog',
-              description: 'Search and filter every specialized course, track, and workshop directly.',
+              description:
+                'Search and filter every published course, track, and workshop directly.',
               actionLabel: 'Browse catalog',
-              targetSectionId: 'catalog-section'
-            }
+              targetSectionId: 'catalog-section',
+            },
           ];
 
-          const selectedTab = heroTabs.find(t => t.id === activeView) || heroTabs[0];
+          const selectedTab = heroTabs.find((t) => t.id === activeView) || heroTabs[0];
 
           return (
             <div className="max-w-3xl">
@@ -337,7 +425,7 @@ const Programs: React.FC = () => {
                   >
                     <div className="flex items-center gap-6 sm:gap-8">
                       <span
-                        className="text-6xl sm:text-7xl lg:text-[5.25rem] font-black tracking-tight leading-none bg-gradient-to-r from-[#ef4444] via-[#dc2626] to-white/25 bg-clip-text text-transparent drop-shadow-[0_0_28px_rgba(239,68,68,0.4)] select-none"
+                        className="text-6xl sm:text-7xl lg:text-[5.25rem] font-black tracking-tight leading-none bg-gradient-to-r from-[#ef4444] via-[#dc2626] to-white/25 bg-clip-text text-transparent drop-shadow-[0_0_28px_rgba(239,68,68,0.4)] select-none tabular-nums"
                         aria-hidden="true"
                       >
                         {selectedTab.number}
@@ -364,7 +452,10 @@ const Programs: React.FC = () => {
                           className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-[#ef4444] hover:text-red-400 transition-colors cursor-pointer group"
                         >
                           <span>{selectedTab.actionLabel}</span>
-                          <ArrowRight size={15} className="transition-transform group-hover:translate-x-1" />
+                          <ArrowRight
+                            size={15}
+                            className="transition-transform group-hover:translate-x-1"
+                          />
                         </button>
                       </div>
                     </div>
@@ -377,22 +468,30 @@ const Programs: React.FC = () => {
       </PageHeader>
 
       {/* Main Section Content based on active view */}
-      <div id="programs-content" className="digital-canvas py-14 sm:py-20 lg:py-24 scroll-mt-20 overflow-x-hidden">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl space-y-16 lg:space-y-24">
-          
-          {/* View 1: 8 Core Programs & Deep Dive (StageArchitectureBanner ONLY appears here) */}
+      <div
+        id="programs-content"
+        className="digital-canvas py-12 sm:py-16 lg:py-20 scroll-mt-24 overflow-x-clip"
+      >
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl space-y-14 lg:space-y-20">
+          {/* View 1: Core Programs & Deep Dive */}
           {activeView === 'ecosystem' && (
-            <div id="ecosystem-section" className="space-y-12 sm:space-y-16 lg:space-y-20 scroll-mt-24">
-              <LearningSchoolsGrid 
+            <div
+              id="ecosystem-section"
+              className="space-y-12 sm:space-y-16 lg:space-y-20 scroll-mt-24"
+            >
+              <LearningSchoolsGrid
                 selectedSchoolId={selectedSchoolId}
                 onSchoolChange={(id) => {
                   setSelectedSchoolId(id);
-                  const matching = Object.values(CANONICAL_SCHOOL_MAP).find(c => c.schoolId === id);
-                  if (matching) setSelectedSchoolFilter(matching.filterKey);
+                  const root = normalizeCanonicalRootKey(id);
+                  if (root) setSelectedRootFilter(root);
                 }}
               />
 
-              <hr className="border-t border-slate-200/80 dark:border-white/10" aria-hidden="true" />
+              <hr
+                className="border-t border-slate-200/80 dark:border-white/10"
+                aria-hidden="true"
+              />
 
               <StageArchitectureBanner
                 onSelectSchool={(id) => {
@@ -402,138 +501,222 @@ const Programs: React.FC = () => {
             </div>
           )}
 
-          {/* View 2: Interactive Visual Roadmap for Learning Tracks */}
+          {/* View 2: Interactive Visual Roadmap */}
           {activeView === 'roadmap' && (
             <div id="roadmap-section" className="space-y-8 scroll-mt-24">
               <InteractiveTrackRoadmap />
             </div>
           )}
 
-          {/* View 3: Pathfinder / Custom Program Builder */}
+          {/* View 3: Pathfinder */}
           {activeView === 'pathfinder' && (
             <div id="pathfinder-section" className="space-y-8 scroll-mt-24">
               <LearningPathBuilder />
             </div>
           )}
 
-          {/* View 3: Program Catalog & Course Cards */}
+          {/* View 4: Program Catalog & Compact Course Cards */}
           {activeView === 'catalog' && (
-            <div id="catalog-section" className="space-y-8 scroll-mt-24">
-              
+            <div id="catalog-section" className="space-y-8 scroll-mt-28">
               {/* Filter & Search Bar */}
-              <div className="pro-surface sticky top-20 z-20 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
-                
-                {/* Search Input */}
-                <div className="relative w-full md:w-80">
-                  <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search courses by keyword..."
-                    className="w-full pl-9 pr-8 py-2.5 rounded-xl text-xs bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-red transition-all"
-                  />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
+              <div className="pro-surface relative z-10 p-3.5 sm:p-4 rounded-2xl flex flex-col gap-3">
+                <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                  {/* Search Input */}
+                  <div className="relative flex-1 md:max-w-sm">
+                    <Search
+                      size={15}
+                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search courses by title, topic, or track..."
+                      className="w-full pl-9 pr-8 py-2 rounded-xl text-xs bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-red transition-all"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        aria-label="Clear search"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
 
-                {/* Program Filter Dropdown */}
-                <div className="relative w-full md:w-64">
-                  <select
-                    value={selectedSchoolFilter}
-                    onChange={(e) => setSelectedSchoolFilter(e.target.value)}
-                    className="w-full pl-4 pr-9 py-2.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-red cursor-pointer appearance-none transition-all"
+                  {/* Canonical Root Quick Filter Bar */}
+                  <div
+                    className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 md:pb-0"
+                    role="group"
+                    aria-label="Filter programmes by primary root"
                   >
-                    {Object.entries(SCHOOL_FILTER_MAP).map(([key, meta]) => (
-                      <option key={key} value={key}>
-                        {meta.label}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                    ▼
+                    {CANONICAL_ROOT_FILTERS.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = selectedRootFilter === item.key;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => handleSelectFilter(item.key)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap border transition-colors cursor-pointer ${
+                            isActive
+                              ? 'bg-[#B91C1C] text-white border-[#B91C1C]'
+                              : 'bg-slate-100/90 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500'
+                          }`}
+                        >
+                          <Icon size={13} />
+                          <span>{item.shortLabel}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
+
+                {!loading && !loadError && (
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-200/70 dark:border-slate-800 pt-2">
+                    <span className="tabular-nums font-medium">
+                      Showing <strong className="text-slate-900 dark:text-white">{filteredEntries.length}</strong>{' '}
+                      {filteredEntries.length === 1 ? 'programme' : 'programmes'}
+                      {selectedRootFilter !== 'ALL' ? ` under ${ROOT_LABEL_MAP[selectedRootFilter]}` : ''}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">
+                      Sorted: Newest First
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Published Courses Grid */}
               {loading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4">
+                  <CardSkeleton />
                   <CardSkeleton />
                   <CardSkeleton />
                   <CardSkeleton />
                 </div>
-              ) : filteredPrograms.length === 0 ? (
-                <div className="bg-white dark:bg-slate-900 rounded-3xl p-12 text-center border border-slate-200 dark:border-slate-800">
-                  <EmptyState 
-                    title="No Courses Found" 
-                    description="No courses match your filter. You can still use the Pathfinder tool above to generate a bespoke learning plan!"
+              ) : loadError ? (
+                <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 text-center border border-red-200 dark:border-red-900/50 space-y-3">
+                  <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/50 text-[#B91C1C]">
+                    <AlertCircle size={20} />
+                  </div>
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                    Unable to Load Programme Catalogue
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md mx-auto">
+                    {loadError}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setRetryToken((n) => n + 1)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
+                  >
+                    <RefreshCw size={13} />
+                    <span>Retry</span>
+                  </button>
+                </div>
+              ) : filteredEntries.length === 0 ? (
+                <div className="bg-white dark:bg-slate-900 rounded-2xl p-10 text-center border border-slate-200 dark:border-slate-800 space-y-4">
+                  <EmptyState
+                    title="No Programmes Found"
+                    description={
+                      selectedRootFilter !== 'ALL' || searchQuery
+                        ? 'No published programmes match your current filter. Try switching categories or clearing your search.'
+                        : 'No published programmes are available in the catalogue yet.'
+                    }
                   />
+                  {(selectedRootFilter !== 'ALL' || searchQuery) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        handleSelectFilter('ALL');
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                    >
+                      Show All Programmes
+                    </button>
+                  )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredPrograms.map((program) => (
-                    <Card key={program.id} hoverEffect className="pro-surface pro-interactive flex flex-col justify-between overflow-hidden !rounded-3xl">
-                      <div className="relative h-44 overflow-hidden -m-px">
-                        <img
-                          src={program.image || program.coverImage || program.bannerImage || getProgramImage(program.categoryId)}
-                          alt={program.title || "Program image"}
-                          loading="lazy"
-                          className="absolute inset-0 w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                      </div>
-                      <CardContent className="space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-brand-red">
-                            {program.categoryId ? program.categoryId.replace(/_/g, ' ') : 'Program Course'}
-                          </span>
-                          <span className="text-[11px] font-bold text-slate-500">
-                            {program.deliveryFormat || 'Online / Physical'}
-                          </span>
+                <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4">
+                  {filteredEntries.map(({ program, rootTitle, indicators }) => (
+                    <Card
+                      key={program.id}
+                      hoverEffect
+                      className="pro-surface pro-interactive flex flex-col justify-between overflow-hidden !rounded-2xl"
+                    >
+                      <div>
+                        <div className="relative h-28 sm:h-32 overflow-hidden bg-slate-900">
+                          <img
+                            src={
+                              program.featuredImage ||
+                              getProgramImage(program.categoryId)
+                            }
+                            alt={program.title || 'Programme cover'}
+                            loading="lazy"
+                            className="absolute inset-0 w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-950/15 to-transparent" />
+                          {indicators.length > 0 && (
+                            <div className="absolute top-2 left-2 right-2 flex flex-wrap gap-1">
+                              {indicators.map((label) => (
+                                <span
+                                  key={label}
+                                  className={`px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] border rounded-sm backdrop-blur-xs bg-white/90 dark:bg-slate-950/90 ${INDICATOR_STYLE_MAP[label]}`}
+                                >
+                                  {label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
 
-                        <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-                          {program.title}
-                        </h3>
-
-                        <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-3 leading-relaxed">
-                          {program.shortDescription}
-                        </p>
-
-                        {program.targetAudience && (
-                          <div className="text-[11px] text-slate-500">
-                            <strong>For:</strong> {program.targetAudience}
+                        <CardContent className="!p-3 sm:!p-3.5 space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#B91C1C] dark:text-red-400 truncate">
+                              {rootTitle}
+                            </span>
+                            <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 shrink-0">
+                              {program.deliveryMode || 'Online / Physical'}
+                            </span>
                           </div>
-                        )}
-                      </CardContent>
 
-                      <CardFooter className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                        <div className="text-xs font-bold text-slate-500">
-                          Flexible Schedule
-                        </div>
+                          <h3 className="text-sm font-extrabold text-slate-900 dark:text-white leading-snug line-clamp-2">
+                            {program.title}
+                          </h3>
+
+                          {program.shortDescription && (
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                              {program.shortDescription}
+                            </p>
+                          )}
+                        </CardContent>
+                      </div>
+
+                      <CardFooter className="!px-3 sm:!px-3.5 !py-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                          {program.duration || 'Flexible Schedule'}
+                        </span>
                         <Button
                           to={`/programs/${resolveProgramRouteSlug(program)}`}
                           size="sm"
-                          className="font-bold text-xs bg-brand-red hover:bg-red-700 text-white"
-                          rightIcon={<ArrowRight size={13} />}
+                          className="!px-2.5 !py-1.5 font-bold text-[11px] bg-[#B91C1C] hover:bg-red-700 text-white shrink-0"
+                          rightIcon={<ArrowRight size={12} />}
                         >
-                          View Pathway
+                          View
                         </Button>
                       </CardFooter>
                     </Card>
                   ))}
                 </div>
               )}
-
             </div>
           )}
 
           {/* Quick Institutional / School Bar */}
-          <div className="relative overflow-hidden p-8 sm:p-10 rounded-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-red-950 text-white flex flex-col md:flex-row items-center justify-between gap-8 border border-white/10 shadow-2xl">
+          <div className="relative overflow-hidden p-7 sm:p-9 rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-red-950 text-white flex flex-col md:flex-row items-center justify-between gap-6 border border-white/10 shadow-xl">
             <div className="space-y-1 text-center md:text-left">
               <div className="text-xs font-black uppercase tracking-widest text-brand-red">
                 Institutional Partnerships
@@ -542,7 +725,8 @@ const Programs: React.FC = () => {
                 Bringing the Ecosystem to Your School?
               </h3>
               <p className="text-xs sm:text-sm text-slate-300 max-w-xl">
-                Explore our Tier 1 (1 day/wk), Tier 2 (2 days/wk), and Tier 3 (3 days/wk) school Coding, Robotics, Music, and Chess delivery models.
+                Explore our Tier 1 (1 day/wk), Tier 2 (2 days/wk), and Tier 3 (3 days/wk) school
+                Coding, Robotics, Music, and Chess delivery models.
               </p>
             </div>
             <Button
@@ -553,10 +737,8 @@ const Programs: React.FC = () => {
               School Delivery Tiers
             </Button>
           </div>
-
         </div>
       </div>
-
     </MainLayout>
   );
 };

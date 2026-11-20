@@ -17,7 +17,6 @@ import {
   ChevronDown,
   Menu,
   X,
-  RotateCcw,
 } from 'lucide-react';
 import type { WorkspaceSectionId } from './types';
 
@@ -33,7 +32,6 @@ interface PreviewAdminShellProps {
   };
   onCreateProgramme: () => void;
   onOpenQuickCreateModal?: () => void;
-  onResetDemoData?: () => void;
   breadcrumbs?: Array<{ label: string; onClick?: () => void }>;
   headerTitle?: string;
   headerSubtitle?: string;
@@ -62,7 +60,6 @@ export const PreviewAdminShell: React.FC<PreviewAdminShellProps> = ({
   counts,
   onCreateProgramme,
   onOpenQuickCreateModal,
-  onResetDemoData,
   breadcrumbs,
   headerTitle,
   headerSubtitle,
@@ -125,17 +122,6 @@ export const PreviewAdminShell: React.FC<PreviewAdminShellProps> = ({
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4">
-            {onResetDemoData && (
-              <button
-                type="button"
-                onClick={onResetDemoData}
-                title="Reset demo data"
-                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50"
-              >
-                <RotateCcw size={13} />
-                <span>Reset Demo</span>
-              </button>
-            )}
             <button
               type="button"
               className="relative p-2 rounded-full text-slate-500 hover:bg-slate-100 transition-colors"

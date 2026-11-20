@@ -91,8 +91,27 @@ export interface ProgramRecord {
   publicGroupPricing: ProgramPriceConfig | null;
   privateMentorshipPricing: ProgramPriceConfig | null;
   lessonsCount?: number;
+  publishedAt?: any;
+  isHot?: boolean;
+  sessionStartAt?: any;
+  sessionEndAt?: any;
+  enrolmentDeadline?: any;
+  isLimitedTime?: boolean;
   createdAt?: any;
   updatedAt?: any;
+}
+
+export type CanonicalRootKey = 'technology' | 'design-graphics' | 'music' | 'academics';
+
+export type ProgramIndicatorLabel = 'HOT' | 'IN SESSION' | 'LIMITED TIME';
+
+export interface CanonicalRootResolution {
+  rootKey: CanonicalRootKey | null;
+  rootDefinition: PrimaryRootDefinition | null;
+  rootProgram: ProgramRecord | null;
+  ancestorIds: string[];
+  hasInvalidParent: boolean;
+  hasCycle: boolean;
 }
 
 export interface ProgramTreeNode {
@@ -444,6 +463,274 @@ export function matchPrimaryRootDefinition(
   return null;
 }
 
+/**
+ * Normalizes canonical root keys and legacy URL/category filter aliases
+ * strictly to one of the four canonical root keys defined in PRIMARY_PROGRAM_ROOTS.
+ */
+export function normalizeCanonicalRootKey(
+  raw?: string | null
+): CanonicalRootKey | null {
+  const clean = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, '-');
+  if (!clean || clean === 'all') return null;
+  if (
+    clean === 'technology' ||
+    clean === 'technology-programme' ||
+    clean === 'technology-programming' ||
+    clean === 'digital-and-technology' ||
+    clean === 'tech' ||
+    clean === 'coding' ||
+    clean === 'root-technology-programme'
+  ) {
+    return 'technology';
+  }
+  if (
+    clean === 'music' ||
+    clean === 'music-programme' ||
+    clean === 'music-performing-arts' ||
+    clean === 'root-music-programme'
+  ) {
+    return 'music';
+  }
+  if (
+    clean === 'academics' ||
+    clean === 'academics-programme' ||
+    clean === 'academic-excellence' ||
+    clean === 'exam-preparation' ||
+    clean === 'root-academics-programme'
+  ) {
+    return 'academics';
+  }
+  if (
+    clean === 'design-graphics' ||
+    clean === 'design-and-graphics' ||
+    clean === 'design-graphics-programme' ||
+    clean === 'creative-design' ||
+    clean === 'creative' ||
+    clean === 'graphic-design' ||
+    clean === 'root-design-graphics-programme'
+  ) {
+    return 'design-graphics';
+  }
+  return null;
+}
+
+/**
+ * Cycle-safe parent-traversal root resolver.
+ * Starts from the target programme, follows parentProgramId links to the real root,
+ * identifies it against PRIMARY_PROGRAM_ROOTS, detects cycles and missing/invalid parents,
+ * and never assigns an uncertain programme to an arbitrary root.
+ */
+export function resolveProgramCanonicalRoot(
+  program: ProgramRecord,
+  programsMap: Map<string, ProgramRecord>
+): CanonicalRootResolution {
+  const visited = new Set<string>([program.id]);
+  const chain: ProgramRecord[] = [program];
+  let current: ProgramRecord = program;
+
+  while (current.parentProgramId) {
+    const parentId = String(current.parentProgramId).trim();
+    if (!parentId) break;
+    if (visited.has(parentId)) {
+      return {
+        rootKey: null,
+        rootDefinition: null,
+        rootProgram: null,
+        ancestorIds: chain
+          .slice(1)
+          .reverse()
+          .map((n) => n.id),
+        hasInvalidParent: false,
+        hasCycle: true,
+      };
+    }
+    const parent = programsMap.get(parentId);
+    if (!parent) {
+      return {
+        rootKey: null,
+        rootDefinition: null,
+        rootProgram: null,
+        ancestorIds: chain
+          .slice(1)
+          .reverse()
+          .map((n) => n.id),
+        hasInvalidParent: true,
+        hasCycle: false,
+      };
+    }
+    visited.add(parent.id);
+    chain.push(parent);
+    current = parent;
+  }
+
+  const topNode = chain[chain.length - 1];
+  const rootDefinition = matchPrimaryRootDefinition(topNode, topNode.id);
+  const ancestorIds = chain
+    .slice(1)
+    .reverse()
+    .map((n) => n.id);
+
+  if (!rootDefinition) {
+    return {
+      rootKey: null,
+      rootDefinition: null,
+      rootProgram: topNode,
+      ancestorIds,
+      hasInvalidParent: false,
+      hasCycle: false,
+    };
+  }
+
+  return {
+    rootKey: rootDefinition.key,
+    rootDefinition,
+    rootProgram: topNode,
+    ancestorIds,
+    hasInvalidParent: false,
+    hasCycle: false,
+  };
+}
+
+/**
+ * Parses Firestore Timestamps, serialized { seconds }, Date instances, epoch numbers,
+ * and ISO date strings into epoch milliseconds. Returns null when missing or unparseable.
+ */
+export function parseProgramTimestampMs(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const ms = Date.parse(trimmed);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, any>;
+    if (typeof obj.toMillis === 'function') {
+      const ms = obj.toMillis();
+      return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
+    }
+    if (typeof obj.toDate === 'function') {
+      const d = obj.toDate();
+      const ms = d instanceof Date ? d.getTime() : NaN;
+      return Number.isFinite(ms) ? ms : null;
+    }
+    const seconds =
+      typeof obj.seconds === 'number'
+        ? obj.seconds
+        : typeof obj._seconds === 'number'
+        ? obj._seconds
+        : null;
+    if (seconds !== null && Number.isFinite(seconds)) {
+      const nanos =
+        typeof obj.nanoseconds === 'number'
+          ? obj.nanoseconds
+          : typeof obj._nanoseconds === 'number'
+          ? obj._nanoseconds
+          : 0;
+      return seconds * 1000 + Math.floor(nanos / 1_000_000);
+    }
+  }
+  return null;
+}
+
+/**
+ * Stable newest-first sorting for public catalogue programmes:
+ * 1. publishedAt (when available)
+ * 2. createdAt (otherwise)
+ * 3. deterministic title -> id fallback for legacy records without dates
+ */
+export function sortProgramsNewestFirst<
+  T extends Pick<ProgramRecord, 'id' | 'title' | 'publishedAt' | 'createdAt'>
+>(programs: T[]): T[] {
+  return [...programs].sort((a, b) => {
+    const aMs =
+      parseProgramTimestampMs(a.publishedAt) ?? parseProgramTimestampMs(a.createdAt);
+    const bMs =
+      parseProgramTimestampMs(b.publishedAt) ?? parseProgramTimestampMs(b.createdAt);
+
+    if (aMs !== null && bMs !== null && aMs !== bMs) {
+      return bMs - aMs;
+    }
+    if (aMs !== null && bMs === null) return -1;
+    if (aMs === null && bMs !== null) return 1;
+
+    const titleDiff = String(a.title || '').localeCompare(String(b.title || ''));
+    if (titleDiff !== 0) return titleDiff;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+}
+
+/**
+ * Determines whether a programme node should be displayed as a registerable course
+ * in the public catalogue. Structural CONTAINER nodes are excluded unless explicitly
+ * configured enrollable.
+ */
+export function isProgramPubliclyEnrollable(
+  program: Pick<ProgramRecord, 'status' | 'isArchived' | 'nodeType' | 'isEnrollable'>
+): boolean {
+  if (program.status !== 'PUBLISHED' || program.isArchived) return false;
+  if (program.nodeType === 'CONTAINER') {
+    return program.isEnrollable === true;
+  }
+  return program.isEnrollable !== false;
+}
+
+/**
+ * Computes active managed availability/promotional indicators strictly from
+ * explicit admin fields and date windows (never inferred from title/description).
+ */
+export function computeProgramIndicators(
+  program: Pick<
+    ProgramRecord,
+    'isHot' | 'sessionStartAt' | 'sessionEndAt' | 'enrolmentDeadline' | 'isLimitedTime'
+  >,
+  nowMs: number = Date.now()
+): ProgramIndicatorLabel[] {
+  const labels: ProgramIndicatorLabel[] = [];
+
+  if (program.isHot === true) {
+    labels.push('HOT');
+  }
+
+  const startMs = parseProgramTimestampMs(program.sessionStartAt);
+  const endMs = parseProgramTimestampMs(program.sessionEndAt);
+  if (startMs !== null && nowMs >= startMs && (endMs === null || nowMs <= endMs)) {
+    labels.push('IN SESSION');
+  }
+
+  const deadlineMs = parseProgramTimestampMs(program.enrolmentDeadline);
+  if (deadlineMs !== null) {
+    if (nowMs <= deadlineMs) {
+      labels.push('LIMITED TIME');
+    }
+  } else if (program.isLimitedTime === true) {
+    labels.push('LIMITED TIME');
+  }
+
+  return labels;
+}
+
+/**
+ * Builds the canonical public catalogue URL for any of the four primary roots.
+ */
+export function buildProgramCatalogueUrl(rootKey?: CanonicalRootKey | null): string {
+  const normalized = normalizeCanonicalRootKey(rootKey);
+  if (!normalized) {
+    return '/programs?tab=catalog#catalog-section';
+  }
+  return `/programs?tab=catalog&category=${normalized}#catalog-section`;
+}
+
 export function normalizeProgramRecord(id: string, raw: Record<string, any> = {}): ProgramRecord {
   const title = String(raw.title || raw.name || 'Untitled Programme').trim();
   const slug = String(raw.slug || slugifyTitle(title)).trim();
@@ -597,7 +884,9 @@ export function normalizeProgramRecord(id: string, raw: Record<string, any> = {}
         (publicGroupPricing ? `₦${publicGroupPricing.amount.toLocaleString()}` : 'Contact Us')
     ),
     price: publicGroupPricing?.amount ?? legacyNumericPrice ?? undefined,
-    featuredImage: String(raw.featuredImage || ''),
+    featuredImage: String(
+      raw.featuredImage || raw.image || raw.coverImage || raw.bannerImage || raw.bannerUrl || ''
+    ),
     curriculum,
     curriculumPdfUrl: String(raw.curriculumPdfUrl || ''),
     curriculumTitle: String(raw.curriculumTitle || ''),
@@ -644,6 +933,12 @@ export function normalizeProgramRecord(id: string, raw: Record<string, any> = {}
     publicGroupPricing,
     privateMentorshipPricing,
     lessonsCount: Number(raw.lessonsCount || curriculum.length || 0),
+    publishedAt: raw.publishedAt || null,
+    isHot: Boolean(raw.isHot),
+    sessionStartAt: raw.sessionStartAt || null,
+    sessionEndAt: raw.sessionEndAt || null,
+    enrolmentDeadline: raw.enrolmentDeadline || null,
+    isLimitedTime: Boolean(raw.isLimitedTime),
     createdAt: raw.createdAt || null,
     updatedAt: raw.updatedAt || null,
   };
@@ -1119,17 +1414,35 @@ export async function executeBranchMove(
   }
 
   const dbs = getAllClientDatabases();
+  const rootById = new Map<string, PrimaryRootDefinition>();
+  if (programsMap) {
+    for (const p of programsMap.values()) {
+      const def = matchPrimaryRootDefinition(p, p.id);
+      if (def) rootById.set(p.id, def);
+    }
+  }
+  for (const r of PRIMARY_PROGRAM_ROOTS) {
+    rootById.set(r.canonicalId, r);
+  }
+
   for (const database of dbs) {
     try {
       const batch = writeBatch(database);
       for (const item of preview.affectedItems) {
         const ref = doc(database, 'programs', item.programId);
+        const resolvedRootDef = item.newRootId ? rootById.get(item.newRootId) : undefined;
         batch.set(
           ref,
           {
             parentProgramId: item.newParentId,
             rootProgramId: item.newRootId,
             ancestorIds: item.newAncestorIds,
+            ...(resolvedRootDef
+              ? {
+                  primaryRootKey: resolvedRootDef.key,
+                  categoryId: resolvedRootDef.categoryId,
+                }
+              : {}),
             sortOrder: item.newSortOrder,
             order: item.newSortOrder,
             isUnassigned: item.isUnassigned,

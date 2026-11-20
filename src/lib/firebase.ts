@@ -60,6 +60,7 @@ export function setActiveDatabaseId(_nextDbId: string, reload = true): void {
       window.localStorage.setItem(ACTIVE_DB_STORAGE_KEY, normalized);
       // Clear cached banner/CMS session keys so the switched database loads fresh state
       if (window.sessionStorage) {
+        window.sessionStorage.removeItem("jaystar_banner_cache_v1");
         window.sessionStorage.removeItem("jaystar_marquee_banner_v1");
       }
     }

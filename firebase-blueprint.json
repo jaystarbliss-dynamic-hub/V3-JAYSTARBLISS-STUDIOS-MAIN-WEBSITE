@@ -171,6 +171,25 @@
         "updatedAt": { "type": "string" },
         "updatedBy": { "type": "string" }
       }
+    },
+    "Promotion": {
+      "title": "Promotion",
+      "description": "Homepage carousel banner or first-visit promotional popup campaign.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "placement": { "type": "string", "enum": ["HOME_CAROUSEL", "FIRST_VISIT_POPUP"] },
+        "status": { "type": "string", "enum": ["DRAFT", "SCHEDULED", "ACTIVE", "PAUSED", "ARCHIVED"] },
+        "desktopImageUrl": { "type": "string" },
+        "mobileImageUrl": { "type": "string" },
+        "imageAlt": { "type": "string" },
+        "ctaLabel": { "type": "string" },
+        "ctaTargetType": { "type": "string", "enum": ["PROGRAM_CATALOG", "INDIVIDUAL_PROGRAM", "INTERNAL_PAGE", "EXTERNAL_URL"] },
+        "sortOrder": { "type": "number" },
+        "popupFrequency": { "type": "string", "enum": ["ONCE_PER_BROWSER", "ONCE_PER_SESSION", "EVERY_N_DAYS"] }
+      },
+      "required": ["title", "placement", "status", "desktopImageUrl", "ctaLabel", "ctaTargetType", "sortOrder"]
     }
   },
   "firestore": {
@@ -285,6 +304,10 @@
     "studentProgress/{docId}": {
       "schema": { "$ref": "#/entities/SiteSettings" },
       "description": "Student lesson and course milestone progress."
+    },
+    "promotions/{promoId}": {
+      "schema": { "$ref": "#/entities/Promotion" },
+      "description": "Homepage carousel banners and first-visit promotional popup campaigns."
     }
   }
 }

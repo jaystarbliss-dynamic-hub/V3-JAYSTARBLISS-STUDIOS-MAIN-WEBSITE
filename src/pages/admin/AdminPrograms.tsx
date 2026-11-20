@@ -8,11 +8,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { normalizeProgramRecord } from '../../lib/programHierarchy';
-import {
-  INITIAL_DEMO_PROGRAMS,
-  INITIAL_DEMO_PROPOSALS,
-  recalculateHierarchyMetadata,
-} from '../../components/admin/programs-preview/mockData';
+import { recalculateHierarchyMetadata } from '../../components/admin/programs-preview/hierarchyUtils';
 import type {
   PreviewProgramRecord,
   PreviewProposalRecord,
@@ -68,10 +64,10 @@ function toPreviewProposalRecord(
     slug: raw.slug || id,
     description: raw.description || '',
     categoryId: raw.categoryId || 'DIGITAL_AND_TECHNOLOGY',
-    parentProgramId: raw.parentProgramId || 'root-technology-programme',
-    parentProgramTitle: raw.parentProgramTitle || 'Technology Programme',
-    parentBreadcrumbPath: raw.parentBreadcrumbPath || 'Technology Programme',
-    rootProgramId: raw.rootProgramId || 'root-technology-programme',
+    parentProgramId: raw.parentProgramId || '',
+    parentProgramTitle: raw.parentProgramTitle || '',
+    parentBreadcrumbPath: raw.parentBreadcrumbPath || '',
+    rootProgramId: raw.rootProgramId || null,
     ancestorIds: Array.isArray(raw.ancestorIds) ? raw.ancestorIds : [],
     proposedNodeType: raw.proposedNodeType || 'ENROLLABLE',
     canContainChildren: Boolean(raw.canContainChildren),
@@ -103,62 +99,75 @@ function toPreviewProposalRecord(
     tutorName: raw.tutorName || raw.proposedByName || 'Tutor',
     tutorEmail: raw.tutorEmail || raw.proposedByEmail || '',
     status: raw.status || 'PENDING',
-    submittedAt: raw.submittedAt || raw.createdAt || new Date().toISOString(),
+    submittedAt:
+      typeof raw.submittedAt === 'string'
+        ? raw.submittedAt
+        : typeof raw.createdAt === 'string'
+        ? raw.createdAt
+        : raw.createdAt?.toDate
+        ? raw.createdAt.toDate().toISOString()
+        : new Date().toISOString(),
     adminReviewNotes: raw.adminReviewNotes || '',
+    reviewedByUid: raw.reviewedByUid,
     reviewedByName: raw.reviewedByName,
     reviewedAt: raw.reviewedAt,
+    createdProgramId: raw.createdProgramId,
     reviewHistory: Array.isArray(raw.reviewHistory) ? raw.reviewHistory : [],
   };
 }
 
 export const AdminPrograms: React.FC = () => {
-  const [livePrograms, setLivePrograms] = useState<PreviewProgramRecord[] | null>(
-    null
-  );
-  const [liveProposals, setLiveProposals] = useState<PreviewProposalRecord[] | null>(
-    null
-  );
+  const [livePrograms, setLivePrograms] = useState<PreviewProgramRecord[] | null>(null);
+  const [liveProposals, setLiveProposals] = useState<PreviewProposalRecord[] | null>(null);
+  const [programsLoading, setProgramsLoading] = useState(true);
+  const [proposalsLoading, setProposalsLoading] = useState(true);
+  const [programsError, setProgramsError] = useState<string | null>(null);
+  const [proposalsError, setProposalsError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
+    setProgramsLoading(true);
+    setProposalsLoading(true);
+    setProgramsError(null);
+    setProposalsError(null);
+
     const unsubPrograms = onSnapshot(
       collection(db, 'programs'),
       (snap) => {
-        if (snap.empty) {
-          setLivePrograms(INITIAL_DEMO_PROGRAMS);
-          return;
-        }
         const docs = snap.docs.map((d) =>
           toPreviewProgramRecord(d.id, d.data() as Record<string, any>)
         );
-        // Merge canonical roots if missing so hierarchy always has the 4 primary roots
-        const existingIds = new Set(docs.map((d) => d.id));
-        const merged = [
-          ...INITIAL_DEMO_PROGRAMS.filter(
-            (demo) => demo.isPrimaryRoot && !existingIds.has(demo.id)
-          ),
-          ...docs,
-        ];
-        setLivePrograms(recalculateHierarchyMetadata(merged));
+        setLivePrograms(recalculateHierarchyMetadata(docs));
+        setProgramsError(null);
+        setProgramsLoading(false);
       },
-      () => {
-        setLivePrograms(INITIAL_DEMO_PROGRAMS);
+      (err) => {
+        console.error('Failed to load live programmes from Firestore:', err);
+        setLivePrograms([]);
+        setProgramsError(
+          err?.message || 'Unable to load programmes from Firestore. Please retry.'
+        );
+        setProgramsLoading(false);
       }
     );
 
     const unsubProposals = onSnapshot(
-      collection(db, 'tutor_program_proposals'),
+      collection(db, 'programProposals'),
       (snap) => {
-        if (snap.empty) {
-          setLiveProposals(INITIAL_DEMO_PROPOSALS);
-          return;
-        }
         const docs = snap.docs.map((d) =>
           toPreviewProposalRecord(d.id, d.data() as Record<string, any>)
         );
         setLiveProposals(docs);
+        setProposalsError(null);
+        setProposalsLoading(false);
       },
-      () => {
-        setLiveProposals(INITIAL_DEMO_PROPOSALS);
+      (err) => {
+        console.error('Failed to load live tutor proposals from Firestore:', err);
+        setLiveProposals([]);
+        setProposalsError(
+          err?.message || 'Unable to load tutor proposals from Firestore. Please retry.'
+        );
+        setProposalsLoading(false);
       }
     );
 
@@ -166,40 +175,32 @@ export const AdminPrograms: React.FC = () => {
       unsubPrograms();
       unsubProposals();
     };
+  }, [retryNonce]);
+
+  const handleRetry = useCallback(() => {
+    setRetryNonce((n) => n + 1);
   }, []);
 
   const handlePersistProgram = useCallback(async (prog: PreviewProgramRecord) => {
-    try {
-      const cleanPayload = JSON.parse(JSON.stringify(prog));
-      await setDoc(doc(db, 'programs', prog.id), cleanPayload, { merge: true });
-    } catch (err) {
-      console.warn('Could not persist program to Firestore:', err);
-    }
+    const cleanPayload = JSON.parse(JSON.stringify(prog));
+    await setDoc(doc(db, 'programs', prog.id), cleanPayload, { merge: true });
   }, []);
 
   const handlePersistProposal = useCallback(async (prop: PreviewProposalRecord) => {
-    try {
-      const cleanPayload = JSON.parse(JSON.stringify(prop));
-      await setDoc(doc(db, 'tutor_program_proposals', prop.id), cleanPayload, {
-        merge: true,
-      });
-    } catch (err) {
-      console.warn('Could not persist proposal to Firestore:', err);
-    }
+    const cleanPayload = JSON.parse(JSON.stringify(prop));
+    await setDoc(doc(db, 'programProposals', prop.id), cleanPayload, {
+      merge: true,
+    });
   }, []);
 
   const handlePersistBatchPrograms = useCallback(
     async (progs: PreviewProgramRecord[]) => {
-      try {
-        const batch = writeBatch(db);
-        progs.slice(0, 400).forEach((p) => {
-          const clean = JSON.parse(JSON.stringify(p));
-          batch.set(doc(db, 'programs', p.id), clean, { merge: true });
-        });
-        await batch.commit();
-      } catch (err) {
-        console.warn('Could not batch-persist programs to Firestore:', err);
-      }
+      const batch = writeBatch(db);
+      progs.slice(0, 400).forEach((p) => {
+        const clean = JSON.parse(JSON.stringify(p));
+        batch.set(doc(db, 'programs', p.id), clean, { merge: true });
+      });
+      await batch.commit();
     },
     []
   );
@@ -209,6 +210,9 @@ export const AdminPrograms: React.FC = () => {
       embeddedInAdminLayout={true}
       externalPrograms={livePrograms}
       externalProposals={liveProposals}
+      isLoading={programsLoading || proposalsLoading}
+      loadError={programsError || proposalsError}
+      onRetryLoad={handleRetry}
       onPersistProgram={handlePersistProgram}
       onPersistProposal={handlePersistProposal}
       onPersistBatchPrograms={handlePersistBatchPrograms}

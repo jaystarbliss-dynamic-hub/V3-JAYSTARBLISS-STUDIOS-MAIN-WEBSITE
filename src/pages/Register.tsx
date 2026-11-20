@@ -5,11 +5,16 @@ import {
   User, Phone, Mail, Lock, BookOpen, 
   ArrowLeft, ArrowRight, Award, Calendar,
   Clock, MapPin, Eye, EyeOff, Check,
-  ShieldCheck, AlertCircle, HelpCircle
+  ShieldCheck, AlertCircle, HelpCircle, Camera, Upload, Loader2, Trash2
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { collection, addDoc, doc, setDoc, serverTimestamp, getDoc, deleteDoc } from 'firebase/firestore';
+import { uploadImageToCloudinary } from '../lib/cloudinary';
+import {
+  buildCanonicalTutorApplicationPayload,
+  isValidTutorPhotoUrl,
+} from '../lib/tutorDirectory';
 import { useTheme } from '../hooks/useTheme';
 import SEO from '../components/ui/SEO';
 import { JaystarblissIcon } from '../components/common/JaystarblissLogo';
@@ -134,6 +139,39 @@ const Register: React.FC = () => {
   const [timeSlot, setTimeSlot] = useState(TIME_SLOTS[2]);
   const [expectedSalary, setExpectedSalary] = useState('');
   const [tutorBio, setTutorBio] = useState('');
+  const [tutorPhotoUrl, setTutorPhotoUrl] = useState('');
+  const [uploadingTutorPhoto, setUploadingTutorPhoto] = useState(false);
+
+  const handleTutorPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      const msg = 'Please select a valid image file (JPG, PNG, or WebP).';
+      setError(msg);
+      toast.error(msg);
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      const msg = 'Profile photograph must be smaller than 5 MB.';
+      setError(msg);
+      toast.error(msg);
+      return;
+    }
+    setUploadingTutorPhoto(true);
+    setError('');
+    try {
+      const result = await uploadImageToCloudinary(file, 'jaystarbliss/tutors');
+      setTutorPhotoUrl(result.secureUrl || result.url);
+      toast.success('Profile photograph uploaded.');
+    } catch (uploadErr: any) {
+      const msg = uploadErr?.message || 'Failed to upload profile photograph. Please try again.';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setUploadingTutorPhoto(false);
+      e.target.value = '';
+    }
+  };
 
   // URL mode initialization
   useEffect(() => {
@@ -220,6 +258,16 @@ const Register: React.FC = () => {
         const age = calculateAge(dateOfBirth);
         if (age < 18) {
           setError('Access denied: You must be at least 18 years old to create an Independent Student account. Students under 18 must be registered through a Parent or Guardian account.');
+          return false;
+        }
+      }
+      if (mode === 'tutor') {
+        if (uploadingTutorPhoto) {
+          setError('Please wait for your profile photograph to finish uploading.');
+          return false;
+        }
+        if (!isValidTutorPhotoUrl(tutorPhotoUrl)) {
+          setError('Please upload a clear portrait photograph of yourself before continuing.');
           return false;
         }
       }
@@ -470,16 +518,27 @@ const Register: React.FC = () => {
         setLoading(false);
       }
     } else if (mode === 'tutor') {
+      if (!isValidTutorPhotoUrl(tutorPhotoUrl)) {
+        const msg = 'A valid uploaded tutor profile photograph is mandatory before submitting your application.';
+        setError(msg);
+        toast.error(msg);
+        setLoading(false);
+        return;
+      }
       try {
         const cleanEmail = email.trim().toLowerCase();
         const cleanName = fullName.trim();
+        const cleanPhoto = tutorPhotoUrl.trim();
         let tutorUid = '';
 
         if (cleanEmail && password && password.length >= 6) {
           try {
             const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
             tutorUid = cred.user.uid;
-            await updateProfile(cred.user, { displayName: cleanName }).catch(() => null);
+            await updateProfile(cred.user, {
+              displayName: cleanName,
+              photoURL: cleanPhoto,
+            }).catch(() => null);
             await setDoc(doc(db, 'users', tutorUid), {
               uid: tutorUid,
               name: cleanName,
@@ -487,9 +546,12 @@ const Register: React.FC = () => {
               username: unameCheck.cleanUsername,
               email: cleanEmail,
               phone: phone.trim(),
+              photoURL: cleanPhoto,
               role: 'STAFF',
-              accountStatus: 'ACTIVE',
-              status: 'ACTIVE',
+              accountStatus: 'PENDING',
+              status: 'PENDING',
+              approvalStatus: 'pending',
+              publicProfileStatus: 'PENDING_REVIEW',
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             }, { merge: true }).catch(() => null);
@@ -501,6 +563,7 @@ const Register: React.FC = () => {
               email: cleanEmail,
               phone: phone.trim(),
               location: location.trim(),
+              photoURL: cleanPhoto,
               qualification: qualification.trim(),
               cvUrl: cvUrl.trim(),
               subjects: selectedSubjects,
@@ -510,7 +573,9 @@ const Register: React.FC = () => {
               expectedSalary: expectedSalary.trim(),
               bio: tutorBio.trim(),
               role: 'staff',
-              status: 'ACTIVE',
+              status: 'PENDING',
+              approvalStatus: 'pending',
+              publicProfileStatus: 'PENDING_REVIEW',
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             }, { merge: true }).catch(() => null);
@@ -527,36 +592,42 @@ const Register: React.FC = () => {
           }
         }
 
-        // Submit tutor application for admin review
-        await addDoc(collection(db, 'tutor_applications'), {
-          ...(tutorUid ? { uid: tutorUid, userId: tutorUid } : {}),
-          username: unameCheck.cleanUsername,
+        // Submit canonical tutor application for admin review (never publicly listed until approved & published)
+        const canonicalPayload = buildCanonicalTutorApplicationPayload({
+          uid: tutorUid || null,
           name: cleanName,
           email: cleanEmail,
           phone: phone.trim(),
+          whatsapp: phone.trim(),
           location: location.trim(),
-          qualification: qualification.trim(),
-          cvUrl: cvUrl.trim(),
+          photoURL: cleanPhoto,
           subjects: selectedSubjects,
+          qualification: qualification.trim(),
           experienceYears,
           daysPerWeek,
           timeSlot,
           expectedSalary: expectedSalary.trim(),
+          cvUrl: cvUrl.trim(),
           bio: tutorBio.trim(),
-          status: 'pending',
-          createdAt: serverTimestamp()
+          source: 'REGISTER_FORM',
         });
-        
-        setSuccess('Instructor Application submitted! Our Academic Directorate will review your curriculum credentials and schedule your onboarding consultation.');
-        toast.success('Instructor application received! Our team will contact you soon.');
-        
-        // Reset form
+
+        await addDoc(collection(db, 'tutor_applications'), {
+          ...canonicalPayload,
+          ...(tutorUid ? { userId: tutorUid } : {}),
+          username: unameCheck.cleanUsername,
+          createdAt: serverTimestamp(),
+        });
+
+        setSuccess('Instructor Application submitted! Our Academic Directorate will review your curriculum credentials and portrait before publishing your profile.');
+        toast.success('Instructor application received! Our team will review and contact you soon.');
+
         setTimeout(() => {
           navigate('/portal');
         }, 3000);
       } catch (err: any) {
-        setError('Error submitting tutor application. Please try again or contact us.');
-        toast.error('Error submitting tutor application. Please try again.');
+        setError(err?.message || 'Error submitting tutor application. Please try again or contact us.');
+        toast.error(err?.message || 'Error submitting tutor application. Please try again.');
         console.error('Tutor application error:', err);
       } finally {
         setLoading(false);
@@ -831,38 +902,101 @@ const Register: React.FC = () => {
               )}
 
               {mode === 'tutor' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div className="field">
-                    <label className="text-xs font-bold text-slate-300 block mb-1.5">City / Location</label>
-                    <div className="input-wrap relative flex items-center">
-                      <span className="input-icon absolute left-3 text-slate-400"><MapPin size={15} /></span>
-                      <input 
-                        type="text" 
-                        value={location} 
-                        onChange={e => setLocation(e.target.value)} 
-                        placeholder="e.g. Lagos, Abuja, or Remote" 
-                        className="w-full bg-white/10 border border-white/20 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:border-brand-red"
-                      />
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div className="field">
+                      <label className="text-xs font-bold text-slate-300 block mb-1.5">City / Location</label>
+                      <div className="input-wrap relative flex items-center">
+                        <span className="input-icon absolute left-3 text-slate-400"><MapPin size={15} /></span>
+                        <input 
+                          type="text" 
+                          value={location} 
+                          onChange={e => setLocation(e.target.value)} 
+                          placeholder="e.g. Lagos, Abuja, or Remote" 
+                          className="w-full bg-white/10 border border-white/20 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:border-brand-red"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="field">
+                      <label className="text-xs font-bold text-slate-300 block mb-1.5">Teaching Experience</label>
+                      <div className="input-wrap relative flex items-center">
+                        <span className="input-icon absolute left-3 text-slate-400"><Clock size={15} /></span>
+                        <select 
+                          value={experienceYears} 
+                          onChange={e => setExperienceYears(e.target.value)}
+                          className="w-full bg-slate-900 border border-white/20 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand-red"
+                        >
+                          <option value="Less than 1 Year">Less than 1 Year</option>
+                          <option value="1–3 Years">1–3 Years</option>
+                          <option value="3–5 Years">3–5 Years</option>
+                          <option value="5+ Years">5+ Years Senior Instructor</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="field">
-                    <label className="text-xs font-bold text-slate-300 block mb-1.5">Teaching Experience</label>
-                    <div className="input-wrap relative flex items-center">
-                      <span className="input-icon absolute left-3 text-slate-400"><Clock size={15} /></span>
-                      <select 
-                        value={experienceYears} 
-                        onChange={e => setExperienceYears(e.target.value)}
-                        className="w-full bg-slate-900 border border-white/20 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand-red"
-                      >
-                        <option value="Less than 1 Year">Less than 1 Year</option>
-                        <option value="1–3 Years">1–3 Years</option>
-                        <option value="3–5 Years">3–5 Years</option>
-                        <option value="5+ Years">5+ Years Senior Instructor</option>
-                      </select>
+                  {/* Mandatory Tutor Profile Photograph */}
+                  <div className="field pt-1">
+                    <label className="text-xs font-bold text-slate-300 block mb-1.5">
+                      Profile Photograph <span className="text-brand-red">*</span>
+                    </label>
+                    <div className="rounded-xl border border-white/20 bg-white/5 p-3 flex flex-col sm:flex-row items-center gap-3.5">
+                      <div className="h-16 w-16 rounded-xl overflow-hidden bg-slate-900/80 border border-white/15 shrink-0 flex items-center justify-center">
+                        {isValidTutorPhotoUrl(tutorPhotoUrl) ? (
+                          <img
+                            src={tutorPhotoUrl}
+                            alt="Uploaded tutor portrait"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <Camera size={22} className="text-slate-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 text-center sm:text-left min-w-0">
+                        <p className="text-xs font-bold text-white">
+                          {isValidTutorPhotoUrl(tutorPhotoUrl)
+                            ? 'Portrait photograph uploaded'
+                            : 'Clear head-and-shoulders photo required'}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                          Required for instructor verification and public Find a Tutor publication after approval (JPG/PNG/WebP, max 5 MB).
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-red hover:bg-red-700 text-white text-[11px] font-bold cursor-pointer transition-colors">
+                            {uploadingTutorPhoto ? (
+                              <>
+                                <Loader2 size={13} className="animate-spin" />
+                                Uploading...
+                              </>
+                            ) : (
+                              <>
+                                <Upload size={13} />
+                                {isValidTutorPhotoUrl(tutorPhotoUrl) ? 'Replace Photo' : 'Upload Photo'}
+                              </>
+                            )}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              disabled={uploadingTutorPhoto}
+                              onChange={(e) => void handleTutorPhotoUpload(e)}
+                              className="hidden"
+                            />
+                          </label>
+                          {isValidTutorPhotoUrl(tutorPhotoUrl) && (
+                            <button
+                              type="button"
+                              onClick={() => setTutorPhotoUrl('')}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] font-semibold transition-colors"
+                            >
+                              <Trash2 size={12} /> Remove
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </>
               )}
 
               {/* Continue Button */}

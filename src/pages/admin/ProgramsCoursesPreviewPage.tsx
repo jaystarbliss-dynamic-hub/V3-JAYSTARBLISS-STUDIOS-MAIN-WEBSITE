@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { CheckCircle2, X } from 'lucide-react';
+import { CheckCircle2, X, AlertCircle, RefreshCw, Loader2 } from 'lucide-react';
+import { auth } from '../../lib/firebase';
 import {
   normalizeProgramRecord,
   getDirectChildren,
@@ -7,12 +8,11 @@ import {
   slugifyTitle,
 } from '../../lib/programHierarchy';
 import {
-  INITIAL_DEMO_PROGRAMS,
-  INITIAL_DEMO_PROPOSALS,
   createBackupSnapshot,
   runHierarchyIntegrityAudit,
   recalculateHierarchyMetadata,
-} from '../../components/admin/programs-preview/mockData';
+  auditSyntheticProgramRecords,
+} from '../../components/admin/programs-preview/hierarchyUtils';
 import type {
   WorkspaceSectionId,
   ArchiveToolsTabId,
@@ -47,6 +47,9 @@ export interface ProgramsCoursesWorkspaceProps {
   embeddedInAdminLayout?: boolean;
   externalPrograms?: PreviewProgramRecord[] | null;
   externalProposals?: PreviewProposalRecord[] | null;
+  isLoading?: boolean;
+  loadError?: string | null;
+  onRetryLoad?: () => void;
   onPersistProgram?: (program: PreviewProgramRecord) => Promise<void> | void;
   onPersistProposal?: (proposal: PreviewProposalRecord) => Promise<void> | void;
   onPersistBatchPrograms?: (programs: PreviewProgramRecord[]) => Promise<void> | void;
@@ -56,52 +59,40 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
   embeddedInAdminLayout = false,
   externalPrograms = null,
   externalProposals = null,
+  isLoading = false,
+  loadError = null,
+  onRetryLoad,
   onPersistProgram,
   onPersistProposal,
   onPersistBatchPrograms,
 }) => {
   const [programs, setPrograms] = useState<PreviewProgramRecord[]>(() =>
-    recalculateHierarchyMetadata(
-      externalPrograms && externalPrograms.length > 0
-        ? externalPrograms
-        : INITIAL_DEMO_PROGRAMS
-    )
+    externalPrograms ? recalculateHierarchyMetadata(externalPrograms) : []
   );
   const [proposals, setProposals] = useState<PreviewProposalRecord[]>(() =>
-    externalProposals && externalProposals.length > 0
-      ? externalProposals
-      : INITIAL_DEMO_PROPOSALS
+    externalProposals ?? []
   );
 
-  // Sync external live Firestore records when provided
+  // Sync external live Firestore records whenever provided (including empty arrays)
   useEffect(() => {
-    if (externalPrograms && externalPrograms.length > 0) {
+    if (externalPrograms !== null) {
       setPrograms(recalculateHierarchyMetadata(externalPrograms));
     }
   }, [externalPrograms]);
 
   useEffect(() => {
-    if (externalProposals && externalProposals.length > 0) {
+    if (externalProposals !== null) {
       setProposals(externalProposals);
     }
   }, [externalProposals]);
 
-  const [backups, setBackups] = useState<BackupSnapshot[]>(() => [
-    createBackupSnapshot(
-      INITIAL_DEMO_PROGRAMS,
-      'Initial Pre-Migration Baseline Snapshot'
-    ),
-  ]);
+  const [backups, setBackups] = useState<BackupSnapshot[]>([]);
 
   // Navigation & focus state
   const [activeSection, setActiveSection] = useState<WorkspaceSectionId>('catalogue');
   const [archiveSubTab, setArchiveSubTab] = useState<ArchiveToolsTabId>('archived');
-  const [selectedHierarchyId, setSelectedHierarchyId] = useState<string | null>(
-    'prog-smart-techies'
-  );
-  const [selectedCurriculumId, setSelectedCurriculumId] = useState<string | null>(
-    'prog-web-development'
-  );
+  const [selectedHierarchyId, setSelectedHierarchyId] = useState<string | null>(null);
+  const [selectedCurriculumId, setSelectedCurriculumId] = useState<string | null>(null);
 
   // Editor state
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
@@ -151,6 +142,11 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
     [programs]
   );
 
+  const syntheticAuditFindings = useMemo(
+    () => auditSyntheticProgramRecords(programs, proposals),
+    [programs, proposals]
+  );
+
   const handleOpenCreateEditor = (parentId: string | null = null) => {
     setEditingProgramId(null);
     setEditorInitialParentId(parentId);
@@ -189,12 +185,18 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
 
     setPrograms((prev) => {
       const existing = prev.find((p) => p.id === id);
+      const publishedAtValue =
+        targetStatus === 'PUBLISHED'
+          ? existing?.publishedAt || nowIso
+          : existing?.publishedAt || null;
       const baseNormalized = normalizeProgramRecord(id, {
         ...(existing || {}),
         ...draftRecord,
         isPublished: targetStatus === 'PUBLISHED',
         isArchived: false,
         status: targetStatus,
+        publishedAt: publishedAtValue,
+        createdAt: existing?.createdAt || nowIso,
         updatedAt: nowIso,
       });
 
@@ -209,7 +211,9 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
         isPublished: targetStatus === 'PUBLISHED',
         isArchived: false,
         status: targetStatus,
+        publishedAt: publishedAtValue,
         previousStatusBeforeArchive: targetStatus,
+        createdAt: existing?.createdAt || nowIso,
         updatedAt: nowIso,
       };
 
@@ -220,7 +224,10 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
       const recalculated = recalculateHierarchyMetadata(nextList);
       savedRecord = recalculated.find((p) => p.id === id) || merged;
       if (savedRecord && onPersistProgram) {
-        void onPersistProgram(savedRecord);
+        Promise.resolve(onPersistProgram(savedRecord)).catch((err) => {
+          console.error('Failed to persist programme:', err);
+          showToast('Could not save programme changes to Firestore.');
+        });
       }
       return recalculated;
     });
@@ -238,6 +245,7 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
   const handleTogglePublish = (prog: PreviewProgramRecord) => {
     const nextPublished = !prog.isPublished;
     const nextStatus: 'PUBLISHED' | 'DRAFT' = nextPublished ? 'PUBLISHED' : 'DRAFT';
+    const nowIso = new Date().toISOString();
     setPrograms((prev) =>
       prev.map((p) => {
         if (p.id !== prog.id) return p;
@@ -245,10 +253,16 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
           ...p,
           isPublished: nextPublished,
           status: nextStatus,
+          publishedAt: nextPublished ? p.publishedAt || nowIso : p.publishedAt || null,
           previousStatusBeforeArchive: nextStatus,
-          updatedAt: new Date().toISOString(),
+          updatedAt: nowIso,
         };
-        if (onPersistProgram) void onPersistProgram(updated);
+        if (onPersistProgram) {
+          Promise.resolve(onPersistProgram(updated)).catch((err) => {
+            console.error('Failed to update publish status:', err);
+            showToast('Could not update publish status in Firestore.');
+          });
+        }
         return updated;
       })
     );
@@ -429,6 +443,9 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
     const newProgId = `prog-approved-${Date.now().toString(36)}`;
     const statusLabel: 'PUBLISHED' | 'DRAFT' = publishImmediately ? 'PUBLISHED' : 'DRAFT';
 
+    const reviewerUid = auth.currentUser?.uid || '';
+    const reviewerName = auth.currentUser?.displayName || 'Admin Reviewer';
+
     setProposals((prev) =>
       prev.map((item) => {
         if (item.id !== proposalId) return item;
@@ -444,14 +461,16 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
           learningObjectives: edited.learningObjectives,
           status: 'APPROVED',
           adminReviewNotes: edited.adminReviewNotes,
-          reviewedByName: 'Super Admin',
+          reviewedByUid: reviewerUid,
+          reviewedByName: reviewerName,
           reviewedAt: nowIso,
+          createdProgramId: newProgId,
           reviewHistory: [
             ...item.reviewHistory,
             {
               id: `hist-${Date.now()}`,
               action: 'APPROVED',
-              actorName: 'Super Admin',
+              actorName: reviewerName,
               timestamp: nowIso.slice(0, 16).replace('T', ' '),
               notes: edited.adminReviewNotes,
             },
@@ -511,6 +530,8 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
         learningObjectives: edited.learningObjectives,
         outcomes: edited.learningObjectives,
         prerequisiteProgramIds: prop.prerequisiteProgramIds || [],
+        publishedAt: publishImmediately ? nowIso : null,
+        createdAt: nowIso,
         updatedAt: nowIso,
       });
 
@@ -672,19 +693,6 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
     showToast('Isolated record into Unassigned queue.');
   };
 
-  const handleResetDemoData = () => {
-    const fresh = recalculateHierarchyMetadata(INITIAL_DEMO_PROGRAMS);
-    setPrograms(fresh);
-    setProposals(INITIAL_DEMO_PROPOSALS);
-    setBackups([
-      createBackupSnapshot(fresh, 'Initial Pre-Migration Baseline Snapshot'),
-    ]);
-    setSelectedHierarchyId('prog-smart-techies');
-    setSelectedCurriculumId('prog-web-development');
-    setActiveSection('catalogue');
-    showToast('Reset workspace to clean demonstration state.');
-  };
-
   const shellMeta = useMemo(() => {
     switch (activeSection) {
       case 'catalogue':
@@ -778,12 +786,42 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
       counts={counts}
       onCreateProgramme={() => handleOpenCreateEditor(null)}
       onOpenQuickCreateModal={() => handleOpenQuickCreateModal(null)}
-      onResetDemoData={embeddedInAdminLayout ? undefined : handleResetDemoData}
       breadcrumbs={shellMeta.breadcrumbs}
       headerTitle={shellMeta.title}
       headerSubtitle={shellMeta.subtitle}
       embeddedInAdminLayout={embeddedInAdminLayout}
     >
+      {/* Live Firestore Loading State */}
+      {isLoading && programs.length === 0 && (
+        <div className="mb-4 px-5 py-8 rounded-2xl bg-white border border-slate-200 flex items-center justify-center gap-3 text-xs font-semibold text-slate-600">
+          <Loader2 className="w-4 h-4 animate-spin text-[#B91C1C]" />
+          <span>Loading live programmes and proposals from Firestore...</span>
+        </div>
+      )}
+
+      {/* Live Firestore Error Banner with Retry */}
+      {loadError && (
+        <div className="mb-4 px-4 py-3.5 rounded-xl bg-red-50 border border-red-200 text-red-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-[#B91C1C] shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold">Could not sync live Firestore data</div>
+              <p className="text-red-800/90 mt-0.5">{loadError}</p>
+            </div>
+          </div>
+          {onRetryLoad && (
+            <button
+              type="button"
+              onClick={onRetryLoad}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white font-bold shrink-0 cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Toast Notification Banner */}
       {toastMessage && (
         <div className="mb-4 px-4 py-3 rounded-xl bg-slate-900 text-white text-xs font-medium flex items-center justify-between gap-3 shadow-sm">
@@ -900,6 +938,7 @@ export const ProgramsCoursesPreviewPage: React.FC<ProgramsCoursesWorkspaceProps>
           onSelectTab={setArchiveSubTab}
           backups={backups}
           integrityFindings={integrityFindings}
+          syntheticAuditFindings={syntheticAuditFindings}
           onRestoreArchived={(id) => setArchivingProgramId(id)}
           onInspectProgram={(id) => {
             setSelectedHierarchyId(id);

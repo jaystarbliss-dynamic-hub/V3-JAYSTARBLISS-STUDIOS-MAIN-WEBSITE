@@ -28,6 +28,7 @@ import {
   getAllDescendants,
   getDirectChildren,
   getProgramBreadcrumbs,
+  resolveProgramCanonicalRoot,
   executeBranchMove,
   slugifyTitle,
 } from '../../lib/programHierarchy';
@@ -88,6 +89,11 @@ const AdminProgramForm: React.FC = () => {
     publicGroupBillingCycle: 'Per Term / Cohort',
     privateMentorshipAmount: 60000,
     privateMentorshipBillingCycle: 'Per Month / 1-on-1',
+    isHot: false,
+    isLimitedTime: false,
+    sessionStartAt: '',
+    sessionEndAt: '',
+    enrolmentDeadline: '',
   });
 
   useEffect(() => {
@@ -172,6 +178,20 @@ const AdminProgramForm: React.FC = () => {
               privateMentorshipAmount: privPrice,
               privateMentorshipBillingCycle:
                 rawData.privateMentorshipPricing?.billingCycle || 'Per Month / 1-on-1',
+              isHot: Boolean(rawData.isHot),
+              isLimitedTime: Boolean(rawData.isLimitedTime),
+              sessionStartAt:
+                typeof rawData.sessionStartAt === 'string'
+                  ? rawData.sessionStartAt.slice(0, 10)
+                  : '',
+              sessionEndAt:
+                typeof rawData.sessionEndAt === 'string'
+                  ? rawData.sessionEndAt.slice(0, 10)
+                  : '',
+              enrolmentDeadline:
+                typeof rawData.enrolmentDeadline === 'string'
+                  ? rawData.enrolmentDeadline.slice(0, 10)
+                  : '',
             }));
           } else {
             setError('Programme not found');
@@ -250,6 +270,15 @@ const AdminProgramForm: React.FC = () => {
       if (name === 'title' && !isEditing && (!prev.slug || prev.slug === slugifyTitle(prev.title))) {
         next.slug = slugifyTitle(value);
       }
+      if (name === 'parentProgramId' && value && programsMap.has(value)) {
+        const parentNode = programsMap.get(value)!;
+        const resolved = resolveProgramCanonicalRoot(parentNode, programsMap);
+        if (resolved.rootDefinition?.categoryId) {
+          next.categoryId = resolved.rootDefinition.categoryId;
+        } else if (parentNode.categoryId) {
+          next.categoryId = parentNode.categoryId;
+        }
+      }
       if (name === 'nodeType') {
         if (value === 'CONTAINER') {
           next.isEnrollable = false;
@@ -321,8 +350,19 @@ const AdminProgramForm: React.FC = () => {
         formData.pricing?.trim() ||
         (pubAmount > 0 ? `₦${pubAmount.toLocaleString()}` : 'Contact Us');
 
+      const existingRecord = isEditing && id ? programsMap.get(id) : null;
+      const parentRootRes =
+        parentId && programsMap.has(parentId)
+          ? resolveProgramCanonicalRoot(programsMap.get(parentId)!, programsMap)
+          : null;
+      const resolvedCategoryId =
+        parentRootRes?.rootDefinition?.categoryId || formData.categoryId;
+      const nowIso = new Date().toISOString();
+
       const payload: any = {
         ...formData,
+        categoryId: resolvedCategoryId,
+        primaryRootKey: parentRootRes?.rootKey ?? existingRecord?.primaryRootKey ?? null,
         slug: formData.slug.trim() || slugifyTitle(formData.title),
         shortDescription: formData.shortDescription,
         fullDescription: formData.longDescription,
@@ -362,11 +402,17 @@ const AdminProgramForm: React.FC = () => {
           billingCycle: formData.privateMentorshipBillingCycle || 'Per Month / 1-on-1',
           label: 'Private 1-on-1 Mentorship',
         },
-        updatedAt: new Date().toISOString(),
+        isHot: Boolean(formData.isHot),
+        isLimitedTime: Boolean(formData.isLimitedTime),
+        sessionStartAt: formData.sessionStartAt || null,
+        sessionEndAt: formData.sessionEndAt || null,
+        enrolmentDeadline: formData.enrolmentDeadline || null,
+        publishedAt: isPublished ? existingRecord?.publishedAt || nowIso : existingRecord?.publishedAt || null,
+        updatedAt: nowIso,
       };
 
       if (!isEditing) {
-        payload.createdAt = new Date().toISOString();
+        payload.createdAt = nowIso;
       }
 
       const dbs = getAllClientDatabases();
@@ -1294,6 +1340,78 @@ const AdminProgramForm: React.FC = () => {
                 <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
                   Enables online tests, logic quizzes, and invigilated exams assigned to this unit.
                 </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Managed Catalogue Indicators */}
+          <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-4">
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                Managed Catalogue Indicators
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Controls optional HOT, IN SESSION, and LIMITED TIME indicators displayed on public programme cards.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <label className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 cursor-pointer">
+                <span className="font-bold text-slate-800 dark:text-slate-200">Mark as HOT</span>
+                <input
+                  type="checkbox"
+                  name="isHot"
+                  checked={formData.isHot}
+                  onChange={handleChange}
+                  className="w-4 h-4 rounded border-slate-300 text-brand-red"
+                />
+              </label>
+              <label className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 cursor-pointer">
+                <span className="font-bold text-slate-800 dark:text-slate-200">Mark as LIMITED TIME</span>
+                <input
+                  type="checkbox"
+                  name="isLimitedTime"
+                  checked={formData.isLimitedTime}
+                  onChange={handleChange}
+                  className="w-4 h-4 rounded border-slate-300 text-brand-red"
+                />
+              </label>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Session Start Date
+                </label>
+                <input
+                  type="date"
+                  name="sessionStartAt"
+                  value={formData.sessionStartAt}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Session End Date
+                </label>
+                <input
+                  type="date"
+                  name="sessionEndAt"
+                  value={formData.sessionEndAt}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Enrolment Deadline
+                </label>
+                <input
+                  type="date"
+                  name="enrolmentDeadline"
+                  value={formData.enrolmentDeadline}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-white"
+                />
               </div>
             </div>
           </div>

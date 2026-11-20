@@ -114,6 +114,7 @@ const CMS_ADMIN_ALLOWED_PATHS = [
   '/admin',
   '/admin/inquiries',
   '/admin/pages',
+  '/admin/promotions',
   '/admin/programs',
   '/admin/services',
   '/admin/portfolio',

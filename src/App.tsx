@@ -18,6 +18,7 @@ import ScrollToTop from "./components/ScrollToTop";
 import GlassRippleListener from "./components/ui/GlassRippleListener";
 import HorizontalWheelScrollListener from "./components/ui/HorizontalWheelScrollListener";
 import MarqueeBanner from "./components/ui/MarqueeBanner";
+import FirstVisitPromoPopup from "./components/promotions/FirstVisitPromoPopup";
 import AdminImpersonationBanner from "./components/common/AdminImpersonationBanner";
 import { FloatingWhatsApp } from "./components/ui/FloatingWhatsApp";
 
@@ -99,9 +100,9 @@ const AdminActivityLogs = lazy(() => import("./pages/admin/AdminActivityLogs"));
 const AdminBilling = lazy(() => import("./pages/admin/AdminBilling"));
 const AdminReports = lazy(() => import("./pages/admin/AdminReports"));
 const AdminTutorSubjects = lazy(() => import("./pages/admin/AdminTutorSubjects"));
+const AdminPromotions = lazy(() => import("./pages/admin/AdminPromotions"));
 const StudentEdgeClub = lazy(() => import("./pages/portal/StudentEdgeClub"));
 const PortalWireframesShowcase = lazy(() => import("./pages/PortalWireframesShowcase"));
-const ProgramsCoursesPreviewPage = lazy(() => import("./pages/admin/ProgramsCoursesPreviewPage"));
 const AcademicReportingCenter = lazy(() => import("./pages/portal/AcademicReportingCenter"));
 
 const StudentBillingGate = () =>
@@ -137,8 +138,22 @@ function AnimatedRoutes() {
           }
         />
         <Route path="/wireframes" element={<PortalWireframesShowcase />} />
-        <Route path="/portal-preview" element={<Navigate to="/portal-preview/programs-courses" replace />} />
-        <Route path="/portal-preview/programs-courses" element={<ProgramsCoursesPreviewPage />} />
+        <Route
+          path="/portal-preview"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/admin/programs" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/portal-preview/programs-courses"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/admin/programs" replace />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/about" element={<PageTransition><About /></PageTransition>} />
         <Route path="/programs" element={<PageTransition><Programs /></PageTransition>} />
         <Route path="/programs/:slug" element={<PageTransition><ProgramDetails /></PageTransition>} />
@@ -272,6 +287,7 @@ function AnimatedRoutes() {
           <Route path="pages" element={<AdminPages />} />
           <Route path="pages/new" element={<AdminPageForm />} />
           <Route path="pages/:id" element={<AdminPageForm />} />
+          <Route path="promotions" element={<AdminPromotions />} />
           <Route path="students" element={<AdminStudents />} />
           <Route path="parents" element={<AdminParents />} />
           <Route path="staff" element={<AdminStaff />} />
@@ -302,6 +318,7 @@ function AppContent() {
       <AuditActivityTracker />
       <AnimatedRoutes />
       <NotificationDrawer />
+      {!isStandalone && <FirstVisitPromoPopup />}
       {!isStandalone && <MarqueeBanner />}
       {!isStandalone && <FloatingWhatsApp />}
     </>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { logBannerDiagnostic } from '../../lib/bannerDiagnostics';
 import { AlertTriangle, X, Radio, ArrowRight, ShieldAlert, Info, CheckCircle2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -26,45 +27,121 @@ const DEFAULT_BANNER: BannerConfig = {
   showDismiss: true
 };
 
+export const MARQUEE_BANNER_CACHE_KEY = 'jaystar_banner_cache_v1';
+
 export const MarqueeBanner: React.FC = () => {
   const [config, setConfig] = useState<BannerConfig>(DEFAULT_BANNER);
   const [isDismissed, setIsDismissed] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
-    const CACHE_KEY = 'jaystar_banner_cache_v1';
     const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
     try {
-      const raw = sessionStorage.getItem(CACHE_KEY);
+      const raw = sessionStorage.getItem(MARQUEE_BANNER_CACHE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.data && Date.now() - Number(parsed.ts || 0) < CACHE_TTL_MS) {
+        const ageMs = Date.now() - Number(parsed?.ts || 0);
+        if (parsed && parsed.data && ageMs < CACHE_TTL_MS) {
           setConfig(prev => ({ ...prev, ...parsed.data }));
-          return;
+          logBannerDiagnostic('MarqueeBanner', 'cache_seeded', {
+            cacheKey: MARQUEE_BANNER_CACHE_KEY,
+            ageMs,
+            enabled: parsed.data.enabled,
+            variant: parsed.data.variant,
+            messagePreview: String(parsed.data.message || '').slice(0, 80),
+          });
+        } else {
+          logBannerDiagnostic('MarqueeBanner', 'cache_expired', {
+            cacheKey: MARQUEE_BANNER_CACHE_KEY,
+            ageMs,
+          });
         }
+      } else {
+        logBannerDiagnostic('MarqueeBanner', 'cache_miss', {
+          cacheKey: MARQUEE_BANNER_CACHE_KEY,
+        });
       }
     } catch {
       // Ignore storage parse issues
     }
 
     const bannerRef = doc(db, 'settings', 'banner');
-    getDoc(bannerRef)
-      .then((snap) => {
+    const unsubscribe = onSnapshot(
+      bannerRef,
+      (snap) => {
         if (snap.exists()) {
           const data = snap.data() as BannerConfig;
           setConfig(prev => ({ ...prev, ...data }));
+          logBannerDiagnostic(
+            'MarqueeBanner',
+            'snapshot_received',
+            {
+              docPath: 'settings/banner',
+              exists: true,
+              fromCache: snap.metadata.fromCache,
+              hasPendingWrites: snap.metadata.hasPendingWrites,
+              enabled: data.enabled,
+              variant: data.variant || 'maintenance',
+              speed: data.speed || 'normal',
+              linkUrl: data.linkUrl || null,
+              messagePreview: String(data.message || '').slice(0, 80),
+            },
+            data.enabled === false ? 'warn' : 'info'
+          );
           try {
-            sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+            sessionStorage.setItem(
+              MARQUEE_BANNER_CACHE_KEY,
+              JSON.stringify({ ts: Date.now(), data })
+            );
           } catch {
             // Ignore quota errors
           }
+        } else {
+          logBannerDiagnostic(
+            'MarqueeBanner',
+            'snapshot_missing',
+            {
+              docPath: 'settings/banner',
+              exists: false,
+              fromCache: snap.metadata.fromCache,
+              usingFallbackDefault: true,
+            },
+            'warn'
+          );
         }
-      })
-      .catch(() => {
-        // Fallback silently to DEFAULT_BANNER when offline or when free read quota is reached
-      });
+      },
+      (err: any) => {
+        logBannerDiagnostic(
+          'MarqueeBanner',
+          'snapshot_error',
+          {
+            docPath: 'settings/banner',
+            code: err?.code || 'unknown',
+            message: err?.message || String(err),
+            usingFallbackDefault: true,
+          },
+          'error'
+        );
+      }
+    );
+
+    return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!config.enabled || isDismissed) {
+      logBannerDiagnostic(
+        'MarqueeBanner',
+        'not_rendering',
+        {
+          enabled: config.enabled,
+          isDismissed,
+        },
+        'warn'
+      );
+    }
+  }, [config.enabled, isDismissed]);
 
   if (!config.enabled || isDismissed) {
     return null;
