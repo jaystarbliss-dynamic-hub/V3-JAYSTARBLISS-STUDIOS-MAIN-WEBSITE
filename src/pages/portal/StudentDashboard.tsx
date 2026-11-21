@@ -185,6 +185,35 @@ const stableCredentialId = (studentKey: string, moduleId: string) => {
   return `JDS-CERT-${hash.toString(36).toUpperCase().padStart(7, '0').slice(-7)}`;
 };
 
+const normalizeSubjectsList = (raw: unknown): string[] => {
+  if (Array.isArray(raw)) {
+    return raw
+      .flatMap((item) => {
+        if (typeof item === 'string') return item.split(/[,;|]/);
+        if (item && typeof item === 'object') {
+          const name = (item as any).name || (item as any).title || (item as any).subject;
+          return typeof name === 'string' ? [name] : [];
+        }
+        return [];
+      })
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  if (typeof raw === 'string') {
+    return raw
+      .split(/[,;|]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  if (raw && typeof raw === 'object') {
+    return Object.values(raw as Record<string, unknown>)
+      .filter((v): v is string => typeof v === 'string')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
 const formatDate = (value?: string) => {
   if (!value) return 'No deadline set';
   try {
@@ -342,15 +371,17 @@ export const StudentDashboard: React.FC = () => {
       let edclubAccess = false;
       let resAccess = true;
 
+      studentRecord.subjects = normalizeSubjectsList(studentRecord.subjects);
+
       const assignedProgramsList: string[] = Array.from(new Set([
         studentRecord.plan,
         (studentRecord as any).track,
         (studentRecord as any).programName,
         (studentRecord as any).programTitle,
-        ...(Array.isArray((studentRecord as any).enrolledPrograms) ? (studentRecord as any).enrolledPrograms : []),
-        ...(Array.isArray(studentRecord.subjects) ? studentRecord.subjects : []),
-        ...(Array.isArray((studentRecord as any).plans) ? (studentRecord as any).plans : []),
-        ...(Array.isArray((studentRecord as any).programs) ? (studentRecord as any).programs : [])
+        ...normalizeSubjectsList((studentRecord as any).enrolledPrograms),
+        ...studentRecord.subjects,
+        ...normalizeSubjectsList((studentRecord as any).plans),
+        ...normalizeSubjectsList((studentRecord as any).programs)
       ])).filter(Boolean).map(s => String(s).trim().toLowerCase());
 
       // If student belongs to a school, inspect the school's configured programs & details
@@ -1017,11 +1048,11 @@ export const StudentDashboard: React.FC = () => {
 
   const enrolledSubjectNames = useMemo(() => {
     const set = new Set<string>();
-    (student?.subjects || []).forEach((s) => s && set.add(s));
+    normalizeSubjectsList(student?.subjects).forEach((s) => s && set.add(s));
     if (enrolledProgramName && enrolledProgramName !== 'Pending Programme Confirmation') {
       set.add(enrolledProgramName);
     }
-    releasedGrades.forEach((g) => g.subject && set.add(g.subject));
+    (Array.isArray(releasedGrades) ? releasedGrades : []).forEach((g) => g?.subject && set.add(g.subject));
     return Array.from(set);
   }, [student?.subjects, enrolledProgramName, releasedGrades]);
 

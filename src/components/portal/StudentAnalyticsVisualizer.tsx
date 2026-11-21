@@ -136,21 +136,27 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
   const [selectedSubject, setSelectedSubject] = useState<string>('ALL');
   const [timeRange, setTimeRange] = useState<'30days' | 'term' | 'all'>('all');
 
+  const safeEnrolledSubjects = Array.isArray(enrolledSubjects) ? enrolledSubjects : [];
+  const safeLearningTracks = Array.isArray(learningTracks) ? learningTracks : [];
+  const safeAssignments = Array.isArray(assignments) ? assignments : [];
+  const safeGradeRecords = Array.isArray(gradeRecords) ? gradeRecords : [];
+  const safeMilestones = Array.isArray(milestones) ? milestones : [];
+
   const filterSubjectList = useMemo(() => {
-    const combined = new Set<string>(enrolledSubjects.filter(Boolean));
-    gradeRecords.forEach((g) => {
-      if (g.subject) combined.add(g.subject);
+    const combined = new Set<string>(safeEnrolledSubjects.filter(Boolean));
+    safeGradeRecords.forEach((g) => {
+      if (g?.subject) combined.add(g.subject);
     });
     return ['ALL', ...Array.from(combined)];
-  }, [enrolledSubjects, gradeRecords]);
+  }, [safeEnrolledSubjects, safeGradeRecords]);
 
   // 1. Learning Progress across real tracks / modules / milestones
   const learningProgressData = useMemo<LearningProgressItem[]>(() => {
-    return (learningTracks || []).map((track) => ({
+    return safeLearningTracks.map((track) => ({
       ...track,
       hours: track.hours ?? 0,
     }));
-  }, [learningTracks]);
+  }, [safeLearningTracks]);
 
   // 2. Assignment Status Distribution (strictly from real assignment records)
   const assignmentBreakdown = useMemo(() => {
@@ -158,8 +164,8 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
     let inProgress = 0;
     let pending = 0;
 
-    (assignments || []).forEach((a) => {
-      const s = String(a.status || a.reviewStatus || '').toUpperCase();
+    safeAssignments.forEach((a) => {
+      const s = String(a?.status || a?.reviewStatus || '').toUpperCase();
       if (s === 'COMPLETED' || s === 'REVIEWED' || s === 'GRADED') {
         completed++;
       } else if (
@@ -181,17 +187,17 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
       completed,
       inProgress,
       pending,
-      total: assignments.length,
+      total: safeAssignments.length,
       pieData,
     };
-  }, [assignments]);
+  }, [safeAssignments]);
 
   // 3. Weekly Assignment Velocity (strictly from dated assignments)
   const assignmentWeeklyData = useMemo<AssignmentWeeklyItem[]>(() => {
     const bucketMap = new Map<string, AssignmentWeeklyItem>();
 
-    (assignments || []).forEach((a) => {
-      const dt = parseValidDate(a.submittedAt || a.dueDate);
+    safeAssignments.forEach((a) => {
+      const dt = parseValidDate(a?.submittedAt || a?.dueDate);
       if (!dt) return;
 
       const monday = new Date(dt);
@@ -210,7 +216,7 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
         });
       }
       const bucket = bucketMap.get(weekKey)!;
-      const s = String(a.status || a.reviewStatus || '').toUpperCase();
+      const s = String(a?.status || a?.reviewStatus || '').toUpperCase();
       if (s === 'COMPLETED' || s === 'REVIEWED' || s === 'GRADED') {
         bucket.completed += 1;
       } else if (
@@ -225,12 +231,12 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
     return Array.from(bucketMap.values())
       .sort((a, b) => a.weekKey.localeCompare(b.weekKey))
       .slice(-8);
-  }, [assignments]);
+  }, [safeAssignments]);
 
   // 4. Real Released Grade Trends
   const sortedGradeRecords = useMemo(() => {
-    return [...(gradeRecords || [])]
-      .filter((g) => Number.isFinite(g.grade))
+    return [...safeGradeRecords]
+      .filter((g) => Number.isFinite(g?.grade))
       .sort((a, b) => {
         const da = parseValidDate(a.date)?.getTime() || 0;
         const dbTime = parseValidDate(b.date)?.getTime() || 0;
@@ -241,7 +247,7 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
         dateLabel: formatShortDate(g.date),
         tierLabel: g.tier || resolveGradeBand(g.grade),
       }));
-  }, [gradeRecords]);
+  }, [safeGradeRecords]);
 
   const filteredGradeTrends = useMemo(() => {
     const now = Date.now();
@@ -304,8 +310,8 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
         : latestGrade;
     const gradeDelta = sortedGradeRecords.length >= 2 ? latestGrade - previousGrade : 0;
 
-    const completedMilestones = milestones.filter(
-      (m) => String(m.status || '').toUpperCase() === 'COMPLETED'
+    const completedMilestones = safeMilestones.filter(
+      (m) => String(m?.status || '').toUpperCase() === 'COMPLETED'
     ).length;
 
     const overallSyllabusProgress =
@@ -314,8 +320,8 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
             learningProgressData.reduce((acc, curr) => acc + curr.progress, 0) /
               learningProgressData.length
           )
-        : milestones.length > 0
-        ? Math.round((completedMilestones / milestones.length) * 100)
+        : safeMilestones.length > 0
+        ? Math.round((completedMilestones / safeMilestones.length) * 100)
         : totalModulesCount > 0
         ? Math.round((completedModulesCount / totalModulesCount) * 100)
         : 0;
@@ -330,17 +336,17 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
       gradeDelta,
       overallSyllabusProgress,
       completedMilestones,
-      totalMilestones: milestones.length,
+      totalMilestones: safeMilestones.length,
       hasGradeData: sortedGradeRecords.length > 0,
       hasAssignmentData: assignmentBreakdown.total > 0,
       hasLearningData:
-        learningProgressData.length > 0 || milestones.length > 0 || totalModulesCount > 0,
+        learningProgressData.length > 0 || safeMilestones.length > 0 || totalModulesCount > 0,
     };
   }, [
     assignmentBreakdown,
     sortedGradeRecords,
     learningProgressData,
-    milestones,
+    safeMilestones,
     completedModulesCount,
     totalModulesCount,
   ]);
