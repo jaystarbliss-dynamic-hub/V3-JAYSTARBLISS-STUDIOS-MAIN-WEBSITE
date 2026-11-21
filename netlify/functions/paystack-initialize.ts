@@ -31,7 +31,7 @@ const findStudent = async (studentId: string, ownerId: string, ownerType: "paren
     if (ownerType === "parent") {
       const sParentId = String(student.parentId || student.parentUid || student.parentUserId || "");
       const sParentEmail = String(student.parentEmail || student.guardianEmail || "").toLowerCase().trim();
-      owned = (sParentId && sParentId === ownerId) || (parentEmailNorm && sParentEmail === parentEmailNorm);
+      owned = Boolean((sParentId && sParentId === ownerId) || (parentEmailNorm && sParentEmail === parentEmailNorm));
       if (!owned) {
         const [uSnap, pSnap] = await Promise.all([
           adminDb.collection("users").doc(ownerId).get().catch(() => null),

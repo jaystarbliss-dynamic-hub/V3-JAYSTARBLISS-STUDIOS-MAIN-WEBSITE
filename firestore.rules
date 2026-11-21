@@ -105,6 +105,32 @@ service cloud.firestore {
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['STAFF','staff','TUTOR','tutor','instructor','INSTRUCTOR','FACULTY','faculty','TEACHER','teacher'])
       ); 
     }
+    function isResourceOwner(data) {
+      return isAuth() && (
+        data.get('createdByUid', '') == request.auth.uid ||
+        data.get('uploadedByUid', '') == request.auth.uid ||
+        data.get('tutorId', '') == request.auth.uid ||
+        data.get('staffId', '') == request.auth.uid ||
+        data.get('senderUid', '') == request.auth.uid ||
+        data.get('authorUid', '') == request.auth.uid ||
+        (
+          data.get('createdByUid', '') == '' &&
+          data.get('uploadedByUid', '') == '' &&
+          data.get('tutorId', '') == '' &&
+          data.get('staffId', '') == '' &&
+          data.get('senderUid', '') == '' &&
+          data.get('authorUid', '') == '' &&
+          !(data.get('createdByRole', '') in ['admin', 'ADMIN', 'super_admin', 'SUPER_ADMIN', 'superadmin', 'SUPERADMIN']) &&
+          request.auth.token.email != null &&
+          (
+            data.get('createdByEmail', '').lower() == request.auth.token.email.lower() ||
+            data.get('uploadedByEmail', '').lower() == request.auth.token.email.lower() ||
+            data.get('assignedBy', '').lower() == request.auth.token.email.lower() ||
+            data.get('senderEmail', '').lower() == request.auth.token.email.lower()
+          )
+        )
+      );
+    }
     function hasStaffSchoolAccess(schoolId) { 
       return isAuth() && schoolId != null && (
         isAnyAdmin() || 
@@ -261,11 +287,17 @@ service cloud.firestore {
     }
     match /personalResources/{docId} { 
       allow read: if true; 
-      allow create, update, delete: if isAnyAdmin() || isSchoolUser() || isStaffOrTutor() || isAuth(); 
+      allow create: if isAnyAdmin() || isSchoolUser() || isStaffOrTutor();
+      allow update, delete: if isAnyAdmin() ||
+        (isStaffOrTutor() && isResourceOwner(resource.data)) ||
+        (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null)));
     }
     match /personalLinks/{docId} { 
       allow read: if true; 
-      allow create, update, delete: if isAnyAdmin() || isSchoolUser() || isStaffOrTutor() || isAuth(); 
+      allow create: if isAnyAdmin() || isSchoolUser() || isStaffOrTutor();
+      allow update, delete: if isAnyAdmin() ||
+        (isStaffOrTutor() && isResourceOwner(resource.data)) ||
+        (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null)));
     }
     match /milestones/{milestoneId} {
       allow read: if true;
@@ -358,22 +390,34 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAnyAdmin() || isStaffOrTutor();
     }
-    match /resources/{resourceId} { allow read: if true; allow write, delete: if isStaffOrTutor() || isAnyAdmin(); }
-    match /links/{linkId} { allow read: if true; allow write, delete: if isStaffOrTutor() || isAnyAdmin(); }
-    match /exams/{examId} { allow read: if true; allow write, delete: if isStaffOrTutor() || isAnyAdmin(); }
+    match /resources/{resourceId} {
+      allow read: if true;
+      allow create: if isAnyAdmin() || isStaffOrTutor();
+      allow update, delete: if isAnyAdmin() || (isStaffOrTutor() && isResourceOwner(resource.data));
+    }
+    match /links/{linkId} {
+      allow read: if true;
+      allow create: if isAnyAdmin() || isStaffOrTutor();
+      allow update, delete: if isAnyAdmin() || (isStaffOrTutor() && isResourceOwner(resource.data));
+    }
+    match /exams/{examId} {
+      allow read: if true;
+      allow create: if isAnyAdmin() || isStaffOrTutor();
+      allow update, delete: if isAnyAdmin() || (isStaffOrTutor() && isResourceOwner(resource.data));
+    }
     match /schoolResources/{resourceId} {
       allow read: if true;
       // School admins can manage resources for their own school. Tutors can
-      // manage school resources only for schools assigned to them.
+      // create for assigned schools and update/delete only resources they sent.
       allow create: if isAnyAdmin() ||
         (isSchoolUser() && isSameSchool(request.resource.data.get('schoolId', null))) ||
         (isStaffOrTutor() && hasStaffSchoolAccess(request.resource.data.get('schoolId', null)));
       allow update: if isAnyAdmin() ||
         (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null)) && isSameSchool(request.resource.data.get('schoolId', null))) ||
-        (isStaffOrTutor() && hasStaffSchoolAccess(resource.data.get('schoolId', null)) && hasStaffSchoolAccess(request.resource.data.get('schoolId', null)));
+        (isStaffOrTutor() && isResourceOwner(resource.data));
       allow delete: if isAnyAdmin() ||
         (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null))) ||
-        (isStaffOrTutor() && hasStaffSchoolAccess(resource.data.get('schoolId', null)));
+        (isStaffOrTutor() && isResourceOwner(resource.data));
     }
     match /schoolLinks/{linkId} {
       allow read: if true;
@@ -382,8 +426,10 @@ service cloud.firestore {
         (isStaffOrTutor() && hasStaffSchoolAccess(request.resource.data.get('schoolId', null)));
       allow update: if isAnyAdmin() ||
         (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null)) && isSameSchool(request.resource.data.get('schoolId', null))) ||
-        (isStaffOrTutor() && hasStaffSchoolAccess(resource.data.get('schoolId', null)) && hasStaffSchoolAccess(request.resource.data.get('schoolId', null)));
-      allow delete: if isAnyAdmin() || hasStaffSchoolAccess(resource.data.get('schoolId', null)) || (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null)));
+        (isStaffOrTutor() && isResourceOwner(resource.data));
+      allow delete: if isAnyAdmin() ||
+        (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null))) ||
+        (isStaffOrTutor() && isResourceOwner(resource.data));
     }
     // Passcodes are verified and managed by trusted server functions only.
     // Direct client reads would expose passcode material to school users and
@@ -391,7 +437,11 @@ service cloud.firestore {
     match /schoolPasscodes/{docId} {
       allow read, write: if false;
     }
-    match /staffGeneralResources/{resId} { allow read: if true; allow write, delete: if isStaffOrTutor() || isAnyAdmin(); }
+    match /staffGeneralResources/{resId} {
+      allow read: if true;
+      allow create: if isAnyAdmin() || isStaffOrTutor();
+      allow update, delete: if isAnyAdmin() || (isStaffOrTutor() && isResourceOwner(resource.data));
+    }
     match /staffSchoolAccess/{docId} { allow read: if true; allow write: if isAnyAdmin(); }
     match /staffRegistration/{docId} { allow read, write: if true; }
     match /pendingStaff/{docId} { allow read: if true; allow write, delete: if isAnyAdmin(); }
@@ -778,6 +828,18 @@ service cloud.firestore {
         allow read: if isSuperAdmin();
         allow write: if false;
       }
+    }
+    match /accountRestrictions/{restrictionId} {
+      allow read: if isAnyAdmin();
+      allow write: if false;
+    }
+    match /restrictionAuditLogs/{logId} {
+      allow read: if isAnyAdmin();
+      allow write: if false;
+    }
+    match /restrictionNotificationLogs/{logId} {
+      allow read: if isAnyAdmin();
+      allow write: if false;
     }
     match /{document=**} { allow read, write: if false; }
   }

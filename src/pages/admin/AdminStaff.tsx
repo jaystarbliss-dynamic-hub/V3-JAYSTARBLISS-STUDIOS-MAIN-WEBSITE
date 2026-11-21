@@ -14,6 +14,7 @@ import {
   type TutorPublicProfileStatus,
 } from '../../lib/tutorDirectory';
 import StaffSchoolAssignments from './StaffSchoolAssignments';
+import { buildResourceCreatorMetadata } from '../../lib/resourcePermissions';
 import { 
   UserCheck, Users, Key, Plus, Trash2, 
   ExternalLink, BookOpen, 
@@ -101,6 +102,8 @@ const AdminStaff: React.FC = () => {
 
   // Staff Resources
   const [staffResources, setStaffResources] = useState<any[]>([]);
+  const [confirmDeleteResourceId, setConfirmDeleteResourceId] = useState<string | null>(null);
+  const [deletingResourceId, setDeletingResourceId] = useState<string | null>(null);
   const [resForm, setResForm] = useState({
     title: '',
     url: '',
@@ -567,7 +570,14 @@ const AdminStaff: React.FC = () => {
       await addDoc(collection(db, 'staffGeneralResources'), {
         title: resForm.title.trim(),
         url: resForm.url.trim(),
+        fileUrl: resForm.url.trim(),
         description: resForm.description.trim(),
+        ...buildResourceCreatorMetadata({
+          uid: auth.currentUser?.uid,
+          email: auth.currentUser?.email,
+          name: auth.currentUser?.displayName || 'Administrator',
+          role: 'admin',
+        }),
         timestamp: serverTimestamp()
       });
 
@@ -581,15 +591,18 @@ const AdminStaff: React.FC = () => {
     }
   };
 
-  // Delete Staff Resource
+  // Delete Staff Resource (no window.confirm; immediately updates state)
   const handleDeleteStaffResource = async (id: string, title: string) => {
-    if (!window.confirm(`Delete staff resource "${title}"?`)) return;
+    setDeletingResourceId(id);
     try {
       await deleteDoc(doc(db, 'staffGeneralResources', id));
-      toast.success(`Deleted "${title}".`);
-      void fetchStaffData();
+      setStaffResources((prev) => prev.filter((item) => item.id !== id));
+      setConfirmDeleteResourceId(null);
+      toast.success(`Deleted "${title}" permanently.`);
     } catch (err: any) {
       toast.error('Error: ' + err.message);
+    } finally {
+      setDeletingResourceId(null);
     }
   };
 
@@ -1820,13 +1833,35 @@ const AdminStaff: React.FC = () => {
                         <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-500/20">
                           FACULTY GUIDE
                         </span>
-                        <button
-                          onClick={() => handleDeleteStaffResource(item.id, item.title)}
-                          className="text-gray-400 hover:text-red-500 transition-colors p-1 cursor-pointer"
-                          title="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {confirmDeleteResourceId === item.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={deletingResourceId === item.id}
+                              onClick={() => handleDeleteStaffResource(item.id, item.title)}
+                              className="px-2 py-1 rounded-lg bg-brand-red text-white text-[10px] font-bold hover:bg-red-700 cursor-pointer disabled:opacity-50"
+                            >
+                              {deletingResourceId === item.id ? 'Deleting...' : 'Confirm'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={deletingResourceId === item.id}
+                              onClick={() => setConfirmDeleteResourceId(null)}
+                              className="px-2 py-1 rounded-lg border border-gray-200 dark:border-slate-700 text-[10px] font-bold text-gray-500 hover:text-gray-800 dark:hover:text-white cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteResourceId(item.id)}
+                            className="text-gray-400 hover:text-red-500 transition-colors p-1 cursor-pointer"
+                            title="Delete"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </div>
 
                       <h3 className="font-black text-gray-900 dark:text-white text-base leading-snug mb-1">

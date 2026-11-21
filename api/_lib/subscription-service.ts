@@ -24,6 +24,13 @@ import {
   parseDateSafe,
   resolvePlanDurationWeeks,
 } from "./subscription-core";
+import {
+  type AccountRestrictionRecord,
+  isPaymentRestrictionRecord,
+  isRestrictionActiveAt,
+  isRestrictionExpiredAt,
+  sanitizeRestrictionForUser,
+} from "./restriction-core";
 
 const asString = (v: unknown) => String(v ?? "").trim();
 const asLower = (v: unknown) => asString(v).toLowerCase();
@@ -47,6 +54,234 @@ const STAFF_ROLES = new Set(["staff", "tutor", "instructor", "faculty", "teacher
 export function extractBearerToken(event: any): string {
   const header = event?.headers?.authorization || event?.headers?.Authorization || "";
   return typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+}
+
+/**
+ * Loads all active `accountRestrictions` documents matching any of the supplied target IDs
+ * or cascading parent/school scopes. Automatically ignores lifted, future-scheduled, or expired restrictions.
+ */
+export async function loadActiveRestrictionsForScope(params: {
+  targetAccountIds?: string[];
+  subscriptionIds?: string[];
+  schoolId?: string | null;
+  parentId?: string | null;
+  studentId?: string | null;
+  programmeEnrollmentId?: string | null;
+  includeCascadingFromSchool?: boolean;
+  includeCascadingFromParent?: boolean;
+  now?: Date;
+}): Promise<AccountRestrictionRecord[]> {
+  const now = params.now || new Date();
+  const matched = new Map<string, AccountRestrictionRecord>();
+
+  const queries: Promise<any>[] = [];
+
+  const uniqueTargetIds = Array.from(new Set((params.targetAccountIds || []).map(asString).filter(Boolean))).slice(0, 10);
+  if (uniqueTargetIds.length > 0) {
+    queries.push(
+      adminDb
+        .collection("accountRestrictions")
+        .where("targetAccountId", "in", uniqueTargetIds)
+        .limit(50)
+        .get()
+        .catch(() => null)
+    );
+  }
+
+  const uniqueSubIds = Array.from(new Set((params.subscriptionIds || []).map(asString).filter(Boolean))).slice(0, 10);
+  if (uniqueSubIds.length > 0) {
+    queries.push(
+      adminDb
+        .collection("accountRestrictions")
+        .where("relatedSubscriptionId", "in", uniqueSubIds)
+        .limit(50)
+        .get()
+        .catch(() => null)
+    );
+  }
+
+  if (params.schoolId && params.includeCascadingFromSchool) {
+    queries.push(
+      adminDb
+        .collection("accountRestrictions")
+        .where("schoolId", "==", asString(params.schoolId))
+        .limit(50)
+        .get()
+        .catch(() => null)
+    );
+  }
+
+  if (params.parentId && params.includeCascadingFromParent) {
+    queries.push(
+      adminDb
+        .collection("accountRestrictions")
+        .where("parentId", "==", asString(params.parentId))
+        .limit(50)
+        .get()
+        .catch(() => null)
+    );
+  }
+
+  if (params.studentId) {
+    queries.push(
+      adminDb
+        .collection("accountRestrictions")
+        .where("affectedStudentIds", "array-contains", asString(params.studentId))
+        .limit(30)
+        .get()
+        .catch(() => null)
+    );
+  }
+
+  if (params.programmeEnrollmentId) {
+    queries.push(
+      adminDb
+        .collection("accountRestrictions")
+        .where("programmeEnrollmentId", "==", asString(params.programmeEnrollmentId))
+        .limit(30)
+        .get()
+        .catch(() => null)
+    );
+  }
+
+  if (queries.length === 0) return [];
+
+  const snapshots = await Promise.all(queries);
+  const expiredDocIds: string[] = [];
+
+  for (const snap of snapshots) {
+    if (!snap?.docs) continue;
+    for (const docSnap of snap.docs) {
+      const data = {
+        restrictionId: docSnap.id,
+        ...(docSnap.data() || {}),
+      } as AccountRestrictionRecord;
+
+      // For dependent student inheritance queries, skip school/parent records explicitly marked non-cascading
+      if (
+        params.includeCascadingFromSchool &&
+        params.studentId &&
+        data.targetAccountType === "SCHOOL" &&
+        data.cascadesToLinkedLearners === false &&
+        !(Array.isArray(data.affectedStudentIds) && data.affectedStudentIds.includes(params.studentId))
+      ) {
+        continue;
+      }
+      if (
+        params.includeCascadingFromParent &&
+        params.studentId &&
+        data.targetAccountType === "PARENT" &&
+        data.cascadesToLinkedLearners === false &&
+        !(Array.isArray(data.affectedStudentIds) && data.affectedStudentIds.includes(params.studentId))
+      ) {
+        continue;
+      }
+
+      // Skip programme-specific restrictions when checking account-wide access unless programmeEnrollmentId matches
+      if (
+        data.restrictedScope === "PROGRAMME" &&
+        data.programmeEnrollmentId &&
+        params.programmeEnrollmentId !== data.programmeEnrollmentId &&
+        !uniqueSubIds.includes(String(data.relatedSubscriptionId || ""))
+      ) {
+        continue;
+      }
+
+      if (isRestrictionExpiredAt(data, now)) {
+        expiredDocIds.push(docSnap.id);
+        continue;
+      }
+
+      if (isRestrictionActiveAt(data, now)) {
+        matched.set(docSnap.id, data);
+      }
+    }
+  }
+
+  // Lazily mark expired temporary restrictions as EXPIRED in Firestore (fire-and-forget safe cleanup)
+  if (expiredDocIds.length > 0) {
+    const expiredIso = now.toISOString();
+    await Promise.all(
+      Array.from(new Set(expiredDocIds)).map((id) =>
+        adminDb
+          .collection("accountRestrictions")
+          .doc(id)
+          .set({ status: "EXPIRED", updatedAt: expiredIso }, { merge: true })
+          .catch(() => undefined)
+      )
+    );
+  }
+
+  return Array.from(matched.values()).sort((a, b) =>
+    String(b.appliedAt || "").localeCompare(String(a.appliedAt || ""))
+  );
+}
+
+/**
+ * Resolves ONLY payment-related active `accountRestrictions` when a verified payment settles.
+ * Independent non-payment manual administrative restrictions remain strictly ACTIVE.
+ */
+export async function resolvePaymentRestrictionsOnPaymentSuccess(params: {
+  targetAccountIds?: string[];
+  subscriptionIds?: string[];
+  programmeEnrollmentId?: string | null;
+  paymentReference: string;
+  resolvedByUid?: string;
+}): Promise<{ resolvedCount: number; remainingNonPaymentCount: number }> {
+  const activeRecords = await loadActiveRestrictionsForScope({
+    targetAccountIds: params.targetAccountIds,
+    subscriptionIds: params.subscriptionIds,
+    programmeEnrollmentId: params.programmeEnrollmentId,
+  });
+
+  let resolvedCount = 0;
+  let remainingNonPaymentCount = 0;
+  const nowIso = new Date().toISOString();
+
+  for (const record of activeRecords) {
+    if (!isPaymentRestrictionRecord(record)) {
+      remainingNonPaymentCount += 1;
+      continue;
+    }
+
+    await adminDb
+      .collection("accountRestrictions")
+      .doc(record.restrictionId)
+      .set(
+        {
+          status: "RESOLVED_BY_PAYMENT",
+          liftedAt: nowIso,
+          liftedByUid: params.resolvedByUid || "system_payment_reconciliation",
+          liftedByName: "Verified Payment Settlement",
+          unlockReason: `Payment restriction resolved automatically by verified payment (${params.paymentReference})`,
+          relatedPaymentReference: params.paymentReference,
+          updatedAt: nowIso,
+        },
+        { merge: true }
+      )
+      .catch(() => undefined);
+
+    await adminDb
+      .collection("restrictionAuditLogs")
+      .add({
+        action: "PAYMENT_RESTRICTION_RESOLVED_BY_PAYMENT",
+        restrictionId: record.restrictionId,
+        targetAccountId: record.targetAccountId,
+        targetAccountType: record.targetAccountType,
+        relatedSubscriptionId: record.relatedSubscriptionId || null,
+        relatedPaymentReference: params.paymentReference,
+        actorUid: params.resolvedByUid || "system_payment_reconciliation",
+        actorName: "Verified Payment Settlement",
+        reasonCode: record.reasonCode,
+        unlockReason: `Settled by verified payment ${params.paymentReference}`,
+        createdAt: nowIso,
+      })
+      .catch(() => undefined);
+
+    resolvedCount += 1;
+  }
+
+  return { resolvedCount, remainingNonPaymentCount };
 }
 
 function mapLegacyStatus(rawStatus: unknown, isExemptFlag?: boolean): BillingSubscriptionRecord["status"] {
@@ -182,6 +417,16 @@ export function normalizeSubscriptionFromSource(params: {
     lockdownActivatedAt: parseDateSafe(canonical?.lockdownActivatedAt)?.toISOString() || null,
     override: canonical?.override || legacy?.override || null,
     exemption: canonical?.exemption || (isExempt ? { exempt: true, reason: asString(legacy?.exemptReason || "Approved Exemption"), grantedByUid: "system", grantedAt: new Date().toISOString() } : null),
+    manuallyLocked: Boolean(canonical?.manuallyLocked ?? legacy?.manuallyLocked),
+    manualLockReason: asString(canonical?.manualLockReason || legacy?.manualLockReason) || null,
+    manualLockedAt: parseDateSafe(canonical?.manualLockedAt || legacy?.manualLockedAt)?.toISOString() || null,
+    manualLockedByUid: asString(canonical?.manualLockedByUid || legacy?.manualLockedByUid) || null,
+    manualLockedByName: asString(canonical?.manualLockedByName || legacy?.manualLockedByName) || null,
+    manuallyUnlocked: Boolean(canonical?.manuallyUnlocked ?? legacy?.manuallyUnlocked),
+    manualUnlockReason: asString(canonical?.manualUnlockReason || legacy?.manualUnlockReason) || null,
+    manualUnlockedAt: parseDateSafe(canonical?.manualUnlockedAt || legacy?.manualUnlockedAt)?.toISOString() || null,
+    manualUnlockedByUid: asString(canonical?.manualUnlockedByUid || legacy?.manualUnlockedByUid) || null,
+    manualUnlockedByName: asString(canonical?.manualUnlockedByName || legacy?.manualUnlockedByName) || null,
     isComplimentary: Boolean(canonical?.isComplimentary || legacy?.isComplimentary),
     billingConfigIncomplete: amount > 0 && !nextDue && !isExempt,
     createdAt: parseDateSafe(canonical?.createdAt)?.toISOString() || null,
@@ -443,8 +688,28 @@ export async function resolveEntitlementForUser(params: {
     const schoolDoc = await resolveSchoolRecord(params.uid, userRecord, email);
     const schoolId = asString(schoolDoc?.id || userRecord.schoolId || params.uid);
     const subscription = await loadSchoolSubscription(schoolId, schoolDoc, userRecord);
-    const evaluated = evaluateSubscriptionState({ subscription, now });
-    const copy = buildRoleLockdownCopy({ role: "school" });
+    const activeRestrictions = await loadActiveRestrictionsForScope({
+      targetAccountIds: [schoolId, params.uid],
+      subscriptionIds: [subscription.id, `school_admin_${params.uid}`],
+      schoolId,
+      includeCascadingFromSchool: true,
+      now,
+    });
+    const evaluated = evaluateSubscriptionState({ subscription, activeRestrictions, now });
+    const publicRestrictions = evaluated.activeRestrictionRecords.map((r) =>
+      sanitizeRestrictionForUser(r, "school")
+    );
+    const copy = buildRoleLockdownCopy({
+      role: "school",
+      isManuallyLocked: evaluated.isManuallyLocked,
+      manualLockReason: evaluated.manualLockReason,
+      restrictionType: evaluated.restrictionType,
+      lockReasonCode: evaluated.lockReasonCode,
+      lockReasonLabel: evaluated.lockReasonLabel,
+      userFacingMessage: evaluated.userFacingMessage,
+      hasPaymentRestriction: evaluated.hasPaymentRestriction,
+      hasNonPaymentRestriction: evaluated.hasNonPaymentRestriction,
+    });
 
     return {
       role: "school",
@@ -454,6 +719,20 @@ export async function resolveEntitlementForUser(params: {
       billingResponsibility: subscription.billingResponsibility,
       status: evaluated.status,
       isLocked: evaluated.isLocked,
+      isManuallyLocked: evaluated.isManuallyLocked,
+      manualLockReason: evaluated.manualLockReason,
+      isManuallyUnlocked: evaluated.isManuallyUnlocked,
+      restrictionType: evaluated.restrictionType,
+      lockReasonCode: evaluated.lockReasonCode,
+      lockReasonLabel: evaluated.lockReasonLabel,
+      effectiveAtIso: evaluated.effectiveAtIso,
+      effectiveAtFormatted: evaluated.effectiveAtFormatted,
+      expiresAtIso: evaluated.expiresAtIso,
+      expiresAtFormatted: evaluated.expiresAtFormatted,
+      activeRestrictions: publicRestrictions,
+      hasPaymentRestriction: evaluated.hasPaymentRestriction,
+      hasNonPaymentRestriction: evaluated.hasNonPaymentRestriction,
+      nextActionType: copy.nextActionType,
       inGracePeriod: evaluated.inGracePeriod,
       isDueSoon: evaluated.isDueSoon,
       isExempt: evaluated.isExempt,
@@ -485,13 +764,21 @@ export async function resolveEntitlementForUser(params: {
     };
   }
 
-  // 3. PARENT (Per-child scoping + account-level contract fallback)
+  // 3. PARENT (Per-child scoping + account-level contract fallback + independent restrictions)
   if (normalized === "parent") {
     const children = await resolveLinkedChildrenForParent(params.uid, email, userRecord);
     const parentSubSnap = await adminDb.collection("billingSubscriptions").doc(`parent_${params.uid}`).get().catch(() => null);
     const parentCanonical = parentSubSnap?.exists ? { id: parentSubSnap.id, ...(parentSubSnap.data() || {}) } : null;
 
+    const parentAccountRestrictions = await loadActiveRestrictionsForScope({
+      targetAccountIds: [params.uid],
+      subscriptionIds: [`parent_${params.uid}`],
+      parentId: params.uid,
+      now,
+    });
+
     const childSummaries: ChildEntitlementSummary[] = [];
+    const childActiveRestrictions: AccountRestrictionRecord[] = [];
 
     for (const child of children) {
       const childSchoolId = asString(child.schoolId);
@@ -503,7 +790,14 @@ export async function resolveEntitlementForUser(params: {
       if (isSchoolFundedChild) {
         const schoolSnap = await adminDb.collection("schools").doc(childSchoolId).get().catch(() => null);
         const schoolSub = await loadSchoolSubscription(childSchoolId, schoolSnap?.exists ? { id: schoolSnap.id, ...(schoolSnap.data() || {}) } : null);
-        const schoolEval = evaluateSubscriptionState({ subscription: schoolSub, now });
+        const schoolRestrictions = await loadActiveRestrictionsForScope({
+          targetAccountIds: [childSchoolId],
+          subscriptionIds: [schoolSub.id],
+          schoolId: childSchoolId,
+          includeCascadingFromSchool: true,
+          now,
+        });
+        const schoolEval = evaluateSubscriptionState({ subscription: schoolSub, activeRestrictions: schoolRestrictions, now });
         childSummaries.push({
           childId: child.id,
           childName,
@@ -569,7 +863,21 @@ export async function resolveEntitlementForUser(params: {
         fallbackPlanName: programmeName,
       });
 
-      const childEval = evaluateSubscriptionState({ subscription: childSub, now });
+      const specificChildRestrictions = await loadActiveRestrictionsForScope({
+        targetAccountIds: [child.id],
+        subscriptionIds: [childSubId],
+        studentId: child.id,
+        now,
+      });
+      const combinedChildRestrictions = [...parentAccountRestrictions, ...specificChildRestrictions];
+      const childEval = evaluateSubscriptionState({
+        subscription: childSub,
+        activeRestrictions: combinedChildRestrictions,
+        now,
+      });
+      if (childEval.isLocked) {
+        childActiveRestrictions.push(...childEval.activeRestrictionRecords);
+      }
       childSummaries.push({
         childId: child.id,
         childName,
@@ -603,7 +911,11 @@ export async function resolveEntitlementForUser(params: {
       legacyBilling: (userRecord.billing as Record<string, any>) || null,
       fallbackPlanName: "Family Tuition Plan",
     });
-    const parentAccountEval = evaluateSubscriptionState({ subscription: parentAccountSub, now });
+    const parentAccountEval = evaluateSubscriptionState({
+      subscription: parentAccountSub,
+      activeRestrictions: parentAccountRestrictions,
+      now,
+    });
 
     const parentFundedChildren = childSummaries.filter((c) => c.billingResponsibility === "PARENT");
     const lockedChildren = parentFundedChildren.filter((c) => c.isLocked);
@@ -615,9 +927,27 @@ export async function resolveEntitlementForUser(params: {
       parentFundedChildren.length > 0
         ? lockedChildren.length === parentFundedChildren.length
         : parentAccountEval.isLocked;
-    const isLocked = hasLockedChild || (parentFundedChildren.length === 0 && parentAccountEval.isLocked);
+    const isLocked =
+      parentAccountEval.isManuallyLocked ||
+      parentAccountEval.hasNonPaymentRestriction ||
+      hasLockedChild ||
+      (parentFundedChildren.length === 0 && parentAccountEval.isLocked);
     const inGracePeriod = !isLocked && (graceChildren.length > 0 || (parentFundedChildren.length === 0 && parentAccountEval.inGracePeriod));
     const isDueSoon = !isLocked && !inGracePeriod && (dueSoonChildren.length > 0 || parentAccountEval.isDueSoon);
+
+    // Combine and deduplicate all active restrictions affecting this parent
+    const mergedParentRestrictionMap = new Map<string, AccountRestrictionRecord>();
+    for (const r of [...parentAccountEval.activeRestrictionRecords, ...childActiveRestrictions]) {
+      mergedParentRestrictionMap.set(r.restrictionId, r);
+    }
+    const mergedParentRestrictions = Array.from(mergedParentRestrictionMap.values());
+    const publicParentRestrictions = mergedParentRestrictions.map((r) =>
+      sanitizeRestrictionForUser(r, "parent")
+    );
+    const hasPaymentRestriction = publicParentRestrictions.some((r) => r.isPaymentRelated) ||
+      (!parentAccountEval.hasNonPaymentRestriction && hasLockedChild);
+    const hasNonPaymentRestriction = publicParentRestrictions.some((r) => !r.isPaymentRelated);
+    const primaryPublic = publicParentRestrictions[0] || null;
 
     const totalAmountDue = parentFundedChildren.length > 0
       ? Number(
@@ -629,7 +959,17 @@ export async function resolveEntitlementForUser(params: {
       : parentAccountEval.amountDue;
 
     const primaryUrgentChild = lockedChildren[0] || graceChildren[0] || dueSoonChildren[0] || null;
-    const copy = buildRoleLockdownCopy({ role: "parent" });
+    const copy = buildRoleLockdownCopy({
+      role: "parent",
+      isManuallyLocked: parentAccountEval.isManuallyLocked || hasNonPaymentRestriction,
+      manualLockReason: primaryPublic?.userFacingMessage || parentAccountEval.manualLockReason,
+      restrictionType: primaryPublic?.restrictionType || parentAccountEval.restrictionType,
+      lockReasonCode: primaryPublic?.reasonCode || parentAccountEval.lockReasonCode,
+      lockReasonLabel: primaryPublic?.reasonLabel || parentAccountEval.lockReasonLabel,
+      userFacingMessage: primaryPublic?.userFacingMessage || parentAccountEval.userFacingMessage,
+      hasPaymentRestriction,
+      hasNonPaymentRestriction,
+    });
 
     return {
       role: "parent",
@@ -638,13 +978,29 @@ export async function resolveEntitlementForUser(params: {
       accountName: displayName,
       billingResponsibility: "PARENT",
       status: isLocked
-        ? "LOCKED"
+        ? parentAccountEval.status === "SUSPENDED"
+          ? "SUSPENDED"
+          : "LOCKED"
         : inGracePeriod
         ? "GRACE_PERIOD"
         : isDueSoon
         ? "DUE_SOON"
         : parentAccountEval.status,
       isLocked,
+      isManuallyLocked: parentAccountEval.isManuallyLocked || hasNonPaymentRestriction,
+      manualLockReason: primaryPublic?.userFacingMessage || parentAccountEval.manualLockReason,
+      isManuallyUnlocked: parentAccountEval.isManuallyUnlocked,
+      restrictionType: primaryPublic?.restrictionType || parentAccountEval.restrictionType,
+      lockReasonCode: primaryPublic?.reasonCode || parentAccountEval.lockReasonCode,
+      lockReasonLabel: primaryPublic?.reasonLabel || parentAccountEval.lockReasonLabel,
+      effectiveAtIso: primaryPublic?.effectiveAtIso || parentAccountEval.effectiveAtIso,
+      effectiveAtFormatted: primaryPublic?.effectiveAtFormatted || parentAccountEval.effectiveAtFormatted,
+      expiresAtIso: primaryPublic?.expiresAtIso || parentAccountEval.expiresAtIso,
+      expiresAtFormatted: primaryPublic?.expiresAtFormatted || parentAccountEval.expiresAtFormatted,
+      activeRestrictions: publicParentRestrictions,
+      hasPaymentRestriction,
+      hasNonPaymentRestriction,
+      nextActionType: copy.nextActionType,
       inGracePeriod,
       isDueSoon,
       isExempt: parentAccountEval.isExempt && !isLocked,
@@ -652,9 +1008,10 @@ export async function resolveEntitlementForUser(params: {
       overrideExpiresAt: parentAccountEval.overrideExpiresAt,
       billingConfigIncomplete: parentAccountEval.billingConfigIncomplete && parentFundedChildren.length === 0,
       canPay: copy.canPay,
-      payNowPath: primaryUrgentChild?.feeItemId
-        ? `/portal/parent/payments?childId=${encodeURIComponent(primaryUrgentChild.childId)}`
-        : copy.payNowPath,
+      payNowPath:
+        copy.canPay && primaryUrgentChild?.feeItemId
+          ? `/portal/parent/payments?childId=${encodeURIComponent(primaryUrgentChild.childId)}`
+          : copy.payNowPath,
       amountDue: totalAmountDue,
       currency: "NGN",
       dueDateIso: primaryUrgentChild?.dueDateIso || parentAccountEval.dueDateIso,
@@ -701,52 +1058,95 @@ export async function resolveEntitlementForUser(params: {
     .catch(() => null);
 
   const selfFundedProgrammes: SelfFundedProgrammeEntitlement[] = [];
-  selfFundedSnap?.docs.forEach((docSnap) => {
-    const d = docSnap.data() || {};
-    if (asString(d.billingResponsibility) !== "STUDENT_SELF_FUNDED") return;
-    const sub = normalizeSubscriptionFromSource({
-      id: `prog_enr_${docSnap.id}`,
-      accountType: "STUDENT_SELF_FUNDED_PROGRAMME",
-      accountId: params.uid,
-      accountName: displayName,
-      recipientEmail: email,
-      studentId: studentDocId,
-      studentName: displayName,
-      programmeEnrollmentId: docSnap.id,
-      billingResponsibility: "STUDENT_SELF_FUNDED",
-      legacyBilling: {
-        baseAmount: Number(d.approvedFee || 0),
-        amountPaid: Number(d.amountPaid || 0),
-        remainingBalance: Number(d.remainingBalance ?? Math.max(0, Number(d.approvedFee || 0) - Number(d.amountPaid || 0))),
-        allowDepositAccess: Boolean(d.allowDepositAccess),
-        depositAmount: Number(d.depositAmount || 0),
-        status: d.enrollmentStatus === "EXEMPT" ? "EXEMPT" : d.paymentStatus,
-        nextDueDate: d.nextDueDate || d.paidThrough,
-        paidThrough: d.paidThrough,
-        durationWeeks: Number(d.durationWeeks || 8),
-        programId: d.programId,
-        programTitle: d.programTitle,
-      },
-    });
-    const ev = evaluateSubscriptionState({ subscription: sub, now });
-    selfFundedProgrammes.push({
-      programmeEnrollmentId: docSnap.id,
-      programmeId: asString(d.programId),
-      programmeName: asString(d.programTitle || "Additional Programme"),
-      status: ev.status,
-      isLocked: ev.isLocked,
-      amountDue: ev.amountDue,
-      dueDateIso: ev.dueDateIso,
-    });
-  });
+  if (selfFundedSnap?.docs) {
+    for (const docSnap of selfFundedSnap.docs) {
+      const d = docSnap.data() || {};
+      if (asString(d.billingResponsibility) !== "STUDENT_SELF_FUNDED") continue;
+      const progSubId = `prog_enr_${docSnap.id}`;
+      const [progSubSnap, progRestrictions] = await Promise.all([
+        adminDb.collection("billingSubscriptions").doc(progSubId).get().catch(() => null),
+        loadActiveRestrictionsForScope({
+          targetAccountIds: [docSnap.id],
+          subscriptionIds: [progSubId],
+          programmeEnrollmentId: docSnap.id,
+          now,
+        }),
+      ]);
+      const progCanonical = progSubSnap?.exists ? { id: progSubSnap.id, ...(progSubSnap.data() || {}) } : null;
+      const sub = normalizeSubscriptionFromSource({
+        id: progSubId,
+        accountType: "STUDENT_SELF_FUNDED_PROGRAMME",
+        accountId: params.uid,
+        accountName: displayName,
+        recipientEmail: email,
+        studentId: studentDocId,
+        studentName: displayName,
+        programmeEnrollmentId: docSnap.id,
+        billingResponsibility: "STUDENT_SELF_FUNDED",
+        canonicalDoc: progCanonical,
+        legacyBilling: {
+          baseAmount: Number(d.approvedFee || 0),
+          amountPaid: Number(d.amountPaid || 0),
+          remainingBalance: Number(d.remainingBalance ?? Math.max(0, Number(d.approvedFee || 0) - Number(d.amountPaid || 0))),
+          allowDepositAccess: Boolean(d.allowDepositAccess),
+          depositAmount: Number(d.depositAmount || 0),
+          status: d.enrollmentStatus === "EXEMPT" ? "EXEMPT" : d.paymentStatus,
+          nextDueDate: d.nextDueDate || d.paidThrough,
+          paidThrough: d.paidThrough,
+          durationWeeks: Number(d.durationWeeks || 8),
+          programId: d.programId,
+          programTitle: d.programTitle,
+          manuallyLocked: Boolean(d.manuallyLocked),
+          manualLockReason: d.manualLockReason || null,
+          manuallyUnlocked: Boolean(d.manuallyUnlocked),
+        },
+      });
+      const ev = evaluateSubscriptionState({ subscription: sub, activeRestrictions: progRestrictions, now });
+      selfFundedProgrammes.push({
+        programmeEnrollmentId: docSnap.id,
+        programmeId: asString(d.programId),
+        programmeName: asString(d.programTitle || "Additional Programme"),
+        status: ev.status,
+        isLocked: ev.isLocked,
+        amountDue: ev.amountDue,
+        dueDateIso: ev.dueDateIso,
+        restrictionType: ev.restrictionType,
+        lockReasonCode: ev.lockReasonCode,
+        lockReasonLabel: ev.lockReasonLabel,
+        userFacingMessage: ev.userFacingMessage,
+        canPay: ev.hasPaymentRestriction,
+      });
+    }
+  }
 
-  // 4A. School-funded student inherits institutional school subscription
+  // 4A. School-funded student inherits institutional school subscription + cascading school restrictions
   if (fundingCategory === "SCHOOL_FUNDED" && schoolId) {
     const schoolSnap = await adminDb.collection("schools").doc(schoolId).get().catch(() => null);
     const schoolDoc = schoolSnap?.exists ? { id: schoolSnap.id, ...(schoolSnap.data() || {}) } : null;
     const schoolSub = await loadSchoolSubscription(schoolId, schoolDoc);
-    const evaluated = evaluateSubscriptionState({ subscription: schoolSub, now });
-    const copy = buildRoleLockdownCopy({ role: "student", studentFundingCategory: "SCHOOL_FUNDED" });
+    const activeRestrictions = await loadActiveRestrictionsForScope({
+      targetAccountIds: [schoolId, params.uid, studentDocId],
+      subscriptionIds: [schoolSub.id, `student_${params.uid}`],
+      schoolId,
+      studentId: studentDocId,
+      includeCascadingFromSchool: true,
+      now,
+    });
+    const evaluated = evaluateSubscriptionState({ subscription: schoolSub, activeRestrictions, now });
+    const publicRestrictions = evaluated.activeRestrictionRecords.map((r) =>
+      sanitizeRestrictionForUser(r, "student", "SCHOOL_FUNDED")
+    );
+    const copy = buildRoleLockdownCopy({
+      role: "student",
+      studentFundingCategory: "SCHOOL_FUNDED",
+      isManuallyLocked: evaluated.isManuallyLocked,
+      manualLockReason: evaluated.manualLockReason,
+      restrictionType: evaluated.restrictionType,
+      lockReasonCode: evaluated.lockReasonCode,
+      lockReasonLabel: evaluated.lockReasonLabel,
+      hasPaymentRestriction: evaluated.hasPaymentRestriction,
+      hasNonPaymentRestriction: evaluated.hasNonPaymentRestriction,
+    });
 
     return {
       role: "student",
@@ -757,6 +1157,20 @@ export async function resolveEntitlementForUser(params: {
       studentFundingCategory: "SCHOOL_FUNDED",
       status: evaluated.status,
       isLocked: evaluated.isLocked,
+      isManuallyLocked: evaluated.isManuallyLocked,
+      manualLockReason: null, // Never leak raw school/admin note to school student
+      isManuallyUnlocked: evaluated.isManuallyUnlocked,
+      restrictionType: evaluated.restrictionType,
+      lockReasonCode: evaluated.lockReasonCode,
+      lockReasonLabel: publicRestrictions[0]?.reasonLabel || "School Portal Access Restricted",
+      effectiveAtIso: evaluated.effectiveAtIso,
+      effectiveAtFormatted: evaluated.effectiveAtFormatted,
+      expiresAtIso: evaluated.expiresAtIso,
+      expiresAtFormatted: evaluated.expiresAtFormatted,
+      activeRestrictions: publicRestrictions,
+      hasPaymentRestriction: false, // School student is never responsible for school payment
+      hasNonPaymentRestriction: evaluated.hasNonPaymentRestriction,
+      nextActionType: copy.nextActionType,
       inGracePeriod: evaluated.inGracePeriod,
       isDueSoon: evaluated.isDueSoon,
       isExempt: evaluated.isExempt,
@@ -788,14 +1202,22 @@ export async function resolveEntitlementForUser(params: {
     };
   }
 
-  // 4B. Parent-funded student inherits parent's child/account fee obligation
+  // 4B. Parent-funded student inherits parent's child/account fee obligation + cascading parent restrictions
   if (fundingCategory === "PARENT_FUNDED") {
     const resolvedParentId = parentId || asString(studentDoc.parentUid);
     const childSubId = resolvedParentId ? `parent_${resolvedParentId}_child_${studentDocId}` : `student_${studentDocId}`;
-    const [childSubSnap, parentSubSnap, parentUserSnap] = await Promise.all([
+    const [childSubSnap, parentSubSnap, parentUserSnap, activeRestrictions] = await Promise.all([
       adminDb.collection("billingSubscriptions").doc(childSubId).get().catch(() => null),
       resolvedParentId ? adminDb.collection("billingSubscriptions").doc(`parent_${resolvedParentId}`).get().catch(() => null) : Promise.resolve(null),
       resolvedParentId ? adminDb.collection("users").doc(resolvedParentId).get().catch(() => null) : Promise.resolve(null),
+      loadActiveRestrictionsForScope({
+        targetAccountIds: [resolvedParentId, studentDocId, params.uid].filter(Boolean),
+        subscriptionIds: [childSubId, resolvedParentId ? `parent_${resolvedParentId}` : "", `student_${params.uid}`].filter(Boolean),
+        parentId: resolvedParentId || null,
+        studentId: studentDocId,
+        includeCascadingFromParent: true,
+        now,
+      }),
     ]);
 
     const childCanonical = childSubSnap?.exists ? { id: childSubSnap.id, ...(childSubSnap.data() || {}) } : null;
@@ -830,8 +1252,21 @@ export async function resolveEntitlementForUser(params: {
       },
     });
 
-    const evaluated = evaluateSubscriptionState({ subscription: sub, now });
-    const copy = buildRoleLockdownCopy({ role: "student", studentFundingCategory: "PARENT_FUNDED" });
+    const evaluated = evaluateSubscriptionState({ subscription: sub, activeRestrictions, now });
+    const publicRestrictions = evaluated.activeRestrictionRecords.map((r) =>
+      sanitizeRestrictionForUser(r, "student", "PARENT_FUNDED")
+    );
+    const copy = buildRoleLockdownCopy({
+      role: "student",
+      studentFundingCategory: "PARENT_FUNDED",
+      isManuallyLocked: evaluated.isManuallyLocked,
+      manualLockReason: null, // Never expose private parental billing/admin details
+      restrictionType: evaluated.restrictionType,
+      lockReasonCode: evaluated.lockReasonCode,
+      lockReasonLabel: evaluated.lockReasonLabel,
+      hasPaymentRestriction: evaluated.hasPaymentRestriction,
+      hasNonPaymentRestriction: evaluated.hasNonPaymentRestriction,
+    });
 
     return {
       role: "student",
@@ -842,6 +1277,20 @@ export async function resolveEntitlementForUser(params: {
       studentFundingCategory: "PARENT_FUNDED",
       status: evaluated.status,
       isLocked: evaluated.isLocked,
+      isManuallyLocked: evaluated.isManuallyLocked,
+      manualLockReason: null,
+      isManuallyUnlocked: evaluated.isManuallyUnlocked,
+      restrictionType: evaluated.restrictionType,
+      lockReasonCode: evaluated.lockReasonCode,
+      lockReasonLabel: publicRestrictions[0]?.reasonLabel || "Programme Access Restricted",
+      effectiveAtIso: evaluated.effectiveAtIso,
+      effectiveAtFormatted: evaluated.effectiveAtFormatted,
+      expiresAtIso: evaluated.expiresAtIso,
+      expiresAtFormatted: evaluated.expiresAtFormatted,
+      activeRestrictions: publicRestrictions,
+      hasPaymentRestriction: false,
+      hasNonPaymentRestriction: evaluated.hasNonPaymentRestriction,
+      nextActionType: copy.nextActionType,
       inGracePeriod: evaluated.inGracePeriod,
       isDueSoon: evaluated.isDueSoon,
       isExempt: evaluated.isExempt,
@@ -875,7 +1324,15 @@ export async function resolveEntitlementForUser(params: {
 
   // 4C. Individually enrolled student
   const indSubId = `student_${params.uid}`;
-  const indSubSnap = await adminDb.collection("billingSubscriptions").doc(indSubId).get().catch(() => null);
+  const [indSubSnap, activeRestrictions] = await Promise.all([
+    adminDb.collection("billingSubscriptions").doc(indSubId).get().catch(() => null),
+    loadActiveRestrictionsForScope({
+      targetAccountIds: [params.uid, studentDocId].filter(Boolean),
+      subscriptionIds: [indSubId],
+      studentId: studentDocId,
+      now,
+    }),
+  ]);
   const indCanonical = indSubSnap?.exists ? { id: indSubSnap.id, ...(indSubSnap.data() || {}) } : null;
 
   const indSub = normalizeSubscriptionFromSource({
@@ -909,8 +1366,22 @@ export async function resolveEntitlementForUser(params: {
     fallbackPlanName: asString(studentDoc.programName || studentDoc.plan || "Individual Learning Programme"),
   });
 
-  const evaluated = evaluateSubscriptionState({ subscription: indSub, now });
-  const copy = buildRoleLockdownCopy({ role: "student", studentFundingCategory: "INDIVIDUAL_SELF_FUNDED" });
+  const evaluated = evaluateSubscriptionState({ subscription: indSub, activeRestrictions, now });
+  const publicRestrictions = evaluated.activeRestrictionRecords.map((r) =>
+    sanitizeRestrictionForUser(r, "student", "INDIVIDUAL_SELF_FUNDED")
+  );
+  const copy = buildRoleLockdownCopy({
+    role: "student",
+    studentFundingCategory: "INDIVIDUAL_SELF_FUNDED",
+    isManuallyLocked: evaluated.isManuallyLocked,
+    manualLockReason: evaluated.manualLockReason,
+    restrictionType: evaluated.restrictionType,
+    lockReasonCode: evaluated.lockReasonCode,
+    lockReasonLabel: evaluated.lockReasonLabel,
+    userFacingMessage: evaluated.userFacingMessage,
+    hasPaymentRestriction: evaluated.hasPaymentRestriction,
+    hasNonPaymentRestriction: evaluated.hasNonPaymentRestriction,
+  });
 
   return {
     role: "student",
@@ -921,6 +1392,20 @@ export async function resolveEntitlementForUser(params: {
     studentFundingCategory: "INDIVIDUAL_SELF_FUNDED",
     status: evaluated.status,
     isLocked: evaluated.isLocked,
+    isManuallyLocked: evaluated.isManuallyLocked,
+    manualLockReason: evaluated.manualLockReason,
+    isManuallyUnlocked: evaluated.isManuallyUnlocked,
+    restrictionType: evaluated.restrictionType,
+    lockReasonCode: evaluated.lockReasonCode,
+    lockReasonLabel: evaluated.lockReasonLabel,
+    effectiveAtIso: evaluated.effectiveAtIso,
+    effectiveAtFormatted: evaluated.effectiveAtFormatted,
+    expiresAtIso: evaluated.expiresAtIso,
+    expiresAtFormatted: evaluated.expiresAtFormatted,
+    activeRestrictions: publicRestrictions,
+    hasPaymentRestriction: evaluated.hasPaymentRestriction,
+    hasNonPaymentRestriction: evaluated.hasNonPaymentRestriction,
+    nextActionType: copy.nextActionType,
     inGracePeriod: evaluated.inGracePeriod,
     isDueSoon: evaluated.isDueSoon,
     isExempt: evaluated.isExempt,

@@ -5,15 +5,21 @@ import {
   X, Terminal, Loader2, Zap, Users,
   Plus, Check, School, GraduationCap,
   FileText, ExternalLink, HelpCircle, Layers,
-  ChevronRight, AlertCircle, Calendar, Mail
+  ChevronRight, AlertCircle, Calendar, Mail, Trash2
 } from 'lucide-react';
-import { collection, getDocs, getDoc, doc, setDoc, addDoc, query, where, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, setDoc, addDoc, deleteDoc, query, where, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import SEO from '../../components/ui/SEO';
 import { ResourceListView } from '../../components/portal/ResourceListView';
 import { triggerResourceNotification } from '../../utils/resourceTracking';
 import { fetchAcademicStudentsFallback, fetchAcademicSchoolsFallback } from '../../lib/academicFallback';
+import {
+  buildResourceCreatorMetadata,
+  canDeleteResource,
+  isAdminRole,
+  isStaffRole,
+} from '../../lib/resourcePermissions';
 
 export interface ResourceDocument {
   id: string;
@@ -53,6 +59,19 @@ export interface ResourceDocument {
   tags?: string[];
   dateAdded?: string;
   isFeatured?: boolean;
+  _collection?: string;
+  sourceLabel?: string;
+  createdByUid?: string;
+  uploadedByUid?: string;
+  createdByEmail?: string;
+  uploadedByEmail?: string;
+  createdByName?: string;
+  createdByRole?: string;
+  assignedBy?: string;
+  tutorId?: string;
+  staffId?: string;
+  studentId?: string;
+  studentName?: string;
 }
 
 interface ResourceLibraryProps {
@@ -168,27 +187,60 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
   const [resources, setResources] = useState<ResourceDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [canManageCurriculum, setCanManageCurriculum] = useState(false);
+  const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<string>(role);
+  const [currentUserName, setCurrentUserName] = useState<string>('');
+  const [deleteTarget, setDeleteTarget] = useState<ResourceDocument | null>(null);
+  const [deletingResource, setDeletingResource] = useState(false);
 
   useEffect(() => {
     let active = true;
     const resolveCurriculumPermission = async () => {
-      if (role !== 'staff' || !auth.currentUser) {
-        if (active) setCanManageCurriculum(false);
+      if (!auth.currentUser) {
+        if (active) {
+          setCanManageCurriculum(false);
+          setIsCurrentUserAdmin(false);
+          setCurrentUserRole(role);
+        }
         return;
       }
       try {
         const uid = auth.currentUser.uid;
-        const [userSnap, adminSnap] = await Promise.all([
+        const [userSnap, adminSnap, tokenResult] = await Promise.all([
           getDoc(doc(db, 'users', uid)).catch(() => null),
-          getDoc(doc(db, 'admins', uid)).catch(() => null)
+          getDoc(doc(db, 'admins', uid)).catch(() => null),
+          auth.currentUser.getIdTokenResult().catch(() => null),
         ]);
-        const userRole = String(userSnap?.data()?.role || '').toLowerCase();
-        const isTutor = ['tutor', 'instructor'].includes(userRole);
-        const isSuperAdmin = Boolean(adminSnap?.exists()) || Boolean((await auth.currentUser.getIdTokenResult()).claims.super_admin);
-        if (active) setCanManageCurriculum(isTutor || isSuperAdmin);
+        const userData = userSnap?.data() || {};
+        const userRole = String(userData.role || role || '').toLowerCase();
+        const isTutor = isStaffRole(userRole) || role === 'staff';
+        const isAdmin =
+          Boolean(adminSnap?.exists()) ||
+          isAdminRole(userRole) ||
+          Boolean(tokenResult?.claims?.super_admin) ||
+          Boolean(tokenResult?.claims?.admin) ||
+          Boolean(tokenResult?.claims?.isAdmin);
+
+        if (active) {
+          setIsCurrentUserAdmin(isAdmin);
+          setCurrentUserRole(isAdmin ? 'admin' : userRole || role);
+          setCurrentUserName(
+            String(
+              userData.fullName ||
+                userData.name ||
+                auth.currentUser.displayName ||
+                auth.currentUser.email ||
+                'Portal Educator'
+            )
+          );
+          setCanManageCurriculum(isAdmin || (role === 'staff' && isTutor));
+        }
       } catch (error) {
         console.warn('Curriculum upload permission check failed:', error);
-        if (active) setCanManageCurriculum(false);
+        if (active) {
+          setCanManageCurriculum(role === 'staff');
+          setIsCurrentUserAdmin(false);
+        }
       }
     };
     void resolveCurriculumPermission();
@@ -256,7 +308,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
     docType: 'Lesson Note' as ResourceDocument['docType'],
     classLevel: 'All Classes',
     assignedClasses: ['All Classes'],
-    audienceMode: 'SCHOOL_CLASS' as 'SCHOOL_CLASS' | 'PRIVATE_LEARNERS',
+    audienceMode: 'SCHOOL_CLASS' as 'GENERAL' | 'SCHOOL_CLASS' | 'PRIVATE_LEARNERS',
     targetSchoolId: '',
     targetStudentIds: [] as string[],
     description: '',
@@ -324,19 +376,21 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
 
       if (role === 'school') {
         const [resSnap, schoolResSnap] = await Promise.all([
-          getDocs(collection(db, 'resources')).catch(() => ({ docs: [] })),
-          getDocs(collection(db, 'schoolResources')).catch(() => ({ docs: [] }))
+          getDocs(collection(db, 'resources')).catch(() => ({ docs: [] } as any)),
+          getDocs(collection(db, 'schoolResources')).catch(() => ({ docs: [] } as any))
         ]);
 
-        const rawList = [...resSnap.docs, ...schoolResSnap.docs];
-        const seenIds = new Set<string>();
+        const taggedList = [
+          ...resSnap.docs.map((dDoc: any) => ({ dDoc, col: 'resources', label: 'General Resource' })),
+          ...schoolResSnap.docs.map((dDoc: any) => ({ dDoc, col: 'schoolResources', label: 'School Resource' })),
+        ];
 
-        dbItems = rawList.map(dDoc => {
+        dbItems = taggedList.map(({ dDoc, col, label }) => {
           const d = dDoc.data();
-          const docId = dDoc.id;
-          seenIds.add(docId);
           return {
-            id: docId,
+            id: dDoc.id,
+            _collection: col,
+            sourceLabel: label,
             title: d.title || 'Curriculum Resource',
             category: (d.category as any) || 'school',
             subject: d.subject || d.subjectTrack || 'Computer Science & ICT',
@@ -345,29 +399,65 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
             description: d.description || 'Institutional lesson plan, worksheet or syllabus.',
             fileUrl: d.fileUrl || d.url || '',
             fileSize: d.fileSize || 'PDF Document',
-            author: d.author || d.instructor || 'Jaystarbliss Tutors',
+            author: d.author || d.createdByName || d.instructor || 'Jaystarbliss Tutors',
             assignedClasses: Array.isArray(d.assignedClasses) ? d.assignedClasses : (d.targetClass ? [d.targetClass] : (d.class ? [d.class] : [])),
             classInstructions: d.classInstructions || d.instructions || '',
             schoolId: d.schoolId || sSchoolId,
             schoolName: d.schoolName || sSchoolName,
+            createdByUid: d.createdByUid || '',
+            uploadedByUid: d.uploadedByUid || '',
+            createdByEmail: d.createdByEmail || '',
+            uploadedByEmail: d.uploadedByEmail || '',
+            createdByName: d.createdByName || d.author || '',
+            createdByRole: d.createdByRole || '',
+            assignedBy: d.assignedBy || '',
+            tutorId: d.tutorId || '',
+            staffId: d.staffId || '',
             dateAdded: d.timestamp?.toDate ? d.timestamp.toDate().toISOString() : (d.assignedAt?.toDate ? d.assignedAt.toDate().toISOString() : (d.dateAdded || d.createdAt || '')),
             tags: d.tags || ['Curriculum Resource'],
             content: d.content
           };
         });
       } else if (role === 'staff') {
-        const [resSnap, staffSnap, schoolResSnap] = await Promise.all([
-          getDocs(collection(db, 'resources')).catch(() => ({ docs: [] })),
-          getDocs(collection(db, 'staffGeneralResources')).catch(() => ({ docs: [] })),
-          getDocs(collection(db, 'schoolResources')).catch(() => ({ docs: [] }))
+        const currentEmail = (auth.currentUser?.email || '').toLowerCase();
+        const personalQueries: Promise<any>[] = [];
+        if (currentUid) {
+          personalQueries.push(
+            getDocs(query(collection(db, 'personalResources'), where('createdByUid', '==', currentUid))).catch(() => ({ docs: [] })),
+            getDocs(query(collection(db, 'personalResources'), where('tutorId', '==', currentUid))).catch(() => ({ docs: [] }))
+          );
+        }
+        if (currentEmail) {
+          personalQueries.push(
+            getDocs(query(collection(db, 'personalResources'), where('assignedBy', '==', currentEmail))).catch(() => ({ docs: [] }))
+          );
+        }
+
+        const [resSnap, staffSnap, schoolResSnap, ...personalSnaps] = await Promise.all([
+          getDocs(collection(db, 'resources')).catch(() => ({ docs: [] } as any)),
+          getDocs(collection(db, 'staffGeneralResources')).catch(() => ({ docs: [] } as any)),
+          getDocs(collection(db, 'schoolResources')).catch(() => ({ docs: [] } as any)),
+          ...personalQueries,
         ]);
 
         const staffMap = new Map<string, ResourceDocument>();
-        [...resSnap.docs, ...staffSnap.docs, ...schoolResSnap.docs].forEach(dDoc => {
-          if (staffMap.has(dDoc.id)) return;
+        const taggedEntries = [
+          ...resSnap.docs.map((dDoc: any) => ({ dDoc, col: 'resources', label: 'General Resource' })),
+          ...staffSnap.docs.map((dDoc: any) => ({ dDoc, col: 'staffGeneralResources', label: 'Staff Resource' })),
+          ...schoolResSnap.docs.map((dDoc: any) => ({ dDoc, col: 'schoolResources', label: 'School Resource' })),
+          ...personalSnaps.flatMap((snap: any) =>
+            (snap?.docs || []).map((dDoc: any) => ({ dDoc, col: 'personalResources', label: 'Private Learner' }))
+          ),
+        ];
+
+        taggedEntries.forEach(({ dDoc, col, label }) => {
+          const compositeKey = `${col}:${dDoc.id}`;
+          if (staffMap.has(compositeKey)) return;
           const d = dDoc.data();
-          staffMap.set(dDoc.id, {
+          staffMap.set(compositeKey, {
             id: dDoc.id,
+            _collection: col,
+            sourceLabel: label,
             title: d.title || 'Teaching Resource',
             category: 'staff',
             subject: d.subject || d.subjectTrack || 'General',
@@ -376,10 +466,23 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
             description: d.description || 'Teaching material and curriculum resources.',
             fileUrl: d.fileUrl || d.url || '',
             fileSize: d.fileSize || 'Document',
-            author: d.author || d.instructor || 'Jaystarbliss Studios',
+            author: d.author || d.createdByName || d.instructor || 'Jaystarbliss Studios',
             assignedClasses: Array.isArray(d.assignedClasses) ? d.assignedClasses : (d.targetClass ? [d.targetClass] : []),
             classInstructions: d.classInstructions || '',
-            dateAdded: d.timestamp?.toDate ? d.timestamp.toDate().toISOString() : (d.dateAdded || d.createdAt || ''),
+            schoolId: d.schoolId || '',
+            schoolName: d.schoolName || '',
+            studentId: d.studentId || '',
+            studentName: d.studentName || '',
+            createdByUid: d.createdByUid || '',
+            uploadedByUid: d.uploadedByUid || '',
+            createdByEmail: d.createdByEmail || '',
+            uploadedByEmail: d.uploadedByEmail || '',
+            createdByName: d.createdByName || d.author || '',
+            createdByRole: d.createdByRole || '',
+            assignedBy: d.assignedBy || '',
+            tutorId: d.tutorId || '',
+            staffId: d.staffId || '',
+            dateAdded: d.timestamp?.toDate ? d.timestamp.toDate().toISOString() : (d.assignedAt?.toDate ? d.assignedAt.toDate().toISOString() : (d.dateAdded || d.createdAt || '')),
             tags: d.tags || ['Teaching Material'],
             content: d.content
           });
@@ -745,18 +848,54 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
     try {
       const selectedSch = authorisedSchools.find((s) => s.id === uploadForm.targetSchoolId);
       const activeSchoolId =
-        uploadForm.audienceMode === 'PRIVATE_LEARNERS'
+        uploadForm.audienceMode === 'PRIVATE_LEARNERS' || uploadForm.audienceMode === 'GENERAL'
           ? ''
           : uploadForm.targetSchoolId || schoolId || studentInfo.schoolId || 'default_school';
       const activeSchoolName =
         uploadForm.audienceMode === 'PRIVATE_LEARNERS'
           ? 'Private Learners'
+          : uploadForm.audienceMode === 'GENERAL'
+          ? 'All Schools (Universal)'
           : selectedSch?.name || schoolName || studentInfo.schoolName || 'School Institution';
 
-      if (uploadForm.audienceMode === 'PRIVATE_LEARNERS') {
+      const creatorMeta = buildResourceCreatorMetadata({
+        uid: auth.currentUser?.uid,
+        email: auth.currentUser?.email,
+        name: currentUserName || auth.currentUser?.displayName || auth.currentUser?.email || 'Tutor',
+        role: isCurrentUserAdmin ? 'admin' : currentUserRole || role,
+      });
+
+      if (uploadForm.audienceMode === 'GENERAL') {
+        await addDoc(collection(db, 'resources'), {
+          title: uploadForm.title.trim(),
+          subject: uploadForm.subject,
+          docType: uploadForm.docType,
+          type: uploadForm.docType,
+          classLevel: uploadForm.assignedClasses[0] || uploadForm.classLevel || 'All Classes',
+          assignedClasses: uploadForm.assignedClasses,
+          description: uploadForm.description.trim() || 'General curriculum learning resource.',
+          fileUrl: uploadForm.fileUrl.trim(),
+          url: uploadForm.fileUrl.trim(),
+          classInstructions: uploadForm.classInstructions.trim(),
+          category: 'both',
+          assignedSchoolId: 'all',
+          schoolId: 'all',
+          assignedSchoolName: 'All Schools (Universal)',
+          assignedProgramId: 'all',
+          programId: 'all',
+          assignedProgramName: 'All Programmes (Universal)',
+          tutorId: auth.currentUser?.uid || '',
+          assignedBy: auth.currentUser?.email || 'Tutor',
+          ...creatorMeta,
+          timestamp: serverTimestamp(),
+          assignedAt: serverTimestamp(),
+        });
+      } else if (uploadForm.audienceMode === 'PRIVATE_LEARNERS') {
         for (const studentId of uploadForm.targetStudentIds) {
+          const learner = privateLearners.find((l) => l.id === studentId);
           await addDoc(collection(db, 'personalResources'), {
             studentId,
+            studentName: learner?.name || 'Learner',
             title: uploadForm.title.trim(),
             subject: uploadForm.subject,
             docType: uploadForm.docType,
@@ -767,8 +906,11 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
             url: uploadForm.fileUrl.trim(),
             classInstructions: uploadForm.classInstructions.trim(),
             category: 'student',
+            tutorId: auth.currentUser?.uid || '',
             assignedAt: serverTimestamp(),
+            timestamp: serverTimestamp(),
             assignedBy: auth.currentUser?.email || 'Tutor',
+            ...creatorMeta,
           });
         }
       } else {
@@ -786,8 +928,11 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
           category: 'school',
           schoolId: activeSchoolId,
           schoolName: activeSchoolName,
+          tutorId: auth.currentUser?.uid || '',
           assignedAt: serverTimestamp(),
+          timestamp: serverTimestamp(),
           assignedBy: auth.currentUser?.email || 'Educator',
+          ...creatorMeta,
         };
 
         await addDoc(collection(db, 'schoolResources'), newDoc);
@@ -828,6 +973,47 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
       toast.error('Failed to publish resource: ' + (err?.message || 'Error occurred'));
     } finally {
       setUploadSubmitting(false);
+    }
+  };
+
+  // Ownership-scoped delete check & execution
+  const canDeleteLibraryItem = useCallback(
+    (item: Record<string, any>) =>
+      canDeleteResource({
+        resource: item,
+        currentUid: auth.currentUser?.uid,
+        currentEmail: auth.currentUser?.email,
+        currentRole: isCurrentUserAdmin ? 'admin' : currentUserRole || role,
+        isAdmin: isCurrentUserAdmin,
+        currentSchoolId: schoolId,
+      }),
+    [isCurrentUserAdmin, currentUserRole, role, schoolId]
+  );
+
+  const handleConfirmDeleteResource = async () => {
+    if (!deleteTarget) return;
+    if (!canDeleteLibraryItem(deleteTarget)) {
+      toast.error('You can only delete resources that you uploaded.');
+      setDeleteTarget(null);
+      return;
+    }
+
+    setDeletingResource(true);
+    try {
+      const targetCollection = deleteTarget._collection || 'schoolResources';
+      await deleteDoc(doc(db, targetCollection, deleteTarget.id));
+      setResources((prev) =>
+        prev.filter(
+          (r) => !(r.id === deleteTarget.id && (r._collection || 'schoolResources') === targetCollection)
+        )
+      );
+      toast.success(`Deleted "${deleteTarget.title}" permanently.`);
+      setDeleteTarget(null);
+    } catch (err: any) {
+      console.error('Error deleting resource:', err);
+      toast.error('Unable to delete resource: ' + (err?.message || 'Permission denied'));
+    } finally {
+      setDeletingResource(false);
     }
   };
 
@@ -892,19 +1078,29 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
       ) : (
         <ResourceListView
           resources={resources}
-          role={role}
+          role={isCurrentUserAdmin ? 'admin' : role}
           studentClass={studentInfo.studentClass}
           bookmarkedIds={bookmarkedIds}
           onBookmark={(resId, e) => toggleBookmark(resId, e)}
           onAssign={(res) => {
-            const docItem = resources.find(r => r.id === res.id);
+            const docItem = resources.find(r => r.id === res.id && r._collection === res._collection);
             if (docItem) handleOpenAssignModal(docItem);
           }}
           onPreview={(res) => {
-            const docItem = resources.find(r => r.id === res.id);
+            const docItem = resources.find(r => r.id === res.id && r._collection === res._collection);
             if (docItem) setPreviewDoc(docItem);
           }}
+          onDelete={(res) => {
+            const docItem = resources.find(r => r.id === res.id && r._collection === res._collection) || (res as ResourceDocument);
+            if (canDeleteLibraryItem(docItem)) {
+              setDeleteTarget(docItem);
+            } else {
+              toast.error('You can only delete resources that you sent.');
+            }
+          }}
           showAssignButton={role === 'school' || canManageCurriculum}
+          showDeleteButton={role === 'staff' || role === 'school' || isCurrentUserAdmin}
+          canDeleteItem={(res) => canDeleteLibraryItem(res)}
           emptyMessage="No curriculum resources found for your enrolled program track. Lessons and study notes uploaded by educators will appear here."
         />
       )}
@@ -1184,17 +1380,28 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                 />
               </div>
 
-              {/* Audience Targeting: School/Class vs Private Learners */}
+              {/* Audience Targeting: General vs School/Class vs Private Learners */}
               {role === 'staff' && (
                 <div className="space-y-2 pt-1">
                   <label className="block font-bold text-slate-700 dark:text-slate-300">
                     Authorised Target Audience
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setUploadForm(prev => ({ ...prev, audienceMode: 'GENERAL' }))}
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
+                        uploadForm.audienceMode === 'GENERAL'
+                          ? 'bg-brand-red text-white border-brand-red'
+                          : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-800'
+                      }`}
+                    >
+                      General Resource
+                    </button>
                     <button
                       type="button"
                       onClick={() => setUploadForm(prev => ({ ...prev, audienceMode: 'SCHOOL_CLASS' }))}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold cursor-pointer ${
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
                         uploadForm.audienceMode === 'SCHOOL_CLASS'
                           ? 'bg-brand-red text-white border-brand-red'
                           : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-800'
@@ -1205,7 +1412,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                     <button
                       type="button"
                       onClick={() => setUploadForm(prev => ({ ...prev, audienceMode: 'PRIVATE_LEARNERS' }))}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold cursor-pointer ${
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
                         uploadForm.audienceMode === 'PRIVATE_LEARNERS'
                           ? 'bg-brand-red text-white border-brand-red'
                           : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-800'
@@ -1322,6 +1529,17 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                         })}
                     </div>
                   )}
+                </div>
+              ) : uploadForm.audienceMode === 'GENERAL' ? (
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Target Class Level</label>
+                  <select
+                    value={uploadForm.assignedClasses[0] || 'All Classes'}
+                    onChange={e => setUploadForm(prev => ({ ...prev, assignedClasses: [e.target.value], classLevel: e.target.value }))}
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-900 dark:text-white outline-hidden focus:border-brand-red"
+                  >
+                    {STANDARD_SCHOOL_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1514,6 +1732,57 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ role = 'all' }
                   </a>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ DELETE RESOURCE CONFIRMATION MODAL ══ */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md shadow-2xl p-6 space-y-5">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/40 text-brand-red flex items-center justify-center shrink-0">
+                <AlertCircle size={20} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Delete Resource?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Are you sure you want to permanently remove{' '}
+                  <strong className="text-slate-900 dark:text-white">"{deleteTarget.title}"</strong>? It will immediately disappear from the library.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                disabled={deletingResource}
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingResource}
+                onClick={handleConfirmDeleteResource}
+                className="px-4 py-2 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {deletingResource ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Delete Permanently</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

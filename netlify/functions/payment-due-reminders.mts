@@ -13,6 +13,10 @@ import {
   resolveScheduledReminderStage,
 } from '../../api/_lib/subscription-core';
 import { normalizeSubscriptionFromSource } from '../../api/_lib/subscription-service';
+import {
+  buildDefaultUserFacingMessage,
+  getAutomaticPaymentReasonCode,
+} from '../../api/_lib/restriction-core';
 
 const asString = (v: unknown) => String(v ?? '').trim();
 const MAX_RETRY_ATTEMPTS = 5;
@@ -678,6 +682,67 @@ export default async () => {
     await reminderRef.set(recordPayload, { merge: true });
 
     if (stage === 'LOCKDOWN_ACTIVATED') {
+      const autoReasonCode = getAutomaticPaymentReasonCode(candidate.subscription.accountType);
+      const dueKey = String(evalState.dueDateIso || nowIso).slice(0, 10).replace(/[^0-9-]/g, '');
+      const autoRestrictionId = `auto_pay_${candidate.subscription.id.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60)}_${dueKey}`;
+      const autoRestrictionRef = adminDb.collection('accountRestrictions').doc(autoRestrictionId);
+      const existingAuto = await autoRestrictionRef.get().catch(() => null);
+      if (!existingAuto?.exists) {
+        await autoRestrictionRef
+          .set({
+            restrictionId: autoRestrictionId,
+            targetAccountId: candidate.subscription.accountId,
+            targetAccountType: candidate.subscription.accountType,
+            accountName: candidate.accountLabel,
+            schoolId: candidate.subscription.schoolId || null,
+            parentId: candidate.subscription.parentId || null,
+            studentId: candidate.subscription.studentId || null,
+            programmeEnrollmentId: candidate.subscription.programmeEnrollmentId || null,
+            affectedStudentIds: candidate.subscription.studentId ? [candidate.subscription.studentId] : [],
+            affectedProgrammeIds: candidate.subscription.programmeId ? [candidate.subscription.programmeId] : [],
+            restrictionType: 'AUTOMATED_PAYMENT_LOCKDOWN',
+            reasonCode: autoReasonCode,
+            customReason: null,
+            userFacingMessage: buildDefaultUserFacingMessage(autoReasonCode, candidate.subscription.accountType),
+            internalAdminNote: `Automated 7-day post-grace lockdown activated for overdue subscription ${candidate.subscription.id}.`,
+            restrictedScope:
+              candidate.subscription.accountType === 'SCHOOL'
+                ? 'INSTITUTION'
+                : candidate.subscription.accountType === 'STUDENT_SELF_FUNDED_PROGRAMME'
+                ? 'PROGRAMME'
+                : 'ACCOUNT',
+            cascadesToLinkedLearners:
+              candidate.subscription.accountType === 'SCHOOL' || candidate.subscription.accountType === 'PARENT',
+            appliedByUid: 'system_billing_guardrail',
+            appliedByName: 'Automated Billing Guardrail',
+            appliedAt: nowIso,
+            effectiveAt: nowIso,
+            expiresAt: null,
+            status: 'ACTIVE',
+            relatedSubscriptionId: candidate.subscription.id,
+            notificationEventId: reminderDocId,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          })
+          .catch(() => undefined);
+
+        await adminDb
+          .collection('restrictionAuditLogs')
+          .add({
+            action: 'AUTOMATED_PAYMENT_LOCKDOWN_ACTIVATED',
+            restrictionId: autoRestrictionId,
+            targetAccountId: candidate.subscription.accountId,
+            targetAccountType: candidate.subscription.accountType,
+            relatedSubscriptionId: candidate.subscription.id,
+            reasonCode: autoReasonCode,
+            restrictionType: 'AUTOMATED_PAYMENT_LOCKDOWN',
+            actorUid: 'system_billing_guardrail',
+            actorName: 'Automated Billing Guardrail',
+            createdAt: nowIso,
+          })
+          .catch(() => undefined);
+      }
+
       dependentNotices += await dispatchDependentStudentLockdownNotices({
         candidate,
         dueDateIso: evalState.dueDateIso,
@@ -697,6 +762,8 @@ export default async () => {
         };
         if (stage === 'LOCKDOWN_ACTIVATED') {
           subPatch.lockdownActivatedAt = candidate.subscription.lockdownActivatedAt || nowIso;
+          subPatch.lockReasonCode = getAutomaticPaymentReasonCode(candidate.subscription.accountType);
+          subPatch.restrictionType = 'AUTOMATED_PAYMENT_LOCKDOWN';
           subPatch.status = 'LOCKED';
         } else if (stage === 'DUE_TODAY') {
           subPatch.status = 'GRACE_PERIOD';

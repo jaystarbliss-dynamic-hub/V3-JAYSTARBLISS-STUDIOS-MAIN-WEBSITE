@@ -3,13 +3,14 @@ import {
   collection, getDocs, addDoc, deleteDoc, doc, updateDoc,
   query, orderBy, serverTimestamp 
 } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { auth, db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { ResourceListView } from '../../components/portal/ResourceListView';
+import { buildResourceCreatorMetadata } from '../../lib/resourcePermissions';
 import { 
   FolderOpen, Link as LinkIcon, Plus, Trash2, 
   ExternalLink, Search, FileText, BookOpen, Edit3,
-  X, Check, Save, Layers, School
+  X, Check, Save, Layers, School, AlertTriangle, Loader2
 } from 'lucide-react';
 
 const AVAILABLE_CLASSES = [
@@ -30,6 +31,7 @@ const AdminResources: React.FC = () => {
   // Editing state for Resources, Links, Exams
   const [editingItem, setEditingItem] = useState<{
     id: string;
+    collectionName?: string;
     type: 'resources' | 'links' | 'exams';
     title: string;
     category: string;
@@ -45,6 +47,16 @@ const AdminResources: React.FC = () => {
     assignedProgramName?: string;
   } | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // In-app delete confirmation modal state (replaces iframe-blocked window.confirm)
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    collectionName: string;
+    title: string;
+    tab: 'resources' | 'links' | 'exams';
+    sourceLabel?: string;
+  } | null>(null);
+  const [deletingItem, setDeletingItem] = useState(false);
 
   // Schools and Programs Catalog for Scoped Assignment
   const [schoolsList, setSchoolsList] = useState<{ id: string; name: string; programs?: any[] }[]>([]);
@@ -96,21 +108,61 @@ const AdminResources: React.FC = () => {
   });
   const [examSubmitting, setExamSubmitting] = useState(false);
 
-  // Fetch all data
+  // Fetch all data across every resource, link, and exam collection so admins can manage & delete any sent item
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [resSnap, linksSnap, examsSnap, schoolsSnap, progsSnap] = await Promise.all([
-        getDocs(query(collection(db, 'resources'), orderBy('timestamp', 'desc'))).catch(() => getDocs(collection(db, 'resources'))),
-        getDocs(query(collection(db, 'links'), orderBy('timestamp', 'desc'))).catch(() => getDocs(collection(db, 'links'))),
-        getDocs(query(collection(db, 'exams'), orderBy('timestamp', 'desc'))).catch(() => getDocs(collection(db, 'exams'))),
+      const [
+        resSnap,
+        schoolResSnap,
+        staffResSnap,
+        personalResSnap,
+        linksSnap,
+        schoolLinksSnap,
+        personalLinksSnap,
+        examsSnap,
+        schoolsSnap,
+        progsSnap,
+      ] = await Promise.all([
+        getDocs(query(collection(db, 'resources'), orderBy('timestamp', 'desc'))).catch(() => getDocs(collection(db, 'resources')).catch(() => ({ docs: [] } as any))),
+        getDocs(collection(db, 'schoolResources')).catch(() => ({ docs: [] } as any)),
+        getDocs(collection(db, 'staffGeneralResources')).catch(() => ({ docs: [] } as any)),
+        getDocs(collection(db, 'personalResources')).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(db, 'links'), orderBy('timestamp', 'desc'))).catch(() => getDocs(collection(db, 'links')).catch(() => ({ docs: [] } as any))),
+        getDocs(collection(db, 'schoolLinks')).catch(() => ({ docs: [] } as any)),
+        getDocs(collection(db, 'personalLinks')).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(db, 'exams'), orderBy('timestamp', 'desc'))).catch(() => getDocs(collection(db, 'exams')).catch(() => ({ docs: [] } as any))),
         getDocs(collection(db, 'schools')).catch(() => ({ docs: [] } as any)),
-        getDocs(collection(db, 'programs')).catch(() => ({ docs: [] } as any))
+        getDocs(collection(db, 'programs')).catch(() => ({ docs: [] } as any)),
       ]);
 
-      setResources(resSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setLinks(linksSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setExams(examsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const toMillis = (item: any): number => {
+        const ts = item.timestamp || item.assignedAt || item.createdAt || item.dateAdded;
+        if (ts?.toMillis) return ts.toMillis();
+        if (ts?.seconds) return ts.seconds * 1000;
+        if (typeof ts === 'string') {
+          const parsed = new Date(ts).getTime();
+          return Number.isNaN(parsed) ? 0 : parsed;
+        }
+        return 0;
+      };
+
+      const mergedResources = [
+        ...resSnap.docs.map((d: any) => ({ id: d.id, _collection: 'resources', sourceLabel: 'General Resource', ...d.data() })),
+        ...schoolResSnap.docs.map((d: any) => ({ id: d.id, _collection: 'schoolResources', sourceLabel: 'School Resource', ...d.data() })),
+        ...staffResSnap.docs.map((d: any) => ({ id: d.id, _collection: 'staffGeneralResources', sourceLabel: 'Staff Resource', ...d.data() })),
+        ...personalResSnap.docs.map((d: any) => ({ id: d.id, _collection: 'personalResources', sourceLabel: 'Student Dispatch', ...d.data() })),
+      ].sort((a, b) => toMillis(b) - toMillis(a));
+
+      const mergedLinks = [
+        ...linksSnap.docs.map((d: any) => ({ id: d.id, _collection: 'links', sourceLabel: 'General Link', ...d.data() })),
+        ...schoolLinksSnap.docs.map((d: any) => ({ id: d.id, _collection: 'schoolLinks', sourceLabel: 'School Link', ...d.data() })),
+        ...personalLinksSnap.docs.map((d: any) => ({ id: d.id, _collection: 'personalLinks', sourceLabel: 'Student Link', ...d.data() })),
+      ].sort((a, b) => toMillis(b) - toMillis(a));
+
+      setResources(mergedResources);
+      setLinks(mergedLinks);
+      setExams(examsSnap.docs.map((d: any) => ({ id: d.id, _collection: 'exams', ...d.data() })));
 
       const schoolsData = schoolsSnap.docs.map((d: any) => ({
         id: d.id,
@@ -160,6 +212,12 @@ const AdminResources: React.FC = () => {
         assignedProgramName: resForm.assignedProgramName || 'All Programmes (Universal)',
         description: resForm.description.trim(),
         fileUrl: resForm.fileUrl.trim(),
+        ...buildResourceCreatorMetadata({
+          uid: auth.currentUser?.uid,
+          email: auth.currentUser?.email,
+          name: auth.currentUser?.displayName || 'Administrator',
+          role: 'admin',
+        }),
         timestamp: serverTimestamp()
       });
       toast.success(`Resource "${resForm.title}" uploaded and published successfully!`);
@@ -205,6 +263,12 @@ const AdminResources: React.FC = () => {
         programId: linkForm.assignedProgramId || 'all',
         assignedProgramName: linkForm.assignedProgramName || 'All Programmes (Universal)',
         description: linkForm.description.trim(),
+        ...buildResourceCreatorMetadata({
+          uid: auth.currentUser?.uid,
+          email: auth.currentUser?.email,
+          name: auth.currentUser?.displayName || 'Administrator',
+          role: 'admin',
+        }),
         timestamp: serverTimestamp()
       });
       toast.success(`Link "${linkForm.title}" posted successfully!`);
@@ -248,6 +312,12 @@ const AdminResources: React.FC = () => {
         programId: examForm.assignedProgramId || 'all',
         assignedProgramName: examForm.assignedProgramName || 'All Programmes (Universal)',
         description: examForm.description.trim(),
+        ...buildResourceCreatorMetadata({
+          uid: auth.currentUser?.uid,
+          email: auth.currentUser?.email,
+          name: auth.currentUser?.displayName || 'Administrator',
+          role: 'admin',
+        }),
         timestamp: serverTimestamp()
       });
       toast.success(`Exam/Assessment "${examForm.title}" posted successfully!`);
@@ -286,7 +356,8 @@ const AdminResources: React.FC = () => {
 
     setSavingEdit(true);
     try {
-      const docRef = doc(db, editingItem.type, editingItem.id);
+      const targetCollection = editingItem.collectionName || editingItem.type;
+      const docRef = doc(db, targetCollection, editingItem.id);
       const updates: any = {
         title: editingItem.title.trim(),
         category: editingItem.category,
@@ -305,6 +376,7 @@ const AdminResources: React.FC = () => {
         updates.classLevel = editingItem.classLevel || 'All Classes';
         updates.assignedClasses = editingItem.assignedClasses || [updates.classLevel];
         updates.fileUrl = targetUrl.trim();
+        updates.url = targetUrl.trim();
       } else {
         updates.url = targetUrl.trim();
       }
@@ -321,15 +393,51 @@ const AdminResources: React.FC = () => {
     }
   };
 
-  // Delete handler
-  const handleDelete = async (id: string, collectionName: string, title: string) => {
-    if (!window.confirm(`Are you sure you want to delete "${title}"?`)) return;
+  // Open in-app delete confirmation modal
+  const requestDelete = (
+    id: string,
+    collectionName: string,
+    title: string,
+    tab: 'resources' | 'links' | 'exams',
+    sourceLabel?: string
+  ) => {
+    setDeleteTarget({ id, collectionName, title, tab, sourceLabel });
+  };
+
+  // Confirm delete from Firestore & remove immediately from local state
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeletingItem(true);
     try {
-      await deleteDoc(doc(db, collectionName, id));
-      toast.success(`Deleted "${title}" successfully.`);
-      fetchData();
+      await deleteDoc(doc(db, deleteTarget.collectionName, deleteTarget.id));
+
+      if (deleteTarget.tab === 'resources') {
+        setResources((prev) =>
+          prev.filter(
+            (r) => !(r.id === deleteTarget.id && (r._collection || 'resources') === deleteTarget.collectionName)
+          )
+        );
+      } else if (deleteTarget.tab === 'links') {
+        setLinks((prev) =>
+          prev.filter(
+            (l) => !(l.id === deleteTarget.id && (l._collection || 'links') === deleteTarget.collectionName)
+          )
+        );
+      } else {
+        setExams((prev) =>
+          prev.filter(
+            (ex) => !(ex.id === deleteTarget.id && (ex._collection || 'exams') === deleteTarget.collectionName)
+          )
+        );
+      }
+
+      toast.success(`Deleted "${deleteTarget.title}" permanently.`);
+      setDeleteTarget(null);
     } catch (err: any) {
-      toast.error('Failed to delete item: ' + err.message);
+      console.error('Error deleting resource:', err);
+      toast.error('Failed to delete item: ' + (err?.message || 'Permission denied'));
+    } finally {
+      setDeletingItem(false);
     }
   };
 
@@ -603,16 +711,19 @@ const AdminResources: React.FC = () => {
             </form>
           </div>
 
-          {/* List of Published Resources (List Format with Filters & Unread Indicators) */}
+          {/* List of Published Resources (All collections: General, School, Staff & Student Dispatches) */}
           <div className="lg:col-span-2 space-y-4">
             <ResourceListView
               resources={resources}
               role="admin"
-              title="Published Resources"
+              title="All Sent & Published Resources"
               showEditButton={true}
               showDeleteButton={true}
+              canEditItem={() => true}
+              canDeleteItem={() => true}
               onEdit={(item) => setEditingItem({
                 id: item.id,
+                collectionName: item._collection || 'resources',
                 type: 'resources',
                 title: item.title,
                 category: item.category || 'both',
@@ -620,15 +731,21 @@ const AdminResources: React.FC = () => {
                 classLevel: item.classLevel || 'All Classes',
                 assignedClasses: item.assignedClasses || [item.classLevel || 'All Classes'],
                 description: item.description || '',
-                fileUrl: item.fileUrl || item.url || ''
+                fileUrl: item.fileUrl || item.url || '',
+                assignedSchoolId: (item as any).assignedSchoolId || item.schoolId || 'all',
+                assignedSchoolName: (item as any).assignedSchoolName || item.schoolName || 'All Schools (Universal)',
+                assignedProgramId: (item as any).assignedProgramId || 'all',
+                assignedProgramName: (item as any).assignedProgramName || 'All Programmes (Universal)',
               })}
-              onDelete={(item) => handleDelete(item.id, 'resources', item.title)}
-              onPreview={(item) => {
-                const url = item.fileUrl || item.url;
-                if (url) {
-                  window.open(url, '_blank');
-                }
-              }}
+              onDelete={(item) =>
+                requestDelete(
+                  item.id,
+                  item._collection || 'resources',
+                  item.title,
+                  'resources',
+                  item.sourceLabel
+                )
+              }
               emptyMessage={loading ? "Loading resources..." : "No resources found matching your filters."}
             />
           </div>
@@ -747,32 +864,50 @@ const AdminResources: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredLinks.map((item) => (
                   <div 
-                    key={item.id} 
+                    key={`${item._collection || 'links'}-${item.id}`} 
                     className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 shadow-xs flex flex-col justify-between hover:border-gray-300 dark:hover:border-slate-700 transition-all"
                   >
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400">
-                          {fmtCategory(item.category)}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400">
+                            {fmtCategory(item.category)}
+                          </span>
+                          {item.sourceLabel && item._collection !== 'links' && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                              {item.sourceLabel}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1">
                           <button
+                            type="button"
                             onClick={() => setEditingItem({
                               id: item.id,
+                              collectionName: item._collection || 'links',
                               type: 'links',
                               title: item.title,
                               category: item.category || 'both',
                               description: item.description || '',
                               url: item.url
                             })}
-                            className="text-gray-400 hover:text-sky-500 transition-colors p-1"
+                            className="text-gray-400 hover:text-sky-500 transition-colors p-1 cursor-pointer"
                             title="Edit Link"
                           >
                             <Edit3 size={15} />
                           </button>
                           <button
-                            onClick={() => handleDelete(item.id, 'links', item.title)}
-                            className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                            type="button"
+                            onClick={() =>
+                              requestDelete(
+                                item.id,
+                                item._collection || 'links',
+                                item.title,
+                                'links',
+                                item.sourceLabel
+                              )
+                            }
+                            className="text-gray-400 hover:text-red-500 transition-colors p-1 cursor-pointer"
                             title="Delete Link"
                           >
                             <Trash2 size={15} />
@@ -918,22 +1053,33 @@ const AdminResources: React.FC = () => {
                         </span>
                         <div className="flex items-center gap-1">
                           <button
+                            type="button"
                             onClick={() => setEditingItem({
                               id: item.id,
+                              collectionName: item._collection || 'exams',
                               type: 'exams',
                               title: item.title,
                               category: item.category || 'both',
                               description: item.description || '',
                               url: item.url
                             })}
-                            className="text-gray-400 hover:text-emerald-500 transition-colors p-1"
+                            className="text-gray-400 hover:text-emerald-500 transition-colors p-1 cursor-pointer"
                             title="Edit Exam"
                           >
                             <Edit3 size={15} />
                           </button>
                           <button
-                            onClick={() => handleDelete(item.id, 'exams', item.title)}
-                            className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                            type="button"
+                            onClick={() =>
+                              requestDelete(
+                                item.id,
+                                item._collection || 'exams',
+                                item.title,
+                                'exams',
+                                'Exam Link'
+                              )
+                            }
+                            className="text-gray-400 hover:text-red-500 transition-colors p-1 cursor-pointer"
                             title="Delete Exam"
                           >
                             <Trash2 size={15} />
@@ -1215,6 +1361,58 @@ const AdminResources: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ══ DELETE CONFIRMATION MODAL ══ */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/40 text-brand-red flex items-center justify-center shrink-0">
+                <AlertTriangle size={20} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Delete Permanently?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  You are about to remove{' '}
+                  <strong className="text-slate-900 dark:text-white">"{deleteTarget.title}"</strong>
+                  {deleteTarget.sourceLabel ? ` (${deleteTarget.sourceLabel})` : ''}. It will immediately disappear for all recipients and cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                disabled={deletingItem}
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingItem}
+                onClick={confirmDelete}
+                className="px-4 py-2 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {deletingItem ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Delete Resource</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

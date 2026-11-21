@@ -22,11 +22,24 @@ import {
 import {
   buildCanonicalSubscriptionWritePayload,
   normalizeSubscriptionFromSource,
+  resolvePaymentRestrictionsOnPaymentSuccess,
 } from "../../api/_lib/subscription-service";
+import {
+  applyManualRestrictionToTarget,
+  buildBulkLockPreview,
+  liftManualRestrictions,
+} from "../../api/_lib/restriction-service";
+import {
+  type AccountRestrictionRecord,
+  type BulkLockTargetInput,
+  type RestrictionTargetAccountType,
+  isRestrictionActiveAt,
+} from "../../api/_lib/restriction-core";
 import {
   computeManualPaymentRecordAndTransition,
   type ManualPaymentTargetType,
 } from "../../api/_lib/manual-payment-core";
+import { randomUUID } from "node:crypto";
 
 const tokenFromEvent = (event: any) => {
   const header = event.headers?.authorization || event.headers?.Authorization || "";
@@ -1350,6 +1363,16 @@ export const handler: Handler = async event => {
         createdAt: new Date().toISOString(),
       });
 
+      if (resultSummary?.accessUnlocked) {
+        await resolvePaymentRestrictionsOnPaymentSuccess({
+          targetAccountIds: [targetId, childId].filter(Boolean),
+          subscriptionIds: resultSummary?.subscriptionId ? [String(resultSummary.subscriptionId)] : [],
+          programmeEnrollmentId: targetType === "PROGRAMME_ENROLLMENT" ? targetId : null,
+          paymentReference: reference,
+          resolvedByUid: decoded.uid,
+        }).catch(() => undefined);
+      }
+
       if (notifyUid) {
         await createPortalNotification({
           recipientId: notifyUid,
@@ -1369,25 +1392,69 @@ export const handler: Handler = async event => {
     // =========================================================================
     if (action === "list_subscriptions") {
       const now = new Date();
-      const [canonicalSnap, schoolsSnap, usersSnap, enrollSnap, remindersSnap, auditSnap] =
-        await Promise.all([
-          adminDb.collection("billingSubscriptions").limit(1000).get(),
-          adminDb.collection("schools").limit(500).get(),
-          adminDb.collection("users").limit(1000).get(),
-          adminDb.collection("programme_enrollments").where("billingResponsibility", "==", "STUDENT_SELF_FUNDED").limit(500).get(),
-          adminDb.collection("subscriptionReminders").limit(150).get(),
-          adminDb.collection("adminAuditLogs").limit(150).get(),
-        ]);
+      const [
+        canonicalSnap,
+        schoolsSnap,
+        usersSnap,
+        enrollSnap,
+        remindersSnap,
+        auditSnap,
+        restrictionsSnap,
+        restrictionAuditSnap,
+      ] = await Promise.all([
+        adminDb.collection("billingSubscriptions").limit(1000).get(),
+        adminDb.collection("schools").limit(500).get(),
+        adminDb.collection("users").limit(1000).get(),
+        adminDb.collection("programme_enrollments").where("billingResponsibility", "==", "STUDENT_SELF_FUNDED").limit(500).get(),
+        adminDb.collection("subscriptionReminders").limit(150).get(),
+        adminDb.collection("adminAuditLogs").limit(150).get(),
+        adminDb.collection("accountRestrictions").limit(500).get().catch(() => ({ docs: [] } as any)),
+        adminDb.collection("restrictionAuditLogs").limit(200).get().catch(() => ({ docs: [] } as any)),
+      ]);
+
+      const allRestrictions: AccountRestrictionRecord[] = (restrictionsSnap.docs || [])
+        .map((d: any) => ({ restrictionId: d.id, ...(d.data() || {}) }) as AccountRestrictionRecord)
+        .sort((a: AccountRestrictionRecord, b: AccountRestrictionRecord) =>
+          String(b.appliedAt || "").localeCompare(String(a.appliedAt || ""))
+        );
+
+      const activeRestrictionsBySubOrAccount = (sub: BillingSubscriptionRecord): AccountRestrictionRecord[] => {
+        return allRestrictions.filter((r) => {
+          if (!isRestrictionActiveAt(r, now)) return false;
+          if (r.relatedSubscriptionId && r.relatedSubscriptionId === sub.id) return true;
+          if (r.targetAccountId && r.targetAccountId === sub.accountId && r.targetAccountType === sub.accountType) {
+            return true;
+          }
+          if (sub.programmeEnrollmentId && r.programmeEnrollmentId === sub.programmeEnrollmentId) return true;
+          return false;
+        });
+      };
 
       const byId = new Map<string, any>();
 
       const pushEntry = (sub: BillingSubscriptionRecord, source: "canonical" | "synthesized") => {
-        const evaluated = evaluateSubscriptionState({ subscription: sub, now });
+        const matchingActive = activeRestrictionsBySubOrAccount(sub);
+        const evaluated = evaluateSubscriptionState({
+          subscription: sub,
+          activeRestrictions: matchingActive,
+          now,
+        });
         byId.set(sub.id, {
           ...sub,
           source,
           liveStatus: evaluated.status,
           isLocked: evaluated.isLocked,
+          isManuallyLocked: evaluated.isManuallyLocked,
+          manualLockReason: evaluated.manualLockReason,
+          isManuallyUnlocked: evaluated.isManuallyUnlocked,
+          restrictionType: evaluated.restrictionType,
+          lockReasonCode: evaluated.lockReasonCode,
+          lockReasonLabel: evaluated.lockReasonLabel,
+          effectiveAtFormatted: evaluated.effectiveAtFormatted,
+          expiresAtFormatted: evaluated.expiresAtFormatted,
+          hasPaymentRestriction: evaluated.hasPaymentRestriction,
+          hasNonPaymentRestriction: evaluated.hasNonPaymentRestriction,
+          activeRestrictions: matchingActive,
           inGracePeriod: evaluated.inGracePeriod,
           isDueSoon: evaluated.isDueSoon,
           isExempt: evaluated.isExempt,
@@ -1442,9 +1509,26 @@ export const handler: Handler = async event => {
       for (const uDoc of usersSnap.docs) {
         const u = uDoc.data() || {};
         const r = normaliseRole(u.role);
+        if (r === "school") {
+          const adminSubId = `school_admin_${uDoc.id}`;
+          if (!byId.has(adminSubId)) {
+            const sub = normalizeSubscriptionFromSource({
+              id: adminSubId,
+              accountType: "SCHOOL_ADMIN",
+              accountId: uDoc.id,
+              accountName: String(u.fullName || u.name || u.email || "School Administrator"),
+              recipientEmail: String(u.email || ""),
+              schoolId: u.schoolId || null,
+              billingResponsibility: "SCHOOL",
+              legacyBilling: null,
+              fallbackPlanName: String(u.schoolName || "School Administrator Account"),
+            });
+            pushEntry(sub, "synthesized");
+          }
+          continue;
+        }
         if (!["parent", "student"].includes(r)) continue;
         if (r === "student" && (u.schoolId || u.parentId)) continue;
-        if (!u.billing || !Number(u.billing.baseAmount || 0)) continue;
         const subId = r === "parent" ? `parent_${uDoc.id}` : `student_${uDoc.id}`;
         if (byId.has(subId)) continue;
         const sub = normalizeSubscriptionFromSource({
@@ -1457,7 +1541,7 @@ export const handler: Handler = async event => {
           studentId: r === "student" ? String(u.studentDocId || uDoc.id) : null,
           studentName: r === "student" ? String(u.fullName || u.name || "") : null,
           billingResponsibility: r === "parent" ? "PARENT" : "STUDENT",
-          legacyBilling: u.billing,
+          legacyBilling: u.billing || null,
           fallbackPlanName: r === "parent" ? "Family Plan" : "Student Plan",
         });
         pushEntry(sub, "synthesized");
@@ -1507,6 +1591,7 @@ export const handler: Handler = async event => {
         dueSoon: subscriptions.filter((s) => s.isDueSoon).length,
         inGracePeriod: subscriptions.filter((s) => s.inGracePeriod).length,
         locked: subscriptions.filter((s) => s.isLocked).length,
+        manuallyRestricted: subscriptions.filter((s) => s.isManuallyLocked).length,
         exempt: subscriptions.filter((s) => s.isExempt).length,
         partiallyPaid: subscriptions.filter((s) => s.liveStatus === "PARTIALLY_PAID").length,
         totalOverdueBalance: Number(
@@ -1525,13 +1610,20 @@ export const handler: Handler = async event => {
       const auditLogs = auditSnap.docs
         .map((d) => ({ id: d.id, ...(d.data() || {}) }))
         .sort((a: any, b: any) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
-        .slice(0, 60);
+        .slice(0, 80);
+
+      const restrictionAuditLogs = (restrictionAuditSnap.docs || [])
+        .map((d: any) => ({ id: d.id, ...(d.data() || {}) }))
+        .sort((a: any, b: any) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+        .slice(0, 100);
 
       return response(200, {
         summary,
         subscriptions,
         reminders,
         auditLogs,
+        restrictions: allRestrictions.slice(0, 200),
+        restrictionAuditLogs,
         isSuperAdmin,
       });
     }
@@ -1670,6 +1762,261 @@ export const handler: Handler = async event => {
       });
 
       return response(200, { updated: true, subscriptionId, status: nextStatus });
+    }
+
+    // =========================================================================
+    // MANUAL & BULK ADMINISTRATIVE ACCOUNT LOCKING, PREVIEW, LIFTING & AUDIT HISTORY
+    // =========================================================================
+    if (action === "preview_bulk_lock") {
+      const targets = (Array.isArray(body.targets) ? body.targets : []) as BulkLockTargetInput[];
+      const preview = await buildBulkLockPreview({
+        targets,
+        reasonCode: body.reasonCode,
+        customReason: body.customReason,
+        userFacingMessage: body.userFacingMessage,
+        internalAdminNote: body.internalAdminNote,
+        restrictionType: body.restrictionType,
+        effectiveAt: body.effectiveAt,
+        expiresAt: body.expiresAt,
+        cascadesToLinkedLearners: body.cascadesToLinkedLearners !== false,
+      });
+
+      return response(200, { preview });
+    }
+
+    if (action === "apply_bulk_lock") {
+      const targets = (Array.isArray(body.targets) ? body.targets : []) as BulkLockTargetInput[];
+      if (targets.length === 0) {
+        return response(400, { error: "Select at least one account or programme entitlement to restrict." });
+      }
+      if (body.confirmed !== true) {
+        return response(400, { error: "Explicit confirmation is required before applying bulk restrictions." });
+      }
+
+      const actorName = String((adminUser as any)?.fullName || (adminUser as any)?.name || email);
+      const bulkBatchId = `bulk_${Date.now()}_${randomUUID().slice(0, 8)}`;
+
+      const succeeded: Array<{
+        restrictionId: string;
+        targetAccountId: string;
+        targetAccountType: RestrictionTargetAccountType;
+        accountName: string;
+        linkedStudentCount: number;
+      }> = [];
+      const failed: Array<{
+        targetKey: string;
+        accountName: string;
+        error: string;
+      }> = [];
+
+      // Deduplicate explicitly selected targets so unselected accounts are never touched
+      const seenKeys = new Set<string>();
+      for (const rawTarget of targets) {
+        const key = `${String(rawTarget.accountType || "").toUpperCase()}:${String(rawTarget.accountId || rawTarget.subscriptionId || "")}:${String(rawTarget.programmeEnrollmentId || "")}`;
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+
+        const res = await applyManualRestrictionToTarget({
+          target: rawTarget,
+          reasonCode: body.reasonCode,
+          customReason: body.customReason,
+          userFacingMessage: body.userFacingMessage,
+          internalAdminNote: body.internalAdminNote,
+          restrictionType: body.restrictionType,
+          effectiveAt: body.effectiveAt,
+          expiresAt: body.expiresAt,
+          cascadesToLinkedLearners: body.cascadesToLinkedLearners !== false,
+          actorUid: decoded.uid,
+          actorEmail: email,
+          actorName,
+          bulkBatchId,
+        });
+
+        if (res.ok) {
+          succeeded.push({
+            restrictionId: res.record.restrictionId,
+            targetAccountId: res.record.targetAccountId,
+            targetAccountType: res.record.targetAccountType,
+            accountName: res.record.accountName || res.record.targetAccountId,
+            linkedStudentCount: res.linkedStudentCount,
+          });
+        } else {
+          failed.push({
+            targetKey: res.targetKey,
+            accountName: String(rawTarget.accountName || rawTarget.accountId || rawTarget.subscriptionId || "Account"),
+            error: res.error,
+          });
+        }
+      }
+
+      // If every single item failed, return 400 with explicit failure list (never silently report success)
+      if (succeeded.length === 0 && failed.length > 0) {
+        return response(400, {
+          error: failed[0].error || "Bulk restriction validation failed.",
+          bulkBatchId,
+          succeeded,
+          failed,
+          partialFailure: false,
+        });
+      }
+
+      return response(200, {
+        ok: failed.length === 0,
+        partialFailure: failed.length > 0,
+        bulkBatchId,
+        appliedCount: succeeded.length,
+        failedCount: failed.length,
+        succeeded,
+        failed,
+      });
+    }
+
+    if (action === "manual_lock_account") {
+      const rawAccountType = String(body.accountType || "SCHOOL").trim().toUpperCase();
+      const validAccountTypes: RestrictionTargetAccountType[] = [
+        "SCHOOL",
+        "SCHOOL_ADMIN",
+        "PARENT",
+        "PARENT_CHILD",
+        "INDIVIDUAL_STUDENT",
+        "STUDENT_SELF_FUNDED_PROGRAMME",
+      ];
+      const accountType = (
+        validAccountTypes.includes(rawAccountType as RestrictionTargetAccountType)
+          ? rawAccountType
+          : "SCHOOL"
+      ) as RestrictionTargetAccountType;
+      const accountId = String(
+        body.accountId || body.schoolId || body.parentId || body.studentId || body.programmeEnrollmentId || ""
+      ).trim();
+
+      const actorName = String((adminUser as any)?.fullName || (adminUser as any)?.name || email);
+
+      const res = await applyManualRestrictionToTarget({
+        target: {
+          subscriptionId: String(body.subscriptionId || "").trim() || null,
+          accountType,
+          accountId,
+          accountName: String(body.accountName || "").trim() || null,
+          schoolId: String(body.schoolId || "").trim() || null,
+          parentId: String(body.parentId || "").trim() || null,
+          studentId: String(body.studentId || "").trim() || null,
+          programmeEnrollmentId: String(body.programmeEnrollmentId || "").trim() || null,
+        },
+        reasonCode: body.reasonCode,
+        customReason: body.customReason,
+        userFacingMessage: body.userFacingMessage,
+        internalAdminNote: body.internalAdminNote,
+        restrictionType: body.restrictionType,
+        effectiveAt: body.effectiveAt,
+        expiresAt: body.expiresAt,
+        cascadesToLinkedLearners: body.cascadesToLinkedLearners !== false,
+        actorUid: decoded.uid,
+        actorEmail: email,
+        actorName,
+      });
+
+      if (!res.ok) {
+        return response(400, { error: res.error });
+      }
+
+      return response(200, {
+        updated: true,
+        restrictionId: res.record.restrictionId,
+        subscriptionId: res.record.relatedSubscriptionId,
+        accountType: res.record.targetAccountType,
+        manuallyLocked: true,
+        linkedStudentCount: res.linkedStudentCount,
+        record: res.record,
+      });
+    }
+
+    if (action === "manual_unlock_account" || action === "lift_restriction") {
+      const rawAccountType = String(body.accountType || "SCHOOL").trim().toUpperCase();
+      const validAccountTypes: RestrictionTargetAccountType[] = [
+        "SCHOOL",
+        "SCHOOL_ADMIN",
+        "PARENT",
+        "PARENT_CHILD",
+        "INDIVIDUAL_STUDENT",
+        "STUDENT_SELF_FUNDED_PROGRAMME",
+      ];
+      const accountType = (
+        validAccountTypes.includes(rawAccountType as RestrictionTargetAccountType)
+          ? rawAccountType
+          : "SCHOOL"
+      ) as RestrictionTargetAccountType;
+      const accountId = String(
+        body.accountId || body.schoolId || body.parentId || body.studentId || body.programmeEnrollmentId || ""
+      ).trim();
+
+      const rawMode = String(body.mode || (action === "lift_restriction" ? "LIFT_ONLY" : "AUTO")).trim().toUpperCase();
+      const mode = rawMode === "OPEN" ? "OPEN" : rawMode === "AUTO" ? "AUTO" : "LIFT_ONLY";
+      const actorName = String((adminUser as any)?.fullName || (adminUser as any)?.name || email);
+
+      const res = await liftManualRestrictions({
+        restrictionId: String(body.restrictionId || "").trim() || null,
+        subscriptionId: String(body.subscriptionId || "").trim() || null,
+        accountType,
+        accountId: accountId || null,
+        schoolId: String(body.schoolId || "").trim() || null,
+        parentId: String(body.parentId || "").trim() || null,
+        studentId: String(body.studentId || "").trim() || null,
+        programmeEnrollmentId: String(body.programmeEnrollmentId || "").trim() || null,
+        unlockReason: body.unlockReason ?? body.reason,
+        mode,
+        actorUid: decoded.uid,
+        actorEmail: email,
+        actorName,
+      });
+
+      if (!res.ok) {
+        return response(400, { error: res.error });
+      }
+
+      return response(200, {
+        updated: true,
+        liftedIds: res.liftedIds,
+        remainingActiveRestrictions: res.remainingActiveRestrictions,
+        hasRemainingPaymentLock: res.hasRemainingPaymentLock,
+        mode,
+      });
+    }
+
+    if (action === "list_restriction_history") {
+      const targetAccountId = String(body.targetAccountId || "").trim();
+      const subscriptionId = String(body.subscriptionId || "").trim();
+
+      let restrictionsQuery: any = adminDb.collection("accountRestrictions");
+      if (targetAccountId) {
+        restrictionsQuery = restrictionsQuery.where("targetAccountId", "==", targetAccountId);
+      } else if (subscriptionId) {
+        restrictionsQuery = restrictionsQuery.where("relatedSubscriptionId", "==", subscriptionId);
+      }
+
+      const [resSnap, logSnap] = await Promise.all([
+        restrictionsQuery.limit(200).get().catch(() => ({ docs: [] } as any)),
+        adminDb.collection("restrictionAuditLogs").limit(200).get().catch(() => ({ docs: [] } as any)),
+      ]);
+
+      const restrictions = (resSnap.docs || [])
+        .map((d: any) => ({ restrictionId: d.id, ...(d.data() || {}) }))
+        .sort((a: any, b: any) => String(b.appliedAt || "").localeCompare(String(a.appliedAt || "")));
+
+      let auditLogs = (logSnap.docs || [])
+        .map((d: any) => ({ id: d.id, ...(d.data() || {}) }))
+        .sort((a: any, b: any) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+
+      if (targetAccountId) {
+        auditLogs = auditLogs.filter((l: any) => l.targetAccountId === targetAccountId || l.targetId === subscriptionId);
+      } else if (subscriptionId) {
+        auditLogs = auditLogs.filter((l: any) => l.targetId === subscriptionId || l.relatedSubscriptionId === subscriptionId);
+      }
+
+      return response(200, {
+        restrictions,
+        auditLogs: auditLogs.slice(0, 120),
+      });
     }
 
     return response(400, { error: "Unsupported billing administrator action." });

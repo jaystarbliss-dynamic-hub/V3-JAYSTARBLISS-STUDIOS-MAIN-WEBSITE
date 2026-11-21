@@ -515,6 +515,11 @@ const StaffDashboard: React.FC = () => {
         schoolName: broadcastTargetType === 'SCHOOL' ? targetSchool?.name || 'School' : '',
         tutorId: staffUid,
         tutorName: effective.effectiveName || user?.displayName || 'Faculty Member',
+        createdByUid: staffUid || '',
+        uploadedByUid: staffUid || '',
+        createdByEmail: (effective.effectiveEmail || user?.email || '').toLowerCase(),
+        createdByName: effective.effectiveName || user?.displayName || 'Faculty Member',
+        createdByRole: 'staff',
         createdAt: serverTimestamp(),
       });
 

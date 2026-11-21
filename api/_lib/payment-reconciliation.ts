@@ -20,7 +20,10 @@ import {
   parseDateSafe,
   resolvePlanDurationWeeks,
 } from "./subscription-core";
-import { buildCanonicalSubscriptionWritePayload } from "./subscription-service";
+import {
+  buildCanonicalSubscriptionWritePayload,
+  resolvePaymentRestrictionsOnPaymentSuccess,
+} from "./subscription-service";
 
 const asString = (value: unknown) => String(value ?? "").trim();
 
@@ -349,6 +352,14 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
     });
 
     if (created) {
+      await resolvePaymentRestrictionsOnPaymentSuccess({
+        targetAccountIds: [programmeEnrollmentId, userId],
+        subscriptionIds: [`prog_enr_${programmeEnrollmentId}`],
+        programmeEnrollmentId,
+        paymentReference: reference,
+        resolvedByUid: verifiedUserId || "paystack_webhook",
+      }).catch(() => undefined);
+
       await adminDb
         .collection("notifications")
         .doc(`prog_active_${reference}`)
@@ -1019,6 +1030,27 @@ export async function reconcileSuccessfulCharge(tx: any, verifiedUserId?: string
   });
 
   if (!created) return { created: false, payment: null };
+
+  // Clear ONLY payment-related restrictions for this account; independent manual administrative restrictions remain active
+  const settledTargetIds = [
+    userId,
+    resolvedSchoolId || "",
+    paymentData.studentId || "",
+    ...verifiedSelectedItems.map((it) => it.childId),
+  ].filter(Boolean);
+  const settledSubIds = [
+    role === "school" && resolvedSchoolId ? `school_${resolvedSchoolId}` : "",
+    role === "parent" ? `parent_${userId}` : "",
+    role === "student" ? `student_${userId}` : "",
+    ...verifiedSelectedItems.map((it) => `parent_${userId}_child_${it.childId}`),
+  ].filter(Boolean);
+  await resolvePaymentRestrictionsOnPaymentSuccess({
+    targetAccountIds: settledTargetIds,
+    subscriptionIds: settledSubIds,
+    paymentReference: reference,
+    resolvedByUid: verifiedUserId || "paystack_webhook",
+  }).catch(() => undefined);
+
   const adminUsers = await adminDb.collection("users").limit(1000).get();
   const adminRoles = new Set(["super_admin", "superadmin", "admin"]);
   const paymentSummary = String(role === "school" ? "School" : role === "parent" ? "Parent" : "Student") + " payment received: " + String(paymentData.plan) + " — ₦" + Number(paymentData.customerTotal).toLocaleString() + " (reference " + reference + ").";

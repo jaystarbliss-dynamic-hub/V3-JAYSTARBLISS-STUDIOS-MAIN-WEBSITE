@@ -349,14 +349,8 @@ export const handler: Handler = async event => {
   try {
     const c = await authUser(event);
     if (schoolRoles.includes(c.role)) {
-      const lockResponse = await enforceEntitlementOrLock({
-        uid: c.uid,
-        role: c.role,
-        email: c.email,
-        userRecord: c.user,
-        resourceLabel: "examinations and results",
-      });
-      if (lockResponse) return lockResponse;
+      const lockCheck = await enforceEntitlementOrLock(event);
+      if (!lockCheck.ok) return lockCheck.response;
     }
     const method = event.httpMethod || "GET";
     const body = event.body ? JSON.parse(event.body || "{}") : {};

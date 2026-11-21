@@ -16,10 +16,14 @@ import {
   KeyRound, ArrowLeft,
   CreditCard, Bell, ShieldCheck, Check,
   Users, Code, ChevronRight, Edit3, Send, UserCheck, AlertTriangle,
-  Calendar, CheckCircle2, History as HistoryIcon
+  Calendar, CheckCircle2, History as HistoryIcon, Lock, Unlock
 } from 'lucide-react';
 import { formatNaira, billingPost } from '../../lib/billing';
 import { CANONICAL_CLASSES, formatNormalizedClassDisplay, normalizeClassName } from '../../lib/classes';
+import {
+  ApplyRestrictionModal,
+  UnlockRestrictionsModal,
+} from '../../components/admin/AdminRestrictionModals';
 
 export interface AssignedTutorAllocation {
   tutorId: string;
@@ -82,7 +86,10 @@ export interface SchoolBillingConfig {
   allowedModes: ('advance_monthly' | 'advance_termly' | 'post_monthly' | 'post_termly')[];
   mode: 'advance_monthly' | 'advance_termly' | 'post_monthly' | 'post_termly';
   nextDueDate?: string;
-  status?: 'ACTIVE' | 'PAID' | 'DUE' | 'OVERDUE';
+  status?: 'ACTIVE' | 'PAID' | 'DUE' | 'OVERDUE' | 'LOCKED';
+  manuallyLocked?: boolean;
+  manuallyUnlocked?: boolean;
+  manualLockReason?: string | null;
   notes?: string;
   lastReminderSentAt?: string;
 }
@@ -230,6 +237,8 @@ const AdminSchools: React.FC = () => {
 
   const [savingAction, setSavingAction] = useState(false);
   const [sendingReminder, setSendingReminder] = useState(false);
+  const [showSchoolLockModal, setShowSchoolLockModal] = useState(false);
+  const [showSchoolUnlockModal, setShowSchoolUnlockModal] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showDeleteSchoolModal, setShowDeleteSchoolModal] = useState(false);
   const [deleteConfirmationInput, setDeleteConfirmationInput] = useState('');
@@ -2471,8 +2480,67 @@ const AdminSchools: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Reminders & Invoice Status */}
+                {/* Manual Portal Lock + Reminders & Invoice Status */}
                 <div className="space-y-6">
+                  {/* Manual Admin Portal Access Control (Locks/Opens School + Linked Students) */}
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2 text-brand-red font-black text-xs uppercase tracking-wider">
+                        {(selectedSchool.billing as any)?.manuallyLocked || String(selectedSchool.billing?.status || '').toUpperCase() === 'LOCKED' ? (
+                          <Lock size={14} />
+                        ) : (
+                          <Unlock size={14} className="text-emerald-600" />
+                        )}
+                        Manual Portal Access Control
+                      </div>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                          (selectedSchool.billing as any)?.manuallyLocked || String(selectedSchool.billing?.status || '').toUpperCase() === 'LOCKED'
+                            ? 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                        }`}
+                      >
+                        {(selectedSchool.billing as any)?.manuallyLocked
+                          ? 'Manually Locked'
+                          : String(selectedSchool.billing?.status || '').toUpperCase() === 'LOCKED'
+                          ? 'Locked'
+                          : (selectedSchool.billing as any)?.manuallyUnlocked
+                          ? 'Manually Opened'
+                          : 'Active'}
+                      </span>
+                    </div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                      Lock or Open School &amp; Linked Students
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      Locking this school immediately makes the school portal and all student accounts enrolled under its programme inactive until you open it again. Overdue accounts also auto-lock after the 7-day grace window.
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowSchoolLockModal(true)}
+                        className="flex-1 min-h-10 px-4 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white font-black text-xs inline-flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        <Lock size={14} />
+                        {(selectedSchool.billing as any)?.manuallyLocked || String(selectedSchool.billing?.status || '').toUpperCase() === 'LOCKED'
+                          ? 'Add Restriction'
+                          : 'Lock School & Students'}
+                      </button>
+                      {((selectedSchool.billing as any)?.manuallyLocked ||
+                        (selectedSchool.billing as any)?.manuallyUnlocked ||
+                        String(selectedSchool.billing?.status || '').toUpperCase() === 'LOCKED') && (
+                        <button
+                          type="button"
+                          onClick={() => setShowSchoolUnlockModal(true)}
+                          className="flex-1 min-h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs inline-flex items-center justify-center gap-2 transition-all cursor-pointer"
+                        >
+                          <Unlock size={14} />
+                          Manage / Open School
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
                     <div className="flex items-center gap-2 text-brand-red font-black text-xs uppercase tracking-wider mb-2">
                       <Bell size={14} /> Due Date & Reminders
@@ -3351,6 +3419,54 @@ const AdminSchools: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* School Restriction & Unlock Modals (Mandatory Reasons + Preview + Audit) */}
+      {selectedSchool && (
+        <>
+          <ApplyRestrictionModal
+            open={showSchoolLockModal}
+            targets={[
+              {
+                subscriptionId: `school:${selectedSchool.id}`,
+                accountType: 'SCHOOL',
+                accountId: selectedSchool.id,
+                accountName: selectedSchool.name,
+                schoolId: selectedSchool.id,
+                liveAmountDue: Number(
+                  (selectedSchool.billing as any)?.remainingBalance ??
+                    (selectedSchool.billing as any)?.amount ??
+                    (billingForm as any)?.baseFee ??
+                    0
+                ),
+              },
+            ]}
+            onClose={() => setShowSchoolLockModal(false)}
+            onSuccess={() => {
+              void loadSchools();
+            }}
+          />
+          <UnlockRestrictionsModal
+            open={showSchoolUnlockModal}
+            target={{
+              subscriptionId: `school:${selectedSchool.id}`,
+              accountType: 'SCHOOL',
+              accountId: selectedSchool.id,
+              accountName: selectedSchool.name,
+              schoolId: selectedSchool.id,
+              liveAmountDue: Number(
+                (selectedSchool.billing as any)?.remainingBalance ??
+                  (selectedSchool.billing as any)?.amount ??
+                  (billingForm as any)?.baseFee ??
+                  0
+              ),
+            }}
+            onClose={() => setShowSchoolUnlockModal(false)}
+            onSuccess={() => {
+              void loadSchools();
+            }}
+          />
+        </>
       )}
     </div>
   );

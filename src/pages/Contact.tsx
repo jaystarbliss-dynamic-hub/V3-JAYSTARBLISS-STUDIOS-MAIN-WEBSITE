@@ -24,7 +24,7 @@ const Contact: React.FC = () => {
     infoWhatsapp: '+234 913 052 9010',
     infoEmail: 'info@jaystarbliss-studios.name.ng',
     supportWhatsapp: '+234 707 763 8925',
-    supportEmail: 'support@jaystarbliss-studios.name.ng',
+    supportEmail: 'support@jaystarblissstudios.com',
     address: 'Lagos, Nigeria',
     googleBusinessUrl: 'https://share.google/mqVU8pAgKEDjOfGHe'
   });

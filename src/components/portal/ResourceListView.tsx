@@ -30,6 +30,19 @@ export interface ResourceItem {
   isFeatured?: boolean;
   tags?: string[];
   term?: string;
+  _collection?: string;
+  sourceLabel?: string;
+  createdByUid?: string;
+  uploadedByUid?: string;
+  createdByEmail?: string;
+  uploadedByEmail?: string;
+  createdByName?: string;
+  createdByRole?: string;
+  assignedBy?: string;
+  tutorId?: string;
+  staffId?: string;
+  studentId?: string;
+  studentName?: string;
 }
 
 export interface ResourceListViewProps {
@@ -45,6 +58,8 @@ export interface ResourceListViewProps {
   showAssignButton?: boolean;
   showEditButton?: boolean;
   showDeleteButton?: boolean;
+  canEditItem?: (resource: ResourceItem) => boolean;
+  canDeleteItem?: (resource: ResourceItem) => boolean;
   emptyMessage?: string;
   customUserId?: string;
   title?: string;
@@ -82,6 +97,8 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
   showAssignButton = false,
   showEditButton = false,
   showDeleteButton = false,
+  canEditItem,
+  canDeleteItem,
   emptyMessage,
   customUserId,
   title
@@ -561,15 +578,27 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      {(item.schoolName || item.isFeatured) && (
+                      {(item.schoolName || item.isFeatured || item.sourceLabel || item.createdByName) && (
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mb-0.5 text-[10px] font-bold">
+                          {item.sourceLabel && (
+                            <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                              {item.sourceLabel}
+                            </span>
+                          )}
+                          {item.sourceLabel && item.schoolName && <span className="text-slate-300 dark:text-slate-700">·</span>}
                           {item.schoolName && (
                             <span className="text-[#1E293B] dark:text-slate-300 inline-flex items-center gap-1">
                               <School size={10} />
                               <span className="truncate max-w-[140px]">{item.schoolName}</span>
                             </span>
                           )}
-                          {item.schoolName && item.isFeatured && <span className="text-slate-300 dark:text-slate-700">·</span>}
+                          {(item.schoolName || item.sourceLabel) && item.createdByName && <span className="text-slate-300 dark:text-slate-700">·</span>}
+                          {item.createdByName && (
+                            <span className="text-slate-500 dark:text-slate-400 font-medium truncate max-w-[160px]">
+                              By {item.createdByName}
+                            </span>
+                          )}
+                          {(item.schoolName || item.sourceLabel || item.createdByName) && item.isFeatured && <span className="text-slate-300 dark:text-slate-700">·</span>}
                           {item.isFeatured && (
                             <span className="text-[#B91C1C] dark:text-red-400 uppercase tracking-wider font-black">
                               Featured
@@ -674,7 +703,7 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
                     )}
 
                     {/* Edit Resource Button */}
-                    {(showEditButton || onEdit) && (
+                    {(showEditButton || onEdit) && (!canEditItem || canEditItem(item)) && (
                       <button
                         type="button"
                         onClick={() => onEdit && onEdit(item)}
@@ -725,13 +754,14 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
                       <span>Read</span>
                     </button>
 
-                    {/* Delete button for Admin */}
-                    {showDeleteButton && onDelete && (
+                    {/* Delete button (Admin: all resources; Tutors: only resources they sent) */}
+                    {showDeleteButton && onDelete && (!canDeleteItem || canDeleteItem(item)) && (
                       <button
                         type="button"
                         onClick={() => onDelete(item)}
                         title="Delete resource"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-[#B91C1C] hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                        aria-label={`Delete ${item.title}`}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-[#B91C1C] hover:bg-red-50 dark:text-slate-400 dark:hover:text-red-400 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
                       >
                         <Trash2 size={15} />
                       </button>

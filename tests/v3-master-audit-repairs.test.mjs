@@ -172,20 +172,24 @@ test("Audit Repair 4: firestore.rules blocks privilege/billing tampering, public
 // =============================================================================
 test("Audit Repair 5: Backend endpoints enforce lockdown guardrails and reject untrusted schoolId overrides", () => {
   const billingData = readFileSync(path.join(rootDir, "netlify/functions/billing-data.ts"), "utf8");
+  const schoolBranchStart = billingData.indexOf('if (role === "school")');
+  const parentBranchStart = billingData.indexOf('if (role === "parent")');
+  assert.ok(schoolBranchStart > 0 && parentBranchStart > schoolBranchStart, "billing-data.ts must have school role handler");
+  const schoolBranch = billingData.slice(schoolBranchStart, parentBranchStart);
   assert.ok(
-    !billingData.includes("event.queryStringParameters?.schoolId"),
-    "billing-data.ts must not allow school users to override schoolId via query parameter"
+    !schoolBranch.includes("queryStringParameters?.schoolId"),
+    "billing-data.ts school role branch must not allow school users to override schoolId via query parameter"
   );
 
   const studentCred = readFileSync(path.join(rootDir, "netlify/functions/student-credential-issue.ts"), "utf8");
   assert.ok(
-    studentCred.includes("enforceEntitlementOrLock"),
+    studentCred.includes("enforceEntitlementOrLock(event)") && studentCred.includes("if (!lockCheck.ok) return lockCheck.response"),
     "student-credential-issue.ts must enforce subscription lockdown for school admins"
   );
 
   const jdiExam = readFileSync(path.join(rootDir, "netlify/functions/jdi-exam-management.ts"), "utf8");
   assert.ok(
-    jdiExam.includes("enforceEntitlementOrLock"),
+    jdiExam.includes("enforceEntitlementOrLock(event)") && jdiExam.includes("if (!lockCheck.ok) return lockCheck.response"),
     "jdi-exam-management.ts must enforce subscription lockdown for school admins"
   );
 

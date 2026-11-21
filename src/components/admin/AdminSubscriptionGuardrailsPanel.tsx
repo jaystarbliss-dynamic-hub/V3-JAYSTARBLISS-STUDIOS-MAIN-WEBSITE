@@ -23,13 +23,22 @@ import {
 import { billingPost, formatNaira } from '../../lib/billing';
 import { useToast } from '../../contexts/ToastContext';
 import { RESET_CONFIRMATION_PHRASE } from '../../../api/_lib/financial-reset-core';
+import {
+  RESTRICTION_TYPE_LABELS,
+  type AccountRestrictionRecord,
+} from '../../../api/_lib/restriction-core';
+import {
+  ApplyRestrictionModal,
+  UnlockRestrictionsModal,
+  type RestrictionModalTarget,
+} from './AdminRestrictionModals';
 
 interface AdminSubscriptionGuardrailsPanelProps {
   onBack: () => void;
   onRefreshParent?: () => void;
 }
 
-type SubTab = 'subscriptions' | 'reminders' | 'audit' | 'reset';
+type SubTab = 'subscriptions' | 'restrictions' | 'reminders' | 'audit' | 'reset';
 
 const STATUS_BADGE: Record<string, string> = {
   ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800',
@@ -51,6 +60,8 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<any>(null);
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
+  const [restrictions, setRestrictions] = useState<AccountRestrictionRecord[]>([]);
+  const [restrictionAuditLogs, setRestrictionAuditLogs] = useState<any[]>([]);
   const [reminders, setReminders] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -92,6 +103,11 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
   const [exemptReason, setExemptReason] = useState('');
   const [submittingExempt, setSubmittingExempt] = useState(false);
 
+  // Bulk & Individual Restriction Modal State
+  const [selectedSubIds, setSelectedSubIds] = useState<Set<string>>(new Set());
+  const [applyRestrictionTargets, setApplyRestrictionTargets] = useState<RestrictionModalTarget[] | null>(null);
+  const [unlockRestrictionTarget, setUnlockRestrictionTarget] = useState<RestrictionModalTarget | null>(null);
+
   // Controlled Test Financial Data Reset State (Superadmin only)
   const [resetLoading, setResetLoading] = useState(false);
   const [dryRunInventory, setDryRunInventory] = useState<any | null>(null);
@@ -106,9 +122,12 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
       const data = await billingPost<any>('billing-admin', { action: 'list_subscriptions' });
       setSummary(data.summary || null);
       setSubscriptions(Array.isArray(data.subscriptions) ? data.subscriptions : []);
+      setRestrictions(Array.isArray(data.restrictions) ? data.restrictions : []);
+      setRestrictionAuditLogs(Array.isArray(data.restrictionAuditLogs) ? data.restrictionAuditLogs : []);
       setReminders(Array.isArray(data.reminders) ? data.reminders : []);
       setAuditLogs(Array.isArray(data.auditLogs) ? data.auditLogs : []);
       setIsSuperAdmin(Boolean(data.isSuperAdmin));
+      setSelectedSubIds(new Set());
     } catch (err: any) {
       toast.error(err?.message || 'Unable to load subscription guardrails.');
     } finally {
@@ -304,6 +323,55 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
     }
   };
 
+  const toRestrictionTarget = (sub: any): RestrictionModalTarget => ({
+    subscriptionId: sub.id,
+    accountType: sub.accountType,
+    accountId: sub.accountId,
+    accountName: sub.accountName || sub.studentName || sub.id,
+    schoolId: sub.schoolId || null,
+    parentId: sub.parentId || null,
+    studentId: sub.studentId || null,
+    programmeEnrollmentId: sub.programmeEnrollmentId || null,
+    liveStatus: sub.liveStatus,
+    liveAmountDue: sub.liveAmountDue ?? sub.remainingBalance ?? 0,
+    isManuallyLocked: Boolean(sub.isManuallyLocked),
+    hasPaymentRestriction: Boolean(sub.hasPaymentRestriction),
+    activeRestrictions: Array.isArray(sub.activeRestrictions) ? sub.activeRestrictions : [],
+  });
+
+  const toggleSelectSub = (subId: string) => {
+    setSelectedSubIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(subId)) next.delete(subId);
+      else next.add(subId);
+      return next;
+    });
+  };
+
+  const allFilteredSelected =
+    filteredSubscriptions.length > 0 &&
+    filteredSubscriptions.every((sub) => selectedSubIds.has(sub.id));
+
+  const toggleSelectAllFiltered = () => {
+    setSelectedSubIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredSubscriptions.forEach((sub) => next.delete(sub.id));
+      } else {
+        filteredSubscriptions.forEach((sub) => next.add(sub.id));
+      }
+      return next;
+    });
+  };
+
+  const selectedSubscriptionTargets = useMemo(
+    () =>
+      subscriptions
+        .filter((sub) => selectedSubIds.has(sub.id))
+        .map((sub) => toRestrictionTarget(sub)),
+    [subscriptions, selectedSubIds]
+  );
+
   const handleRunDryRun = async () => {
     setResetLoading(true);
     setResetResult(null);
@@ -421,7 +489,8 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
       {/* Sub-navigation Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
         {[
-          { id: 'subscriptions' as SubTab, label: 'Subscriptions & Overrides', icon: ShieldCheck },
+          { id: 'subscriptions' as SubTab, label: 'Accounts & Access Control', icon: ShieldCheck },
+          { id: 'restrictions' as SubTab, label: `Restrictions & History (${restrictions.length})`, icon: Lock },
           { id: 'reminders' as SubTab, label: `Reminder History (${reminders.length})`, icon: Bell },
           { id: 'audit' as SubTab, label: `Admin Audit Trail (${auditLogs.length})`, icon: History },
           ...(isSuperAdmin
@@ -478,12 +547,42 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
             >
               <option value="ALL">All Account Types</option>
               <option value="SCHOOL">School</option>
+              <option value="SCHOOL_ADMIN">School Administrator</option>
               <option value="PARENT">Parent Account</option>
               <option value="PARENT_CHILD">Parent-Enrolled Child</option>
               <option value="INDIVIDUAL_STUDENT">Individual Student</option>
               <option value="STUDENT_SELF_FUNDED_PROGRAMME">Self-Funded Additional Programme</option>
             </select>
           </div>
+
+          {/* Bulk Action Bar */}
+          {selectedSubIds.size > 0 && (
+            <div className="rounded-2xl border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/30 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-red-950 dark:text-red-200">
+                <Lock size={15} className="text-[#B91C1C] shrink-0" />
+                <span>
+                  <strong>{selectedSubIds.size}</strong> account{selectedSubIds.size > 1 ? 's' : ''} selected for bulk action.
+                  Review affected learners &amp; confirm before applying.
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setApplyRestrictionTargets(selectedSubscriptionTargets)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold cursor-pointer"
+                >
+                  <Lock size={13} /> Apply Bulk Restriction ({selectedSubIds.size})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubIds(new Set())}
+                  className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+          )}
 
           {loading ? (
             <div className="py-12 flex items-center justify-center gap-2 text-xs text-slate-500">
@@ -498,17 +597,43 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 dark:bg-slate-800/70 text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   <tr>
+                    <th className="px-3 py-3 w-9">
+                      <input
+                        type="checkbox"
+                        checked={allFilteredSelected}
+                        onChange={toggleSelectAllFiltered}
+                        aria-label="Select all filtered accounts"
+                        className="accent-[#B91C1C] cursor-pointer"
+                      />
+                    </th>
                     <th className="px-4 py-3">Account &amp; Plan</th>
                     <th className="px-4 py-3">Payer</th>
-                    <th className="px-4 py-3">Live Status</th>
+                    <th className="px-4 py-3">Live Status &amp; Active Locks</th>
                     <th className="px-4 py-3">Due / Grace (WAT)</th>
                     <th className="px-4 py-3">Balance</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {filteredSubscriptions.map((sub) => (
-                    <tr key={sub.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                  {filteredSubscriptions.map((sub) => {
+                    const activeCount = Array.isArray(sub.activeRestrictions) ? sub.activeRestrictions.length : 0;
+                    const isSelected = selectedSubIds.has(sub.id);
+                    return (
+                    <tr
+                      key={sub.id}
+                      className={`hover:bg-slate-50/70 dark:hover:bg-slate-800/40 ${
+                        isSelected ? 'bg-red-50/30 dark:bg-red-950/15' : ''
+                      }`}
+                    >
+                      <td className="px-3 py-3 align-top">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectSub(sub.id)}
+                          aria-label={`Select ${sub.accountName || sub.id}`}
+                          className="mt-1 accent-[#B91C1C] cursor-pointer"
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <p className="font-bold text-[#14284B] dark:text-white">
                           {sub.accountName || sub.studentName || sub.id}
@@ -536,9 +661,26 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
                         >
                           {sub.liveStatus === 'LOCKED' && <Lock size={10} />}
                           {sub.liveStatus === 'GRACE_PERIOD' && <Clock size={10} />}
-                          {String(sub.liveStatus || 'ACTIVE').replace(/_/g, ' ')}
+                          {sub.isManuallyLocked
+                            ? 'RESTRICTED'
+                            : String(sub.liveStatus || 'ACTIVE').replace(/_/g, ' ')}
                         </span>
-                        {sub.billingConfigIncomplete && (
+                        {sub.lockReasonLabel && sub.isLocked && (
+                          <span className="block text-[10px] font-bold text-red-700 dark:text-red-400 mt-1 max-w-[220px] truncate" title={sub.lockReasonLabel}>
+                            {sub.lockReasonLabel}
+                          </span>
+                        )}
+                        {activeCount > 1 && (
+                          <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-950/60 text-[#B91C1C] dark:text-red-300 text-[10px] font-black">
+                            {activeCount} Active Restrictions
+                          </span>
+                        )}
+                        {!sub.isManuallyLocked && sub.isManuallyUnlocked && (
+                          <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-semibold">
+                            Opened manually by admin
+                          </span>
+                        )}
+                        {sub.billingConfigIncomplete && !sub.isManuallyLocked && sub.accountType !== 'SCHOOL_ADMIN' && (
                           <span className="block text-[10px] text-amber-600 mt-0.5">
                             No due date configured (not auto-locked)
                           </span>
@@ -566,49 +708,241 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
                         <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
                           <button
                             type="button"
-                            onClick={() => openManualModalForSub(sub)}
-                            className="px-2.5 py-1.5 rounded-lg bg-[#14284B] hover:bg-slate-800 text-white text-[11px] font-bold cursor-pointer"
+                            onClick={() => setApplyRestrictionTargets([toRestrictionTarget(sub)])}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-[11px] font-bold cursor-pointer"
                           >
-                            Record Payment
+                            <Lock size={12} /> {sub.isLocked ? 'Add Lock' : 'Lock / Restrict'}
                           </button>
-                          {sub.hasActiveOverride ? (
+                          {(sub.isLocked || activeCount > 0 || sub.isManuallyUnlocked) && (
                             <button
                               type="button"
-                              onClick={() => void handleRevokeOverride(sub)}
-                              className="px-2.5 py-1.5 rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-50 text-[11px] font-bold cursor-pointer"
+                              onClick={() => setUnlockRestrictionTarget(toRestrictionTarget(sub))}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer"
                             >
-                              Revoke Override
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOverrideTarget(sub);
-                                setOverrideReason('');
-                              }}
-                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold cursor-pointer"
-                            >
-                              Temp Override
+                              <Unlock size={12} /> {activeCount > 0 || sub.isLocked ? 'Manage / Lift' : 'Lock Settings'}
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setExemptTarget(sub);
-                              setExemptReason('');
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold cursor-pointer"
-                          >
-                            {sub.isExempt ? 'Remove Exempt' : 'Exempt'}
-                          </button>
+                          {sub.accountType !== 'SCHOOL_ADMIN' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openManualModalForSub(sub)}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#14284B] hover:bg-slate-800 text-white text-[11px] font-bold cursor-pointer"
+                              >
+                                Record Payment
+                              </button>
+                              {sub.hasActiveOverride ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleRevokeOverride(sub)}
+                                  className="px-2.5 py-1.5 rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-50 text-[11px] font-bold cursor-pointer"
+                                >
+                                  Revoke Override
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOverrideTarget(sub);
+                                    setOverrideReason('');
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold cursor-pointer"
+                                >
+                                  Temp Override
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExemptTarget(sub);
+                                  setExemptReason('');
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold cursor-pointer"
+                              >
+                                {sub.isExempt ? 'Remove Exempt' : 'Exempt'}
+                              </button>
+                            </>
+                          )}
                         </div>
+                      </td>
+                    </tr>
+                  );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 1B: RESTRICTIONS & IMMUTABLE AUDIT HISTORY */}
+      {subTab === 'restrictions' && (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-[#14284B] dark:text-white">
+                  Account &amp; Programme Restrictions Ledger ({restrictions.length})
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Every automated payment lockdown and manual administrative restriction is preserved as an independent record.
+                </p>
+              </div>
+            </div>
+            {restrictions.length === 0 ? (
+              <div className="p-10 text-center text-xs text-slate-500">
+                No account restriction records have been created yet.
+              </div>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800/70 text-[11px] uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Target Account</th>
+                    <th className="px-4 py-3">Type &amp; Reason</th>
+                    <th className="px-4 py-3">User Message &amp; Internal Note</th>
+                    <th className="px-4 py-3">Audit Trail</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {restrictions.map((r) => (
+                    <tr key={r.restrictionId} className="align-top">
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                            r.status === 'ACTIVE'
+                              ? 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300'
+                              : r.status === 'SCHEDULED'
+                              ? 'bg-sky-100 text-sky-700'
+                              : r.status === 'RESOLVED_BY_PAYMENT'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                          }`}
+                        >
+                          {String(r.status).replace(/_/g, ' ')}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-bold text-[#14284B] dark:text-white">{r.accountName || r.targetAccountId}</p>
+                        <p className="text-[10px] text-slate-400">
+                          {r.targetAccountType}
+                          {r.cascadesToLinkedLearners ? ` • Cascades (${r.affectedStudentIds?.length || 0} learners)` : ''}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-bold text-slate-800 dark:text-slate-200">{r.reasonCode}</p>
+                        <p className="text-[10px] text-slate-500">
+                          {RESTRICTION_TYPE_LABELS[r.restrictionType] || r.restrictionType}
+                        </p>
+                        {r.expiresAt && (
+                          <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5">
+                            Expires: {String(r.expiresAt).slice(0, 16).replace('T', ' ')}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 max-w-sm space-y-1">
+                        <p className="text-slate-700 dark:text-slate-300">{r.userFacingMessage}</p>
+                        {r.internalAdminNote && (
+                          <p className="text-[11px] text-amber-900 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/50 rounded-md px-2 py-1">
+                            <strong>Internal Note (Private):</strong> {r.internalAdminNote}
+                          </p>
+                        )}
+                        {r.unlockReason && (
+                          <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                            <strong>Unlock Reason:</strong> {r.unlockReason}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-[11px] text-slate-500 space-y-0.5">
+                        <p>
+                          <strong>Applied:</strong> {r.appliedByName} ({String(r.appliedAt || '').slice(0, 16).replace('T', ' ')})
+                        </p>
+                        {r.liftedByName && (
+                          <p>
+                            <strong>Lifted:</strong> {r.liftedByName} ({String(r.liftedAt || '').slice(0, 16).replace('T', ' ')})
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {(r.status === 'ACTIVE' || r.status === 'SCHEDULED') &&
+                          r.restrictionType !== 'AUTOMATED_PAYMENT_LOCKDOWN' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setUnlockRestrictionTarget({
+                                  subscriptionId: r.relatedSubscriptionId || null,
+                                  accountType: r.targetAccountType,
+                                  accountId: r.targetAccountId,
+                                  accountName: r.accountName || r.targetAccountId,
+                                  schoolId: r.schoolId,
+                                  parentId: r.parentId,
+                                  studentId: r.studentId,
+                                  programmeEnrollmentId: r.programmeEnrollmentId,
+                                  activeRestrictions: [r],
+                                })
+                              }
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer"
+                            >
+                              <Unlock size={12} /> Lift
+                            </button>
+                          )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+
+          {/* Immutable Restriction Audit Log */}
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-xs font-black uppercase tracking-wider text-[#14284B] dark:text-white">
+                Immutable Restriction Audit Log ({restrictionAuditLogs.length})
+              </h3>
             </div>
-          )}
+            {restrictionAuditLogs.length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-500">
+                No restriction lifecycle events logged yet.
+              </div>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800/70 text-[11px] uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-4 py-2.5">Event</th>
+                    <th className="px-4 py-2.5">Account</th>
+                    <th className="px-4 py-2.5">Actor</th>
+                    <th className="px-4 py-2.5">Reason / Details</th>
+                    <th className="px-4 py-2.5">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {restrictionAuditLogs.map((log) => (
+                    <tr key={log.id}>
+                      <td className="px-4 py-2.5 font-extrabold text-[#14284B] dark:text-white">
+                        {log.action}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span className="font-semibold">{log.targetAccountName || log.targetAccountId}</span>
+                        <span className="block text-[10px] text-slate-400">{log.targetAccountType}</span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <p className="font-semibold">{log.actorName || log.actorEmail}</p>
+                        <p className="text-[10px] text-slate-400">{log.actorEmail}</p>
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
+                        {log.unlockReason || log.userFacingMessage || log.reasonCode || '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-500">
+                        {String(log.createdAt || '').slice(0, 19).replace('T', ' ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       )}
 
@@ -1143,6 +1477,28 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
           </form>
         </div>
       )}
+
+      {/* MODAL: APPLY INDIVIDUAL OR BULK RESTRICTION (2-STEP PREVIEW + CONFIRM) */}
+      <ApplyRestrictionModal
+        open={Boolean(applyRestrictionTargets && applyRestrictionTargets.length > 0)}
+        targets={applyRestrictionTargets || []}
+        onClose={() => setApplyRestrictionTargets(null)}
+        onSuccess={() => {
+          void loadData();
+          onRefreshParent?.();
+        }}
+      />
+
+      {/* MODAL: MANAGE & LIFT RESTRICTIONS (MANDATORY UNLOCK REASON + AUDIT) */}
+      <UnlockRestrictionsModal
+        open={Boolean(unlockRestrictionTarget)}
+        target={unlockRestrictionTarget}
+        onClose={() => setUnlockRestrictionTarget(null)}
+        onSuccess={() => {
+          void loadData();
+          onRefreshParent?.();
+        }}
+      />
     </div>
   );
 };

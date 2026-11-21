@@ -30,6 +30,7 @@ import {
   saveStudentPathwayConfiguration,
   submitPriorLearningRecognition,
 } from '../../lib/learningPathwayEngine';
+import { buildResourceCreatorMetadata } from '../../lib/resourcePermissions';
 
 export interface AssignedStudentTutor {
   tutorId: string;
@@ -105,6 +106,8 @@ const AdminStudents: React.FC = () => {
   const [tutors, setTutors] = useState<{ id: string; name: string; email: string }[]>([]);
   const [parents, setParents] = useState<{ id: string; name: string; email: string; phone?: string }[]>([]);
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
+  const [confirmDeleteDispatchKey, setConfirmDeleteDispatchKey] = useState<string | null>(null);
+  const [deletingDispatchKey, setDeletingDispatchKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -1109,6 +1112,12 @@ const AdminStudents: React.FC = () => {
         studentName: selectedStudent?.fullName || 'Student',
         title: resourceForm.title.trim(),
         description: resourceForm.description.trim(),
+        ...buildResourceCreatorMetadata({
+          uid: auth.currentUser?.uid,
+          email: auth.currentUser?.email,
+          name: auth.currentUser?.displayName || 'Administrator',
+          role: 'admin',
+        }),
         timestamp: serverTimestamp(),
         createdAt: serverTimestamp()
       };
@@ -1130,6 +1139,24 @@ const AdminStudents: React.FC = () => {
       toast.error('Failed to send resource: ' + err.message);
     } finally {
       setSendingResource(false);
+    }
+  };
+
+  // Action: Delete dispatched personal resource/link immediately
+  const handleDeleteDispatch = async (item: Dispatch) => {
+    const key = `${item.collectionName}:${item.id}`;
+    setDeletingDispatchKey(key);
+    try {
+      await deleteDoc(doc(db, item.collectionName, item.id));
+      setDispatches((prev) =>
+        prev.filter((d) => !(d.id === item.id && d.collectionName === item.collectionName))
+      );
+      setConfirmDeleteDispatchKey(null);
+      toast.success(`Deleted "${item.title || 'resource'}" permanently.`);
+    } catch (err: any) {
+      toast.error('Failed to delete dispatch: ' + (err?.message || 'Permission denied'));
+    } finally {
+      setDeletingDispatchKey(null);
     }
   };
 
@@ -1903,12 +1930,15 @@ const AdminStudents: React.FC = () => {
             </button>
           </div>
           <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
-            {dispatches.slice(0, 3).map((item, idx) => {
+            {dispatches.slice(0, 6).map((item, idx) => {
               const targetStudent = students.find(s => s.id === item.studentId);
+              const dispatchKey = `${item.collectionName}:${item.id}`;
+              const isConfirming = confirmDeleteDispatchKey === dispatchKey;
+              const isDeleting = deletingDispatchKey === dispatchKey;
               return (
                 <div
                   key={`${item.collectionName}-${item.id}-${idx}`}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-950/50"
+                  className="flex items-center justify-between gap-2.5 rounded-xl border border-slate-100 bg-slate-50/60 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-950/50"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -1923,15 +1953,46 @@ const AdminStudents: React.FC = () => {
                       To: <strong>{targetStudent?.fullName || 'Student'}</strong>
                     </p>
                   </div>
-                  <a
-                    href={item.url || item.fileUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-white dark:bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-brand-red border border-slate-200 dark:border-slate-800 hover:border-brand-red"
-                  >
-                    <LinkIcon size={11} />
-                    Open
-                  </a>
+                  <div className="shrink-0 flex items-center gap-1.5">
+                    <a
+                      href={item.url || item.fileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg bg-white dark:bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-brand-red border border-slate-200 dark:border-slate-800 hover:border-brand-red"
+                    >
+                      <LinkIcon size={11} />
+                      Open
+                    </a>
+                    {isConfirming ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={isDeleting}
+                          onClick={() => handleDeleteDispatch(item)}
+                          className="inline-flex items-center rounded-lg bg-brand-red px-2 py-1.5 text-[10px] font-bold text-white hover:bg-red-700 cursor-pointer disabled:opacity-50"
+                        >
+                          {isDeleting ? '...' : 'Confirm'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isDeleting}
+                          onClick={() => setConfirmDeleteDispatchKey(null)}
+                          className="inline-flex items-center rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1.5 text-[10px] font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteDispatchKey(dispatchKey)}
+                        className="inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 text-slate-400 hover:text-brand-red hover:border-brand-red transition-colors cursor-pointer"
+                        title="Delete dispatch"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}

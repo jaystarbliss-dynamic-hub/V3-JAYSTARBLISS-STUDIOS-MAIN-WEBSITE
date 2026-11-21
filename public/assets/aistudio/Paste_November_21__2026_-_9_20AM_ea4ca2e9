@@ -1,0 +1,968 @@
+# JAYSTARBLISS STUDIOS V3 — MASTER IMPLEMENTATION VERIFICATION, COMPLETION & REPAIR CHECKLIST
+
+## OBJECTIVE
+
+Conduct a comprehensive implementation audit of the existing Jaystarbliss Studios V3 platform against the requirements in the two previous implementation briefs:
+
+1. **Programme Discovery, Hierarchy, Enrolment, Admissions, Student Billing, Social Sharing & Portal Onboarding.**
+2. **Subscription Guardrails, Seven-Day Grace Period, Portal Lockdown, Payment Renewals, Tutor Class Links & Test Financial Data Reset.**
+
+Your responsibility is to determine whether every requested feature has actually been implemented and works correctly.
+
+**This is not a request to generate another plan or merely review the code. It is an audit-and-repair task.**
+
+You must:
+
+- Inspect the existing codebase.
+- Inspect the actual Firebase data structures and rules where accessible.
+- Trace complete user journeys.
+- Verify both frontend and backend implementations.
+- Test the relevant workflows.
+- Identify every missing, incomplete, broken, insecure or incorrectly implemented requirement.
+- Fix each issue you can safely resolve within the existing architecture.
+- Run the appropriate tests and verify your fixes.
+- Produce a final implementation report.
+
+Do not assume a feature is complete just because a button, page, tab, database field or visual component exists.
+
+A feature counts as complete only when its actual functionality, data flow, permissions, error handling and relevant user experience work as required.
+
+---
+
+# SECTION A — AUDIT RULES AND COMPLETION STATUS
+
+## A1. Inspect the repository before making changes
+
+Repository:
+
+`jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE`
+
+Inspect the latest available repository state and identify:
+
+- Current branch.
+- Current commit.
+- Existing project architecture.
+- Existing Firebase collections and document structures.
+- Existing Netlify Functions and API endpoints.
+- Current programme hierarchy implementation.
+- Existing registration and admission workflows.
+- Current school, parent, student, tutor and administrator portals.
+- Current Billing Center and payment reconciliation.
+- Current notification and email services.
+- Existing class scheduling and meeting-link management.
+- Existing security rules and indexes.
+- Any work already completed from the two previous prompts.
+
+Do not revert working changes merely because the implementation differs from the original suggestions. A different implementation is acceptable when it achieves the same required result securely and reliably.
+
+## A2. Use an explicit checklist status system
+
+For every requirement, assign one of these statuses:
+
+- [ ] **NOT IMPLEMENTED** — The feature does not exist.
+- [ ] **INCOMPLETE** — Some functionality exists, but important requirements are missing.
+- [ ] **BROKEN** — The feature exists but does not work correctly.
+- [ ] **INSECURE** — It works through the interface but can be bypassed or abused.
+- [ ] **PASS** — The feature has been verified and meets the requirement.
+- [ ] **BLOCKED** — Verification or implementation is impossible because required credentials, infrastructure or permissions are unavailable.
+
+Every checklist item must have:
+
+1. Its current status.
+2. Evidence from the actual implementation.
+3. Relevant file paths, functions, components, rules or endpoints.
+4. The problem identified, where applicable.
+5. The corrective action taken.
+6. The test performed after the fix.
+
+Do not mark something PASS merely because you intend to implement it.
+
+Do not mark an untested live payment, email or database operation as successfully verified.
+
+## A3. Fix requirements, not just their appearance
+
+For each INCOMPLETE, BROKEN or INSECURE item:
+
+- Inspect the existing implementation.
+- Identify the real cause of the problem.
+- Implement the missing functionality.
+- Preserve existing working behaviour.
+- Add or update tests.
+- Verify that the corrected implementation works.
+
+Do not leave known issues unresolved simply because other sections pass.
+
+If an item is genuinely BLOCKED by external access, finish every safe part and explain exactly what remains blocked.
+
+---
+
+# SECTION B — PROGRAMME HIERARCHY AND CATALOGUE
+
+Audit the existing public programme catalogue and administrative programme management.
+
+### B1. Programme hierarchy
+
+- [ ] Programmes support parent and child relationships.
+- [ ] Root programmes remain distinct from their child programmes.
+- [ ] A programme can act as a container for other programmes.
+- [ ] A programme can be directly enrolable while also containing child programmes where its type permits this.
+- [ ] Hybrid programmes preserve both their own enrolment option and their child-programme structure.
+- [ ] Child programmes are not incorrectly displayed as independent top-level catalogue entries.
+- [ ] Publicly discoverable parent programmes appear even when they are not directly enrolable.
+- [ ] Child programmes are displayed beneath their correct parent.
+- [ ] Direct links to individual child programmes remain functional.
+- [ ] Orphaned, circular or invalid parent relationships are safely detected and flagged for administrative review.
+- [ ] The system does not silently flatten, delete or misclassify existing programme relationships.
+
+### B2. Canonical programme resolution
+
+- [ ] Canonical root resolution works consistently.
+- [ ] Programme breadcrumbs show the correct hierarchy.
+- [ ] Programme ordering is consistent.
+- [ ] Public enrolment eligibility is resolved correctly.
+- [ ] Only appropriately published programmes are exposed publicly.
+- [ ] Unpublished, draft or archived programmes cannot be accessed through ID-based URL fallbacks.
+- [ ] Existing programme records remain compatible with the hierarchy.
+
+### B3. Administrative programme management
+
+- [ ] Administrators can create root programmes.
+- [ ] Administrators can create child programmes.
+- [ ] Administrators can configure programme type and enrolment eligibility.
+- [ ] Administrators can move or reassign programmes without corrupting hierarchy relationships.
+- [ ] Programme previews accurately reflect the public catalogue.
+- [ ] Existing programmes and enrolments are preserved.
+
+---
+
+# SECTION C — PROGRAMME SHARING, CAMPAIGNS AND SOCIAL PREVIEWS
+
+### C1. Shareable programme links
+
+- [ ] Every public programme has a stable, shareable URL.
+- [ ] Individual programme links open the exact programme selected.
+- [ ] Links remain functional when opened from external messaging platforms.
+- [ ] Programme links work on desktop and mobile.
+- [ ] Invalid programme links show a proper not-found state.
+- [ ] Programme slugs and canonical URLs are consistent.
+
+### C2. Social-media metadata
+
+- [ ] Programme titles populate social preview titles.
+- [ ] Programme descriptions populate social preview descriptions.
+- [ ] Programme featured images populate social preview images.
+- [ ] Open Graph metadata is available.
+- [ ] Twitter/X card metadata is available.
+- [ ] Canonical URLs point to the correct production domain.
+- [ ] Social crawlers can read the metadata without relying entirely on client-side React execution.
+- [ ] The implementation uses a crawler-readable metadata strategy such as prerendering, server-rendered metadata or a suitable Netlify Edge solution.
+- [ ] No inconsistent legacy production domains remain in generated share links.
+
+### C3. Promotions and campaign links
+
+- [ ] Existing home carousel promotions still work.
+- [ ] Existing first-visit promotions still work.
+- [ ] Campaign CTAs can target the programme catalogue.
+- [ ] Campaign CTAs can target a specific programme.
+- [ ] Internal page links work correctly.
+- [ ] External URLs work correctly.
+- [ ] A promotion linked to an individual programme opens that exact programme.
+- [ ] Campaign-specific share previews display the appropriate image and description when required.
+- [ ] Existing promotion functionality has not been broken.
+
+---
+
+# SECTION D — PORTAL PROGRAMME DISCOVERY
+
+### D1. Student Learning & Tracks
+
+- [ ] Existing assigned curricula remain visible.
+- [ ] Existing learning progress remains visible.
+- [ ] An Explore Programmes discovery section is available.
+- [ ] Students can browse eligible published programmes.
+- [ ] Programme hierarchy is represented correctly.
+- [ ] Programme descriptions, delivery options and relevant fees are displayed.
+- [ ] Direct programme links work from the student portal.
+- [ ] Students can access programmes they are eligible to enrol in.
+- [ ] School-funded programmes are not incorrectly presented as student-funded obligations.
+- [ ] Independently purchased programmes are distinguishable from school-funded programmes.
+
+### D2. Parent programme discovery
+
+- [ ] Parents can discover eligible programmes for their linked children.
+- [ ] The parent can select the child for whom an application is intended.
+- [ ] The selected child is verified against the authenticated parent's actual relationships.
+- [ ] The parent cannot enrol an unrelated child.
+- [ ] Existing Parent Learning Tracks remain functional.
+- [ ] Programme discovery does not expose another household's learner records.
+
+### D3. Account category restrictions
+
+- [ ] Individual students can discover and apply for eligible programmes.
+- [ ] School students can discover eligible additional programmes.
+- [ ] School students can independently fund an additional programme where permitted.
+- [ ] Parent-enrolled children cannot bypass parent enrolment rules by independently self-enrolling.
+- [ ] School students are not confused with school administrators.
+- [ ] Existing registration age and eligibility policies remain enforced.
+
+---
+
+# SECTION E — PROGRAMME APPLICATIONS AND ADMINISTRATIVE ADMISSIONS
+
+### E1. Authentication and deep links
+
+- [ ] A visitor can open a shared programme link.
+- [ ] An unauthenticated visitor can initiate an application.
+- [ ] After login or registration, the user returns to the originally selected programme.
+- [ ] The correct programme ID or slug survives the authentication process.
+- [ ] Existing users are signed in rather than accidentally creating duplicate accounts.
+- [ ] School-issued student authentication remains compatible.
+- [ ] The application journey does not bypass account eligibility checks.
+
+### E2. Application workflow
+
+- [ ] Applications create a persistent programme enrolment/application record.
+- [ ] Application records contain the correct student and programme references.
+- [ ] Payer and billing responsibility are recorded separately from the learner's registration type.
+- [ ] Applications have distinct admission and payment states.
+- [ ] Application status is visible to authorized administrators.
+- [ ] Application status changes are auditable.
+- [ ] Repeated submissions do not create accidental duplicate active enrolments.
+
+### E3. Administrator approval
+
+- [ ] Administrators can review submitted applications.
+- [ ] Administrators can approve applications.
+- [ ] Administrators can reject applications with an appropriate reason.
+- [ ] Approved applications create or update the correct programme entitlement.
+- [ ] Fees and payment terms are established from trusted administrative configuration.
+- [ ] Students cannot modify the approved fee amount from the browser.
+- [ ] Admission and payment status remain distinct.
+- [ ] Approval triggers the appropriate notification and email.
+- [ ] Admission emails contain a working link to continue to payment where payment is required.
+
+### E4. Admission state and payment state
+
+- [ ] Pending applications cannot access paid programme content prematurely.
+- [ ] Approved applications can proceed to payment.
+- [ ] Payment obligations appear in the correct Billing Center.
+- [ ] Partial payment is represented correctly.
+- [ ] Full settlement activates the correct entitlement.
+- [ ] Rejected applications do not retain unintended access.
+- [ ] Existing enrolments are not duplicated.
+
+---
+
+# SECTION F — STUDENT-FUNDED PROGRAMMES AND BILLING RESPONSIBILITY
+
+This section is critical. Verify that programme funding is independent of the learner's registration category.
+
+### F1. School-funded and student-funded separation
+
+- [ ] School-funded programmes are billed to the school.
+- [ ] A school student can independently apply for an additional programme where permitted.
+- [ ] An approved independently purchased programme is billed to the authenticated student.
+- [ ] A school is not billed for that independently purchased programme.
+- [ ] The student's school relationship remains intact.
+- [ ] Existing school-funded entitlements remain intact.
+- [ ] The student can have school-funded and self-funded programmes simultaneously.
+- [ ] Each programme has its own correct funding responsibility.
+- [ ] A school's institutional subscription is not confused with an individual student's extra programme subscription.
+
+### F2. Student Billing Center access
+
+- [ ] Individual students retain their existing Billing access.
+- [ ] A school student can access Billing when they have an approved student-funded fee obligation.
+- [ ] A school student without an approved student-funded fee obligation does not receive an unnecessary self-payment prompt.
+- [ ] Parent-enrolled children do not receive independent payment controls.
+- [ ] Student-funded programme fees are visible to the correct student.
+- [ ] The fee owner is the actual authenticated student.
+- [ ] Students cannot view other students' fee items.
+- [ ] Students can repay an outstanding balance.
+- [ ] Students can renew or re-subscribe when their programme requires renewal.
+- [ ] Existing parent billing remains intact.
+- [ ] Existing institutional school billing remains intact.
+
+### F3. Payment access and programme activation
+
+- [ ] A programme application alone does not incorrectly grant paid access.
+- [ ] The system supports any approved deposit/access policy.
+- [ ] Full payment activates access when full settlement is required.
+- [ ] An approved deposit activates access only when the configured policy permits it.
+- [ ] Payment history identifies the relevant programme.
+- [ ] Renewal creates the appropriate new billing cycle.
+- [ ] Historical payment cycles remain accessible.
+
+---
+
+# SECTION G — FIRST-LOGIN GUIDED PORTAL TUTORIAL
+
+- [ ] A guided tutorial exists for newly created accounts.
+- [ ] The tutorial is role-aware.
+- [ ] Student onboarding explains the relevant student portal features.
+- [ ] Parent onboarding explains child management, learning tracks and billing.
+- [ ] School administrator onboarding explains the relevant school tools.
+- [ ] Tutor onboarding explains the relevant tutor workflows.
+- [ ] Existing users are not incorrectly treated as new users.
+- [ ] Completion state is persisted in the user's account record.
+- [ ] The tutorial does not reappear on every login.
+- [ ] Users can skip the tutorial.
+- [ ] Users can navigate forwards and backwards.
+- [ ] Users can finish the tutorial.
+- [ ] Tutorial controls work on touch and desktop.
+- [ ] The layout works on mobile, tablet and desktop.
+- [ ] The tutorial does not overflow the viewport.
+- [ ] Focus, keyboard interaction and reduced-motion behaviour are handled.
+- [ ] The tutorial is distinct from the promotional popup.
+
+---
+
+# SECTION H — CENTRAL SUBSCRIPTION AND BILLING MODEL
+
+### H1. Central subscription model
+
+- [ ] A reliable subscription or equivalent entitlement model exists.
+- [ ] School subscriptions are supported.
+- [ ] Individual student subscriptions are supported.
+- [ ] Parent-funded subscriptions are supported.
+- [ ] School-funded student entitlements are supported.
+- [ ] Student-funded additional programme obligations are supported.
+- [ ] Payer identity and learner identity are stored separately where necessary.
+- [ ] Subscription dates and durations are authoritative.
+- [ ] Subscription status is not controlled by browser-side state.
+- [ ] Existing billing and payment records remain compatible.
+- [ ] Complimentary and exempt accounts are supported.
+- [ ] Missing billing configuration does not automatically lock an account without a valid payment obligation.
+
+### H2. Subscription states
+
+Check that the system handles the equivalent of:
+
+- [ ] ACTIVE
+- [ ] DUE_SOON
+- [ ] GRACE_PERIOD
+- [ ] LOCKED
+- [ ] PARTIALLY_PAID
+- [ ] EXEMPT
+- [ ] SUSPENDED
+- [ ] CANCELLED
+
+The precise naming can differ, but equivalent states and transitions must work.
+
+### H3. Date calculations
+
+- [ ] Due dates are stored consistently.
+- [ ] Africa/Lagos is used for business-facing date and reminder calculations.
+- [ ] Seven days before due date is calculated correctly.
+- [ ] The due date itself is handled correctly.
+- [ ] The seven-day grace period is calculated consistently.
+- [ ] Lockdown begins after seven full days overdue.
+- [ ] Early renewal extends from the existing paid-through date.
+- [ ] Grace-period renewal preserves the correct subscription timeline.
+- [ ] A renewal after full expiry starts the new period correctly.
+- [ ] Different plan durations are respected.
+- [ ] Missing due dates do not accidentally lock accounts.
+
+---
+
+# SECTION I — SEVEN-DAY GRACE PERIOD AND PORTAL LOCKDOWN
+
+### I1. School administrator
+
+- [ ] Active schools can access their normal portal.
+- [ ] Schools receive a warning before the due date.
+- [ ] School access remains active during the seven-day grace period.
+- [ ] Once the grace period expires, the administrator is locked out of restricted operational sections.
+- [ ] The basic dashboard remains accessible.
+- [ ] Billing remains accessible.
+- [ ] The roster is locked.
+- [ ] Student profiles are locked.
+- [ ] Class schedules are locked.
+- [ ] Resources are locked.
+- [ ] Examinations and results are locked.
+- [ ] Passcodes are locked.
+- [ ] Printing and exporting restricted records are locked.
+- [ ] Direct URL access to restricted features is rejected.
+- [ ] The portal displays a professional lockdown interface.
+- [ ] Restricted navigation items are visibly disabled.
+- [ ] Pay Now opens the correct school Billing Center.
+- [ ] No restricted student data loads while locked.
+
+### I2. School students
+
+- [ ] School students inherit the relevant school-funded entitlement.
+- [ ] Students can authenticate during a school lockdown.
+- [ ] Students do not load academic data during lockdown.
+- [ ] Assignments are inaccessible.
+- [ ] Activities are inaccessible.
+- [ ] Results are inaccessible.
+- [ ] Resources are inaccessible.
+- [ ] Class schedules are inaccessible.
+- [ ] Printing and downloading restricted records are blocked.
+- [ ] The message tells them to contact their school administrator.
+- [ ] Students are not asked to pay the school's institutional bill.
+- [ ] Successful school renewal automatically restores their access.
+
+### I3. Individually enrolled students
+
+- [ ] Their own subscription controls their programme access.
+- [ ] They receive reminders before renewal.
+- [ ] They retain access during the grace period.
+- [ ] After lockdown, the basic dashboard remains accessible.
+- [ ] Billing remains accessible.
+- [ ] Paid programme content is blocked.
+- [ ] Learning materials and activities are blocked.
+- [ ] Restricted assessments and results are blocked.
+- [ ] Pay Now opens their own Billing Center.
+- [ ] Successful renewal restores their access.
+
+### I4. Parents
+
+- [ ] Parent billing responsibility is correctly identified.
+- [ ] Parents receive reminders for the relevant child/fee obligation.
+- [ ] Parent Billing remains accessible after lockdown.
+- [ ] Parents can see the affected child's relevant outstanding fees.
+- [ ] Restricted learning content is unavailable for the affected entitlement.
+- [ ] Affected children are identified correctly.
+- [ ] Unrelated children are not unnecessarily locked when their own obligations remain active.
+- [ ] Existing contract-level billing is respected where a shared contract applies.
+- [ ] Pay Now opens the correct parent fee item.
+
+### I5. Parent-enrolled students
+
+- [ ] Their access follows the relevant parent-funded fee obligation.
+- [ ] They can sign in during lockdown.
+- [ ] Academic data does not load.
+- [ ] They see a message instructing them to contact their parent or guardian.
+- [ ] They do not receive an inappropriate student payment button.
+- [ ] Parent payment restores their access.
+
+### I6. Student-funded additional programmes
+
+- [ ] A school student's independently funded additional programme has its own payment status.
+- [ ] An unpaid additional programme can be locked without automatically locking the student's unrelated school-funded academic access.
+- [ ] The student's school is not billed for the additional programme.
+- [ ] A school institutional lockdown does not incorrectly change ownership of a separately student-funded fee.
+- [ ] All funding relationships are resolved from trusted records.
+
+---
+
+# SECTION J — SERVER-SIDE ACCESS ENFORCEMENT
+
+A visual-only lockdown does not pass this audit.
+
+### J1. API enforcement
+
+- [ ] All relevant protected APIs verify the user's authentication.
+- [ ] All relevant protected APIs verify the correct payer/learner relationship.
+- [ ] All relevant protected APIs check authoritative subscription entitlement.
+- [ ] Locked users cannot fetch restricted student records.
+- [ ] Locked users cannot fetch restricted resources.
+- [ ] Locked users cannot fetch restricted assignments.
+- [ ] Locked users cannot fetch restricted assessments.
+- [ ] Locked users cannot fetch restricted results.
+- [ ] Locked users cannot fetch restricted schedules.
+- [ ] Locked users cannot access restricted passcodes.
+- [ ] Locked users cannot use report/export/print endpoints.
+- [ ] Locked users cannot bypass restrictions with direct HTTP requests.
+- [ ] Appropriate error responses are returned, including a structured `PORTAL_LOCKED` response where applicable.
+- [ ] Billing endpoints remain accessible to the responsible payer.
+
+### J2. Frontend and cached data
+
+- [ ] Direct route navigation is checked.
+- [ ] Existing open tabs respond to entitlement changes.
+- [ ] Cached API responses do not expose restricted data after lockdown.
+- [ ] The application does not render stale restricted data after a lock is detected.
+- [ ] Locked school students do not initiate unnecessary academic queries.
+- [ ] The UI displays loading and error states correctly.
+- [ ] Successful payment refreshes the correct portal state.
+
+### J3. Firestore security
+
+- [ ] Firestore rules do not allow ordinary users to modify their own subscription state.
+- [ ] Students cannot change their school or parent relationship to bypass lockdown.
+- [ ] Parents can only access verified linked learners.
+- [ ] School administrators can only access their own school's permitted records.
+- [ ] Ordinary users cannot create fraudulent successful payment records.
+- [ ] Administrative overrides are restricted.
+- [ ] No broad public-read permissions were introduced to make the feature work.
+
+---
+
+# SECTION K — PAYMENT REMINDERS AND EMAILS
+
+### K1. Seven-day pre-due reminder
+
+- [ ] Schools receive the reminder seven days before the due date.
+- [ ] Parents receive the reminder seven days before the due date.
+- [ ] Individual students receive the reminder seven days before the due date.
+- [ ] Minor students' billing communication uses the appropriate parent/guardian contact.
+- [ ] Messages include the correct payer, learner, programme, due date and amount.
+- [ ] The payment link opens the correct Billing Center.
+
+### K2. Due-date notification
+
+- [ ] A reminder is sent on the due date.
+- [ ] The message makes clear that payment is due.
+- [ ] The message explains that the seven-day grace period has begun.
+- [ ] The message contains the correct payment link.
+
+### K3. Lockdown notification
+
+- [ ] A suitable final notification is sent when the account becomes locked.
+- [ ] The school is informed of the institutional lockdown.
+- [ ] Parents are informed of affected child access.
+- [ ] Individual students are informed appropriately.
+- [ ] School students receive the school administrator contact instruction rather than a payer payment link.
+
+### K4. Email reliability
+
+- [ ] The existing Resend integration is reused.
+- [ ] Scheduled reminders run without a person opening the dashboard.
+- [ ] Reminder jobs are idempotent.
+- [ ] Duplicate emails are prevented for the same billing cycle and reminder type.
+- [ ] Failed email delivery can be retried.
+- [ ] Already renewed, exempt or cancelled subscriptions are excluded.
+- [ ] Reminder attempts and outcomes are traceable.
+
+---
+
+# SECTION L — PAYMENT RENEWAL AND RESTORATION
+
+### L1. Paystack verification
+
+- [ ] Existing Paystack initialization works.
+- [ ] Existing Paystack verification works.
+- [ ] Existing webhook verification works.
+- [ ] Payment status is confirmed server-side.
+- [ ] Payment amount and currency are validated.
+- [ ] Payment owner is validated.
+- [ ] Payment reference is validated.
+- [ ] Client-supplied amounts are not trusted.
+- [ ] Duplicate webhook/verification events are idempotent.
+- [ ] A failed or pending transaction does not unlock a portal.
+
+### L2. Renewal calculations
+
+- [ ] Early renewal extends from the existing paid-through date.
+- [ ] Renewal during grace preserves the correct timeline.
+- [ ] Renewal after full expiry follows the new-period rule.
+- [ ] Actual plan duration is used.
+- [ ] Renewal is applied to the correct subscription.
+- [ ] Historical billing cycles are preserved.
+- [ ] The same payment is never applied twice.
+
+### L3. Partial payments
+
+- [ ] Partial payments reduce outstanding balances accurately.
+- [ ] Remaining balances are displayed correctly.
+- [ ] Full payment clears the relevant balance.
+- [ ] Deposit-based access is only granted when an approved policy allows it.
+- [ ] Partial payment does not accidentally unlock an obligation that requires full settlement.
+
+### L4. Restoration
+
+- [ ] Successful settlement changes the authoritative entitlement.
+- [ ] School lockdown is removed after valid school settlement.
+- [ ] School student access is restored automatically.
+- [ ] Individual student access is restored automatically.
+- [ ] Parent-funded access is restored for the correct child/fee item.
+- [ ] Student-funded additional programme access is restored independently.
+- [ ] Billing displays the next due date.
+- [ ] Payment confirmation and receipt functionality remain available.
+
+---
+
+# SECTION M — ADMINISTRATIVE MANUAL PAYMENTS
+
+- [ ] An authorized administrator can record a manual school payment.
+- [ ] An authorized administrator can record a manual parent payment.
+- [ ] An authorized administrator can record a manual individual student payment.
+- [ ] The correct programme/subscription can be selected.
+- [ ] Full payments are supported.
+- [ ] Partial payments are supported.
+- [ ] The amount received is validated.
+- [ ] The relevant outstanding balance is checked.
+- [ ] A payment date can be recorded.
+- [ ] Payment method can be recorded.
+- [ ] Reference and notes can be recorded.
+- [ ] Proof of payment can be attached if supported.
+- [ ] Manual payment is distinguishable from Paystack.
+- [ ] The verifying administrator is recorded.
+- [ ] Duplicate submissions are prevented.
+- [ ] Successful manual settlement updates the entitlement correctly.
+- [ ] Manual payment actions have an audit trail.
+- [ ] Historical payment records are not silently overwritten.
+- [ ] Ordinary users cannot record verified payments for themselves.
+
+---
+
+# SECTION N — FINANCIAL TEST-DATA RESET
+
+**The objective is to implement and safely validate the test-data cleanup process. Do not execute a destructive reset without explicit confirmation from the user.**
+
+### N1. Collection discovery
+
+- [ ] The repository has been searched for all financial collections and subcollections.
+- [ ] Payment records have been identified.
+- [ ] Transaction history has been identified.
+- [ ] Wallet transaction records have been identified.
+- [ ] Withdrawal records have been identified.
+- [ ] Invoice and receipt records have been identified.
+- [ ] Ledger and balance records have been identified.
+- [ ] Subscription configuration has been distinguished from transaction history.
+- [ ] Embedded `schools.billing` fields have been reviewed.
+- [ ] Embedded `users.billing` fields have been reviewed.
+- [ ] Payment plans and fee policies have been identified.
+- [ ] No collection has been assumed disposable merely because it contains payment-related data.
+
+### N2. Protected records
+
+- [ ] User accounts are preserved.
+- [ ] Student profiles are preserved.
+- [ ] Parent profiles and relationships are preserved.
+- [ ] School records are preserved.
+- [ ] Tutor records are preserved.
+- [ ] Academic records are preserved.
+- [ ] Programme records are preserved.
+- [ ] Student programme enrolments are preserved.
+- [ ] School and parent relationships are preserved.
+- [ ] Payment plans are preserved.
+- [ ] Transaction fee policies are preserved.
+- [ ] Paystack configuration is preserved.
+- [ ] Legitimate subscription and contract configuration is preserved.
+- [ ] Administrative audit records are preserved.
+
+### N3. Dry run
+
+- [ ] A superadmin-only dry-run workflow exists.
+- [ ] The Firebase project ID is displayed.
+- [ ] The environment is identified.
+- [ ] The target collections are listed.
+- [ ] Record counts are shown.
+- [ ] Transaction status counts are shown.
+- [ ] Aggregate totals are shown.
+- [ ] Proposed wallet and derived balance changes are shown.
+- [ ] The dry run does not change Firestore.
+- [ ] Sensitive credentials and personal information are not exposed.
+
+### N4. Destructive-operation safeguards
+
+- [ ] The reset requires an approved test Firebase project ID.
+- [ ] It fails closed if the project cannot be verified.
+- [ ] It refuses to run against production.
+- [ ] A backup/export is created before deletion.
+- [ ] Backup location and record counts are displayed.
+- [ ] The user receives a clear preview.
+- [ ] A separate explicit confirmation is required.
+- [ ] The confirmation phrase is required.
+- [ ] Scope and record counts are rechecked before execution.
+- [ ] The operation uses safe pagination and batch limits.
+- [ ] The operation is logged.
+- [ ] The audit record cannot be removed by the cleanup operation.
+- [ ] The final record counts are verified.
+
+### N5. Execution status
+
+Choose exactly one:
+
+- [ ] Code for dry-run and controlled reset is implemented, but no reset has been executed.
+- [ ] Dry run completed and awaits user confirmation.
+- [ ] Reset executed only after explicit user confirmation.
+- [ ] Reset could not proceed because the target environment could not be verified.
+
+Do not claim that the financial data has been cleared if only a reset interface has been built.
+
+---
+
+# SECTION O — TUTOR-MANAGED CLASS MEETING LINKS
+
+### O1. Individual class links
+
+- [ ] Tutors can add a meeting link to a scheduled class.
+- [ ] Tutors can edit the link for a particular occurrence.
+- [ ] Different weeks can have different meeting links.
+- [ ] One link can be retained for multiple weeks.
+- [ ] A tutor can update selected future occurrences.
+- [ ] One occurrence can be changed without changing unrelated sessions.
+- [ ] Historical class links are preserved.
+
+### O2. Default and occurrence overrides
+
+- [ ] Recurring schedules can have a default meeting link.
+- [ ] Individual occurrences can override the default.
+- [ ] The system identifies whether a link is inherited or individually configured.
+- [ ] Future default changes do not overwrite historical occurrence-specific links.
+- [ ] Duplicate schedule records are not created unnecessarily.
+- [ ] Correct schedule occurrence data is returned.
+
+### O3. Permissions and display
+
+- [ ] Only the assigned tutor or authorized platform administrator can edit the class link.
+- [ ] School administrators cannot modify tutor-controlled links without explicit permission.
+- [ ] Students cannot modify class links.
+- [ ] Parents cannot modify class links.
+- [ ] Existing URL validation is reused.
+- [ ] Microsoft Teams links work.
+- [ ] Google Meet links work.
+- [ ] Zoom links work.
+- [ ] Other valid HTTPS meeting URLs work.
+- [ ] Link changes are auditable.
+- [ ] Students see the correct link for their class date.
+- [ ] Parents see the correct link for their child's class.
+- [ ] Schools see the correct link for their scheduled classes.
+
+---
+
+# SECTION P — ADMINISTRATIVE SUBSCRIPTION CONTROLS
+
+- [ ] Administrators can view all subscriptions.
+- [ ] Administrators can filter subscriptions due within seven days.
+- [ ] Administrators can view grace-period accounts.
+- [ ] Administrators can view locked accounts.
+- [ ] Administrators can see overdue balances.
+- [ ] Administrators can identify the payer.
+- [ ] Administrators can identify the affected learner and programme.
+- [ ] Administrators can view payment history.
+- [ ] Administrators can view reminder history.
+- [ ] Administrators can view lockdown history.
+- [ ] Administrators can configure subscription plans.
+- [ ] Administrators can configure valid exemptions.
+- [ ] Administrators can apply time-limited access overrides.
+- [ ] Administrative overrides require a reason.
+- [ ] Administrative actions are auditable.
+- [ ] Existing Billing Center functionality is preserved.
+- [ ] Existing fee configuration is preserved.
+
+---
+
+# SECTION Q — SECURITY, DATA INTEGRITY AND PERFORMANCE
+
+- [ ] No client-side action can mark a payment successful.
+- [ ] No client-side action can activate an unpaid subscription.
+- [ ] No client-side action can remove lockdown.
+- [ ] No client-side action can change payer responsibility.
+- [ ] No client-side action can bypass age or registration restrictions.
+- [ ] Existing school student identities remain valid.
+- [ ] Existing parent-child relationships remain valid.
+- [ ] Existing tutor assignments remain valid.
+- [ ] Existing wallet and payout calculations remain valid.
+- [ ] Payment records are idempotent.
+- [ ] Reminder records are idempotent.
+- [ ] Administrative actions are auditable.
+- [ ] Firestore permissions are not broadened unnecessarily.
+- [ ] Data fetching stops early for locked accounts.
+- [ ] Locked users do not trigger unnecessary academic Firestore reads.
+- [ ] Existing features not related to these two briefs continue to work.
+- [ ] No unrelated user records or academic records are modified.
+
+---
+
+# SECTION R — END-TO-END TESTING
+
+Do not stop after static code review.
+
+Run the relevant tests for the following user journeys using test data and safe sandbox modes.
+
+### R1. Programme discovery and enrolment
+
+- [ ] Public programme discovery.
+- [ ] Parent programme discovery.
+- [ ] Student programme discovery.
+- [ ] Shared programme link.
+- [ ] Unauthenticated programme link and sign-in return.
+- [ ] Application submission.
+- [ ] Administrator approval.
+- [ ] Admission email.
+- [ ] Approved fee creation.
+- [ ] Student-funded additional programme purchase.
+- [ ] Parent-funded programme purchase.
+- [ ] School-funded programme access.
+
+### R2. Subscription and lockdown
+
+- [ ] Active subscription.
+- [ ] Seven-day pre-due reminder.
+- [ ] Due-date notification.
+- [ ] Day one of grace period.
+- [ ] Day seven of grace period.
+- [ ] Transition into lockdown.
+- [ ] School administrator lockdown.
+- [ ] School student lockdown.
+- [ ] Individual student lockdown.
+- [ ] Parent lockdown.
+- [ ] Parent-enrolled child lockdown.
+- [ ] Student-funded additional programme lockdown.
+- [ ] Direct URL bypass attempt.
+- [ ] Direct API bypass attempt.
+- [ ] Successful Paystack renewal.
+- [ ] Successful admin manual payment.
+- [ ] Automatic access restoration.
+
+### R3. Payment and billing
+
+- [ ] Early renewal.
+- [ ] Renewal during grace.
+- [ ] Renewal after full expiry.
+- [ ] Full payment.
+- [ ] Partial payment.
+- [ ] Duplicate Paystack webhook.
+- [ ] Duplicate manual-payment submission.
+- [ ] Incorrect payment owner.
+- [ ] Incorrect payment amount.
+- [ ] Failed payment.
+- [ ] Pending payment.
+- [ ] Payment for the wrong programme.
+- [ ] School/student funding separation.
+
+### R4. Tutor meeting links
+
+- [ ] Different links for consecutive weeks.
+- [ ] One shared link for future weeks.
+- [ ] Single occurrence override.
+- [ ] Default link update.
+- [ ] Historical link preservation.
+- [ ] Correct link displayed in the student's portal.
+- [ ] Unauthorized link edit rejected.
+
+### R5. Financial reset
+
+- [ ] Correct test project identified.
+- [ ] Dry-run preview.
+- [ ] Backup validation.
+- [ ] Production protection.
+- [ ] Explicit confirmation requirement.
+- [ ] Record scope verification.
+- [ ] No deletion of unrelated records.
+
+Never use real customer charges, real transfers, actual refunds or unsolicited real emails as part of these tests.
+
+---
+
+# SECTION S — BUILD, TYPE AND REGRESSION CHECKS
+
+After the implementation audit and repairs:
+
+- [ ] Run the project's build command.
+- [ ] Run the TypeScript checks.
+- [ ] Run the available lint checks.
+- [ ] Run the existing unit tests.
+- [ ] Run or add tests for subscription date calculations.
+- [ ] Run or add tests for entitlement resolution.
+- [ ] Run or add tests for funding responsibility.
+- [ ] Run or add tests for payment idempotency.
+- [ ] Run or add tests for lockdown enforcement.
+- [ ] Run or add tests for class link inheritance.
+- [ ] Validate Netlify Function compilation.
+- [ ] Validate Firestore rules where test tooling is available.
+- [ ] Review required Firestore indexes.
+- [ ] Check browser console errors.
+- [ ] Check route errors.
+- [ ] Check loading states.
+- [ ] Check mobile responsiveness.
+- [ ] Verify existing login and registration.
+- [ ] Verify the normal dashboards for active accounts.
+- [ ] Verify existing billing history and fee configuration.
+- [ ] Verify existing administrative and tutor workflows.
+
+Do not hide build errors, disable TypeScript checks or weaken lint rules just to achieve a successful build.
+
+---
+
+# SECTION T — REQUIRED FINAL REPORT
+
+Once the audit and repairs are completed, produce a structured report.
+
+## T1. Overall completion summary
+
+Show:
+
+- Total requirements reviewed.
+- Number PASS.
+- Number NOT IMPLEMENTED.
+- Number INCOMPLETE.
+- Number BROKEN.
+- Number INSECURE.
+- Number BLOCKED.
+- Number fixed during this audit.
+- Number still unresolved.
+
+## T2. Requirement-by-requirement checklist
+
+Return the actual checklist with its status.
+
+For every non-PASS item, state:
+- What was wrong.
+- What you changed.
+- Where you changed it.
+- How it was tested.
+- Whether it now passes.
+
+## T3. Changed files
+
+List:
+- Modified files.
+- New files.
+- Firestore rule changes.
+- Firestore index changes.
+- Netlify Function changes.
+- New scheduled jobs.
+- Database schema changes.
+- Migration scripts, if any.
+
+Explain the purpose of each group of changes.
+
+## T4. Database and financial changes
+
+Clearly state:
+- Whether Firestore collections were added or modified.
+- Whether existing records were migrated.
+- Whether a migration was dry-run or executed.
+- Whether the financial reset was only built, previewed or executed.
+- Which collections would be affected by an approved reset.
+- Whether all backups and audit records are available.
+
+## T5. Test report
+
+For each test, provide:
+- Test name.
+- Account type.
+- Expected behaviour.
+- Actual result.
+- PASS or FAIL.
+- Any relevant error or limitation.
+
+## T6. Outstanding work
+
+Do not conceal unresolved issues.
+
+List any external requirement that still needs attention, such as:
+- Firebase access or rules deployment.
+- Netlify scheduled function configuration.
+- Resend domain verification.
+- Paystack test credentials.
+- Required Firestore indexes.
+- External deployment settings.
+- A migration or financial reset awaiting approval.
+
+---
+
+# FINAL EXECUTION RULES
+
+1. **Inspect first.** Do not make blind changes.
+2. **Verify actual functionality.** Do not give a feature a PASS because its interface exists.
+3. **Fix all safe and resolvable failures.** Do not stop at a checklist report.
+4. **Preserve existing working functionality.**
+5. **Do not invent test results.**
+6. **Do not use real customer financial transactions for testing.**
+7. **Do not send real reminder emails during tests unless explicitly authorized.**
+8. **Do not execute the destructive financial reset without an explicit final confirmation.**
+9. **Do not delete real financial records or unrelated Firestore data.**
+10. **Do not weaken security rules to make tests pass.**
+11. **Do not commit, push, merge or deploy to production without explicit authorization.**
+12. **Do not leave a known security bypass unresolved and still report the feature as complete.**
+
+The goal is to bring the actual existing platform into alignment with both previous implementation briefs—not to produce a report that merely says the work has been reviewed.
+
+Start by auditing the repository, then repair the gaps, run the tests, and provide the final evidence-based completion report.

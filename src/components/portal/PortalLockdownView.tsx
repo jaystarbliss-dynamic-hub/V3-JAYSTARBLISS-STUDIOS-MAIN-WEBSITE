@@ -31,6 +31,7 @@ export const PortalSubscriptionBanner: React.FC<{
 
   // 1. LOCKDOWN BANNER (Microsoft Office Activation style — authoritative red/navy bar)
   if (entitlement.isLocked) {
+    const isPaymentBanner = Boolean(entitlement.canPay && entitlement.payNowPath);
     return (
       <div
         role="alert"
@@ -47,7 +48,7 @@ export const PortalSubscriptionBanner: React.FC<{
               </p>
               <p className="text-xs text-red-100 leading-snug mt-0.5">
                 {entitlement.message}
-                {entitlement.canPay && entitlement.amountDue > 0 && (
+                {isPaymentBanner && entitlement.amountDue > 0 && (
                   <>
                     {' '}
                     <span className="font-bold text-white">
@@ -56,12 +57,20 @@ export const PortalSubscriptionBanner: React.FC<{
                     {entitlement.dueDateFormatted ? ` • Due ${entitlement.dueDateFormatted}` : ''}
                   </>
                 )}
+                {entitlement.expiresAtFormatted && (
+                  <>
+                    {' '}
+                    <span className="font-bold text-white">
+                      • Scheduled Restoration: {entitlement.expiresAtFormatted}
+                    </span>
+                  </>
+                )}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {entitlement.canPay && entitlement.payNowPath ? (
+            {isPaymentBanner && entitlement.payNowPath ? (
               <Link
                 to={entitlement.payNowPath}
                 className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-white text-[#991B1B] hover:bg-red-50 text-xs font-black uppercase tracking-wider shadow-xs transition-colors"
@@ -170,9 +179,9 @@ export const PortalSubscriptionBanner: React.FC<{
 };
 
 /**
- * Full-screen / route-level Microsoft Office Activation-style Lockdown Panel.
- * Rendered directly when a locked user navigates to a restricted route or when a
- * school/parent-funded student accesses their locked portal.
+ * Full-screen / route-level Lockdown Panel.
+ * Displays the actual saved restriction reason, effective date, expected restoration date (if set),
+ * all active public-safe restrictions, and the appropriate next action (Pay Now ONLY for payment restrictions).
  */
 export const PortalLockdownView: React.FC<PortalLockdownViewProps> = ({
   entitlement,
@@ -181,6 +190,14 @@ export const PortalLockdownView: React.FC<PortalLockdownViewProps> = ({
 }) => {
   const lockedChildren = (entitlement.affectedChildren || []).filter((c) => c.isLocked);
   const supportPath = `/portal/${entitlement.role}/support`;
+  const activeRestrictions = entitlement.activeRestrictions || [];
+  const isDependentStudent =
+    entitlement.role === 'student' &&
+    (entitlement.studentFundingCategory === 'SCHOOL_FUNDED' ||
+      entitlement.studentFundingCategory === 'PARENT_FUNDED');
+  const showPayNow = Boolean(entitlement.canPay && entitlement.payNowPath);
+  const hasMultipleRestrictions = !isDependentStudent && activeRestrictions.length > 1;
+  const isNonPaymentOnly = !showPayNow && !isDependentStudent;
 
   return (
     <div className={compact ? 'w-full' : 'max-w-3xl mx-auto py-8 sm:py-12 px-2'}>
@@ -194,7 +211,8 @@ export const PortalLockdownView: React.FC<PortalLockdownViewProps> = ({
             <div className="min-w-0">
               <div className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-widest text-red-200 mb-1">
                 <ShieldAlert size={13} />
-                Subscription Guardrail Active
+                {entitlement.lockReasonLabel ||
+                  (entitlement.isManuallyLocked ? 'Administrative Restriction Active' : 'Access Restriction Active')}
               </div>
               <h2 className="text-lg sm:text-xl font-black tracking-tight leading-snug">
                 {entitlement.headline}
@@ -214,9 +232,9 @@ export const PortalLockdownView: React.FC<PortalLockdownViewProps> = ({
             {entitlement.message}
           </p>
 
-          {/* Subscription Metrics Grid — shown to responsible payers & contextually to students */}
+          {/* Metrics Grid — tailored to restriction type and account role */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {entitlement.canPay && (
+            {showPayNow && (
               <div className="rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50 dark:bg-slate-900/50 p-4">
                 <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Outstanding Amount
@@ -229,26 +247,38 @@ export const PortalLockdownView: React.FC<PortalLockdownViewProps> = ({
 
             <div className="rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50 dark:bg-slate-900/50 p-4">
               <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                <Calendar size={12} /> Payment Due Date
+                <ShieldAlert size={12} /> Restriction Reason
               </span>
               <span className="mt-1 block text-sm font-extrabold text-[#14284B] dark:text-white">
-                {entitlement.dueDateFormatted || 'Overdue'}
+                {entitlement.lockReasonLabel ||
+                  (entitlement.isManuallyLocked ? 'Administrative Restriction' : 'Subscription Payment Overdue')}
               </span>
             </div>
 
             <div className="rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50 dark:bg-slate-900/50 p-4">
               <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                <Clock size={12} /> 7-Day Grace Period
+                <Calendar size={12} /> {entitlement.effectiveAtFormatted ? 'Effective Date' : 'Payment Due Date'}
               </span>
-              <span className="mt-1 block text-sm font-extrabold text-[#B91C1C] dark:text-red-400">
-                {entitlement.graceEndsAtFormatted ? `Ended ${entitlement.graceEndsAtFormatted}` : 'Expired'}
+              <span className="mt-1 block text-sm font-extrabold text-[#14284B] dark:text-white">
+                {entitlement.effectiveAtFormatted || entitlement.dueDateFormatted || 'Active Now'}
               </span>
             </div>
 
-            {!entitlement.canPay && (
+            {entitlement.expiresAtFormatted && (
+              <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/60 dark:bg-emerald-950/20 p-4">
+                <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                  <Clock size={12} /> Expected Restoration
+                </span>
+                <span className="mt-1 block text-sm font-extrabold text-emerald-900 dark:text-emerald-200">
+                  {entitlement.expiresAtFormatted}
+                </span>
+              </div>
+            )}
+
+            {isDependentStudent && (
               <div className="rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50 dark:bg-slate-900/50 p-4">
                 <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  <UserCheck size={12} /> Account Responsibility
+                  <UserCheck size={12} /> Account Contact
                 </span>
                 <span className="mt-1 block text-sm font-extrabold text-[#14284B] dark:text-white">
                   {entitlement.studentFundingCategory === 'SCHOOL_FUNDED'
@@ -258,6 +288,35 @@ export const PortalLockdownView: React.FC<PortalLockdownViewProps> = ({
               </div>
             )}
           </div>
+
+          {/* Multiple Active Restrictions Breakdown (when both payment & administrative restrictions apply) */}
+          {hasMultipleRestrictions && (
+            <div className="rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-2.5">
+              <h3 className="text-xs font-extrabold uppercase tracking-wider text-amber-900 dark:text-amber-200">
+                Active Account Restrictions ({activeRestrictions.length})
+              </h3>
+              <p className="text-xs text-amber-800 dark:text-amber-300">
+                More than one restriction currently applies to this account. Resolving a payment restriction alone will not lift an independent administrative restriction.
+              </p>
+              <div className="space-y-2">
+                {activeRestrictions.map((r) => (
+                  <div
+                    key={r.restrictionId}
+                    className="rounded-xl bg-white dark:bg-slate-900/80 border border-amber-200/70 dark:border-amber-900/40 px-4 py-3 text-xs space-y-1"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-extrabold text-[#14284B] dark:text-white">{r.reasonLabel}</span>
+                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                        {r.restrictionTypeLabel}
+                        {r.expiresAtFormatted ? ` • Until ${r.expiresAtFormatted}` : ''}
+                      </span>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{r.userFacingMessage}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Parent-specific affected children list */}
           {entitlement.role === 'parent' && lockedChildren.length > 0 && (
@@ -278,52 +337,74 @@ export const PortalLockdownView: React.FC<PortalLockdownViewProps> = ({
                         {child.dueDateFormatted ? ` • Due ${child.dueDateFormatted}` : ''}
                       </p>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-black text-[#B91C1C] dark:text-red-400">
-                        {formatNaira(child.amountDue)}
-                      </span>
-                      <Link
-                        to={`/portal/parent/payments?childId=${encodeURIComponent(child.childId)}`}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold transition-colors"
-                      >
-                        <CreditCard size={12} />
-                        Pay Item
-                      </Link>
-                    </div>
+                    {showPayNow && (
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-black text-[#B91C1C] dark:text-red-400">
+                          {formatNaira(child.amountDue)}
+                        </span>
+                        <Link
+                          to={`/portal/parent/payments?childId=${encodeURIComponent(child.childId)}`}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold transition-colors"
+                        >
+                          <CreditCard size={12} />
+                          Pay Item
+                        </Link>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Permitted vs Restricted Clarity */}
+          {/* Restoration & Next Steps Clarity */}
           <div className="rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-700/60 p-4 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-            {entitlement.canPay ? (
+            {showPayNow && !entitlement.hasNonPaymentRestriction ? (
               <>
                 <strong className="text-[#14284B] dark:text-white">Automatic Instant Restoration:</strong>{' '}
-                Your Billing Center, payment history, and receipts remain fully accessible. As soon as your renewal payment is verified, all restricted features and student learning access restore automatically.
+                Your Billing Center, payment history, and receipts remain fully accessible. As soon as your renewal payment is verified, all restricted features and learning access restore automatically.
+              </>
+            ) : showPayNow && entitlement.hasNonPaymentRestriction ? (
+              <>
+                <strong className="text-[#14284B] dark:text-white">Next Steps:</strong>{' '}
+                Your Billing Center remains open to settle any outstanding balance. Because an independent administrative restriction also applies, please contact Jaystarbliss Studios Support Desk so our team can assist with full restoration.
+              </>
+            ) : isNonPaymentOnly ? (
+              <>
+                <strong className="text-[#14284B] dark:text-white">How to Restore Access:</strong>{' '}
+                Your academic records remain safely preserved. This restriction is not a billing payment request — please contact the Jaystarbliss Studios Support Desk for guidance and review updates.
               </>
             ) : (
               <>
-                <strong className="text-[#14284B] dark:text-white">Automatic Access Return:</strong>{' '}
-                Your academic records remain safely preserved. Once{' '}
+                <strong className="text-[#14284B] dark:text-white">Your Records Remain Safe:</strong>{' '}
+                Your academic records and progress remain safely preserved. Please contact{' '}
                 {entitlement.studentFundingCategory === 'SCHOOL_FUNDED'
-                  ? 'your school administrator completes the institutional renewal'
-                  : 'your parent or guardian completes the programme renewal'}
-                , your learning portal will unlock automatically.
+                  ? 'your school administrator'
+                  : 'your parent or guardian'}{' '}
+                for further information about restoring access.
               </>
             )}
           </div>
 
           {/* Primary Actions */}
           <div className="flex flex-wrap items-center gap-3 pt-1">
-            {entitlement.canPay && entitlement.payNowPath && (
+            {showPayNow && entitlement.payNowPath && (
               <Link
                 to={entitlement.payNowPath}
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-sm transition-colors"
               >
                 <CreditCard size={16} />
                 PAY NOW — Open Billing Center
+              </Link>
+            )}
+
+            {isNonPaymentOnly && (
+              <Link
+                to={supportPath}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#14284B] hover:bg-slate-800 text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-sm transition-colors"
+              >
+                <Headphones size={16} />
+                Contact Support Desk
               </Link>
             )}
 
@@ -334,13 +415,15 @@ export const PortalLockdownView: React.FC<PortalLockdownViewProps> = ({
               Return to Overview
             </Link>
 
-            <Link
-              to={supportPath}
-              className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 text-xs sm:text-sm font-semibold transition-colors"
-            >
-              <Headphones size={15} />
-              Contact Support
-            </Link>
+            {!isNonPaymentOnly && (
+              <Link
+                to={supportPath}
+                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 text-xs sm:text-sm font-semibold transition-colors"
+              >
+                <Headphones size={15} />
+                Contact Support
+              </Link>
+            )}
           </div>
         </div>
       </div>

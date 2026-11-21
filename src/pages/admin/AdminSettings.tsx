@@ -39,7 +39,7 @@ const AdminSettings: React.FC = () => {
     secondaryPhone: '+234 913 052 9010',
     infoEmail: 'info@jaystarbliss-studios.name.ng',
     infoWhatsapp: '+234 913 052 9010',
-    supportEmail: 'support@jaystarbliss-studios.name.ng',
+    supportEmail: 'support@jaystarblissstudios.com',
     supportWhatsapp: '+234 707 763 8925',
     whatsappNumber: '+234 913 651 8194',
     googleBusinessUrl: 'https://share.google/mqVU8pAgKEDjOfGHe',
@@ -831,7 +831,7 @@ const AdminSettings: React.FC = () => {
                 name="supportEmail"
                 value={settings.supportEmail}
                 onChange={handleChange}
-                placeholder="support@jaystarbliss-studios.name.ng"
+                placeholder="support@jaystarblissstudios.com"
                 className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
               />
             </div>

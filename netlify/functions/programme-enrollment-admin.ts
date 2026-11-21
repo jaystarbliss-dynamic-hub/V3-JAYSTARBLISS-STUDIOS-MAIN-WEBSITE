@@ -1,5 +1,6 @@
 import type { Handler } from "@netlify/functions";
-import admin, { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
+import { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
 import { sendProgrammeAdmissionEmail } from "../../api/_lib/email";
 
 const CORS_HEADERS = {
@@ -152,8 +153,8 @@ export const handler: Handler = async (event) => {
         billingResponsibility: "STUDENT_SELF_FUNDED",
         approvedBy: callerUid,
         approvedByName: callerName,
-        approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        approvedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       };
 
       await enrollRef.set(approvalUpdate, { merge: true });
@@ -202,8 +203,8 @@ export const handler: Handler = async (event) => {
               actionUrl: `/portal/student/payments?enrollmentId=${encodeURIComponent(enrollmentId)}`,
               actionText: "Continue to Payment",
               read: false,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: FieldValue.serverTimestamp(),
+              createdAt: FieldValue.serverTimestamp(),
             },
             { merge: true }
           );
@@ -241,7 +242,7 @@ export const handler: Handler = async (event) => {
         {
           emailDeliveryStatus,
           emailDeliveryError,
-          emailLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+          emailLastAttemptAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
       );
@@ -275,7 +276,7 @@ export const handler: Handler = async (event) => {
           adminNotes,
           reviewedBy: callerUid,
           reviewedByName: callerName,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
       );
@@ -312,7 +313,7 @@ export const handler: Handler = async (event) => {
               type: "PROGRAMME_APPLICATION_UPDATE",
               enrollmentId,
               read: false,
-              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              createdAt: FieldValue.serverTimestamp(),
             },
             { merge: true }
           );
@@ -362,8 +363,8 @@ export const handler: Handler = async (event) => {
         {
           emailDeliveryStatus,
           emailDeliveryError,
-          emailLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          emailLastAttemptAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
       );

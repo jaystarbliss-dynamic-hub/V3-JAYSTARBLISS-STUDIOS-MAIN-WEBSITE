@@ -33,14 +33,8 @@ export const handler: Handler = async event => {
     if (!isAdmin && !isTeachingStaff && !isSchool) return json(403, { error: 'You are not authorized to issue student credentials.' });
 
     if (isSchool) {
-      const lockResponse = await enforceEntitlementOrLock({
-        uid: decoded.uid,
-        role: callerRole,
-        email: decoded.email || caller.email,
-        userRecord: caller,
-        resourceLabel: 'student access credentials and passcodes',
-      });
-      if (lockResponse) return lockResponse;
+      const lockCheck = await enforceEntitlementOrLock(event);
+      if (!lockCheck.ok) return lockCheck.response;
     }
 
     const body = JSON.parse(event.body || '{}');
