@@ -11,6 +11,7 @@ export interface TooltipProps {
   delay?: number;
   disabled?: boolean;
   className?: string;
+  fullWidth?: boolean;
 }
 
 export const Tooltip: React.FC<TooltipProps> = ({
@@ -20,6 +21,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
   delay = 180,
   disabled = false,
   className = '',
+  fullWidth = false,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number; arrowPlacement: TooltipPlacement }>({
@@ -156,7 +158,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
   };
 
   return (
-    <div ref={containerRef} className={`relative inline-flex items-center ${className}`}>
+    <div ref={containerRef} className={`relative ${fullWidth ? 'flex w-full' : 'inline-flex'} items-center ${className}`}>
       {trigger}
       {typeof document !== 'undefined' && createPortal(
         <AnimatePresence>

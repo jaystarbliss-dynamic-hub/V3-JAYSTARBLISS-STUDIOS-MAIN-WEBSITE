@@ -38,6 +38,9 @@ export interface FintechWithdrawalModalProps {
 
 type Step = 'saved-choice' | 'form' | 'confirm';
 
+const EMPTY_BANKS: BankOption[] = [];
+const DEFAULT_WITHDRAWAL_FEE_POLICY = { percentage: 0, flat: 0, cap: 0, enabled: false };
+
 export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
   isOpen,
   onClose,
@@ -46,7 +49,7 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
   savedAccountNumber = '',
   savedAccountLast4 = '',
   savedAccountName = '',
-  banksList = [],
+  banksList = EMPTY_BANKS,
   withdrawalFeePolicy,
   minimumWithdrawalAmount,
   onConfirmWithdrawal
@@ -62,12 +65,14 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
   const [accountVerified, setAccountVerified] = useState(hasSavedAccount);
   const [amount, setAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [directoryBanks, setDirectoryBanks] = useState<BankOption[]>(banksList || []);
+  const [directoryBanks, setDirectoryBanks] = useState<BankOption[]>(() => (Array.isArray(banksList) ? banksList : EMPTY_BANKS));
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [loadedConfig, setLoadedConfig] = useState<PaymentConfig | null>(null);
 
   useEffect(() => {
-    setDirectoryBanks(banksList || []);
+    if (Array.isArray(banksList) && banksList.length > 0) {
+      setDirectoryBanks(prev => (prev === banksList ? prev : banksList));
+    }
   }, [banksList]);
 
   useEffect(() => {
@@ -93,7 +98,9 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
         const response = await fetch('/.netlify/functions/paystack-banks', { headers: { Authorization: `Bearer ${token}` } });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || 'Unable to load supported banks.');
-        if (!cancelled) setDirectoryBanks(Array.isArray(result.banks) ? result.banks : []);
+        if (!cancelled && Array.isArray(result.banks) && result.banks.length > 0) {
+          setDirectoryBanks(result.banks);
+        }
       } catch (error) {
         console.warn('Nigerian bank directory lookup failed:', error);
       } finally {
@@ -132,7 +139,10 @@ export const FintechWithdrawalModal: React.FC<FintechWithdrawalModalProps> = ({
 
   const selectedBank = availableBanks.find(bank => bank.code === bankCode);
   const numAmount = Number(amount) || 0;
-  const effectivePolicy = withdrawalFeePolicy || loadedConfig?.withdrawalFeePolicy || { percentage: 0, flat: 0, cap: 0, enabled: false };
+  const effectivePolicy = useMemo(
+    () => withdrawalFeePolicy || loadedConfig?.withdrawalFeePolicy || DEFAULT_WITHDRAWAL_FEE_POLICY,
+    [withdrawalFeePolicy, loadedConfig?.withdrawalFeePolicy]
+  );
   const effectiveMinimum = Number(minimumWithdrawalAmount ?? loadedConfig?.minimumWithdrawalAmount ?? 10000);
   const fee = useMemo(() => {
     if (!effectivePolicy.enabled || numAmount <= 0) return 0;

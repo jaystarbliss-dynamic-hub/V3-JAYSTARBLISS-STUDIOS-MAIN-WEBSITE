@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { auth, db, getAllClientDatabases } from "../../lib/firebase";
 import {
@@ -19,6 +19,7 @@ import {
   computeExamMaxScore,
   calculateScorePercentage,
   normalizeClassName,
+  expandGradeRange,
   resolvePartnerSchoolName,
   canManageExamRecord,
   normalizeDeliveryMode,
@@ -164,11 +165,18 @@ type Exam = {
   durationMinutes: number;
   schoolId?: string;
   schoolName?: string;
+  targetSchoolIds?: string[];
+  schoolIds?: string[];
   recipientMode?: string;
   targetStudentIds?: string[];
+  excludedStudentIds?: string[];
   targetClass?: string;
   className?: string;
   classIds?: string[];
+  gradeTargetMode?: "ALL" | "SPECIFIC" | "RANGE";
+  gradeRange?: { from: string; to: string } | null;
+  targetProgramIds?: string[];
+  targetProgramTitles?: string[];
   passcode?: string;
   dueDate?: string;
   availableFrom?: string;
@@ -1418,10 +1426,289 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   const filteredSchoolLearnerOptions = useMemo(() => {
     return schoolLearners.filter((s) => {
       if (schoolId && s.schoolId !== schoolId) return false;
-      if (selectedClass && s.className !== selectedClass) return false;
+      if (selectedClass && normalizeClassName(s.className) !== normalizeClassName(selectedClass)) {
+        return false;
+      }
       return true;
     });
   }, [schoolLearners, schoolId, selectedClass]);
+
+  // Helper: Resolve all normalized classes associated with an exam (explicit classIds, gradeRange, targetClass)
+  const getExamClassSet = useCallback((ex: Exam): Set<string> => {
+    const set = new Set<string>();
+    const pushCls = (raw?: string) => {
+      const norm = normalizeClassName(raw || "");
+      if (norm && norm.toLowerCase() !== "all") set.add(norm);
+    };
+    if (Array.isArray(ex.classIds)) {
+      ex.classIds.forEach((c) => pushCls(c));
+    }
+    if (ex.gradeRange?.from && ex.gradeRange?.to) {
+      expandGradeRange(ex.gradeRange.from, ex.gradeRange.to).forEach((c) => pushCls(c));
+    }
+    if (ex.targetClass) {
+      String(ex.targetClass)
+        .split(",")
+        .forEach((part) => pushCls(part));
+    }
+    if (ex.className) {
+      String(ex.className)
+        .split(",")
+        .forEach((part) => pushCls(part));
+    }
+    return set;
+  }, []);
+
+  // Helper: Check if an exam matches the active Work Type + Recipient Category + School + Private Subtype
+  const examMatchesUpstreamScope = useCallback(
+    (ex: Exam): boolean => {
+      if (workTypeTab !== "ALL" && normalizeWorkType(ex.workType, ex) !== workTypeTab) {
+        return false;
+      }
+
+      const mode = String(ex.recipientMode || "").toUpperCase();
+      const targetSchools = [
+        ...(Array.isArray(ex.targetSchoolIds) ? ex.targetSchoolIds : []),
+        ...(Array.isArray(ex.schoolIds) ? ex.schoolIds : []),
+        ...(ex.schoolId && ex.schoolId !== "private" && ex.schoolId !== "all" ? [ex.schoolId] : []),
+      ].filter(Boolean);
+
+      const hasTargetStudents = Array.isArray(ex.targetStudentIds) && ex.targetStudentIds.length > 0;
+      const examIsPrivate = isPrivateAttemptOrExam({
+        schoolId: ex.schoolId,
+        schoolName: ex.schoolName,
+        recipientMode: ex.recipientMode,
+      });
+
+      const examAttempts = attempts.filter((a) => a.examId === ex.id);
+
+      if (recipientCategory === "partner_schools") {
+        // Reject private-only exams unless they explicitly target a partner school or have a partner-school attempt
+        const hasPartnerSchoolAttempt = examAttempts.some(
+          (a) =>
+            !isPrivateAttemptOrExam({
+              schoolId: a.schoolId || ex.schoolId,
+              schoolName: a.schoolName || ex.schoolName,
+              studentId: a.studentId,
+              studentUid: a.studentUid,
+              recipientMode: ex.recipientMode,
+            })
+        );
+        if (examIsPrivate && targetSchools.length === 0 && mode !== "MULTI_TARGET" && !hasPartnerSchoolAttempt) {
+          return false;
+        }
+        if (schoolId) {
+          const matchesSelectedSchool =
+            targetSchools.includes(schoolId) ||
+            ex.schoolId === schoolId ||
+            examAttempts.some((a) => a.schoolId === schoolId);
+          if (!matchesSelectedSchool) return false;
+        }
+      } else if (recipientCategory === "private_students") {
+        // Strict isolation: ONLY show exams targeting private students or having a genuine private student attempt
+        const targetsPrivateStudent =
+          hasTargetStudents &&
+          ex.targetStudentIds!.some((sid) => {
+            const pRec = privateLearnerById.get(sid);
+            if (!pRec) return false;
+            if (privateSubFilter !== "all" && pRec.subType !== privateSubFilter) return false;
+            return true;
+          });
+
+        const hasMatchingPrivateAttempt = examAttempts.some((a) => {
+          const isPrivAtt = isPrivateAttemptOrExam({
+            schoolId: a.schoolId || ex.schoolId,
+            schoolName: a.schoolName || ex.schoolName,
+            studentId: a.studentId,
+            studentUid: a.studentUid,
+            recipientMode: ex.recipientMode,
+          });
+          if (!isPrivAtt) return false;
+          if (privateSubFilter !== "all") {
+            const pRec =
+              privateLearnerById.get(a.studentId) ||
+              (a.studentUid ? privateLearnerById.get(a.studentUid) : undefined);
+            if (pRec && pRec.subType !== privateSubFilter) return false;
+          }
+          return true;
+        });
+
+        const isDedicatedPrivateExam =
+          mode === "PRIVATE_LEARNERS" ||
+          mode === "PRIVATE" ||
+          ex.schoolId === "private" ||
+          (examIsPrivate && targetSchools.length === 0);
+
+        if (privateSubFilter !== "all") {
+          if (!targetsPrivateStudent && !hasMatchingPrivateAttempt && !(isDedicatedPrivateExam && !hasTargetStudents)) {
+            return false;
+          }
+        } else {
+          if (!isDedicatedPrivateExam && !targetsPrivateStudent && !hasMatchingPrivateAttempt) {
+            return false;
+          }
+        }
+      } else if (schoolId) {
+        const matchesSelectedSchool =
+          targetSchools.includes(schoolId) ||
+          ex.schoolId === schoolId ||
+          examAttempts.some((a) => a.schoolId === schoolId);
+        if (!matchesSelectedSchool) return false;
+      }
+
+      return true;
+    },
+    [workTypeTab, recipientCategory, privateSubFilter, schoolId, attempts, privateLearnerById]
+  );
+
+  // Cascading Class / Level options strictly scoped to Work Type + Recipient Category + School + Student
+  const availableClassesForFilter = useMemo(() => {
+    const classSet = new Set<string>();
+    const addClass = (raw?: string) => {
+      const norm = normalizeClassName(raw || "");
+      if (norm && norm.toLowerCase() !== "all") classSet.add(norm);
+    };
+
+    // 1. Classes from upstream-scoped attempts
+    attempts.forEach((a) => {
+      const exam = exams.find((e) => e.id === a.examId);
+      if (workTypeTab !== "ALL" && normalizeWorkType(exam?.workType, exam) !== workTypeTab) {
+        return;
+      }
+      const isPriv = isPrivateAttemptOrExam({
+        schoolId: a.schoolId || exam?.schoolId,
+        schoolName: a.schoolName || exam?.schoolName,
+        studentId: a.studentId,
+        studentUid: a.studentUid,
+        recipientMode: exam?.recipientMode,
+      });
+      if (recipientCategory === "partner_schools" && isPriv) return;
+      if (recipientCategory === "private_students") {
+        if (!isPriv) return;
+        if (privateSubFilter !== "all") {
+          const pRec =
+            privateLearnerById.get(a.studentId) ||
+            (a.studentUid ? privateLearnerById.get(a.studentUid) : undefined);
+          if (pRec && pRec.subType !== privateSubFilter) return;
+        }
+      }
+      if (schoolId && recipientCategory !== "private_students" && a.schoolId !== schoolId) return;
+      if (selectedStudentId) {
+        const pSel = privateLearnerById.get(selectedStudentId);
+        const matchesStd =
+          a.studentId === selectedStudentId ||
+          a.studentUid === selectedStudentId ||
+          (pSel?.uid && (a.studentUid === pSel.uid || a.studentId === pSel.uid));
+        if (!matchesStd) return;
+      }
+      addClass(a.className);
+    });
+
+    // 2. Classes from upstream-scoped exams (even before attempts exist)
+    exams.forEach((ex) => {
+      if (!examMatchesUpstreamScope(ex)) return;
+      if (selectedStudentId) {
+        const pSel = privateLearnerById.get(selectedStudentId);
+        const sIds = [selectedStudentId, pSel?.uid].filter(Boolean) as string[];
+        const targetsStd =
+          Array.isArray(ex.targetStudentIds) &&
+          ex.targetStudentIds.some((tid) => sIds.includes(tid));
+        const hasStdAttempt = attempts.some(
+          (a) => a.examId === ex.id && (sIds.includes(a.studentId) || (a.studentUid && sIds.includes(a.studentUid)))
+        );
+        if (!targetsStd && !hasStdAttempt) return;
+      }
+      getExamClassSet(ex).forEach((c) => classSet.add(c));
+    });
+
+    return Array.from(classSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [
+    attempts,
+    exams,
+    workTypeTab,
+    recipientCategory,
+    privateSubFilter,
+    schoolId,
+    selectedStudentId,
+    privateLearnerById,
+    examMatchesUpstreamScope,
+    getExamClassSet,
+  ]);
+
+  // Cascading Assessment options strictly scoped to Work Type + Recipient Category + School + Class + Student
+  const availableExamsForFilter = useMemo(() => {
+    const normSelectedClass = selectedClass ? normalizeClassName(selectedClass) : "";
+
+    return exams.filter((ex) => {
+      if (!examMatchesUpstreamScope(ex)) return false;
+
+      const examAttempts = attempts.filter((a) => a.examId === ex.id);
+
+      // Filter by selected class (strictly narrows Assessment dropdown when Class changes!)
+      if (normSelectedClass) {
+        const examClasses = getExamClassSet(ex);
+        const hasAttemptInClass = examAttempts.some(
+          (a) => normalizeClassName(a.className || "") === normSelectedClass
+        );
+        // Only include exam if it explicitly targets that class, has an attempt in that class, or explicitly targets ALL classes (empty class set)
+        if (examClasses.size > 0) {
+          if (!examClasses.has(normSelectedClass) && !hasAttemptInClass) return false;
+        } else {
+          // Broad exam with no class restriction: only show if it targets the current scope AND either has an attempt in that class or is an open school/private exam
+          if (!hasAttemptInClass && ex.targetClass && ex.targetClass.toLowerCase() !== "all") {
+            return false;
+          }
+        }
+      }
+
+      // Filter by selected individual student (private or school student)
+      if (selectedStudentId) {
+        const pSel = privateLearnerById.get(selectedStudentId);
+        const sSel = schoolLearners.find((s) => s.id === selectedStudentId);
+        const idCandidates = [selectedStudentId, pSel?.uid].filter(Boolean) as string[];
+        const stdClass = normalizeClassName(pSel?.className || sSel?.className || "");
+
+        const targetedDirectly =
+          Array.isArray(ex.targetStudentIds) &&
+          ex.targetStudentIds.some((tid) => idCandidates.includes(tid));
+        const hasStudentAttempt = examAttempts.some(
+          (a) =>
+            idCandidates.includes(a.studentId) ||
+            (a.studentUid ? idCandidates.includes(a.studentUid) : false)
+        );
+        const examClasses = getExamClassSet(ex);
+        const eligibleByClass =
+          (!ex.targetStudentIds || ex.targetStudentIds.length === 0) &&
+          (!stdClass || examClasses.size === 0 || examClasses.has(stdClass));
+
+        if (!targetedDirectly && !hasStudentAttempt && !eligibleByClass) return false;
+      }
+
+      return true;
+    });
+  }, [
+    exams,
+    attempts,
+    selectedClass,
+    selectedStudentId,
+    privateLearnerById,
+    schoolLearners,
+    examMatchesUpstreamScope,
+    getExamClassSet,
+  ]);
+
+  // Auto-clear downstream selections whenever upstream filters invalidate them
+  useEffect(() => {
+    if (selectedClass && !availableClassesForFilter.includes(selectedClass)) {
+      setSelectedClass("");
+    }
+  }, [selectedClass, availableClassesForFilter]);
+
+  useEffect(() => {
+    if (selected && !availableExamsForFilter.some((e) => e.id === selected)) {
+      setSelected("");
+    }
+  }, [selected, availableExamsForFilter]);
 
   // Filtered attempts for Examination History
   const filtered = useMemo(() => {
@@ -2407,9 +2694,9 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       </section>
 
       {/* RECIPIENT CATEGORY & FILTER CONTROLS (Deliverable 6) */}
-      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-xs space-y-4">
+      <section className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#111114] p-4 sm:p-5 shadow-xs space-y-4">
         {!isSchoolUser && (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-zinc-800 pb-3.5">
             <div className="flex flex-wrap items-center gap-1.5">
               {(
                 [
@@ -2427,15 +2714,16 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     onClick={() => {
                       setRecipientCategory(cat.id);
                       setSelectedStudentId("");
+                      setSelected("");
+                      setSelectedClass("");
                       if (cat.id === "private_students") {
                         setSchoolId("");
-                        setSelectedClass("");
                       }
                     }}
                     className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
                       active
                         ? "bg-[#1E293B] text-white dark:bg-[#B91C1C] shadow-xs"
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                        : "bg-slate-100 dark:bg-[#18181B] text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800"
                     }`}
                   >
                     <Icon size={14} />
@@ -2460,11 +2748,12 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     onClick={() => {
                       setPrivateSubFilter(sub.id);
                       setSelectedStudentId("");
+                      setSelected("");
                     }}
                     className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer ${
                       privateSubFilter === sub.id
                         ? "bg-[#B91C1C] text-white"
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                        : "bg-slate-100 dark:bg-[#18181B] text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800"
                     }`}
                   >
                     {sub.label}
@@ -2525,15 +2814,19 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             </label>
           )}
 
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Assessment
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+            Assessment ({availableExamsForFilter.length})
             <select
-              className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
+              className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-zinc-700 bg-white dark:bg-[#09090B] p-2.5 text-sm font-normal text-slate-800 dark:text-zinc-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
             >
-              <option value="">All Assessments</option>
-              {exams.map((e) => (
+              <option value="">
+                {availableExamsForFilter.length === 0
+                  ? "No assessments in current scope"
+                  : `All Matching Assessments (${availableExamsForFilter.length})`}
+              </option>
+              {availableExamsForFilter.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.title} — {e.subject}
                 </option>
@@ -2542,29 +2835,27 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
           </label>
 
           {recipientCategory !== "private_students" ? (
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
               Class {recipientCategory === "partner_schools" ? "/ Narrow by Student" : ""}
               <div className="mt-1.5 flex gap-2 normal-case tracking-normal">
                 <select
-                  className="block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white"
+                  className="block w-full rounded-xl border border-slate-300 dark:border-zinc-700 bg-white dark:bg-[#09090B] p-2.5 text-sm font-normal text-slate-800 dark:text-zinc-100 outline-none focus:border-[#1E293B] dark:focus:border-white"
                   value={selectedClass}
                   onChange={(e) => {
                     setSelectedClass(e.target.value);
                     setSelectedStudentId("");
                   }}
                 >
-                  <option value="">All Classes</option>
-                  {Array.from(new Set(attempts.map((a) => a.className).filter(Boolean)))
-                    .sort()
-                    .map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
+                  <option value="">All Classes ({availableClassesForFilter.length})</option>
+                  {availableClassesForFilter.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
                 </select>
                 {!isSchoolUser && recipientCategory === "partner_schools" && (
                   <select
-                    className="block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white"
+                    className="block w-full rounded-xl border border-slate-300 dark:border-zinc-700 bg-white dark:bg-[#09090B] p-2.5 text-sm font-normal text-slate-800 dark:text-zinc-100 outline-none focus:border-[#1E293B] dark:focus:border-white"
                     value={selectedStudentId}
                     onChange={(e) => setSelectedStudentId(e.target.value)}
                   >
@@ -2579,21 +2870,19 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               </div>
             </label>
           ) : (
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
               Class / Level
               <select
-                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-sm font-normal text-slate-800 dark:text-slate-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
+                className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-zinc-700 bg-white dark:bg-[#09090B] p-2.5 text-sm font-normal text-slate-800 dark:text-zinc-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
                 value={selectedClass}
                 onChange={(e) => setSelectedClass(e.target.value)}
               >
-                <option value="">All Levels</option>
-                {Array.from(new Set(attempts.map((a) => a.className).filter(Boolean)))
-                  .sort()
-                  .map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
+                <option value="">All Levels ({availableClassesForFilter.length})</option>
+                {availableClassesForFilter.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
               </select>
             </label>
           )}

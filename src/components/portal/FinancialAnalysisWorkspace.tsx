@@ -36,6 +36,7 @@ import {
 } from '../../lib/financialAnalytics';
 import { formatCurrency, formatReceiptDate, generatePdfStatement, type TransactionReceiptData } from '../../lib/receiptGenerator';
 import { useToast } from '../../contexts/ToastContext';
+import { Bar3DShape, HorizontalBar3DShape } from '../charts/Bar3DShape';
 
 const BRAND_CHART_COLORS = [
   '#1E293B', // Jaystarbliss Navy
@@ -587,7 +588,7 @@ export const FinancialAnalysisWorkspace: React.FC<FinancialAnalysisWorkspaceProp
                       <BarChart
                         data={analytics.programmeBreakdown.slice(0, 6)}
                         layout="vertical"
-                        margin={{ top: 0, right: 18, left: 10, bottom: 0 }}
+                        margin={{ top: 8, right: 22, left: 10, bottom: 0 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
                         <XAxis
@@ -601,7 +602,7 @@ export const FinancialAnalysisWorkspace: React.FC<FinancialAnalysisWorkspaceProp
                           type="category"
                           dataKey="label"
                           width={125}
-                          tick={{ fontSize: 11, fill: '#334155' }}
+                          tick={{ fontSize: 11, fill: '#64748B' }}
                           axisLine={false}
                           tickLine={false}
                         />
@@ -611,7 +612,7 @@ export const FinancialAnalysisWorkspace: React.FC<FinancialAnalysisWorkspaceProp
                             props?.payload?.label || 'Programme'
                           ]}
                         />
-                        <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
+                        <Bar dataKey="amount" shape={<HorizontalBar3DShape />}>
                           {analytics.programmeBreakdown.slice(0, 6).map((_, idx) => (
                             <Cell key={idx} fill={idx === 0 ? '#B91C1C' : '#1E293B'} />
                           ))}
@@ -633,7 +634,7 @@ export const FinancialAnalysisWorkspace: React.FC<FinancialAnalysisWorkspaceProp
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={analytics.channelBreakdown}
-                        margin={{ top: 5, right: 10, left: 0, bottom: 0 }}
+                        margin={{ top: 12, right: 14, left: 0, bottom: 0 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
                         <XAxis
@@ -654,7 +655,7 @@ export const FinancialAnalysisWorkspace: React.FC<FinancialAnalysisWorkspaceProp
                             props?.payload?.label || 'Channel'
                           ]}
                         />
-                        <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
+                        <Bar dataKey="amount" shape={<Bar3DShape />}>
                           {analytics.channelBreakdown.map((ch, idx) => (
                             <Cell
                               key={ch.key}

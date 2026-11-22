@@ -9,6 +9,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
   ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
+import { Bar3DShape, HorizontalBar3DShape } from '../charts/Bar3DShape';
 
 interface AdminAnalyticsWidgetProps {
   studentsData?: any[];
@@ -387,15 +388,15 @@ export const AdminAnalyticsWidget: React.FC<AdminAnalyticsWidgetProps> = ({
 
             <div className="h-[340px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={loginFrequencyData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+                <BarChart data={loginFrequencyData} margin={{ top: 14, right: 16, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.5} />
                   <XAxis dataKey="day" tick={{ fontSize: 12 }} stroke="#94a3b8" />
                   <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                  <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: '1px solid #334155', color: '#fff' }} />
-                  <Bar dataKey="student" name="Students" stackId="a" fill={BRAND_PALETTE.red} />
-                  <Bar dataKey="staff" name="Faculty/Tutors" stackId="a" fill={BRAND_PALETTE.navy} />
-                  <Bar dataKey="parent" name="Parents" stackId="a" fill={BRAND_PALETTE.slate} />
-                  <Bar dataKey="school" name="School Admins" stackId="a" fill={BRAND_PALETTE.lightSlate} radius={[4, 4, 0, 0]} />
+                  <RechartsTooltip contentStyle={{ backgroundColor: '#111114', borderRadius: '12px', border: '1px solid #27272A', color: '#fff' }} />
+                  <Bar dataKey="student" name="Students" stackId="a" fill={BRAND_PALETTE.red} shape={<Bar3DShape />} />
+                  <Bar dataKey="staff" name="Faculty/Tutors" stackId="a" fill={BRAND_PALETTE.navy} shape={<Bar3DShape />} />
+                  <Bar dataKey="parent" name="Parents" stackId="a" fill={BRAND_PALETTE.slate} shape={<Bar3DShape />} />
+                  <Bar dataKey="school" name="School Admins" stackId="a" fill={BRAND_PALETTE.lightSlate} shape={<Bar3DShape />} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -417,12 +418,12 @@ export const AdminAnalyticsWidget: React.FC<AdminAnalyticsWidgetProps> = ({
               ) : (
                 <div className="h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={resourceEngagementData} layout="vertical" margin={{ top: 10, right: 20, left: 40, bottom: 0 }}>
+                    <BarChart data={resourceEngagementData} layout="vertical" margin={{ top: 12, right: 24, left: 40, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.5} />
                       <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} stroke="#94a3b8" />
                       <YAxis type="category" dataKey="category" tick={{ fontSize: 11 }} stroke="#94a3b8" width={120} />
-                      <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: '1px solid #334155', color: '#fff' }} />
-                      <Bar dataKey="resources" name="Published resources" fill={BRAND_PALETTE.navy} radius={[0, 4, 4, 0]} />
+                      <RechartsTooltip contentStyle={{ backgroundColor: '#111114', borderRadius: '12px', border: '1px solid #27272A', color: '#fff' }} />
+                      <Bar dataKey="resources" name="Published resources" fill={BRAND_PALETTE.navy} shape={<HorizontalBar3DShape />} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -485,14 +486,14 @@ export const AdminAnalyticsWidget: React.FC<AdminAnalyticsWidgetProps> = ({
             ) : (
               <div className="h-[340px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={cbtAssessmentData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+                  <BarChart data={cbtAssessmentData} margin={{ top: 14, right: 16, left: -15, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.5} />
                     <XAxis dataKey="grade" tick={{ fontSize: 12 }} stroke="#94a3b8" />
                     <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                    <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: '1px solid #334155', color: '#fff' }} />
-                    <Bar dataKey="registered" name="Registered" fill={BRAND_PALETTE.navy} radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="taken" name="Completed" fill={BRAND_PALETTE.slate} radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="passed" name="Passed" fill={BRAND_PALETTE.red} radius={[4, 4, 0, 0]} />
+                    <RechartsTooltip contentStyle={{ backgroundColor: '#111114', borderRadius: '12px', border: '1px solid #27272A', color: '#fff' }} />
+                    <Bar dataKey="registered" name="Registered" fill={BRAND_PALETTE.navy} shape={<Bar3DShape />} />
+                    <Bar dataKey="taken" name="Completed" fill={BRAND_PALETTE.slate} shape={<Bar3DShape />} />
+                    <Bar dataKey="passed" name="Passed" fill={BRAND_PALETTE.red} shape={<Bar3DShape />} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

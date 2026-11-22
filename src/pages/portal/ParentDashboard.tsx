@@ -50,6 +50,11 @@ import DashboardGreeting from '../../components/portal/DashboardGreeting';
 import { useToast } from '../../contexts/ToastContext';
 import { useSubscriptionEntitlement } from '../../contexts/SubscriptionEntitlementContext';
 import { PortalLockdownView } from '../../components/portal/PortalLockdownView';
+import PortalHeroBanner, {
+  PORTAL_BANNER_BTN_LIGHT,
+  PORTAL_BANNER_BTN_PRIMARY,
+} from '../../components/portal/PortalHeroBanner';
+import { Bar3DShape, HorizontalBar3DShape } from '../../components/charts/Bar3DShape';
 import { FintechTransactionDetailsModal } from '../../components/portal/FintechTransactionDetailsModal';
 import type { TransactionReceiptData } from '../../lib/receiptGenerator';
 import { getEffectiveAuth } from '../../utils/impersonation';
@@ -704,6 +709,13 @@ const ParentDashboard: React.FC = () => {
     }
   };
 
+  const effectiveAuth = getEffectiveAuth();
+  const parentDisplayName =
+    effectiveAuth.effectiveName ||
+    sessionStorage.getItem('userName') ||
+    auth.currentUser?.displayName ||
+    'Parent Account';
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       <SEO
@@ -714,42 +726,37 @@ const ParentDashboard: React.FC = () => {
 
       <DashboardGreeting role="Parent / Guardian" />
 
+      <PortalHeroBanner
+        role="parent"
+        title={parentDisplayName}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setShowEnrollModal(true);
+                setEnrollError('');
+              }}
+              className={PORTAL_BANNER_BTN_PRIMARY}
+            >
+              <PlusCircle size={13} aria-hidden="true" />
+              <span>Enroll New Child</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/portal/parent/support')}
+              className={PORTAL_BANNER_BTN_LIGHT}
+            >
+              <Headphones size={13} aria-hidden="true" />
+              <span>Support Desk</span>
+            </button>
+          </>
+        }
+      />
+
       {entitlement?.isLocked && (
         <PortalLockdownView entitlement={entitlement} compact />
       )}
-
-      {/* Compact Action Header Bar (replaces decorative hero banner) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
-        <div>
-          <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-            Family Learning Overview
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Track linked learners, module milestones, upcoming classes, and enrollment requests.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              setShowEnrollModal(true);
-              setEnrollError('');
-            }}
-            className="min-h-10 px-4 py-2 rounded-lg bg-brand-red hover:bg-red-800 text-white text-xs font-bold transition-colors inline-flex items-center gap-2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-red whitespace-nowrap"
-          >
-            <PlusCircle size={14} aria-hidden="true" />
-            <span>Enroll New Child</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/portal/parent/support')}
-            className="min-h-10 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold transition-colors inline-flex items-center gap-2 cursor-pointer whitespace-nowrap"
-          >
-            <Headphones size={14} aria-hidden="true" />
-            <span>Support Desk</span>
-          </button>
-        </div>
-      </div>
 
       {enrollSuccess && (
         <div
@@ -1140,7 +1147,7 @@ const ParentDashboard: React.FC = () => {
                     <BarChart
                       data={moduleComparisonData}
                       layout="vertical"
-                      margin={{ top: 6, right: 16, left: 4, bottom: 4 }}
+                      margin={{ top: 10, right: 20, left: 4, bottom: 4 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
                       <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: BRAND_SLATE }} />
@@ -1148,18 +1155,20 @@ const ParentDashboard: React.FC = () => {
                         type="category"
                         dataKey="name"
                         width={85}
-                        tick={{ fontSize: 11, fill: BRAND_NAVY }}
+                        tick={{ fontSize: 11, fill: BRAND_SLATE }}
                       />
                       <Tooltip
                         contentStyle={{
                           borderRadius: '8px',
-                          border: '1px solid #E2E8F0',
+                          border: '1px solid #27272A',
+                          backgroundColor: '#111114',
+                          color: '#F8FAFC',
                           fontSize: '12px',
                         }}
                       />
                       <Legend wrapperStyle={{ fontSize: '11px' }} />
-                      <Bar dataKey="completed" name="Completed" stackId="mod" fill={BRAND_CRIMSON} radius={[0, 0, 0, 0]} />
-                      <Bar dataKey="remaining" name="Remaining" stackId="mod" fill={BRAND_SLATE_MUTED} radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="completed" name="Completed" stackId="mod" fill={BRAND_CRIMSON} shape={<HorizontalBar3DShape />} />
+                      <Bar dataKey="remaining" name="Remaining" stackId="mod" fill={BRAND_SLATE_MUTED} shape={<HorizontalBar3DShape />} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1234,7 +1243,7 @@ const ParentDashboard: React.FC = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={activityStatusData}
-                      margin={{ top: 6, right: 12, left: -12, bottom: 4 }}
+                      margin={{ top: 14, right: 16, left: -12, bottom: 4 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
                       <XAxis dataKey="status" tick={{ fontSize: 10, fill: BRAND_SLATE }} />
@@ -1242,11 +1251,13 @@ const ParentDashboard: React.FC = () => {
                       <Tooltip
                         contentStyle={{
                           borderRadius: '8px',
-                          border: '1px solid #E2E8F0',
+                          border: '1px solid #27272A',
+                          backgroundColor: '#111114',
+                          color: '#F8FAFC',
                           fontSize: '12px',
                         }}
                       />
-                      <Bar dataKey="count" name="Records" radius={[4, 4, 0, 0]}>
+                      <Bar dataKey="count" name="Records" shape={<Bar3DShape />}>
                         {activityStatusData.map((entry, idx) => (
                           <Cell key={idx} fill={entry.fill} />
                         ))}

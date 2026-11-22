@@ -29,6 +29,7 @@ import {
   isProgramPubliclyEnrollable,
 } from '../lib/programHierarchy';
 import { submitStudentProgrammeApplication } from '../lib/programmeEnrollments';
+import { dispatchActionableAlert } from '../lib/adminAlertDispatcher';
 import { buildPortalProgramExplorePath, resolveProgramSlug } from '../lib/sharing';
 import './Portal.css';
 import './SecurePortalTheme.css';
@@ -553,9 +554,29 @@ const Register: React.FC = () => {
         await notifyAdminsOfRegistration(cred.user);
 
         // Also add reference request for admin audit
-        await addDoc(collection(db, 'student_requests'), {
+        const reqRef = await addDoc(collection(db, 'student_requests'), {
           studentId: cred.user.uid,
           ...data
+        });
+        void dispatchActionableAlert({
+          category: 'student_request',
+          categoryLabel: 'New Student Registration Request',
+          notificationType: 'registration',
+          priority: 'high',
+          title: `New Student Request: ${fullName.trim()}`,
+          message: `${fullName.trim()} (${email.trim().toLowerCase()}) registered for a student portal account and is waiting in Student Requests.`,
+          actionPath: '/admin/approvals?tab=students',
+          actionText: 'Review Student Request',
+          notifyPlatformAdmins: true,
+          details: [
+            { label: 'Student', value: fullName.trim() },
+            { label: 'Email', value: email.trim().toLowerCase() },
+            { label: 'Username', value: unameCheck.cleanUsername },
+          ],
+          senderName: fullName.trim(),
+          senderRole: 'Student Registration',
+          replyTo: email.trim().toLowerCase(),
+          dedupeKey: `stu_req_${reqRef.id}`,
         });
 
         // If user registered from a programme share/details link, create a PENDING_ADMIN_REVIEW application (never auto-admitted or paid)
@@ -708,11 +729,32 @@ const Register: React.FC = () => {
           source: 'REGISTER_FORM',
         });
 
-        await addDoc(collection(db, 'tutor_applications'), {
+        const tutorAppRef = await addDoc(collection(db, 'tutor_applications'), {
           ...canonicalPayload,
           ...(tutorUid ? { userId: tutorUid } : {}),
           username: unameCheck.cleanUsername,
           createdAt: serverTimestamp(),
+        });
+
+        void dispatchActionableAlert({
+          category: 'tutor_application',
+          categoryLabel: 'New Tutor Application',
+          notificationType: 'registration',
+          priority: 'high',
+          title: `New Tutor Application: ${fullName.trim()}`,
+          message: `${fullName.trim()} applied as an instructor (${selectedSubjects.slice(0, 3).join(', ') || 'General'}) and is awaiting admin review.`,
+          actionPath: '/admin/approvals?tab=tutors',
+          actionText: 'Review Tutor Application',
+          notifyPlatformAdmins: true,
+          details: [
+            { label: 'Applicant', value: fullName.trim() },
+            { label: 'Email', value: email.trim().toLowerCase() },
+            { label: 'Subjects', value: selectedSubjects.join(', ') || '—' },
+          ],
+          senderName: fullName.trim(),
+          senderRole: 'Tutor Applicant',
+          replyTo: email.trim().toLowerCase(),
+          dedupeKey: `tut_app_${tutorAppRef.id}`,
         });
 
         setSuccess('Instructor Application submitted! Our Academic Directorate will review your curriculum credentials and portrait before publishing your profile.');

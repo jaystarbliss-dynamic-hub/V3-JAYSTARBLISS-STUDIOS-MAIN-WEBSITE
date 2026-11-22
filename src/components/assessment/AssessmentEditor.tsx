@@ -172,7 +172,34 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
     initialExam?.primaryCategory || initialExam?.category || 'Technology Programme'
   );
   const [targetClass, setTargetClass] = useState<string>(
-    initialExam?.targetClass || initialExam?.className || CANONICAL_CLASSES[1] || 'Primary 4'
+    initialExam?.targetClass || initialExam?.className || CANONICAL_CLASSES[1] || 'Grade 1'
+  );
+  const [classIds, setClassIds] = useState<string[]>(
+    Array.isArray(initialExam?.classIds) && initialExam.classIds.length > 0
+      ? initialExam.classIds.filter((c: string) => c && c.toLowerCase() !== 'all')
+      : initialExam?.targetClass && String(initialExam.targetClass).toLowerCase() !== 'all'
+      ? [initialExam.targetClass]
+      : []
+  );
+  const [gradeTargetMode, setGradeTargetMode] = useState<'ALL' | 'SPECIFIC' | 'RANGE'>(
+    initialExam?.gradeTargetMode ||
+      (initialExam?.gradeRange?.from && initialExam?.gradeRange?.to
+        ? 'RANGE'
+        : Array.isArray(initialExam?.classIds) && initialExam.classIds.length > 0
+        ? 'SPECIFIC'
+        : 'SPECIFIC')
+  );
+  const [gradeRange, setGradeRange] = useState<{ from: string; to: string } | null>(
+    initialExam?.gradeRange || null
+  );
+  const [targetProgramIds, setTargetProgramIds] = useState<string[]>(
+    Array.isArray(initialExam?.targetProgramIds) ? initialExam.targetProgramIds : []
+  );
+  const [targetProgramTitles, setTargetProgramTitles] = useState<string[]>(
+    Array.isArray(initialExam?.targetProgramTitles) ? initialExam.targetProgramTitles : []
+  );
+  const [excludedStudentIds, setExcludedStudentIds] = useState<string[]>(
+    Array.isArray(initialExam?.excludedStudentIds) ? initialExam.excludedStudentIds : []
   );
   const [externalUrl, setExternalUrl] = useState<string>(initialExam?.externalUrl || '');
   const [status, setStatus] = useState<'draft' | 'active' | 'scheduled'>(
@@ -761,7 +788,25 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         learningVideoUrl: primaryResource?.youtubeUrl || '',
         learningResources: cleanedResources,
         status: resolvedStatus,
-        targetClass,
+        targetClass:
+          gradeTargetMode === 'ALL'
+            ? 'all'
+            : classIds.length > 0
+            ? classIds[0]
+            : targetClass,
+        classIds:
+          gradeTargetMode === 'ALL'
+            ? []
+            : classIds.length > 0
+            ? classIds
+            : targetClass && targetClass.toLowerCase() !== 'all'
+            ? [targetClass]
+            : [],
+        gradeTargetMode,
+        gradeRange: gradeTargetMode === 'RANGE' ? gradeRange : null,
+        targetProgramIds,
+        targetProgramTitles,
+        excludedStudentIds,
         recipientMode,
         targetSchoolIds,
         targetStudentIds,
@@ -1412,24 +1457,90 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
 
                 <label className="block">
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                    Target Class / Level
+                    Target Class / Grade Range
                   </span>
-                  <select
-                    value={targetClass}
-                    onChange={(e) => {
-                      setTargetClass(e.target.value);
-                      markDirty();
-                    }}
-                    className="w-full mt-1 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900 px-3 text-xs font-semibold"
-                  >
-                    {CANONICAL_CLASSES.map((cls) => (
-                      <option key={cls} value={cls}>
-                        {cls}
-                      </option>
-                    ))}
-                  </select>
+                  {gradeTargetMode === 'RANGE' && gradeRange ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowRecipientModal(true)}
+                      className="w-full mt-1 h-9 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50/60 dark:bg-[#09090B] px-3 text-left text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between cursor-pointer hover:border-[#B91C1C]"
+                    >
+                      <span className="truncate">
+                        {gradeRange.from} – {gradeRange.to} ({classIds.length})
+                      </span>
+                      <span className="text-[10px] font-semibold text-[#B91C1C] dark:text-red-400 shrink-0 ml-1">
+                        Edit
+                      </span>
+                    </button>
+                  ) : classIds.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowRecipientModal(true)}
+                      className="w-full mt-1 h-9 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50/60 dark:bg-[#09090B] px-3 text-left text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between cursor-pointer hover:border-[#B91C1C]"
+                    >
+                      <span className="truncate">{classIds.length} Grades Selected</span>
+                      <span className="text-[10px] font-semibold text-[#B91C1C] dark:text-red-400 shrink-0 ml-1">
+                        Edit
+                      </span>
+                    </button>
+                  ) : (
+                    <select
+                      value={gradeTargetMode === 'ALL' ? 'all' : targetClass}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'all') {
+                          setGradeTargetMode('ALL');
+                          setClassIds([]);
+                          setGradeRange(null);
+                          setTargetClass('all');
+                        } else {
+                          setGradeTargetMode('SPECIFIC');
+                          setClassIds([val]);
+                          setGradeRange(null);
+                          setTargetClass(val);
+                        }
+                        markDirty();
+                      }}
+                      className="w-full mt-1 h-9 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50/60 dark:bg-[#09090B] px-3 text-xs font-semibold"
+                    >
+                      <option value="all">All Grades</option>
+                      {CANONICAL_CLASSES.map((cls) => (
+                        <option key={cls} value={cls}>
+                          {cls}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </label>
               </div>
+
+              {(targetProgramTitles.length > 0 || excludedStudentIds.length > 0) && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-slate-600 dark:text-zinc-400">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {targetProgramTitles.length > 0 && (
+                      <span>
+                        <strong className="text-slate-800 dark:text-zinc-200">
+                          Target Programmes ({targetProgramTitles.length}):
+                        </strong>{' '}
+                        {targetProgramTitles.slice(0, 3).join(', ')}
+                        {targetProgramTitles.length > 3 ? ` +${targetProgramTitles.length - 3} more` : ''}
+                      </span>
+                    )}
+                    {excludedStudentIds.length > 0 && (
+                      <span className="font-semibold text-[#B91C1C] dark:text-red-400">
+                        {excludedStudentIds.length} student{excludedStudentIds.length === 1 ? '' : 's'} excluded
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowRecipientModal(true)}
+                    className="text-xs font-bold text-[#14284B] dark:text-zinc-200 hover:text-[#B91C1C] cursor-pointer"
+                  >
+                    Configure Targeting
+                  </button>
+                </div>
+              )}
 
               {/* Deliverables, Due Date & Quick Activation / Schedule Row */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
@@ -3339,15 +3450,42 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         availableSchools={assignedSchools}
         availablePrivateStudents={assignedPrivateStudents}
         schoolStudents={assignedSchoolStudents}
+        programsMap={programsMap}
         initialSelectedSchoolIds={targetSchoolIds}
         initialSelectedStudentIds={targetStudentIds}
+        initialExcludedStudentIds={excludedStudentIds}
+        initialClassScopeMode={
+          gradeTargetMode === 'RANGE'
+            ? 'RANGE'
+            : gradeTargetMode === 'SPECIFIC' && classIds.length > 0
+            ? 'SELECTED'
+            : 'ALL'
+        }
+        initialGradeRange={gradeRange}
+        initialSelectedClasses={classIds}
+        initialTargetProgramIds={targetProgramIds}
         isTutor={isTutor}
         onConfirm={(res) => {
           setTargetSchoolIds(res.targetSchoolIds);
           setTargetStudentIds(res.targetStudentIds);
+          setExcludedStudentIds(res.excludedStudentIds || []);
           setRecipientMode(res.recipientMode);
-          if (res.selectedClasses && res.selectedClasses.length > 0) {
+          setGradeTargetMode(res.gradeTargetMode);
+          setGradeRange(res.gradeRange);
+          setClassIds(res.selectedClasses || []);
+          setTargetProgramIds(res.targetProgramIds || []);
+          setTargetProgramTitles(res.targetProgramTitles || []);
+          if (res.gradeTargetMode === 'ALL') {
+            setTargetClass('all');
+          } else if (res.selectedClasses && res.selectedClasses.length > 0) {
             setTargetClass(res.selectedClasses[0]);
+          }
+          if (res.targetProgramIds && res.targetProgramIds.length > 0) {
+            const firstProg = programsMap.get(res.targetProgramIds[0]);
+            if (firstProg) {
+              setProgramId(firstProg.id);
+              setProgramTitle(firstProg.title);
+            }
           }
           markDirty();
           setShowRecipientModal(false);

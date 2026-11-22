@@ -1059,10 +1059,15 @@ export default function TutorExaminations() {
           confirmationMessage:
             data.confirmationMessage ||
             "Your assessment has been recorded and submitted successfully.",
-          createdBy: data.createdBy,
-          tutorId: data.tutorId,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt || data.createdAt,
+          createdBy: data.createdBy || "",
+          tutorId: data.tutorId || "",
+          createdAt: data.createdAt || null,
+          updatedAt: data.updatedAt || data.createdAt || null,
+          ...(data.gradeTargetMode ? { gradeTargetMode: data.gradeTargetMode } : {}),
+          ...(data.gradeRange ? { gradeRange: data.gradeRange } : {}),
+          ...(Array.isArray(data.targetProgramIds) ? { targetProgramIds: data.targetProgramIds } : {}),
+          ...(Array.isArray(data.targetProgramTitles) ? { targetProgramTitles: data.targetProgramTitles } : {}),
+          ...(Array.isArray(data.excludedStudentIds) ? { excludedStudentIds: data.excludedStudentIds } : {}),
         });
       });
 
@@ -1098,10 +1103,10 @@ export default function TutorExaminations() {
     }
   }, [schoolsLoading, assignedSchools.length]);
 
-  // 4. Real-time Subscription to Student Attempts & Roster for Active Native Examination
+  // 4. Real-time Subscription to Student Attempts & Roster for Active Examination
   useEffect(() => {
     const activeId = editingExamId;
-    if (!activeId || deliveryMode === "EXTERNAL_LINK") {
+    if (!activeId) {
       setExamAttempts([]);
       return;
     }
@@ -1941,8 +1946,13 @@ ANSWER KEY
         payload.targetSchoolIds?.[0] ||
         (payload.recipientMode === "PRIVATE_LEARNERS" ? "private" : ""),
       targetSchoolIds: payload.targetSchoolIds || [],
-      classIds: payload.classIds || [payload.targetClass || "all"],
+      classIds: payload.classIds ?? (payload.targetClass && payload.targetClass !== "all" ? [payload.targetClass] : []),
+      gradeTargetMode: payload.gradeTargetMode,
+      gradeRange: payload.gradeRange,
+      targetProgramIds: payload.targetProgramIds || [],
+      targetProgramTitles: payload.targetProgramTitles || [],
       targetStudentIds: payload.targetStudentIds || [],
+      excludedStudentIds: payload.excludedStudentIds || [],
     });
 
     const selectedSchoolObj = assignedSchools.find((s) =>
@@ -2051,17 +2061,19 @@ ANSWER KEY
       recipientMode: normalizedTargets.recipientMode,
       targetSchoolIds: normalizedTargets.targetSchoolIds,
       targetStudentIds: normalizedTargets.targetStudentIds,
+      excludedStudentIds: normalizedTargets.excludedStudentIds,
+      gradeTargetMode: normalizedTargets.gradeTargetMode,
+      gradeRange: normalizedTargets.gradeRange,
+      targetProgramIds: normalizedTargets.targetProgramIds,
+      targetProgramTitles: normalizedTargets.targetProgramTitles,
       deliveryMode: payload.deliveryMode,
       externalUrl: payload.deliveryMode === "EXTERNAL_LINK" ? validatedExternalUrl : "",
       url: payload.deliveryMode === "EXTERNAL_LINK" ? validatedExternalUrl : "",
       schoolId: normalizedTargets.schoolId || payload.targetSchoolIds?.[0] || "",
       schoolName,
-      targetClass: payload.targetClass || "all",
-      className: payload.targetClass || "all",
-      classIds:
-        Array.isArray(payload.classIds) && payload.classIds.length > 0
-          ? payload.classIds
-          : [payload.targetClass || "all"],
+      targetClass: normalizedTargets.targetClass || "all",
+      className: normalizedTargets.targetClass || "all",
+      classIds: normalizedTargets.classIds,
       hasTimeLimit,
       durationMinutes: resolvedDurationMinutes,
       gradingMode: resolvedGradingMode,
@@ -2299,21 +2311,32 @@ ANSWER KEY
         updatedAt: new Date().toISOString(),
       };
 
-      const firestorePayload: Record<string, any> = {
+      const sanitizeForFirestore = (obj: Record<string, any>): Record<string, any> => {
+        const cleaned: Record<string, any> = {};
+        Object.entries(obj).forEach(([k, v]) => {
+          if (v !== undefined) cleaned[k] = v;
+        });
+        return cleaned;
+      };
+
+      const firestorePayload: Record<string, any> = sanitizeForFirestore({
         ...draftRecord,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      };
+      });
 
-      for (const dbInstance of getAllClientDatabases()) {
-        await setDoc(doc(dbInstance, "jdiExams", newExamId), firestorePayload, { merge: true });
-        await setDoc(doc(dbInstance, "schoolExams", newExamId), firestorePayload, { merge: true });
-      }
+      const dbList = getAllClientDatabases();
+      await Promise.allSettled(
+        dbList.flatMap((dbInstance) => [
+          setDoc(doc(dbInstance, "jdiExams", newExamId), firestorePayload, { merge: true }),
+          setDoc(doc(dbInstance, "schoolExams", newExamId), firestorePayload, { merge: true }),
+        ])
+      );
 
       setExistingExams((prev) => [draftRecord, ...prev.filter((item) => item.id !== newExamId)]);
       setDuplicateRecipientDraft(draftRecord);
       setMessage(
-        `Created draft copy "${draftRecord.title}". Select the target recipients to continue.`
+        `Created draft copy "${draftRecord.title}". Select the target recipients to continue into the workspace.`
       );
     } catch (e) {
       setErrorMessage(e instanceof Error ? e.message : "Failed to duplicate assessment.");
@@ -2402,14 +2425,9 @@ ANSWER KEY
       prev.map((item) => (item.id === updatedDraft.id ? updatedDraft : item))
     );
 
-    if (updatedDraft.deliveryMode === "EXTERNAL_LINK") {
-      // Part 6.4: Link assessments skip the native question workspace and go directly to final review & publish
-      setLinkDuplicateReviewExam(updatedDraft);
-    } else {
-      // Part 6.3: Native assessments open directly in the Native Assessment Workspace
-      handleEditExam(updatedDraft, "questions");
-      setViewMode("edit");
-    }
+    // Launch the duplicated assessment directly inside the Assessment Workspace
+    handleEditExam(updatedDraft, "questions");
+    setViewMode("edit");
   };
 
   // Part 6.4: Save or publish the duplicated Link Assessment from the Final Review modal
@@ -2903,6 +2921,16 @@ ANSWER KEY
       schoolName: ex.schoolName,
       targetClass: ex.targetClass,
       className: ex.className,
+      programTitle: ex.programTitle || ex.programName,
+      programId: ex.programId,
+      programPath: ex.programPath,
+      programBreadcrumbs: ex.programBreadcrumbs,
+      primaryCategory: ex.primaryCategory,
+      gradeRange: (ex as any).gradeRange,
+      gradeTargetMode: (ex as any).gradeTargetMode,
+      targetProgramIds: (ex as any).targetProgramIds,
+      targetProgramTitles: (ex as any).targetProgramTitles,
+      excludedStudentIds: (ex as any).excludedStudentIds,
       recipientMode: ex.recipientMode,
       targetSchoolIds: ex.targetSchoolIds,
       targetStudentIds: ex.targetStudentIds,
@@ -2983,6 +3011,7 @@ ANSWER KEY
             setViewMode("create");
           }}
           onEditAssessment={(assessment) => {
+            setShowPreview(false);
             const match = existingExams.find((e) => e.id === assessment.id);
             if (match) {
               handleEditExam(match, "questions");
@@ -2992,6 +3021,7 @@ ANSWER KEY
             setViewMode("edit");
           }}
           onMonitorAssessment={(assessment) => {
+            setShowPreview(false);
             const match = existingExams.find((e) => e.id === assessment.id);
             if (match) {
               handleEditExam(match, "responses");
@@ -3005,8 +3035,11 @@ ANSWER KEY
             const match = existingExams.find((e) => e.id === assessment.id);
             if (match) {
               handleEditExam(match, "questions");
-              setShowPreview(true);
+            } else {
+              setEditingExamId(assessment.id);
             }
+            setShowPreview(true);
+            setViewMode("edit");
           }}
           onDuplicateAssessment={(assessment) => {
             const match = existingExams.find((e) => e.id === assessment.id);
@@ -3030,6 +3063,7 @@ ANSWER KEY
       {/* ============================================================== */}
       {(viewMode === "create" || viewMode === "edit" || viewMode === "monitor") && (
         <AssessmentEditor
+          key={`${viewMode}-${editingExamId || "new"}-${showPreview ? "preview" : "editor"}`}
           initialExam={
             editingExamId
               ? existingExams.find((e) => e.id === editingExamId)

@@ -2,8 +2,226 @@ import type { Handler } from "@netlify/functions";
 import { adminDb } from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { gradeAnswers } from "../../api/_lib/jdi-assessment.js";
+import { sendActionableNotificationEmail } from "../../api/_lib/email";
 
 export const config = { schedule: "*/5 * * * *" };
+
+async function sendAssessmentDeadlineSummary(examId: string, exam: any) {
+  if (exam.deadlineSummaryNotified === true) return;
+  const schoolId = String(exam.schoolId || "").trim();
+  const schoolName = String(exam.schoolName || "").trim();
+  const targetStudentUids = Array.isArray(exam.studentUids)
+    ? exam.studentUids.map((u: unknown) => String(u || "").trim()).filter(Boolean)
+    : [];
+  const isSchoolAssessment =
+    Boolean(schoolId) && String(exam.audienceType || "").toLowerCase() !== "individual" && targetStudentUids.length === 0;
+
+  const attemptsSnap = await adminDb
+    .collection("jdiExamAttempts")
+    .where("examId", "==", examId)
+    .limit(500)
+    .get()
+    .catch(() => null);
+
+  const submittedKeys = new Set<string>();
+  attemptsSnap?.docs.forEach(d => {
+    const st = String(d.data()?.status || "").toLowerCase();
+    if (["submitted", "graded", "expired", "completed"].includes(st)) {
+      const key = String(d.data()?.studentUid || d.data()?.studentId || d.id).trim();
+      if (key) submittedKeys.add(key);
+    }
+  });
+
+  let totalExpected = targetStudentUids.length;
+  const schoolAdminUids = new Set<string>();
+
+  if (schoolId) {
+    const [schoolStudents, individuals, schoolUsers] = await Promise.all([
+      adminDb.collection("students").where("schoolId", "==", schoolId).limit(500).get().catch(() => null),
+      adminDb.collection("individualStudents").where("schoolId", "==", schoolId).limit(500).get().catch(() => null),
+      adminDb.collection("users").where("schoolId", "==", schoolId).limit(100).get().catch(() => null),
+    ]);
+    if (isSchoolAssessment) {
+      const classes = Array.isArray(exam.classIds) ? exam.classIds.map((c: unknown) => String(c || "").trim().toLowerCase()) : [];
+      const filterByClass = classes.length > 0 && !classes.includes("all");
+      const eligible = new Set<string>();
+      for (const snap of [schoolStudents, individuals]) {
+        snap?.docs.forEach(docSnap => {
+          const student = docSnap.data() || {};
+          if (filterByClass) {
+            const classId = String(student.classId || student.class_id || student.classLevel || student.className || student.class || student.grade || "").trim().toLowerCase();
+            if (!classId || !classes.includes(classId)) return;
+          }
+          eligible.add(String(student.firebaseUid || student.userId || student.uid || docSnap.id));
+        });
+      }
+      totalExpected = Math.max(eligible.size, submittedKeys.size);
+    }
+    schoolUsers?.docs.forEach(d => {
+      if (["SCHOOL", "SCHOOL_ADMIN", "SCHOOLADMIN", "INSTITUTION"].includes(String(d.data().role || "").toUpperCase())) {
+        schoolAdminUids.add(d.id);
+      }
+    });
+  } else if (totalExpected === 0) {
+    totalExpected = Math.max(submittedKeys.size, 1);
+  }
+
+  const submittedCount = submittedKeys.size;
+  const missingCount = Math.max(0, totalExpected - submittedCount);
+  const examTitle = String(exam.title || "Assessment").trim();
+  const title = `Assessment Closed: ${submittedCount}/${totalExpected} Submitted`;
+  const message = `${submittedCount} of ${totalExpected} students submitted "${examTitle}"${
+    schoolName ? ` (${schoolName})` : ""
+  }. ${
+    missingCount > 0
+      ? `${missingCount} student${missingCount === 1 ? "" : "s"} did not submit before the deadline.`
+      : "All assigned students submitted."
+  }`;
+
+  const creatorUid = String(exam.createdBy || exam.tutorId || "").trim();
+  const staffLink = `/portal/staff/exam-history?examId=${encodeURIComponent(examId)}`;
+  const schoolLink = `/portal/school/exam-history?examId=${encodeURIComponent(examId)}`;
+  const adminLink = `/admin/examination-history?examId=${encodeURIComponent(examId)}`;
+
+  const batch = adminDb.batch();
+  const now = FieldValue.serverTimestamp();
+
+  if (creatorUid) {
+    batch.set(
+      adminDb.collection("jdiNotifications").doc(`exam_summary_${examId}_${creatorUid}`),
+      {
+        recipientUid: creatorUid,
+        isRead: false,
+        type: "exam_deadline_summary",
+        priority: "high",
+        title,
+        message,
+        link: staffLink,
+        actionUrl: staffLink,
+        linkText: "Review Submission Report",
+        actionText: "Review Submission Report",
+        examId,
+        submittedCount,
+        totalExpected,
+        missingCount,
+        schoolId: schoolId || null,
+        createdAt: now,
+      },
+      { merge: true }
+    );
+  }
+
+  schoolAdminUids.forEach(uid => {
+    batch.set(
+      adminDb.collection("jdiNotifications").doc(`exam_summary_${examId}_${uid}`),
+      {
+        recipientUid: uid,
+        isRead: false,
+        type: "exam_deadline_summary",
+        priority: "high",
+        title,
+        message,
+        link: schoolLink,
+        actionUrl: schoolLink,
+        linkText: "Review School Report",
+        actionText: "Review School Report",
+        examId,
+        submittedCount,
+        totalExpected,
+        missingCount,
+        schoolId: schoolId || null,
+        createdAt: now,
+      },
+      { merge: true }
+    );
+  });
+
+  if (schoolId) {
+    batch.set(
+      adminDb.collection("notifications").doc(`sch_${schoolId}_exam_summary_${examId}`),
+      {
+        recipientId: `school_${schoolId}`,
+        recipientType: "school_admin",
+        targetRole: "school",
+        type: "exam_deadline_summary",
+        priority: "high",
+        title,
+        message,
+        link: schoolLink,
+        actionUrl: schoolLink,
+        linkText: "Review School Report",
+        actionText: "Review School Report",
+        examId,
+        schoolId,
+        schoolName: schoolName || null,
+        read: false,
+        readBy: [],
+        senderName: "Jaystarbliss Assessments",
+        senderRole: "Assessment Monitor",
+        timestamp: now,
+        createdAt: now,
+      },
+      { merge: true }
+    );
+  }
+
+  batch.set(
+    adminDb.collection("notifications").doc(`adm_exam_summary_${examId}`),
+    {
+      recipientId: "all",
+      recipientType: "all",
+      targetRole: "admin",
+      type: "exam_deadline_summary",
+      priority: "high",
+      title,
+      message,
+      link: adminLink,
+      actionUrl: adminLink,
+      linkText: "Review Submission Report",
+      actionText: "Review Submission Report",
+      examId,
+      schoolId: schoolId || null,
+      schoolName: schoolName || null,
+      read: false,
+      readBy: [],
+      senderName: "Jaystarbliss Assessments",
+      senderRole: "Assessment Monitor",
+      timestamp: now,
+      createdAt: now,
+    },
+    { merge: true }
+  );
+
+  batch.set(
+    adminDb.collection("jdiExams").doc(examId),
+    {
+      deadlineSummaryNotified: true,
+      deadlineSummaryNotifiedAt: now,
+      lastSubmissionSummary: { submittedCount, totalExpected, missingCount },
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
+
+  await sendActionableNotificationEmail({
+    title: `${title} — ${examTitle}`,
+    message,
+    category: isSchoolAssessment ? "School Assessment Submission Summary" : "Assessment Submission Summary",
+    priority: "high",
+    details: [
+      { label: "Assessment", value: examTitle },
+      ...(schoolName ? [{ label: "School", value: schoolName }] : []),
+      { label: "Submitted", value: `${submittedCount} of ${totalExpected} students` },
+      { label: "Did Not Submit", value: String(missingCount) },
+    ],
+    actionPath: creatorUid ? staffLink : adminLink,
+    actionText: "View Submission Report",
+    notifyPlatformAdmins: true,
+    schoolId: schoolId || null,
+    recipientUids: creatorUid ? [creatorUid] : [],
+  }).catch(err => console.warn("Deadline summary email warning:", err));
+}
 
 async function notifyExamStatus(examId: string, exam: any, status: "active" | "completed") {
   const recipients = new Set<string>();
@@ -90,6 +308,11 @@ async function updateScheduledExamStatuses(now: string) {
     await notifyExamStatus(doc.id, { ...initial, ...result.exam }, result.status).catch(error => {
       console.error("Unable to notify scheduled exam status", doc.id, error);
     });
+    if (result.status === "completed") {
+      await sendAssessmentDeadlineSummary(doc.id, { ...initial, ...result.exam }).catch(error => {
+        console.error("Unable to send exam deadline summary", doc.id, error);
+      });
+    }
     await ref.collection("events").add({
       type: result.status === "active" ? "exam_auto_activated" : "exam_auto_completed",
       createdAt: FieldValue.serverTimestamp(),
@@ -121,12 +344,32 @@ async function updateScheduledExamStatuses(now: string) {
     await notifyExamStatus(doc.id, result, "completed").catch(error => {
       console.error("Unable to notify closed exam status", doc.id, error);
     });
+    await sendAssessmentDeadlineSummary(doc.id, result).catch(error => {
+      console.error("Unable to send closed exam deadline summary", doc.id, error);
+    });
     await doc.ref.collection("events").add({
       type: "exam_auto_completed",
       createdAt: FieldValue.serverTimestamp(),
       system: true,
     }).catch(error => console.error("Unable to write closed exam audit event", doc.id, error));
   }
+
+  // Catch any recently completed exams (e.g., 1 hour past deadline) that have not yet dispatched their summary
+  const recentlyClosed = await adminDb.collection("jdiExams")
+    .where("status", "==", "completed")
+    .limit(100)
+    .get()
+    .catch(() => null);
+  for (const doc of recentlyClosed?.docs || []) {
+    const exam = doc.data() || {};
+    if (exam.deadlineSummaryNotified === true) continue;
+    const untilMs = exam.availableUntil ? Date.parse(String(exam.availableUntil)) : NaN;
+    if (!Number.isFinite(untilMs) || untilMs > nowMs || nowMs - untilMs > 30 * 24 * 60 * 60 * 1000) continue;
+    await sendAssessmentDeadlineSummary(doc.id, exam).catch(error => {
+      console.error("Unable to send catch-up exam deadline summary", doc.id, error);
+    });
+  }
+
   return { activated, completed };
 }
 

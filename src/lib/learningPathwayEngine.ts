@@ -76,6 +76,7 @@ export interface StudentUnitProgressRecord {
   tutorNotes: string;
   evidenceReference: string;
   assessmentIds: string[];
+  isManualOverride?: boolean;
   lastUpdatedByUid?: string;
   lastUpdatedByName?: string;
   completedAt?: string | null;
@@ -137,6 +138,12 @@ export interface ComputedProgramNodeProgress {
   totalRequiredUnitsCount: number;
   completedOptionalUnitsCount: number;
   totalOptionalUnitsCount: number;
+  // Attendance-driven automatic progress & manual tutor override metadata
+  isManualOverride: boolean;
+  progressSource: 'MANUAL_OVERRIDE' | 'AUTO_ATTENDANCE' | 'PRIOR_LEARNING' | 'NONE';
+  autoAttendanceProgress: number;
+  attendedSessionsCount: number;
+  expectedDurationSessions: number;
   // Prerequisites
   missingPrerequisites: ProgramRecord[];
   isLockedByPrerequisite: boolean;
@@ -395,22 +402,238 @@ export function resolveEnrolmentScope(
 }
 
 /**
+ * Parses a programme's expected session duration (used as the denominator for
+ * attendance-driven automatic learning progress).
+ */
+export function parseProgramDurationSessions(
+  program?: Partial<ProgramRecord> | Record<string, any> | null,
+  fallbackTopicsCount?: number
+): number {
+  if (!program) {
+    return fallbackTopicsCount && fallbackTopicsCount > 0 ? Math.round(fallbackTopicsCount) : 12;
+  }
+
+  const p = program as Record<string, any>;
+  const explicitNumeric = [
+    p.durationSessions,
+    p.totalSessions,
+    p.expectedSessions,
+    p.durationWeeks,
+  ]
+    .map((v) => Number(v))
+    .find((n) => Number.isFinite(n) && n > 0);
+  if (explicitNumeric) return Math.max(1, Math.round(explicitNumeric));
+
+  const durationStr = String(p.duration || p.durationLabel || '').trim().toLowerCase();
+  if (durationStr) {
+    const match = durationStr.match(/(\d+(?:\.\d+)?)\s*(week|wk|session|class|lesson|month|term|year|topic)/i);
+    if (match) {
+      const qty = parseFloat(match[1]);
+      const unit = match[2].toLowerCase();
+      if (Number.isFinite(qty) && qty > 0) {
+        if (unit.startsWith('month')) return Math.max(1, Math.round(qty * 4));
+        if (unit.startsWith('term')) return Math.max(1, Math.round(qty * 12));
+        if (unit.startsWith('year')) return Math.max(1, Math.round(qty * 36));
+        return Math.max(1, Math.round(qty));
+      }
+    }
+    const bareNumber = durationStr.match(/^(\d+)$/);
+    if (bareNumber) {
+      const n = parseInt(bareNumber[1], 10);
+      if (n > 0) return n;
+    }
+  }
+
+  if (typeof p.lessonsCount === 'number' && p.lessonsCount > 0) {
+    return Math.round(p.lessonsCount);
+  }
+  if (Array.isArray(p.curriculum) && p.curriculum.length > 0) {
+    return p.curriculum.length;
+  }
+  if (Array.isArray(p.topics) && p.topics.length > 0) {
+    return p.topics.length;
+  }
+  if (fallbackTopicsCount && fallbackTopicsCount > 0) {
+    return Math.round(fallbackTopicsCount);
+  }
+  return 12;
+}
+
+export interface AttendanceDerivedProgress {
+  attendedSessions: number;
+  expectedSessions: number;
+  percentage: number;
+}
+
+/**
+ * Calculates automatic learning progress strictly as:
+ *   clamp(round((attendedSessions / expectedDurationSessions) * 100), 0, 100)
+ * where attended sessions are attendance records with status PRESENT or LATE.
+ */
+export function computeAttendanceDerivedProgress(
+  attendanceRecords: any[] = [],
+  program?: Partial<ProgramRecord> | Record<string, any> | null,
+  options?: { studentIds?: string[]; fallbackTopicsCount?: number }
+): AttendanceDerivedProgress {
+  const expectedSessions = parseProgramDurationSessions(program, options?.fallbackTopicsCount);
+  if (!Array.isArray(attendanceRecords) || attendanceRecords.length === 0) {
+    return { attendedSessions: 0, expectedSessions, percentage: 0 };
+  }
+
+  const studentIdSet = new Set(
+    (options?.studentIds || []).map((id) => String(id || '').trim()).filter(Boolean)
+  );
+
+  const progId = String((program as any)?.id || '').trim().toLowerCase();
+  const progTitle = String((program as any)?.title || (program as any)?.name || '')
+    .trim()
+    .toLowerCase();
+
+  const seenSessionKeys = new Set<string>();
+  const matchedProgramSessions: any[] = [];
+  const allAttendedSessions: any[] = [];
+
+  for (const rec of attendanceRecords) {
+    if (!rec) continue;
+    let statusRaw = String(rec.status || '').trim().toUpperCase();
+    let recStudentId = String(rec.studentId || rec.studentUid || '').trim();
+
+    // Support roster-style attendance documents if encountered
+    if (!statusRaw && Array.isArray(rec.records || rec.students || rec.attendees)) {
+      const roster: any[] = rec.records || rec.students || rec.attendees;
+      const entry = roster.find((r) => {
+        if (!r) return false;
+        const rid = String(r.studentId || r.studentUid || r.id || '').trim();
+        return studentIdSet.size === 0 || (rid && studentIdSet.has(rid));
+      });
+      if (!entry) continue;
+      statusRaw = String(entry.status || (entry.present ? 'PRESENT' : 'ABSENT')).trim().toUpperCase();
+      recStudentId = String(entry.studentId || entry.studentUid || entry.id || recStudentId).trim();
+    } else if (studentIdSet.size > 0 && recStudentId && !studentIdSet.has(recStudentId)) {
+      continue;
+    }
+
+    const isAttended = statusRaw === 'PRESENT' || statusRaw === 'LATE' || rec.present === true;
+    if (!isAttended) continue;
+
+    const datePart = String(rec.date || rec.sessionDate || '').slice(0, 10);
+    const schedPart = String(rec.scheduleId || rec.sessionId || '');
+    const dedupKey = rec.id
+      ? String(rec.id)
+      : `${schedPart || 'session'}__${recStudentId || 'stu'}__${datePart || Math.random()}`;
+    if (seenSessionKeys.has(dedupKey)) continue;
+    seenSessionKeys.add(dedupKey);
+
+    allAttendedSessions.push(rec);
+
+    if (progId || progTitle) {
+      const recProgId = String(rec.programId || rec.courseId || '').trim().toLowerCase();
+      const recProgTitle = String(
+        rec.programTitle || rec.programName || rec.courseName || rec.subject || ''
+      )
+        .trim()
+        .toLowerCase();
+      const matchesProg =
+        (progId && recProgId && recProgId === progId) ||
+        (progTitle &&
+          recProgTitle &&
+          (recProgTitle === progTitle ||
+            recProgTitle.includes(progTitle) ||
+            progTitle.includes(recProgTitle)));
+      if (matchesProg) {
+        matchedProgramSessions.push(rec);
+      }
+    }
+  }
+
+  // If attendance records are tagged to this specific programme, count those; otherwise use all attended student sessions.
+  const attendedSessions =
+    matchedProgramSessions.length > 0 ? matchedProgramSessions.length : allAttendedSessions.length;
+  const percentage = Math.min(100, Math.max(0, Math.round((attendedSessions / expectedSessions) * 100)));
+
+  return {
+    attendedSessions,
+    expectedSessions,
+    percentage,
+  };
+}
+
+/**
+ * Fetches attendance records for a student across configured client databases.
+ */
+export async function fetchStudentAttendanceRecords(
+  studentIds: string | string[]
+): Promise<any[]> {
+  const idList = Array.from(
+    new Set(
+      (Array.isArray(studentIds) ? studentIds : [studentIds])
+        .map((id) => String(id || '').trim())
+        .filter(Boolean)
+    )
+  );
+  if (idList.length === 0) return [];
+
+  const dbs = getAllClientDatabases();
+  const recordsMap = new Map<string, any>();
+
+  const queries: Promise<any>[] = [];
+  for (const database of dbs) {
+    for (const sid of idList) {
+      queries.push(
+        getDocs(query(collection(database, 'attendance'), where('studentId', '==', sid))).catch(
+          () => null
+        )
+      );
+      queries.push(
+        getDocs(query(collection(database, 'attendance'), where('studentUid', '==', sid))).catch(
+          () => null
+        )
+      );
+    }
+  }
+
+  const snaps = await Promise.all(queries);
+  for (const snap of snaps) {
+    if (!snap?.docs) continue;
+    for (const d of snap.docs) {
+      if (!recordsMap.has(d.id)) {
+        recordsMap.set(d.id, { id: d.id, ...d.data() });
+      }
+    }
+  }
+
+  return Array.from(recordsMap.values());
+}
+
+/**
  * Computes the complete recursive learning progress tree and summary for a student.
- * Enforces all Phase 5 rules:
+ * Enforces all Phase 5 rules + Attendance-Driven Auto Progress (with Tutor Manual Override):
  * 1. Structural containers (`CONTAINER`) never count in the denominator; they show the aggregate of their required descendants.
  * 2. Leaf enrollable programmes (`ENROLLABLE`) count their own curriculum/lesson completion.
  * 3. Hybrid programmes (`HYBRID`) track their own direct requirement (`selfProgress`) + descendant units without double-counting.
  * 4. Optional programmes (`isRequired === false` or in `optionalProgramIds`) are marked `OPTIONAL` and do not block mandatory completion.
  * 5. Prior-Learning Approved (`PRIOR_LEARNING_APPROVED`) satisfies that exact unit (`100%`) and its prerequisite role without completing unrelated branches.
  * 6. Prerequisites (`prerequisiteProgramIds`) mark a unit as `LOCKED` if any prerequisite is not yet completed or prior-learning-approved.
+ * 7. When no manual tutor override is active, unit progress is computed automatically from attended sessions / programme duration sessions.
  */
 export function calculateStudentPathwayProgress(input: {
   studentRecord: any;
   programsMap: Map<string, ProgramRecord>;
   progressRecords: StudentUnitProgressRecord[];
   priorLearningRecords: PriorLearningRecognitionRecord[];
+  attendanceRecords?: any[];
 }): StudentPathwayProgressSummary {
-  const { studentRecord, programsMap, progressRecords, priorLearningRecords } = input;
+  const { studentRecord, programsMap, progressRecords, priorLearningRecords, attendanceRecords = [] } = input;
+
+  const studentIdCandidates = [
+    studentRecord?.id,
+    studentRecord?.studentId,
+    studentRecord?.studentDocId,
+    studentRecord?.firebaseUid,
+    studentRecord?.uid,
+  ]
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
 
   const extracted = extractStudentSelectedProgramIds(studentRecord, programsMap);
   const scope = resolveEnrolmentScope(extracted.selectedProgramIds, programsMap, {
@@ -472,12 +695,26 @@ export function calculateStudentPathwayProgress(input: {
       return reqChildren.every((c) => isProgramRequirementSatisfied(c.id, new Set(visited)));
     }
 
-    const rawPct = progRec
-      ? typeof progRec.selfProgress === 'number' && prog.nodeType === 'HYBRID'
-        ? progRec.selfProgress
-        : progRec.progress
-      : 0;
-    const selfDone = rawPct >= 100 || progRec?.status === 'COMPLETED';
+    const autoForPrereq = computeAttendanceDerivedProgress(attendanceRecords, prog, {
+      studentIds: studentIdCandidates,
+    });
+    const hasManualPrereqOverride = Boolean(
+      progRec &&
+        (progRec.isManualOverride === true ||
+          (progRec.isManualOverride !== false &&
+            ((typeof progRec.selfProgress === 'number' && prog.nodeType === 'HYBRID'
+              ? progRec.selfProgress
+              : progRec.progress) > 0 ||
+              progRec.status === 'COMPLETED')))
+    );
+
+    const rawPct = hasManualPrereqOverride
+      ? typeof progRec!.selfProgress === 'number' && prog.nodeType === 'HYBRID'
+        ? progRec!.selfProgress
+        : progRec!.progress
+      : autoForPrereq.percentage;
+    const selfDone: boolean =
+      rawPct >= 100 || (hasManualPrereqOverride && progRec?.status === 'COMPLETED');
 
     if (prog.nodeType === 'HYBRID') {
       const children = getDirectChildren(prog.id, programsMap.values()).filter(
@@ -536,23 +773,52 @@ export function calculateStudentPathwayProgress(input: {
 
     // Direct unit progress (for ENROLLABLE or HYBRID)
     const progRec = progressByProgramId.get(prog.id);
+    const autoAttendance = computeAttendanceDerivedProgress(attendanceRecords, prog, {
+      studentIds: studentIdCandidates,
+    });
     const totalLessons =
       progRec?.totalLessons ||
       prog.lessonsCount ||
-      (Array.isArray(prog.curriculum) && prog.curriculum.length > 0 ? prog.curriculum.length : 8);
+      (Array.isArray(prog.curriculum) && prog.curriculum.length > 0
+        ? prog.curriculum.length
+        : autoAttendance.expectedSessions);
+
+    const storedManualValue = progRec
+      ? isHybrid && typeof progRec.selfProgress === 'number'
+        ? Math.min(100, Math.max(0, Math.round(progRec.selfProgress)))
+        : Math.min(100, Math.max(0, Math.round(progRec.progress || 0)))
+      : 0;
+
+    // A record is a manual tutor override if explicitly flagged true, or legacy record with progress > 0 / COMPLETED and not reset to auto.
+    const isManualOverride = Boolean(
+      !isPriorApproved &&
+        progRec &&
+        (progRec.isManualOverride === true ||
+          (progRec.isManualOverride !== false &&
+            (storedManualValue > 0 || progRec.status === 'COMPLETED')))
+    );
 
     let selfProgress = 0;
     let completedLessons = progRec?.completedLessons || 0;
+    let progressSource: 'MANUAL_OVERRIDE' | 'AUTO_ATTENDANCE' | 'PRIOR_LEARNING' | 'NONE' = 'NONE';
 
     if (isPriorApproved) {
       selfProgress = 100;
       completedLessons = totalLessons;
+      progressSource = 'PRIOR_LEARNING';
+    } else if (isManualOverride) {
+      selfProgress = storedManualValue;
+      progressSource = 'MANUAL_OVERRIDE';
+    } else if (autoAttendance.attendedSessions > 0) {
+      selfProgress = autoAttendance.percentage;
+      completedLessons = Math.min(
+        totalLessons,
+        Math.round((selfProgress / 100) * totalLessons)
+      );
+      progressSource = 'AUTO_ATTENDANCE';
     } else if (progRec) {
-      if (isHybrid && typeof progRec.selfProgress === 'number') {
-        selfProgress = Math.min(100, Math.max(0, Math.round(progRec.selfProgress)));
-      } else {
-        selfProgress = Math.min(100, Math.max(0, Math.round(progRec.progress || 0)));
-      }
+      selfProgress = 0;
+      progressSource = 'AUTO_ATTENDANCE';
     }
 
     let selfStatus: LearningUnitStatus = 'NOT_STARTED';
@@ -560,12 +826,12 @@ export function calculateStudentPathwayProgress(input: {
       selfStatus = 'PRIOR_LEARNING_APPROVED';
     } else if (isLockedByPrerequisite) {
       selfStatus = 'LOCKED';
-    } else if (selfProgress >= 100 || progRec?.status === 'COMPLETED') {
+    } else if (selfProgress >= 100 || (isManualOverride && progRec?.status === 'COMPLETED')) {
       selfStatus = 'COMPLETED';
       selfProgress = 100;
     } else if (
       selfProgress > 0 ||
-      progRec?.status === 'CURRENT' ||
+      (isManualOverride && progRec?.status === 'CURRENT') ||
       currentFocusSet.has(prog.id)
     ) {
       selfStatus = 'CURRENT';
@@ -673,6 +939,11 @@ export function calculateStudentPathwayProgress(input: {
       totalRequiredUnitsCount,
       completedOptionalUnitsCount,
       totalOptionalUnitsCount,
+      isManualOverride,
+      progressSource,
+      autoAttendanceProgress: autoAttendance.percentage,
+      attendedSessionsCount: autoAttendance.attendedSessions,
+      expectedDurationSessions: autoAttendance.expectedSessions,
       missingPrerequisites,
       isLockedByPrerequisite,
       priorLearningRecord: priorRec,
@@ -816,6 +1087,7 @@ export async function fetchStudentProgressRecords(
         tutorNotes: data.tutorNotes || '',
         evidenceReference: data.evidenceReference || '',
         assessmentIds: Array.isArray(data.assessmentIds) ? data.assessmentIds : [],
+        isManualOverride: typeof data.isManualOverride === 'boolean' ? data.isManualOverride : undefined,
         lastUpdatedByUid: data.lastUpdatedByUid,
         lastUpdatedByName: data.lastUpdatedByName,
         completedAt: data.completedAt || null,
@@ -1061,6 +1333,8 @@ export async function updateStudentUnitProgress(input: {
   completedTopics?: string[];
   tutorNotes?: string;
   evidenceReference?: string;
+  isManualOverride?: boolean;
+  resetToAuto?: boolean;
   actorUid: string;
   actorName: string;
 }): Promise<void> {
@@ -1068,15 +1342,22 @@ export async function updateStudentUnitProgress(input: {
   const programPath = breadcrumbs.map((b) => b.title).join(' › ');
   const docId = `${input.studentId}_${input.program.id}`;
 
-  const clampedProgress = Math.min(100, Math.max(0, Math.round(input.progress)));
-  const clampedSelf =
-    typeof input.selfProgress === 'number'
-      ? Math.min(100, Math.max(0, Math.round(input.selfProgress)))
-      : clampedProgress;
+  const isResetting = Boolean(input.resetToAuto);
+  const isManualOverride = isResetting ? false : input.isManualOverride !== false;
 
-  const status: LearningUnitStatus =
-    input.status ||
-    (clampedProgress >= 100 ? 'COMPLETED' : clampedProgress > 0 ? 'CURRENT' : 'UPCOMING');
+  const clampedProgress = isResetting
+    ? 0
+    : Math.min(100, Math.max(0, Math.round(input.progress)));
+  const clampedSelf = isResetting
+    ? 0
+    : typeof input.selfProgress === 'number'
+    ? Math.min(100, Math.max(0, Math.round(input.selfProgress)))
+    : clampedProgress;
+
+  const status: LearningUnitStatus = isResetting
+    ? 'UPCOMING'
+    : input.status ||
+      (clampedProgress >= 100 ? 'COMPLETED' : clampedProgress > 0 ? 'CURRENT' : 'UPCOMING');
 
   const payload: any = {
     studentId: input.studentId,
@@ -1088,10 +1369,12 @@ export async function updateStudentUnitProgress(input: {
     progress: clampedProgress,
     selfProgress: clampedSelf,
     status,
-    completedLessons:
-      typeof input.completedLessons === 'number'
-        ? input.completedLessons
-        : Math.round((clampedProgress / 100) * (input.totalLessons || 8)),
+    isManualOverride,
+    completedLessons: isResetting
+      ? 0
+      : typeof input.completedLessons === 'number'
+      ? input.completedLessons
+      : Math.round((clampedProgress / 100) * (input.totalLessons || 8)),
     totalLessons: input.totalLessons || input.program.lessonsCount || 8,
     completedTopics: input.completedTopics || [],
     tutorNotes: input.tutorNotes ?? '',

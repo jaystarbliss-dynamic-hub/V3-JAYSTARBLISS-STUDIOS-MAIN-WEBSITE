@@ -53,6 +53,12 @@ import { EmbeddedLearningMedia } from '../../components/portal/EmbeddedLearningM
 import SEO from '../../components/ui/SEO';
 import { ExamListSkeleton } from '../../components/ui/Skeleton';
 import { getFriendlyErrorMessage, logInternalDiagnostic } from '../../utils/friendlyErrors';
+import {
+  FloatingActionMenu,
+  RowActionMenuButton,
+  useRowActionMenu,
+  type RowActionItem,
+} from '../../components/ui/RowActionMenu';
 
 export type AssignmentCenterRole = 'student' | 'staff' | 'parent' | 'school';
 
@@ -213,6 +219,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
   // Student Submission State
   const [submittingId, setSubmittingId] = useState('');
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const rowActionMenu = useRowActionMenu<UnifiedAssignmentRecord>();
 
   const loadData = useCallback(
     async (isRefresh = false) => {
@@ -1053,6 +1060,8 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
                 onDraftChange={(patch) => updateDraft(a.id, patch)}
                 onSubmit={() => void handleSubmitAssignment(a)}
                 submitting={submittingId === a.id}
+                onOpenMenu={(e) => rowActionMenu.openFromButton(e, a)}
+                onContextMenu={(e) => rowActionMenu.openFromContextMenu(e, a)}
                 onReview={() => {
                   setReviewing(a);
                   setReviewForm({
@@ -1067,6 +1076,80 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
           </div>
         )}
       </div>
+
+      {rowActionMenu.state && (() => {
+        const target = rowActionMenu.state.data;
+        const canReviewTarget =
+          role === 'staff' &&
+          Boolean(target.status === 'SUBMITTED' || target.submissionText || target.submissionUrl || target.grade != null);
+
+        const actions: RowActionItem[] = [];
+        if (canReviewTarget) {
+          actions.push({
+            id: 'review',
+            label: target.grade != null ? 'Update Review & Grade' : 'Review & Grade',
+            icon: <MessageSquare size={14} />,
+            onClick: () => {
+              setReviewing(target);
+              setReviewForm({
+                grade: target.grade == null ? '' : String(target.grade),
+                feedback: target.feedback || '',
+                reviewStatus:
+                  target.status === 'RESUBMISSION_REQUIRED' ? 'RESUBMISSION_REQUIRED' : 'COMPLETED',
+              });
+            },
+          });
+        }
+        if (target.submissionUrl) {
+          actions.push({
+            id: 'open-submission',
+            label: 'Open Submitted Link',
+            icon: <ExternalLink size={14} />,
+            onClick: () => {
+              const aEl = document.createElement('a');
+              aEl.href = target.submissionUrl!;
+              aEl.target = '_blank';
+              aEl.rel = 'noreferrer';
+              aEl.click();
+            },
+          });
+        }
+        if (target.resourceUrl) {
+          actions.push({
+            id: 'open-resource',
+            label: 'Open Reference Material',
+            icon: <FileText size={14} />,
+            onClick: () => {
+              const aEl = document.createElement('a');
+              aEl.href = target.resourceUrl!;
+              aEl.target = '_blank';
+              aEl.rel = 'noreferrer';
+              aEl.click();
+            },
+          });
+        }
+        actions.push({
+          id: 'copy-title',
+          label: 'Copy Assignment Title',
+          icon: <ClipboardList size={14} />,
+          dividerBefore: actions.length > 0,
+          onClick: () => {
+            navigator.clipboard?.writeText(target.title || '').catch(() => {});
+            setSuccess('Assignment title copied.');
+          },
+        });
+
+        return (
+          <FloatingActionMenu
+            open={true}
+            x={rowActionMenu.state.x}
+            y={rowActionMenu.state.y}
+            title={target.title}
+            items={actions}
+            onClose={rowActionMenu.close}
+          />
+        );
+      })()}
 
       {/* Create Assignment / Activity Modal (Tutor) */}
       {showCreate && (
@@ -1584,7 +1667,9 @@ const AssignmentCard: React.FC<{
   onSubmit: () => void;
   submitting: boolean;
   onReview: () => void;
-}> = ({ assignment: a, role, draft, onDraftChange, onSubmit, submitting, onReview }) => {
+  onOpenMenu: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+}> = ({ assignment: a, role, draft, onDraftChange, onSubmit, submitting, onReview, onOpenMenu, onContextMenu }) => {
   const badge = statusBadgeMeta(a.status);
   const canSubmit =
     role === 'student' &&
@@ -1597,7 +1682,10 @@ const AssignmentCard: React.FC<{
     (a.resourceUrl.includes('youtube.com') || a.resourceUrl.includes('youtu.be'));
 
   return (
-    <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/40 p-5 sm:p-6 shadow-xs transition-all hover:border-slate-300 dark:hover:border-slate-700">
+    <article
+      onContextMenu={onContextMenu}
+      className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#111114] p-5 sm:p-6 shadow-xs transition-all hover:border-slate-300 dark:hover:border-zinc-700"
+    >
       {/* Top Meta Row */}
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
         <div className="min-w-0 space-y-2">
@@ -1668,32 +1756,37 @@ const AssignmentCard: React.FC<{
         </div>
 
         {/* Right Action / Score Box */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
           {role === 'staff' &&
             (a.status === 'SUBMITTED' || a.submissionText || a.submissionUrl) && (
               <button
                 type="button"
                 onClick={onReview}
-                className="min-h-10 px-4 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold inline-flex items-center justify-center gap-2 cursor-pointer"
+                className="min-h-9 px-3.5 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <MessageSquare size={15} />
+                <MessageSquare size={14} />
                 {a.grade != null ? 'Update Review' : 'Review & Grade'}
               </button>
             )}
 
           {a.grade != null && (
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-4 py-2.5 text-right">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+            <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-[#18181B] px-3.5 py-2 text-right">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400">
                 Score
               </p>
-              <p className="text-xl font-black text-slate-900 dark:text-white tabular-nums">
+              <p className="text-lg font-black text-slate-900 dark:text-white tabular-nums">
                 {a.grade}
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                <span className="text-xs font-semibold text-slate-500 dark:text-zinc-400">
                   /{a.maxMarks || 100}
                 </span>
               </p>
             </div>
           )}
+
+          <RowActionMenuButton
+            ariaLabel={`More actions for ${a.title}`}
+            onClick={onOpenMenu}
+          />
         </div>
       </div>
 

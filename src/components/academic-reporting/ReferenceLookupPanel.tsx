@@ -132,34 +132,24 @@ export const ReferenceLookupPanel: React.FC<ReferenceLookupPanelProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-slate-800 rounded-xl p-5 shadow-xs">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pb-4 border-b border-[#E2E8F0] dark:border-slate-800">
-        <div>
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-[#B91C1C]" />
-            <h3 className="text-base font-bold text-[#0F172A] dark:text-white tracking-tight">
-              Academic Records Lookup
-            </h3>
-          </div>
-          <p className="text-xs text-[#475569] dark:text-slate-400 mt-0.5">
-            Search for an assessment or official learner report using its reference number (e.g.{' '}
-            <span className="font-mono text-[#0F172A] dark:text-slate-200">JDI-BXI45EFVXW26</span>,{' '}
-            <span className="font-mono text-[#0F172A] dark:text-slate-200">JDI-TRM-...</span>,{' '}
-            <span className="font-mono text-[#0F172A] dark:text-slate-200">JDI-SES-...</span>,{' '}
-            <span className="font-mono text-[#0F172A] dark:text-slate-200">JDI-PRG-...</span>,{' '}
-            <span className="font-mono text-[#0F172A] dark:text-slate-200">JDI-ANN-...</span>)
-          </p>
+    <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-zinc-800 rounded-xl p-5 shadow-xs">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-[#B91C1C]" />
+          <h3 className="text-base font-bold text-[#0F172A] dark:text-white tracking-tight">
+            Academic Records Lookup
+          </h3>
         </div>
 
         <form onSubmit={handleSearch} className="flex items-center gap-2 w-full md:w-auto">
           <div className="relative flex-1 md:w-80">
-            <Search className="w-4 h-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-[#64748B] dark:text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={queryText}
               onChange={(e) => setQueryText(e.target.value)}
               placeholder="Enter JDI reference number or learner..."
-              className="w-full pl-9 pr-3 py-2 text-xs font-mono bg-[#F8FAFC] dark:bg-slate-900 border border-[#CBD5E1] dark:border-slate-700 rounded-lg text-[#0F172A] dark:text-white focus:outline-none focus:border-[#1E293B]"
+              className="w-full pl-9 pr-3 py-2 text-xs font-mono bg-[#F8FAFC] dark:bg-[#09090B] border border-[#CBD5E1] dark:border-zinc-800 rounded-lg text-[#0F172A] dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-[#1E293B] dark:focus:border-zinc-600"
             />
           </div>
           <button

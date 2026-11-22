@@ -3,6 +3,11 @@ import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, 
   addDoc, query, where, limit, serverTimestamp 
 } from 'firebase/firestore';
+import { SUPER_ADMIN_EMAILS, resolveCanonicalAdminScope } from '../utils/adminRbac';
+import {
+  handleBillingAdminFirestoreFallback,
+  handleFinancialResetFirestoreFallback,
+} from './billingFirestoreFallback';
 
 export interface FeePolicy { percentage: number; flat: number; cap: number; waiveFlatBelow: number; enabled: boolean; }
 export interface WithdrawalFeePolicy { percentage: number; flat: number; cap: number; enabled: boolean; }
@@ -118,16 +123,50 @@ export const billingGet = async <T>(path: string): Promise<T> => {
         console.warn('User document lookup notice:', uErr);
       }
 
-      const rawRole = String(userDocData?.role || cachedRole || 'student').toLowerCase();
-      const effectiveRole = ['admin', 'superadmin'].includes(rawRole)
-        ? 'admin'
-        : ['school', 'partner_school', 'school_admin'].includes(rawRole) || Boolean(userDocData?.schoolId) || Boolean(cachedSchoolId) || Boolean(querySchoolId)
-          ? 'school'
-          : ['parent', 'guardian'].includes(rawRole)
-            ? 'parent'
-            : ['tutor', 'staff', 'instructor'].includes(rawRole)
-              ? 'staff'
-              : 'student';
+      const userEmailLower = String(user.email || userDocData?.email || '').toLowerCase();
+      const rawUserRole = String(userDocData?.role || cachedRole || 'student').trim().toLowerCase();
+      const isActualAdmin =
+        SUPER_ADMIN_EMAILS.has(userEmailLower) ||
+        rawUserRole === 'superadmin' ||
+        resolveCanonicalAdminScope(rawUserRole) !== null;
+
+      let effectiveRole: 'admin' | 'school' | 'parent' | 'staff' | 'student';
+      let masqueradeRole: string | null = null;
+      if (isActualAdmin && typeof window !== 'undefined') {
+        try {
+          const rawMasq = sessionStorage.getItem('admin_masquerade');
+          if (rawMasq) {
+            const parsed = JSON.parse(rawMasq);
+            if (parsed?.isMasquerading && parsed?.targetRole) {
+              masqueradeRole = String(parsed.targetRole).trim().toLowerCase();
+            }
+          }
+        } catch {
+          masqueradeRole = null;
+        }
+      }
+
+      const resolvedRoleSource = masqueradeRole || rawUserRole;
+      if (
+        !masqueradeRole &&
+        (isActualAdmin ||
+          resolvedRoleSource === 'superadmin' ||
+          resolveCanonicalAdminScope(resolvedRoleSource) !== null)
+      ) {
+        effectiveRole = 'admin';
+      } else if (['school', 'partner_school', 'school_admin', 'institution'].includes(resolvedRoleSource)) {
+        effectiveRole = 'school';
+      } else if (['parent', 'guardian'].includes(resolvedRoleSource)) {
+        effectiveRole = 'parent';
+      } else if (['tutor', 'staff', 'instructor', 'teacher'].includes(resolvedRoleSource)) {
+        effectiveRole = 'staff';
+      } else if (['student', 'individual_student'].includes(resolvedRoleSource)) {
+        effectiveRole = 'student';
+      } else if (Boolean(querySchoolId) || Boolean(userDocData?.schoolId) || Boolean(cachedSchoolId)) {
+        effectiveRole = 'school';
+      } else {
+        effectiveRole = 'student';
+      }
 
       // 2. School Role Handler
       if (effectiveRole === 'school') {
@@ -309,16 +348,33 @@ export const billingGet = async <T>(path: string): Promise<T> => {
 
       // 4. Student Role Handler
       if (effectiveRole === 'student') {
-        const studentDocId = String(userDocData?.studentDocId || '');
+        const studentDocId = String(
+          userDocData?.studentDocId ||
+          sessionStorage.getItem('studentDocId') ||
+          localStorage.getItem('jaystar_cached_student_doc_id') ||
+          ''
+        ).trim();
         let studentRecord: any = null;
         if (studentDocId) {
           const stSnap = await getDoc(doc(db, 'individualStudents', studentDocId)).catch(() => null);
-          if (stSnap && stSnap.exists()) studentRecord = { id: stSnap.id, ...stSnap.data() };
+          if (stSnap && stSnap.exists()) {
+            studentRecord = { id: stSnap.id, ...stSnap.data() };
+          } else {
+            const schoolStSnap = await getDoc(doc(db, 'students', studentDocId)).catch(() => null);
+            if (schoolStSnap && schoolStSnap.exists()) {
+              studentRecord = { id: schoolStSnap.id, ...schoolStSnap.data() };
+            }
+          }
         }
         if (!studentRecord) {
-          const stByUid = await getDocs(query(collection(db, 'individualStudents'), where('firebaseUid', '==', user.uid), limit(1))).catch(() => ({ docs: [] } as any));
-          if (!stByUid.empty) {
-            studentRecord = { id: stByUid.docs[0].id, ...stByUid.docs[0].data() };
+          const [indByUid, stdByUid] = await Promise.all([
+            getDocs(query(collection(db, 'individualStudents'), where('firebaseUid', '==', user.uid), limit(1))).catch(() => ({ docs: [], empty: true } as any)),
+            getDocs(query(collection(db, 'students'), where('firebaseUid', '==', user.uid), limit(1))).catch(() => ({ docs: [], empty: true } as any)),
+          ]);
+          if (!indByUid.empty) {
+            studentRecord = { id: indByUid.docs[0].id, ...indByUid.docs[0].data() };
+          } else if (!stdByUid.empty) {
+            studentRecord = { id: stdByUid.docs[0].id, ...stdByUid.docs[0].data() };
           }
         }
 
@@ -340,8 +396,24 @@ export const billingGet = async <T>(path: string): Promise<T> => {
           managerName = prntSnap?.exists() ? prntSnap.data()?.name || 'Parent / Guardian' : 'Parent / Guardian';
         }
 
-        const paymentsSnap = await getDocs(query(collection(db, 'payments'), limit(50))).catch(() => ({ docs: [] } as any));
-        const studentPayments = paymentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })).filter((p: any) => String(p.userId || '') === user.uid);
+        const [paymentsSnap, selfEnrollSnap] = await Promise.all([
+          getDocs(query(collection(db, 'payments'), limit(100))).catch(() => ({ docs: [] } as any)),
+          getDocs(query(collection(db, 'programme_enrollments'), where('studentUid', '==', user.uid), limit(50))).catch(() => ({ docs: [] } as any)),
+        ]);
+
+        const selfFundedEnrollments = selfEnrollSnap.docs
+          .map((d: any) => ({ id: d.id, ...d.data() }))
+          .filter((e: any) => String(e.billingResponsibility || '').toUpperCase() === 'STUDENT_SELF_FUNDED');
+        if (selfFundedEnrollments.length > 0) {
+          isExempt = false;
+        }
+
+        const studentPayments = paymentsSnap.docs
+          .map((d: any) => ({ id: d.id, ...d.data() }))
+          .filter((p: any) =>
+            String(p.userId || '') === user.uid ||
+            (studentDocId && String(p.studentId || '') === studentDocId)
+          );
         const verifiedStudentPayments = studentPayments.filter((p: any) => isSuccessfulPaymentRecord(p));
 
         return {
@@ -351,6 +423,7 @@ export const billingGet = async <T>(path: string): Promise<T> => {
           managedBy,
           managerName,
           payments: studentPayments,
+          programmeEnrollments: selfFundedEnrollments,
           billingSummary: {
             totalPaid: verifiedStudentPayments.reduce((acc: number, p: any) => acc + extractPaymentAmountNaira(p), 0),
             monthlyRevenue: 0,
@@ -398,20 +471,59 @@ export const billingGet = async <T>(path: string): Promise<T> => {
       }
 
       // 6. Admin Role Handler (Default)
-      const [paymentsSnap, schoolsSnap, enrollmentsSnap, withdrawalsSnap, tutorsSnap] = await Promise.all([
-        getDocs(query(collection(db, 'payments'), limit(200))).catch(() => ({ docs: [] } as any)),
-        getDocs(query(collection(db, 'schools'), limit(100))).catch(() => ({ docs: [] } as any)),
-        getDocs(query(collection(db, 'enrollment_requests'), limit(100))).catch(() => ({ docs: [] } as any)),
-        getDocs(query(collection(db, 'walletWithdrawals'), limit(100))).catch(() => ({ docs: [] } as any)),
-        getDocs(query(collection(db, 'users'), where('role', 'in', ['TUTOR', 'tutor', 'STAFF', 'staff']), limit(100))).catch(() => ({ docs: [] } as any))
+      const [paymentsSnap, schoolsSnap, enrollmentsSnap, withdrawalsSnap, usersSnap] = await Promise.all([
+        getDocs(query(collection(db, 'payments'), limit(300))).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(db, 'schools'), limit(200))).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(db, 'enrollment_requests'), limit(200))).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(db, 'walletWithdrawals'), limit(150))).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(db, 'users'), limit(400))).catch(() => ({ docs: [] } as any))
       ]);
 
-      const payments = paymentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      const payments = paymentsSnap.docs
+        .map((d: any) => ({ id: d.id, ...d.data() }))
+        .sort((a: any, b: any) => {
+          const tA = asDate(a.paidAt || a.createdAt)?.getTime() || 0;
+          const tB = asDate(b.paidAt || b.createdAt)?.getTime() || 0;
+          return tB - tA;
+        });
       const verifiedAdminPayments = payments.filter((p: any) => isSuccessfulPaymentRecord(p) && p.type !== 'transfer_to' && p.type !== 'outflow');
       const schools = schoolsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
       const enrollments = enrollmentsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
       const withdrawals = withdrawalsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-      const staff = tutorsSnap.docs.map((d: any) => ({ id: d.id, name: d.data().name || d.data().email || 'Staff', email: d.data().email || '', role: d.data().role || 'tutor', accountStatus: d.data().accountStatus || 'ACTIVE' }));
+
+      const staff: any[] = [];
+      const parents: any[] = [];
+      const directStudents: any[] = [];
+      for (const uDoc of usersSnap.docs) {
+        const u = uDoc.data() || {};
+        const r = String(u.role || '').trim().toLowerCase();
+        if (['tutor', 'staff', 'instructor', 'teacher'].includes(r)) {
+          staff.push({
+            id: uDoc.id,
+            name: u.fullName || u.name || u.email || 'Staff',
+            email: u.email || '',
+            role: u.role || 'tutor',
+            accountStatus: u.accountStatus || u.status || 'ACTIVE'
+          });
+        } else if (['parent', 'guardian'].includes(r)) {
+          parents.push({
+            id: uDoc.id,
+            name: u.fullName || u.name || u.email || 'Parent',
+            email: u.email || '',
+            phone: u.phone || '',
+            billing: u.billing || null,
+            accountStatus: u.accountStatus || u.status || 'ACTIVE'
+          });
+        } else if (['student', 'individual_student'].includes(r) && !u.schoolId && !u.parentId) {
+          directStudents.push({
+            id: uDoc.id,
+            name: u.fullName || u.name || u.email || 'Student',
+            email: u.email || '',
+            billing: u.billing || null,
+            accountStatus: u.accountStatus || u.status || 'ACTIVE'
+          });
+        }
+      }
 
       return {
         role: 'admin',
@@ -422,7 +534,7 @@ export const billingGet = async <T>(path: string): Promise<T> => {
           monthlyRevenue: 0,
           transactionFees: verifiedAdminPayments.reduce((acc: number, p: any) => acc + Number(p.transactionFee || 0), 0),
           paymentCount: verifiedAdminPayments.length,
-          lastPaidAt: null,
+          lastPaidAt: verifiedAdminPayments[0]?.paidAt || null,
           nextPaymentDue: null,
           overdue: false
         },
@@ -430,8 +542,8 @@ export const billingGet = async <T>(path: string): Promise<T> => {
         withdrawals,
         staff,
         schools,
-        parents: [],
-        directStudents: []
+        parents,
+        directStudents
       } as unknown as T;
     } catch (fsErr) {
       console.warn('Billing data firestore resolution error:', fsErr);
@@ -754,6 +866,17 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
       }, { merge: true });
     }
     return { updated: true, programs } as unknown as T;
+  }
+
+  if (path === 'admin-financial-reset') {
+    return await handleFinancialResetFirestoreFallback<T>(action, body);
+  }
+
+  if (path === 'billing-admin' || path.includes('billing-admin')) {
+    const fallbackResult = await handleBillingAdminFirestoreFallback<T>(action, body);
+    if (fallbackResult !== null) {
+      return fallbackResult;
+    }
   }
 
   throw new Error('The billing service could not complete this request right now.');

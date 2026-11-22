@@ -9,8 +9,18 @@ import {
   GraduationCap,
   ShieldCheck,
   Filter,
+  BookOpen,
+  UserX,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
-import { CANONICAL_CLASSES, classifyStudentEnrolment } from '../../lib/classes';
+import {
+  CANONICAL_CLASSES,
+  classifyStudentEnrolment,
+  expandGradeRange,
+  normalizeClassName,
+} from '../../lib/classes';
+import { buildProgramTree, type ProgramRecord, type ProgramTreeNode } from '../../lib/programHierarchy';
 
 export interface RecipientSchool {
   id: string;
@@ -44,8 +54,13 @@ export interface RecipientSelectionResult {
   recipientMode: 'SCHOOL_CLASS' | 'PRIVATE_LEARNERS' | 'MULTI_TARGET';
   targetSchoolIds: string[];
   targetStudentIds: string[];
-  classScopeMode: 'ALL' | 'SELECTED';
+  excludedStudentIds: string[];
+  classScopeMode: 'ALL' | 'SELECTED' | 'RANGE';
+  gradeTargetMode: 'ALL' | 'SPECIFIC' | 'RANGE';
+  gradeRange: { from: string; to: string } | null;
   selectedClasses: string[];
+  targetProgramIds: string[];
+  targetProgramTitles: string[];
 }
 
 interface RecipientSelectorModalProps {
@@ -56,13 +71,17 @@ interface RecipientSelectorModalProps {
   privateStudents?: RecipientPrivateStudent[];
   availablePrivateStudents?: RecipientPrivateStudent[];
   schoolStudents?: RecipientPrivateStudent[];
+  programsMap?: Map<string, ProgramRecord>;
   initialRecipientType?: 'ALL' | 'SCHOOL' | 'PRIVATE';
   initialSchoolIds?: string[];
   initialSelectedSchoolIds?: string[];
   initialStudentIds?: string[];
   initialSelectedStudentIds?: string[];
-  initialClassScopeMode?: 'ALL' | 'SELECTED';
+  initialExcludedStudentIds?: string[];
+  initialClassScopeMode?: 'ALL' | 'SELECTED' | 'RANGE';
+  initialGradeRange?: { from: string; to: string } | null;
   initialSelectedClasses?: string[];
+  initialTargetProgramIds?: string[];
   isTutor?: boolean;
   onApply?: (result: RecipientSelectionResult) => void;
   onConfirm?: (result: RecipientSelectionResult) => void;
@@ -79,13 +98,17 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
   privateStudents: privateStudentsProp,
   availablePrivateStudents,
   schoolStudents = EMPTY_STUDENT_ARRAY,
+  programsMap,
   initialRecipientType,
   initialSchoolIds,
   initialSelectedSchoolIds,
   initialStudentIds,
   initialSelectedStudentIds,
+  initialExcludedStudentIds = EMPTY_STRING_ARRAY,
   initialClassScopeMode = 'ALL',
+  initialGradeRange = null,
   initialSelectedClasses = EMPTY_STRING_ARRAY,
+  initialTargetProgramIds = EMPTY_STRING_ARRAY,
   onApply,
   onConfirm,
 }) => {
@@ -114,8 +137,20 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
   );
   const [targetSchoolIds, setTargetSchoolIds] = useState<string[]>(resolvedInitSchoolIds);
   const [targetStudentIds, setTargetStudentIds] = useState<string[]>(resolvedInitStudentIds);
-  const [classScopeMode, setClassScopeMode] = useState<'ALL' | 'SELECTED'>(initialClassScopeMode);
+  const [excludedStudentIds, setExcludedStudentIds] = useState<string[]>(initialExcludedStudentIds);
+  const [classScopeMode, setClassScopeMode] = useState<'ALL' | 'SELECTED' | 'RANGE'>(initialClassScopeMode);
   const [selectedClasses, setSelectedClasses] = useState<string[]>(initialSelectedClasses);
+  const [gradeRangeFrom, setGradeRangeFrom] = useState<string>(
+    initialGradeRange?.from || 'Grade 1'
+  );
+  const [gradeRangeTo, setGradeRangeTo] = useState<string>(
+    initialGradeRange?.to || 'Grade 6'
+  );
+  const [targetProgramIds, setTargetProgramIds] = useState<string[]>(initialTargetProgramIds);
+  const [programSearch, setProgramSearch] = useState('');
+  const [expandedProgramIds, setExpandedProgramIds] = useState<Set<string>>(new Set());
+  const [excludeSearch, setExcludeSearch] = useState('');
+  const [showExcludeSection, setShowExcludeSection] = useState(initialExcludedStudentIds.length > 0);
   const [searchQuery, setSearchQuery] = useState('');
   const [privateCategoryFilter, setPrivateCategoryFilter] = useState<'ALL' | 'PARENT' | 'INDIVIDUAL'>('ALL');
   const [schoolStudentFilterMode, setSchoolStudentFilterMode] = useState<'ALL' | 'SELECTED'>(
@@ -130,8 +165,15 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
       setRecipientType(resolvedInitType);
       setTargetSchoolIds(resolvedInitSchoolIds);
       setTargetStudentIds(resolvedInitStudentIds);
+      setExcludedStudentIds(initialExcludedStudentIds);
       setClassScopeMode(initialClassScopeMode);
       setSelectedClasses(initialSelectedClasses);
+      setGradeRangeFrom(initialGradeRange?.from || 'Grade 1');
+      setGradeRangeTo(initialGradeRange?.to || 'Grade 6');
+      setTargetProgramIds(initialTargetProgramIds);
+      setProgramSearch('');
+      setExcludeSearch('');
+      setShowExcludeSection(initialExcludedStudentIds.length > 0);
       setSearchQuery('');
       setPrivateCategoryFilter('ALL');
       setSchoolStudentFilterMode(
@@ -145,8 +187,11 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
     resolvedInitType,
     resolvedInitSchoolIds,
     resolvedInitStudentIds,
+    initialExcludedStudentIds,
     initialClassScopeMode,
+    initialGradeRange,
     initialSelectedClasses,
+    initialTargetProgramIds,
   ]);
 
   const filteredSchools = useMemo(() => {
@@ -251,6 +296,70 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
     });
   }, [schoolStudents, targetSchoolIds, schools, classScopeMode, selectedClasses, schoolStudentSearch]);
 
+  const expandedRangeClasses = useMemo(
+    () => (classScopeMode === 'RANGE' ? expandGradeRange(gradeRangeFrom, gradeRangeTo) : []),
+    [classScopeMode, gradeRangeFrom, gradeRangeTo]
+  );
+
+  const effectiveClasses = useMemo(
+    () =>
+      classScopeMode === 'RANGE'
+        ? expandedRangeClasses
+        : classScopeMode === 'SELECTED'
+        ? selectedClasses
+        : [],
+    [classScopeMode, expandedRangeClasses, selectedClasses]
+  );
+
+  const programTreeRoots = useMemo(() => {
+    if (!programsMap || programsMap.size === 0) return [] as ProgramTreeNode[];
+    const tree = buildProgramTree(Array.from(programsMap.values()).filter((p) => !p.isArchived));
+    const allRoots = [...tree.roots, ...tree.unassigned];
+    const q = programSearch.trim().toLowerCase();
+    if (!q) return allRoots;
+    const filterRec = (nodes: ProgramTreeNode[]): ProgramTreeNode[] => {
+      const out: ProgramTreeNode[] = [];
+      for (const n of nodes) {
+        const children = filterRec(n.children);
+        if (
+          n.program.title.toLowerCase().includes(q) ||
+          n.breadcrumbPath.toLowerCase().includes(q) ||
+          children.length > 0
+        ) {
+          out.push({ ...n, children });
+        }
+      }
+      return out;
+    };
+    return filterRec(allRoots);
+  }, [programsMap, programSearch]);
+
+  // Candidate students for exclusion picker (within active scope)
+  const excludableCandidates = useMemo(() => {
+    const pool =
+      recipientType === 'PRIVATE'
+        ? verifiedPrivateStudents
+        : recipientType === 'SCHOOL'
+        ? matchingSchoolStudents
+        : [...schoolStudents, ...verifiedPrivateStudents];
+    const q = excludeSearch.trim().toLowerCase();
+    const seen = new Set<string>();
+    return pool.filter((st) => {
+      if (!st.id || seen.has(st.id)) return false;
+      seen.add(st.id);
+      if (effectiveClasses.length > 0) {
+        const stGrade = normalizeClassName(st.grade || st.className || st.class || '');
+        if (stGrade && !effectiveClasses.includes(stGrade)) return false;
+      }
+      if (!q) return true;
+      return (
+        (st.name || st.fullName || '').toLowerCase().includes(q) ||
+        (st.schoolName || '').toLowerCase().includes(q) ||
+        (st.grade || st.className || '').toLowerCase().includes(q)
+      );
+    });
+  }, [recipientType, verifiedPrivateStudents, matchingSchoolStudents, schoolStudents, effectiveClasses, excludeSearch]);
+
   if (!isOpen) return null;
 
   const toggleSchool = (id: string) => {
@@ -265,9 +374,89 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
     );
   };
 
+  const toggleExcludedStudent = (id: string) => {
+    setExcludedStudentIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleProgram = (id: string) => {
+    setTargetProgramIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleExpandProgram = (id: string) => {
+    setExpandedProgramIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const toggleClass = (cls: string) => {
     setSelectedClasses((prev) =>
       prev.includes(cls) ? prev.filter((item) => item !== cls) : [...prev, cls]
+    );
+  };
+
+  const renderProgramOption = (node: ProgramTreeNode): React.ReactNode => {
+    const p = node.program;
+    const hasChildren = node.children.length > 0;
+    const isExpanded = expandedProgramIds.has(p.id) || Boolean(programSearch.trim());
+    const checked = targetProgramIds.includes(p.id);
+
+    return (
+      <div key={p.id}>
+        <div
+          className={`flex items-center justify-between gap-2 px-3 py-2 text-xs transition-colors ${
+            checked
+              ? 'bg-red-50/70 dark:bg-red-950/25 text-slate-900 dark:text-white'
+              : 'hover:bg-slate-50 dark:hover:bg-[#18181B] text-slate-700 dark:text-zinc-300'
+          }`}
+          style={{ paddingLeft: `${12 + Math.min(node.depth, 6) * 18}px` }}
+        >
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            {hasChildren ? (
+              <button
+                type="button"
+                onClick={() => toggleExpandProgram(p.id)}
+                className="p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                aria-label={isExpanded ? 'Collapse sub-programmes' : 'Expand sub-programmes'}
+              >
+                {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              </button>
+            ) : (
+              <span className="w-4 text-center text-slate-300 dark:text-zinc-700">·</span>
+            )}
+            <button
+              type="button"
+              onClick={() => toggleProgram(p.id)}
+              className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer"
+            >
+              <span
+                className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 transition-colors ${
+                  checked
+                    ? 'bg-[#B91C1C] border-[#B91C1C] text-white'
+                    : 'border-slate-300 dark:border-zinc-700'
+                }`}
+              >
+                {checked && <Check size={11} />}
+              </span>
+              <span className="font-semibold truncate">{p.title}</span>
+              {hasChildren && (
+                <span className="text-[10px] text-slate-400 dark:text-zinc-500 shrink-0">
+                  · {node.children.length} sub
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+        {hasChildren && isExpanded && (
+          <div>{node.children.map((child) => renderProgramOption(child))}</div>
+        )}
+      </div>
     );
   };
 
@@ -295,13 +484,35 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
         ? 'MULTI_TARGET'
         : 'SCHOOL_CLASS';
 
+    const resolvedGradeRange =
+      classScopeMode === 'RANGE' && expandedRangeClasses.length > 0
+        ? {
+            from: expandedRangeClasses[0],
+            to: expandedRangeClasses[expandedRangeClasses.length - 1],
+          }
+        : null;
+
+    const resolvedProgramTitles = targetProgramIds
+      .map((pid) => programsMap?.get(pid)?.title || '')
+      .filter(Boolean);
+
     const result: RecipientSelectionResult = {
       recipientType,
       recipientMode: computedRecipientMode,
       targetSchoolIds: cleanSchoolIds,
       targetStudentIds: cleanStudentIds,
+      excludedStudentIds,
       classScopeMode,
-      selectedClasses: classScopeMode === 'SELECTED' ? selectedClasses : [],
+      gradeTargetMode:
+        classScopeMode === 'RANGE'
+          ? 'RANGE'
+          : classScopeMode === 'SELECTED'
+          ? 'SPECIFIC'
+          : 'ALL',
+      gradeRange: resolvedGradeRange,
+      selectedClasses: effectiveClasses,
+      targetProgramIds,
+      targetProgramTitles: resolvedProgramTitles,
     };
 
     if (onApply) onApply(result);
@@ -310,22 +521,17 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800">
-          <div>
-            <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
-              Select Target Recipients &amp; Classes
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Choose which schools, classes, or genuinely enrolled private learners can access this assessment.
-            </p>
-          </div>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-zinc-800">
+          <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+            Target Recipients, Grades &amp; Programmes
+          </h2>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer shrink-0"
           >
             <X size={18} />
           </button>
@@ -625,78 +831,164 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
             </div>
           )}
 
-          {/* Step 3: Class / Grade Filtering (Only for ALL or SCHOOL) */}
-          {recipientType !== 'PRIVATE' && (
-            <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <GraduationCap size={14} />
-                  <span>
-                    {recipientType === 'SCHOOL' ? '3.' : '2.'} Class / Grade Level Scope
-                  </span>
-                </label>
+          {/* Step 3: Class / Grade Filtering (Supports All, Specific Grades, or Grade Range) */}
+          <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-zinc-800">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 flex items-center gap-1.5">
+                <GraduationCap size={14} />
+                <span>3. Grade / Class Scope</span>
+              </label>
 
-                <div className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5">
+              <div className="inline-flex rounded-lg bg-slate-100 dark:bg-[#18181B] p-0.5">
+                {(
+                  [
+                    { id: 'ALL', label: 'All Grades' },
+                    { id: 'SELECTED', label: 'Specific Grade(s)' },
+                    { id: 'RANGE', label: 'Grade Range' },
+                  ] as const
+                ).map((modeBtn) => (
                   <button
+                    key={modeBtn.id}
                     type="button"
-                    onClick={() => setClassScopeMode('ALL')}
+                    onClick={() => setClassScopeMode(modeBtn.id)}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
-                      classScopeMode === 'ALL'
-                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
-                        : 'text-slate-500'
+                      classScopeMode === modeBtn.id
+                        ? 'bg-white dark:bg-[#09090B] text-slate-900 dark:text-white shadow-2xs'
+                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white'
                     }`}
                   >
-                    All Classes
+                    {modeBtn.label}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setClassScopeMode('SELECTED')}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
-                      classScopeMode === 'SELECTED'
-                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
-                        : 'text-slate-500'
-                    }`}
-                  >
-                    Specific Classes
-                  </button>
+                ))}
+              </div>
+            </div>
+
+            {classScopeMode === 'SELECTED' && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-44 overflow-y-auto p-1">
+                {CANONICAL_CLASSES.map((cls) => {
+                  const active = selectedClasses.includes(cls);
+                  return (
+                    <button
+                      key={cls}
+                      type="button"
+                      onClick={() => toggleClass(cls)}
+                      className={`px-3 py-2 rounded-xl border text-left text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                        active
+                          ? 'border-[#1E293B] dark:border-zinc-400 bg-slate-100 dark:bg-[#18181B] text-[#1E293B] dark:text-white'
+                          : 'border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-[#18181B]'
+                      }`}
+                    >
+                      <span className="truncate">{cls}</span>
+                      {active && <Check size={13} className="shrink-0 text-[#B91C1C] dark:text-red-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {classScopeMode === 'RANGE' && (
+              <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/70 dark:bg-[#09090B] p-3.5 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                      From Grade
+                    </span>
+                    <select
+                      value={gradeRangeFrom}
+                      onChange={(e) => setGradeRangeFrom(e.target.value)}
+                      className="mt-1 w-full h-9 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-[#111114] px-3 text-xs font-semibold text-slate-900 dark:text-white"
+                    >
+                      {CANONICAL_CLASSES.map((cls) => (
+                        <option key={cls} value={cls}>
+                          {cls}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                      To Grade
+                    </span>
+                    <select
+                      value={gradeRangeTo}
+                      onChange={(e) => setGradeRangeTo(e.target.value)}
+                      className="mt-1 w-full h-9 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-[#111114] px-3 text-xs font-semibold text-slate-900 dark:text-white"
+                    >
+                      {CANONICAL_CLASSES.map((cls) => (
+                        <option key={cls} value={cls}>
+                          {cls}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="text-xs text-slate-600 dark:text-zinc-400">
+                  Covers <strong className="text-slate-900 dark:text-white">{expandedRangeClasses.length}</strong> grade level{expandedRangeClasses.length === 1 ? '' : 's'}:{' '}
+                  <span className="text-slate-700 dark:text-zinc-300 font-medium">
+                    {expandedRangeClasses.join(', ')}
+                  </span>
                 </div>
               </div>
+            )}
+          </div>
 
-              {classScopeMode === 'SELECTED' && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-44 overflow-y-auto p-1">
-                  {CANONICAL_CLASSES.map((cls) => {
-                    const active = selectedClasses.includes(cls);
-                    return (
-                      <button
-                        key={cls}
-                        type="button"
-                        onClick={() => toggleClass(cls)}
-                        className={`px-3 py-2 rounded-xl border text-left text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
-                          active
-                            ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-white'
-                            : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                        }`}
-                      >
-                        <span className="truncate">{cls}</span>
-                        {active && <Check size={13} className="shrink-0 text-[#B91C1C] dark:text-red-400" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+          {/* Step 4: Multi-Programme & Sub-Programme Targeting */}
+          {programsMap && programsMap.size > 0 && (
+            <div className="space-y-2.5 pt-3 border-t border-slate-100 dark:border-zinc-800">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 flex items-center gap-1.5">
+                  <BookOpen size={13} />
+                  <span>
+                    4. Target Programmes / Sub-Programmes ({targetProgramIds.length || 'All'})
+                  </span>
+                </label>
+                {targetProgramIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setTargetProgramIds([])}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white cursor-pointer"
+                  >
+                    Clear ({targetProgramIds.length})
+                  </button>
+                )}
+              </div>
+
+              <div className="relative">
+                <Search
+                  size={13}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  type="text"
+                  value={programSearch}
+                  onChange={(e) => setProgramSearch(e.target.value)}
+                  placeholder="Search programmes or sub-programmes..."
+                  className="w-full h-9 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-[#09090B] text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B] dark:focus:border-zinc-500"
+                />
+              </div>
+
+              <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#09090B] divide-y divide-slate-100 dark:divide-zinc-800/60">
+                {programTreeRoots.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-slate-400">
+                    No programmes match your search.
+                  </div>
+                ) : (
+                  programTreeRoots.map((root) => renderProgramOption(root))
+                )}
+              </div>
             </div>
           )}
 
-          {/* Step 4 (Optional for Partner Schools): Narrow down to specific students within selected school/class */}
+          {/* Step 5 (Optional for Partner Schools): Narrow down to specific students within selected school/class */}
           {recipientType === 'SCHOOL' && targetSchoolIds.length > 0 && schoolStudents.length > 0 && (
-            <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-zinc-800">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 flex items-center gap-1.5">
                   <Filter size={13} />
-                  <span>4. Student Scope Within Selected School / Class</span>
+                  <span>5. Student Scope Within Selected School</span>
                 </label>
 
-                <div className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5">
+                <div className="inline-flex rounded-lg bg-slate-100 dark:bg-[#18181B] p-0.5">
                   <button
                     type="button"
                     onClick={() => {
@@ -705,19 +997,19 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                     }}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
                       schoolStudentFilterMode === 'ALL'
-                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
-                        : 'text-slate-500'
+                        ? 'bg-white dark:bg-[#09090B] text-slate-900 dark:text-white shadow-2xs'
+                        : 'text-slate-500 dark:text-zinc-400'
                     }`}
                   >
-                    Entire School / Class
+                    Entire Cohort
                   </button>
                   <button
                     type="button"
                     onClick={() => setSchoolStudentFilterMode('SELECTED')}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
                       schoolStudentFilterMode === 'SELECTED'
-                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
-                        : 'text-slate-500'
+                        ? 'bg-white dark:bg-[#09090B] text-slate-900 dark:text-white shadow-2xs'
+                        : 'text-slate-500 dark:text-zinc-400'
                     }`}
                   >
                     Specific Students ({matchingSchoolStudents.length})
@@ -736,14 +1028,14 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                       type="text"
                       value={schoolStudentSearch}
                       onChange={(e) => setSchoolStudentSearch(e.target.value)}
-                      placeholder="Filter students in selected school/class..."
-                      className="w-full h-8 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B] dark:focus:border-slate-400"
+                      placeholder="Filter students in selected school..."
+                      className="w-full h-8 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-[#09090B] text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B]"
                     />
                   </div>
-                  <div className="max-h-40 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800/60">
+                  <div className="max-h-40 overflow-y-auto border border-slate-200 dark:border-zinc-800 rounded-xl divide-y divide-slate-100 dark:divide-zinc-800/60">
                     {matchingSchoolStudents.length === 0 ? (
                       <div className="p-4 text-center text-xs text-slate-400">
-                        No students found in the selected school/class scope.
+                        No students found in the selected scope.
                       </div>
                     ) : (
                       matchingSchoolStudents.map((st) => {
@@ -755,8 +1047,8 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                             onClick={() => toggleStudent(st.id)}
                             className={`w-full flex items-center justify-between px-3.5 py-2 cursor-pointer text-left transition-colors ${
                               checked
-                                ? 'bg-slate-100/80 dark:bg-slate-800/60'
-                                : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                                ? 'bg-slate-100/80 dark:bg-[#18181B]'
+                                : 'hover:bg-slate-50 dark:hover:bg-[#18181B]/60'
                             }`}
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
@@ -764,12 +1056,12 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                                 className={`w-4 h-4 rounded flex items-center justify-center border transition-colors shrink-0 ${
                                   checked
                                     ? 'bg-[#1E293B] border-[#1E293B] dark:bg-white dark:border-white text-white dark:text-[#1E293B]'
-                                    : 'border-slate-300 dark:border-slate-700'
+                                    : 'border-slate-300 dark:border-zinc-700'
                                 }`}
                               >
                                 {checked && <Check size={11} />}
                               </div>
-                              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                              <span className="text-xs font-bold text-slate-800 dark:text-zinc-200 truncate">
                                 {st.name}
                               </span>
                             </div>
@@ -780,7 +1072,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
                                 </span>
                               )}
                               {st.grade && (
-                                <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                                <span className="text-[10px] font-semibold text-slate-500 dark:text-zinc-400">
                                   {st.grade}
                                 </span>
                               )}
@@ -794,26 +1086,105 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
               )}
             </div>
           )}
+
+          {/* Step 6: Exclude Specific Students */}
+          {excludableCandidates.length > 0 && (
+            <div className="space-y-2.5 pt-3 border-t border-slate-100 dark:border-zinc-800">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExcludeSection((v) => !v)}
+                  className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 hover:text-slate-800 dark:hover:text-white inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <UserX size={13} className={excludedStudentIds.length > 0 ? 'text-[#B91C1C]' : ''} />
+                  <span>
+                    Exclude Specific Students ({excludedStudentIds.length} Excluded)
+                  </span>
+                  {showExcludeSection ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                </button>
+                {excludedStudentIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setExcludedStudentIds([])}
+                    className="text-xs font-semibold text-[#B91C1C] dark:text-red-400 hover:underline cursor-pointer"
+                  >
+                    Clear Exclusions
+                  </button>
+                )}
+              </div>
+
+              {showExcludeSection && (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search
+                      size={13}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+                    <input
+                      type="text"
+                      value={excludeSearch}
+                      onChange={(e) => setExcludeSearch(e.target.value)}
+                      placeholder="Search student to exclude from this assessment..."
+                      className="w-full h-8 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-[#09090B] text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#B91C1C]"
+                    />
+                  </div>
+                  <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#09090B] divide-y divide-slate-100 dark:divide-zinc-800/60">
+                    {excludableCandidates.slice(0, 60).map((st) => {
+                      const excluded = excludedStudentIds.includes(st.id);
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => toggleExcludedStudent(st.id)}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-left text-xs transition-colors cursor-pointer ${
+                            excluded
+                              ? 'bg-red-50/70 dark:bg-red-950/30 text-[#B91C1C] dark:text-red-300'
+                              : 'hover:bg-slate-50 dark:hover:bg-[#18181B] text-slate-700 dark:text-zinc-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 ${
+                                excluded
+                                  ? 'bg-[#B91C1C] border-[#B91C1C] text-white'
+                                  : 'border-slate-300 dark:border-zinc-700'
+                              }`}
+                            >
+                              {excluded && <X size={10} />}
+                            </span>
+                            <span className="font-semibold truncate">{st.name || st.fullName}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 dark:text-zinc-500 shrink-0 ml-2">
+                            {st.grade || st.className || ''}
+                            {excluded ? ' · Excluded' : ''}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="px-4 sm:px-6 py-3.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 truncate tabular-nums">
-            <ShieldCheck size={14} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
+        <div className="px-4 sm:px-6 py-3.5 bg-slate-50 dark:bg-[#09090B] border-t border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400 truncate tabular-nums">
+            <ShieldCheck size={14} className="text-[#1E293B] dark:text-zinc-300 shrink-0" />
             <span className="truncate">
               {recipientType === 'ALL'
-                ? 'Targeting all assigned students'
+                ? 'All cohorts'
                 : recipientType === 'SCHOOL'
-                ? `${targetSchoolIds.length} school(s)${
-                    schoolStudentFilterMode === 'SELECTED' && targetStudentIds.length > 0
-                      ? ` · ${targetStudentIds.length} student(s)`
-                      : ''
-                  }`
-                : `${targetStudentIds.length} private learner(s) selected`}
-              {recipientType !== 'PRIVATE' &&
-                classScopeMode === 'SELECTED' &&
-                selectedClasses.length > 0 &&
-                ` · ${selectedClasses.length} class(es)`}
+                ? `${targetSchoolIds.length} school(s)`
+                : `${targetStudentIds.length} private learner(s)`}
+              {classScopeMode === 'RANGE' && expandedRangeClasses.length > 0
+                ? ` · ${expandedRangeClasses[0]}–${expandedRangeClasses[expandedRangeClasses.length - 1]}`
+                : classScopeMode === 'SELECTED' && selectedClasses.length > 0
+                ? ` · ${selectedClasses.length} grade(s)`
+                : ''}
+              {targetProgramIds.length > 0 ? ` · ${targetProgramIds.length} programme(s)` : ''}
+              {excludedStudentIds.length > 0 ? ` · ${excludedStudentIds.length} excluded` : ''}
             </span>
           </div>
 
@@ -821,7 +1192,7 @@ export const RecipientSelectorModal: React.FC<RecipientSelectorModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer whitespace-nowrap"
+              className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-zinc-800 text-xs font-bold text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer whitespace-nowrap"
             >
               Cancel
             </button>

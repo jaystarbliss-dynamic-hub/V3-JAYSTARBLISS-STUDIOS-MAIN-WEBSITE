@@ -188,12 +188,12 @@ export const ProgramHierarchySelector: React.FC<ProgramHierarchySelectorProps> =
     return (
       <div key={p.id} className="select-none">
         <div
-          className={`flex flex-wrap items-center justify-between gap-2 py-2 px-3 rounded-xl transition-colors ${
+          className={`flex flex-wrap items-center justify-between gap-2 py-2 px-3 rounded-lg transition-colors ${
             isDirectlySelected
-              ? 'bg-red-50/90 dark:bg-red-950/40 border border-red-200 dark:border-red-800/70'
+              ? 'bg-red-50/70 dark:bg-red-950/25 border border-red-200/80 dark:border-red-900/50'
               : isInheritedInScope
-              ? 'bg-indigo-50/50 dark:bg-indigo-950/20'
-              : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+              ? 'bg-slate-50 dark:bg-[#18181B]'
+              : 'hover:bg-slate-50 dark:hover:bg-[#18181B]'
           }`}
           style={{ marginLeft: `${Math.min(node.depth, 10) * 18}px` }}
         >
@@ -202,19 +202,19 @@ export const ProgramHierarchySelector: React.FC<ProgramHierarchySelectorProps> =
               <button
                 type="button"
                 onClick={() => toggleExpand(p.id)}
-                className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500"
+                className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-zinc-800 text-slate-500 dark:text-zinc-400 cursor-pointer"
               >
                 {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
               </button>
             ) : (
-              <span className="w-4 text-center text-slate-300 text-xs">•</span>
+              <span className="w-4 text-center text-slate-300 dark:text-zinc-700 text-xs">·</span>
             )}
 
             <input
               type="checkbox"
               checked={isDirectlySelected || isInheritedInScope}
               onChange={() => toggleSelectNode(p)}
-              className="h-4 w-4 rounded border-slate-300 text-brand-red focus:ring-brand-red cursor-pointer"
+              className="h-4 w-4 rounded border-slate-300 dark:border-zinc-700 accent-[#B91C1C] cursor-pointer"
             />
 
             <div
@@ -223,41 +223,41 @@ export const ProgramHierarchySelector: React.FC<ProgramHierarchySelectorProps> =
             >
               {hasChildren || p.nodeType === 'CONTAINER' ? (
                 isExpanded ? (
-                  <FolderOpen size={15} className="text-brand-red shrink-0" />
+                  <FolderOpen size={15} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
                 ) : (
-                  <Folder size={15} className="text-brand-red shrink-0" />
+                  <Folder size={15} className="text-[#14284B] dark:text-zinc-300 shrink-0" />
                 )
               ) : (
-                <BookOpen size={14} className="text-emerald-600 shrink-0" />
+                <BookOpen size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
               )}
 
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                   <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
                     {p.title}
                   </span>
                   {p.nodeType === 'CONTAINER' ? (
-                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-amber-100 text-amber-900">
-                      Branch Folder
+                    <span className="text-[10px] font-semibold text-slate-500 dark:text-zinc-500">
+                      · Branch
                     </span>
                   ) : p.nodeType === 'HYBRID' ? (
-                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-indigo-100 text-indigo-900">
-                      Hybrid Package
+                    <span className="text-[10px] font-semibold text-slate-500 dark:text-zinc-500">
+                      · Hybrid
                     </span>
                   ) : null}
                   {isInheritedInScope && (
-                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-indigo-100 text-indigo-800">
-                      Included via Parent Branch
+                    <span className="text-[10px] font-semibold text-slate-500 dark:text-zinc-400">
+                      · Included via parent
                     </span>
                   )}
                   {isPriorRecognised && (
-                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-0.5">
-                      <Award size={10} /> Prior-Learning Credit
+                    <span className="text-[10px] font-bold text-[#14284B] dark:text-zinc-200 inline-flex items-center gap-0.5">
+                      · <Award size={10} /> Prior Credit
                     </span>
                   )}
                 </div>
                 {node.depth > 0 && (
-                  <div className="text-[10px] text-slate-400 truncate">
+                  <div className="text-[10px] text-slate-400 dark:text-zinc-500 truncate">
                     {node.breadcrumbPath}
                   </div>
                 )}
@@ -267,7 +267,7 @@ export const ProgramHierarchySelector: React.FC<ProgramHierarchySelectorProps> =
 
           <div className="flex items-center gap-2 shrink-0">
             {p.isEnrollable && priceDisplay > 0 && (
-              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+              <span className="text-[11px] font-bold text-slate-600 dark:text-zinc-300 tabular-nums">
                 ₦{priceDisplay.toLocaleString()}
               </span>
             )}
@@ -325,14 +325,14 @@ export const ProgramHierarchySelector: React.FC<ProgramHierarchySelectorProps> =
         </label>
 
         {onChangeDeliveryType && (
-          <div className="inline-flex rounded-xl p-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+          <div className="inline-flex rounded-xl p-0.5 bg-slate-100 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800">
             <button
               type="button"
               onClick={() => onChangeDeliveryType('PUBLIC_GROUP', suggestedTotalAmount)}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                 deliveryType === 'PUBLIC_GROUP'
-                  ? 'bg-white dark:bg-slate-900 text-emerald-700 shadow-2xs'
-                  : 'text-slate-500'
+                  ? 'bg-white dark:bg-[#09090B] text-slate-900 dark:text-white shadow-2xs'
+                  : 'text-slate-500 dark:text-zinc-400'
               }`}
             >
               <Users size={12} /> Public Group
@@ -340,10 +340,10 @@ export const ProgramHierarchySelector: React.FC<ProgramHierarchySelectorProps> =
             <button
               type="button"
               onClick={() => onChangeDeliveryType('PRIVATE_MENTORSHIP', suggestedTotalAmount)}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                 deliveryType === 'PRIVATE_MENTORSHIP'
-                  ? 'bg-white dark:bg-slate-900 text-indigo-700 shadow-2xs'
-                  : 'text-slate-500'
+                  ? 'bg-white dark:bg-[#09090B] text-[#B91C1C] dark:text-red-400 shadow-2xs'
+                  : 'text-slate-500 dark:text-zinc-400'
               }`}
             >
               <UserCheck size={12} /> Private 1-on-1
@@ -352,49 +352,45 @@ export const ProgramHierarchySelector: React.FC<ProgramHierarchySelectorProps> =
         )}
       </div>
 
-      {/* Selected Breadcrumb Chips */}
+      {/* Selected Summary */}
       {selectedProgramIds.length === 0 ? (
-        <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs flex items-center gap-2">
-          <AlertCircle size={15} className="text-amber-600 shrink-0" />
-          <span>
-            No programme selected yet. If left unselected, the student will be marked as{' '}
-            <strong>Pending Programme Confirmation</strong> (never assigned a generic fallback).
-          </span>
+        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-400 text-xs flex items-center gap-2">
+          <AlertCircle size={15} className="text-[#B91C1C] shrink-0" />
+          <span>No programme selected yet. Select one or more tracks below.</span>
         </div>
       ) : (
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-2">
-          <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300">
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-zinc-300">
             <span>
-              Selected Pathway ({selectedProgramIds.length} node(s) →{' '}
-              {resolvedScope.requiredLearningUnits.length} required learning unit(s) in scope)
+              Selected: {selectedProgramIds.length} track{selectedProgramIds.length === 1 ? '' : 's'} ·{' '}
+              {resolvedScope.requiredLearningUnits.length} unit{resolvedScope.requiredLearningUnits.length === 1 ? '' : 's'}
             </span>
             {suggestedTotalAmount > 0 && (
-              <span className="text-emerald-700 dark:text-emerald-400">
-                Suggested Fee: ₦{suggestedTotalAmount.toLocaleString()}
+              <span className="text-slate-900 dark:text-white tabular-nums">
+                ₦{suggestedTotalAmount.toLocaleString()}
               </span>
             )}
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="divide-y divide-slate-200/70 dark:divide-zinc-800 text-xs">
             {selectedProgramIds.map((pid) => {
               const crumbs = getProgramBreadcrumbs(pid, programsMap);
               const pathStr = crumbs.map((c) => c.title).join(' › ');
               return (
-                <span
-                  key={pid}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[11px] font-semibold"
-                >
-                  <span>{pathStr || pid}</span>
+                <div key={pid} className="flex items-center justify-between py-1.5 gap-2">
+                  <span className="font-semibold text-slate-800 dark:text-zinc-200 truncate">
+                    {pathStr || pid}
+                  </span>
                   <button
                     type="button"
                     onClick={() => {
                       const p = programsMap.get(pid);
                       if (p) toggleSelectNode(p);
                     }}
-                    className="text-slate-300 hover:text-white font-bold"
+                    className="text-xs font-bold text-slate-400 hover:text-[#B91C1C] cursor-pointer shrink-0"
                   >
-                    ×
+                    Remove
                   </button>
-                </span>
+                </div>
               );
             })}
           </div>
@@ -408,8 +404,8 @@ export const ProgramHierarchySelector: React.FC<ProgramHierarchySelectorProps> =
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search any root, branch, or nested sub-programme (e.g. HTML, CSS, Piano, CorelDraw)..."
-          className="w-full pl-8 pr-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-900 dark:text-white"
+          placeholder="Search programmes or sub-programmes..."
+          className="w-full pl-8 pr-3 py-2 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs bg-white dark:bg-[#09090B] text-slate-900 dark:text-white focus:outline-none focus:border-[#1E293B]"
         />
       </div>
 
@@ -417,7 +413,7 @@ export const ProgramHierarchySelector: React.FC<ProgramHierarchySelectorProps> =
       <div
         className={`${
           compact ? 'max-h-60' : 'max-h-80'
-        } overflow-y-auto p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 space-y-0.5`}
+        } overflow-y-auto p-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#09090B] space-y-0.5`}
       >
         {visibleRoots.length === 0 ? (
           <div className="p-6 text-center text-xs text-slate-400">

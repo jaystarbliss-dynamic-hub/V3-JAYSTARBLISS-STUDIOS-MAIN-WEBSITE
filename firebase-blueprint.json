@@ -291,6 +291,56 @@
         "createdAt": { "type": "string" }
       },
       "required": ["operationId", "projectId", "createdAt"]
+    },
+    "AccountRestriction": {
+      "title": "AccountRestriction",
+      "description": "Manual or automated portal access restriction record with target scoping, reason metadata, and lifecycle status.",
+      "type": "object",
+      "properties": {
+        "restrictionId": { "type": "string" },
+        "targetAccountId": { "type": "string" },
+        "targetAccountType": { "type": "string", "enum": ["SCHOOL", "SCHOOL_ADMIN", "INDIVIDUAL_STUDENT", "PARENT", "PARENT_CHILD", "STUDENT_SELF_FUNDED_PROGRAMME"] },
+        "schoolId": { "type": "string" },
+        "parentId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "programmeEnrollmentId": { "type": "string" },
+        "restrictionType": { "type": "string" },
+        "reasonCode": { "type": "string" },
+        "userFacingMessage": { "type": "string" },
+        "status": { "type": "string", "enum": ["ACTIVE", "SCHEDULED", "LIFTED", "EXPIRED", "RESOLVED_BY_PAYMENT"] },
+        "relatedSubscriptionId": { "type": "string" },
+        "appliedAt": { "type": "string" },
+        "effectiveAt": { "type": "string" },
+        "expiresAt": { "type": "string" }
+      },
+      "required": ["targetAccountId", "targetAccountType", "restrictionType", "reasonCode", "userFacingMessage", "status"]
+    },
+    "RestrictionAuditLog": {
+      "title": "RestrictionAuditLog",
+      "description": "Append-only immutable audit log recording every restriction application, lift, or automated payment resolution.",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "restrictionId": { "type": "string" },
+        "targetAccountId": { "type": "string" },
+        "actorUid": { "type": "string" },
+        "actorName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["action", "actorUid", "createdAt"]
+    },
+    "RestrictionNotificationLog": {
+      "title": "RestrictionNotificationLog",
+      "description": "Idempotent notification dispatch ledger for restriction notices.",
+      "type": "object",
+      "properties": {
+        "notificationEventId": { "type": "string" },
+        "restrictionId": { "type": "string" },
+        "targetAccountId": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["restrictionId", "targetAccountId", "status"]
     }
   },
   "firestore": {
@@ -433,6 +483,18 @@
     "financialResetBackups/{backupId}": {
       "schema": { "$ref": "#/entities/FinancialResetBackup" },
       "description": "Pre-reset backup snapshot archives for controlled test financial data resets."
+    },
+    "accountRestrictions/{restrictionId}": {
+      "schema": { "$ref": "#/entities/AccountRestriction" },
+      "description": "Manual and automated portal access restriction records."
+    },
+    "restrictionAuditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/RestrictionAuditLog" },
+      "description": "Immutable append-only audit log for portal access restriction lifecycle events."
+    },
+    "restrictionNotificationLogs/{logId}": {
+      "schema": { "$ref": "#/entities/RestrictionNotificationLog" },
+      "description": "Idempotent notification dispatch ledger for portal restrictions."
     }
   }
 }

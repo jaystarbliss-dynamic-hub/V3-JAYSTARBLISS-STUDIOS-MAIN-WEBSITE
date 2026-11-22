@@ -8,6 +8,7 @@ import {
 } from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { enforceEntitlementOrLock } from "../../api/_lib/subscription-service";
+import { sendActionableNotificationEmail } from "../../api/_lib/email";
 
 function getAllAdminDbs() {
   const dbs = [getDefaultAdminDb(), getLegacyNamedAdminDb()].filter(Boolean);
@@ -91,8 +92,33 @@ async function resolveSchoolName(schoolId: string, ...fallbacks: unknown[]): Pro
 
 async function notifyStaff(a: any, exam: any, attemptId: string) {
   const recipients = new Set<string>();
-  if (exam.createdBy) recipients.add(String(exam.createdBy));
-  const schoolId = String(a.schoolId || exam.schoolId || "");
+  const creatorUid = String(exam.createdBy || exam.tutorId || "").trim();
+  if (creatorUid) recipients.add(creatorUid);
+
+  const schoolId = String(a.schoolId || exam.schoolId || "").trim();
+  const schoolName = String(a.schoolName || exam.schoolName || "").trim();
+  const targetStudentUids = Array.isArray(exam.studentUids)
+    ? exam.studentUids.map((u: unknown) => String(u || "").trim()).filter(Boolean)
+    : [];
+  const isSchoolAssessment =
+    Boolean(schoolId) && String(exam.audienceType || "").toLowerCase() !== "individual" && targetStudentUids.length === 0;
+
+  let studentName = String(a.studentName || a.fullName || "").trim();
+  let parentId = "";
+
+  if (!studentName || !schoolId) {
+    let studentSnap = await adminDb.collection("individualStudents").doc(String(a.studentId || "")).get().catch(() => null);
+    if (!studentSnap?.exists) {
+      studentSnap = await adminDb.collection("students").doc(String(a.studentId || "")).get().catch(() => null);
+    }
+    const sData = studentSnap?.data() || {};
+    if (!studentName) {
+      studentName = String(sData.fullName || sData.studentName || sData.name || "A student").trim();
+    }
+    parentId = String(sData.parentId || sData.parentUid || sData.guardianId || "").trim();
+  }
+
+  const schoolAdminUids = new Set<string>();
   if (schoolId) {
     const users = await adminDb
       .collection("users")
@@ -103,34 +129,155 @@ async function notifyStaff(a: any, exam: any, attemptId: string) {
     if (users) {
       users.docs.forEach(d => {
         const role = String(d.data().role || "").toUpperCase();
-        if (["SCHOOL", "SCHOOL_ADMIN"].includes(role)) recipients.add(d.id);
+        if (["SCHOOL", "SCHOOL_ADMIN", "SCHOOLADMIN", "INSTITUTION"].includes(role)) {
+          recipients.add(d.id);
+          schoolAdminUids.add(d.id);
+        }
       });
     }
-  } else {
-    let student = await adminDb.collection("individualStudents").doc(String(a.studentId || "")).get();
-    if (!student.exists) {
-      student = await adminDb.collection("students").doc(String(a.studentId || "")).get();
-    }
-    const parentId = String(student.data()?.parentId || student.data()?.guardianId || "");
-    if (parentId) recipients.add(parentId);
+  } else if (parentId) {
+    recipients.add(parentId);
   }
   recipients.delete(String(a.studentUid || ""));
+
+  // Compute live submission counts (X of Y)
+  const attemptsSnap = await adminDb
+    .collection("jdiExamAttempts")
+    .where("examId", "==", String(a.examId || ""))
+    .limit(500)
+    .get()
+    .catch(() => null);
+  const submittedKeys = new Set<string>();
+  attemptsSnap?.docs.forEach(d => {
+    const st = String(d.data()?.status || "").toLowerCase();
+    if (["submitted", "graded", "expired", "completed"].includes(st)) {
+      const key = String(d.data()?.studentUid || d.data()?.studentId || d.id).trim();
+      if (key) submittedKeys.add(key);
+    }
+  });
+  const thisStudentKey = String(a.studentUid || a.studentId || "").trim();
+  if (thisStudentKey) submittedKeys.add(thisStudentKey);
+
+  let totalExpected = targetStudentUids.length;
+  if (isSchoolAssessment && schoolId) {
+    const classIds = Array.isArray(exam.classIds)
+      ? exam.classIds.map((c: unknown) => String(c || "").trim().toLowerCase()).filter(Boolean)
+      : [];
+    const filterByClass = classIds.length > 0 && !classIds.includes("all");
+    const [schSnap, indSnap] = await Promise.all([
+      adminDb.collection("students").where("schoolId", "==", schoolId).limit(500).get().catch(() => null),
+      adminDb.collection("individualStudents").where("schoolId", "==", schoolId).limit(500).get().catch(() => null),
+    ]);
+    const eligible = new Set<string>();
+    for (const snap of [schSnap, indSnap]) {
+      snap?.docs.forEach(docSnap => {
+        const s = docSnap.data() || {};
+        if (filterByClass) {
+          const sClass = String(s.classId || s.classLevel || s.className || s.class || s.grade || "").trim().toLowerCase();
+          if (!sClass || !classIds.includes(sClass)) return;
+        }
+        eligible.add(String(s.firebaseUid || s.userId || s.uid || docSnap.id));
+      });
+    }
+    totalExpected = Math.max(eligible.size, submittedKeys.size);
+  } else if (totalExpected === 0) {
+    totalExpected = Math.max(submittedKeys.size, 1);
+  }
+
+  const submittedCount = submittedKeys.size;
+  const examTitle = String(exam.title || "An assessment").trim();
+  const progressText =
+    totalExpected > 1 ? ` (${submittedCount} of ${totalExpected} assigned students submitted so far)` : "";
+  const schoolSuffix = isSchoolAssessment && schoolName ? ` — ${schoolName}` : "";
+  const message = `${studentName || "A student"} submitted "${examTitle}"${schoolSuffix}${progressText}.`;
+
+  const staffLink = `/portal/staff/exam-history?examId=${encodeURIComponent(String(a.examId || ""))}`;
+  const schoolLink = `/portal/school/exam-history?examId=${encodeURIComponent(String(a.examId || ""))}`;
+  const adminLink = `/admin/examination-history?examId=${encodeURIComponent(String(a.examId || ""))}`;
+  const parentLink = `/portal/parent/examinations`;
+
   const batch = adminDb.batch();
   recipients.forEach(uid => {
-    const ref = adminDb.collection("jdiNotifications").doc();
-    batch.set(ref, {
-      recipientUid: uid,
-      isRead: false,
+    const link = schoolAdminUids.has(uid)
+      ? schoolLink
+      : uid === parentId
+      ? parentLink
+      : staffLink;
+    const ref = adminDb.collection("jdiNotifications").doc(`sub_${attemptId}_${uid}`);
+    batch.set(
+      ref,
+      {
+        recipientUid: uid,
+        isRead: false,
+        type: "exam_submitted",
+        priority: "high",
+        title: "Assessment attempt submitted",
+        message,
+        link,
+        actionUrl: link,
+        linkText: "View Submissions",
+        actionText: "View Submissions",
+        studentName: studentName || "Student",
+        submittedCount,
+        totalExpected,
+        examId: a.examId,
+        attemptId,
+        schoolId: schoolId || null,
+        schoolName: schoolName || null,
+        createdAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  });
+
+  // Also record in notifications for admin & school admin visibility
+  batch.set(
+    adminDb.collection("notifications").doc(`adm_exam_sub_${attemptId}`),
+    {
+      recipientId: "all",
+      recipientType: "all",
+      targetRole: "admin",
       type: "exam_submitted",
+      priority: "normal",
       title: "Assessment attempt submitted",
-      message: String(exam.title || "An assessment") + " was submitted or timed out.",
+      message,
+      link: adminLink,
+      actionUrl: adminLink,
+      linkText: "Open Assessment History",
+      actionText: "Open Assessment History",
       examId: a.examId,
       attemptId,
       schoolId: schoolId || null,
+      schoolName: schoolName || null,
+      read: false,
+      readBy: [],
+      senderName: studentName || "Student",
+      senderRole: "Student Submission",
+      timestamp: FieldValue.serverTimestamp(),
       createdAt: FieldValue.serverTimestamp(),
-    });
-  });
-  if (recipients.size) await batch.commit();
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
+
+  await sendActionableNotificationEmail({
+    title: `Assessment attempt submitted: ${examTitle}`,
+    message,
+    category: isSchoolAssessment ? "School Assessment Submission" : "Targeted Assessment Submission",
+    priority: "normal",
+    details: [
+      { label: "Student", value: studentName || "Student" },
+      { label: "Assessment", value: examTitle },
+      { label: "Submissions", value: `${submittedCount} of ${totalExpected} submitted` },
+      ...(schoolName ? [{ label: "School", value: schoolName }] : []),
+    ],
+    actionPath: creatorUid ? staffLink : adminLink,
+    actionText: "Open Assessment History",
+    notifyPlatformAdmins: true,
+    schoolId: isSchoolAssessment ? schoolId : null,
+    recipientUids: creatorUid ? [creatorUid] : [],
+  }).catch((err) => console.warn("Assessment submit email alert warning:", err));
 }
 
 export const handler: Handler = async event => {

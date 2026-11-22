@@ -31,6 +31,12 @@ import {
   submitPriorLearningRecognition,
 } from '../../lib/learningPathwayEngine';
 import { buildResourceCreatorMetadata } from '../../lib/resourcePermissions';
+import {
+  FloatingActionMenu,
+  RowActionMenuButton,
+  useRowActionMenu,
+  type RowActionItem,
+} from '../../components/ui/RowActionMenu';
 
 export interface AssignedStudentTutor {
   tutorId: string;
@@ -120,6 +126,7 @@ const AdminStudents: React.FC = () => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedSchoolView, setSelectedSchoolView] = useState<string | null>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
+  const rowActionMenu = useRowActionMenu<UnifiedStudent>();
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -1598,10 +1605,11 @@ const AdminStudents: React.FC = () => {
                   <div
                     key={student.id}
                     onClick={() => setInspectedStudent(student)}
+                    onContextMenu={(e) => rowActionMenu.openFromContextMenu(e, student)}
                     className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 p-4 transition-all cursor-pointer ${
                       isInspected
                         ? 'bg-brand-red/5 border-l-4 border-l-brand-red dark:bg-brand-red/10'
-                        : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
+                        : 'hover:bg-slate-50/80 dark:hover:bg-[#18181B]'
                     }`}
                   >
                     {/* Left: Avatar & Core Summary Info */}
@@ -1611,32 +1619,35 @@ const AdminStudents: React.FC = () => {
                       </div>
 
                       <div className="min-w-0 space-y-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                           <p className="truncate text-sm font-black text-slate-900 dark:text-white">
                             {student.fullName}
                           </p>
+                          <span className="text-slate-300 dark:text-zinc-700">·</span>
 
-                          {/* Category Badge */}
+                          {/* Category Text (Unboxed) */}
                           {student.studentType === 'school' ? (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-extrabold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#14284B] dark:text-zinc-300">
                               <School size={11} />
                               {student.schoolName || 'School Student'}
                             </span>
                           ) : student.studentType === 'parent' ? (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-[10px] font-extrabold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-zinc-300">
                               <Users size={11} />
                               Parent: {student.parentName || 'Enrolled'}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-[10px] font-extrabold text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-zinc-300">
                               <UserCheck size={11} />
                               Personal Learner
                             </span>
                           )}
 
-                          {/* Mentor Pill */}
+                          <span className="text-slate-300 dark:text-zinc-700">·</span>
+
+                          {/* Mentor Text */}
                           {mentorCount > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-purple-100/80 px-2 py-0.5 text-[10px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-300">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-400">
                               <GraduationCap size={11} />
                               {primaryMentorName}{mentorCount > 1 ? ` +${mentorCount - 1}` : ''}
                             </span>
@@ -1647,23 +1658,26 @@ const AdminStudents: React.FC = () => {
                                 e.stopPropagation();
                                 openAssignMentorModal(student);
                               }}
-                              className="inline-flex items-center gap-1 rounded-md border border-dashed border-slate-300 px-2 py-0.5 text-[10px] font-bold text-slate-500 hover:border-purple-500 hover:text-purple-600 dark:border-slate-700 dark:text-slate-400"
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-brand-red dark:text-zinc-400 dark:hover:text-red-400 cursor-pointer"
                             >
                               + Assign Mentor
                             </button>
                           )}
 
-                          {/* Status Badge */}
+                          {/* Status Indicator (Unboxed) */}
                           {isSuspended && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-black uppercase text-red-700 dark:bg-red-950/30 dark:text-red-300">
-                              Suspended
-                            </span>
+                            <>
+                              <span className="text-slate-300 dark:text-zinc-700">·</span>
+                              <span className="text-[11px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
+                                Suspended
+                              </span>
+                            </>
                           )}
                         </div>
 
                         {/* Core Identifiers & Inline Credentials */}
-                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500">
-                          <span className="font-mono font-bold text-slate-700 dark:text-slate-300">@{student.username}</span>
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500 dark:text-zinc-400">
+                          <span className="font-mono font-bold text-slate-700 dark:text-zinc-300">@{student.username}</span>
                           {student.accessCode && (
                             <button
                               type="button"
@@ -1671,71 +1685,30 @@ const AdminStudents: React.FC = () => {
                                 e.stopPropagation();
                                 copyToClipboard(student.accessCode, `${student.fullName}'s Access Code`);
                               }}
-                              className="inline-flex items-center gap-1 rounded-md bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 font-mono text-[10px] font-black text-amber-800 hover:bg-amber-100 dark:bg-amber-950/30 dark:border-amber-800/50 dark:text-amber-300"
+                              className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-slate-700 hover:text-brand-red dark:text-zinc-300 dark:hover:text-red-400 cursor-pointer"
                               title="Click to copy Access Code"
                             >
-                              <KeyRound size={10} />
+                              <KeyRound size={11} />
                               {student.accessCode}
-                              <Copy size={9} />
+                              <Copy size={10} />
                             </button>
                           )}
                           {student.class && (
-                            <span>· Class: <strong className="text-slate-700 dark:text-slate-200">{student.class}</strong></span>
+                            <span>· Class: <strong className="text-slate-700 dark:text-zinc-200">{student.class}</strong></span>
                           )}
                           {student.track && (
-                            <span className="hidden md:inline">· Track: <strong className="text-slate-700 dark:text-slate-200">{student.track}</strong></span>
+                            <span className="hidden md:inline">· Track: <strong className="text-slate-700 dark:text-zinc-200">{student.track}</strong></span>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    {/* Right: Streamlined Actions */}
-                    <div className="shrink-0 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => setInspectedStudent(isInspected ? null : student)}
-                        className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-                          isInspected
-                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                            : 'border border-slate-200/90 bg-white text-slate-700 hover:border-brand-red hover:text-brand-red dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
-                        }`}
-                      >
-                        <span>{isInspected ? 'Inspecting' : '360° View'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          toast.info(`Directly viewing student dashboard for ${student.fullName}...`);
-                          startImpersonation({
-                            id: student.id,
-                            uid: student.firebaseUid || student.id,
-                            name: student.fullName,
-                            email: student.email || student.parentEmail,
-                            role: 'STUDENT',
-                            schoolId: student.schoolId,
-                            schoolName: student.schoolName,
-                            studentDocId: student.id,
-                            class: student.class || student.grade,
-                            classLevel: student.class || student.grade,
-                            phone: student.parentPhone
-                          }, navigate);
-                        }}
-                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs transition-all cursor-pointer whitespace-nowrap"
-                        title={`Directly log into ${student.fullName}'s student dashboard`}
-                      >
-                        <UserCheck size={13} />
-                        <span className="hidden sm:inline">Log In As</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setManagingStudent(student)}
-                        className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-200/90 bg-white p-2 text-slate-600 hover:border-brand-red hover:text-brand-red dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 cursor-pointer"
-                        title={`Full settings for ${student.fullName}`}
-                      >
-                        <Settings size={14} />
-                      </button>
+                    {/* Right: Three-Dot More Actions Menu */}
+                    <div className="shrink-0 flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+                      <RowActionMenuButton
+                        ariaLabel={`More actions for ${student.fullName}`}
+                        onClick={(e) => rowActionMenu.openFromButton(e, student)}
+                      />
                     </div>
                   </div>
                 );
@@ -1743,6 +1716,86 @@ const AdminStudents: React.FC = () => {
             </div>
           )}
         </section>
+
+        {rowActionMenu.state && (() => {
+          const target = rowActionMenu.state.data;
+          const targetSuspended = ['SUSPENDED', 'BANNED', 'DISABLED'].includes(target.accountStatus.toUpperCase());
+          const targetInspected = inspectedStudent?.id === target.id;
+
+          const menuItems: RowActionItem[] = [
+            {
+              id: 'inspect',
+              label: targetInspected ? 'Close 360° Inspector' : 'Open 360° Inspector',
+              icon: <ChevronRight size={14} />,
+              onClick: () => setInspectedStudent(targetInspected ? null : target),
+            },
+            {
+              id: 'impersonate',
+              label: 'Log In As Student',
+              icon: <UserCheck size={14} />,
+              onClick: () => {
+                toast.info(`Directly viewing student dashboard for ${target.fullName}...`);
+                startImpersonation({
+                  id: target.id,
+                  uid: target.firebaseUid || target.id,
+                  name: target.fullName,
+                  email: target.email || target.parentEmail,
+                  role: 'STUDENT',
+                  schoolId: target.schoolId,
+                  schoolName: target.schoolName,
+                  studentDocId: target.id,
+                  class: target.class || target.grade,
+                  classLevel: target.class || target.grade,
+                  phone: target.parentPhone,
+                }, navigate);
+              },
+            },
+            {
+              id: 'settings',
+              label: 'Full Settings & Pathways',
+              icon: <Settings size={14} />,
+              onClick: () => setManagingStudent(target),
+            },
+            {
+              id: 'assign-mentor',
+              label: 'Assign Faculty Mentor',
+              icon: <GraduationCap size={14} />,
+              onClick: () => openAssignMentorModal(target),
+            },
+            {
+              id: 'credentials',
+              label: 'Issue / Rotate Access Code',
+              icon: <KeyRound size={14} />,
+              onClick: () => void issueCredentials(target),
+            },
+            {
+              id: 'status',
+              label: targetSuspended ? 'Reactivate Student' : 'Suspend Student',
+              icon: <ShieldCheck size={14} />,
+              dividerBefore: true,
+              onClick: () => void toggleStudentStatus(target),
+            },
+            {
+              id: 'delete',
+              label: 'Delete Student Record',
+              icon: <Trash2 size={14} />,
+              danger: true,
+              confirmLabel: 'Confirm permanent delete?',
+              onClick: () => void deleteStudent(target),
+            },
+          ];
+
+          return (
+            <FloatingActionMenu
+              open={true}
+              x={rowActionMenu.state.x}
+              y={rowActionMenu.state.y}
+              title={target.fullName}
+              items={menuItems}
+              onClose={rowActionMenu.close}
+            />
+          );
+        })()}
 
         {/* Right: Docked 360° Scholar Inspector Drawer */}
         {inspectedStudent && (
@@ -2855,12 +2908,12 @@ const AdminStudents: React.FC = () => {
                 ) : (
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                     {selectedTutorsList.map((tm) => (
-                      <div key={tm.tutorId} className="flex items-center justify-between p-3 rounded-2xl bg-purple-50/50 dark:bg-purple-950/30 border border-purple-200/60 dark:border-purple-800/60">
+                      <div key={tm.tutorId} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800">
                         <div className="min-w-0">
-                          <div className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <div className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
                             <span>{tm.tutorName}</span>
-                            <span className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-[10px] font-bold">
-                              {tm.role || 'Lead Mentor'}
+                            <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400">
+                              · {tm.role || 'Lead Mentor'}
                             </span>
                           </div>
                           <div className="text-[11px] text-slate-500 truncate">

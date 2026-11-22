@@ -3,13 +3,16 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function isAuth() { return request.auth != null; }
     function isAdminEmail() { 
-      return isAuth() && request.auth.token.email != null && (
+      return isAuth() && (
         request.auth.token.admin == true || 
         request.auth.token.isAdmin == true || 
-        request.auth.token.email == 'johnrufai242@gmail.com' || 
-        request.auth.token.email == 'admin@jaystarbliss.com' || 
-        request.auth.token.email == 'admin@jaystarbliss-studios.name.ng' ||
-        request.auth.token.email == 'admin@jaystar.com'
+        request.auth.token.super_admin == true ||
+        (request.auth.token.email != null && (
+          request.auth.token.email.lower() == 'johnrufai242@gmail.com' || 
+          request.auth.token.email.lower() == 'admin@jaystarbliss.com' || 
+          request.auth.token.email.lower() == 'admin@jaystarbliss-studios.name.ng' ||
+          request.auth.token.email.lower() == 'admin@jaystar.com'
+        ))
       ); 
     }
     function isActiveUserRecord() { 
@@ -26,16 +29,19 @@ service cloud.firestore {
         isAdminEmail() || 
         (exists(/databases/$(database)/documents/admins/$(request.auth.uid))) || 
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['SUPER_ADMIN', 'super_admin', 'ADMIN', 'admin'])
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['SUPER_ADMIN', 'super_admin', 'SUPERADMIN', 'superadmin', 'ADMIN', 'admin'])
       ); 
     }
     function isPrivilegedRole(role) {
       return role in [
         'SUPER_ADMIN','super_admin','SUPERADMIN','superadmin',
-        'ADMIN','admin','CONTENT_ADMIN','content_admin',
+        'ADMIN','admin','ACADEMIC_ADMIN','academic_admin',
+        'ACADEMIC_SUPPORT_ADMIN','academic_support_admin',
+        'CMS_ADMIN','cms_admin','CONTENT_ADMIN','content_admin',
         'EDUCATION_ADMIN','education_admin','SERVICES_ADMIN','services_admin',
         'MARKETING_ADMIN','marketing_admin','SUPPORT_ADMIN','support_admin',
-        'FINANCE_ADMIN','finance_admin','DIRECTOR','director'
+        'FINANCE_ADMIN','finance_admin','BILLING_ADMIN','billing_admin',
+        'DIRECTOR','director'
       ];
     }
     function isSelfRegistrationRole(role) {
@@ -51,7 +57,7 @@ service cloud.firestore {
         isAdminEmail() || 
         (exists(/databases/$(database)/documents/admins/$(request.auth.uid))) || 
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['SUPER_ADMIN','super_admin','SUPERADMIN','superadmin','ADMIN','admin','CONTENT_ADMIN','content_admin','EDUCATION_ADMIN','education_admin','SERVICES_ADMIN','services_admin','MARKETING_ADMIN','marketing_admin','SUPPORT_ADMIN','support_admin','FINANCE_ADMIN','finance_admin','director','DIRECTOR'])
+          isPrivilegedRole(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')))
       ); 
     }
     function isPromotionsAdmin() {
@@ -152,6 +158,16 @@ service cloud.firestore {
       return isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
         ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('schoolId', get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('school_id', get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('schoolDocId', null)))
         : null; 
+    }
+    function userParentId() {
+      return isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('parentId', get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('parentUid', null))
+        : null;
+    }
+    function userStudentDocId() {
+      return isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('studentDocId', get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('individualStudentId', null))
+        : null;
     }
     function isSameSchool(schoolId) {
       return isAuth() && schoolId != null && schoolId != '' && (
@@ -538,8 +554,20 @@ service cloud.firestore {
       allow update, delete: if isAnyAdmin(); 
     }
     match /supportTickets/{ticketId} {
-      allow read: if isAnyAdmin() || (isAuth() && (resource.data.userId == request.auth.uid || resource.data.userEmail == request.auth.token.email));
-      allow create, update: if isAuth();
+      allow read: if isAnyAdmin() || (
+        isAuth() && (
+          resource.data.get('userId', '') == request.auth.uid ||
+          (request.auth.token.email != null && resource.data.get('userEmail', '').lower() == request.auth.token.email.lower())
+        )
+      );
+      allow create: if isAuth();
+      allow update: if isAnyAdmin() || (
+        isAuth() && (
+          resource.data.get('userId', '') == request.auth.uid ||
+          (request.auth.token.email != null && resource.data.get('userEmail', '').lower() == request.auth.token.email.lower())
+        ) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedAdminUid', 'assignedAdminName', 'internalNotes'])
+      );
       allow delete: if isAnyAdmin();
     }
     match /supportChats/{chatId} {
@@ -800,46 +828,84 @@ service cloud.firestore {
     match /billingSubscriptions/{subId} {
       allow read: if isAnyAdmin() || (
         isAuth() && (
-          resource.data.get('accountId', '') == request.auth.uid ||
-          resource.data.get('payerUid', '') == request.auth.uid ||
-          resource.data.get('parentId', '') == request.auth.uid ||
-          resource.data.get('studentId', '') == request.auth.uid ||
-          (resource.data.get('schoolId', '') != '' && isSameSchool(resource.data.get('schoolId', '')))
+          (resource == null && (
+            subId == 'parent_' + request.auth.uid ||
+            subId == 'student_' + request.auth.uid ||
+            subId == 'school_admin_' + request.auth.uid ||
+            (userSchoolId() != null && subId == 'school_' + userSchoolId()) ||
+            (userParentId() != null && subId == 'parent_' + userParentId())
+          )) ||
+          (resource != null && (
+            resource.data.get('accountId', '') == request.auth.uid ||
+            resource.data.get('payerUid', '') == request.auth.uid ||
+            resource.data.get('parentId', '') == request.auth.uid ||
+            resource.data.get('studentId', '') == request.auth.uid ||
+            (userParentId() != null && resource.data.get('parentId', '') == userParentId()) ||
+            (userStudentDocId() != null && (
+              resource.data.get('studentId', '') == userStudentDocId() ||
+              resource.data.get('accountId', '') == userStudentDocId()
+            )) ||
+            (resource.data.get('schoolId', '') != '' && isSameSchool(resource.data.get('schoolId', ''))) ||
+            (resource.data.get('accountId', '') != '' && isSameSchool(resource.data.get('accountId', '')))
+          ))
         )
       );
       allow write: if isAnyAdmin();
     }
     match /subscriptionReminders/{remId} {
       allow read: if isAnyAdmin() || (isAuth() && resource.data.get('recipientUid', '') == request.auth.uid);
-      allow write: if false;
+      allow create, update: if isAnyAdmin();
+      allow delete: if isSuperAdmin();
     }
     match /adminAuditLogs/{logId} {
       allow read: if isAnyAdmin();
-      allow write: if false;
+      allow create: if isAnyAdmin();
+      allow update, delete: if false;
     }
     match /financialResetAuditLogs/{logId} {
       allow read: if isSuperAdmin();
-      allow write: if false;
+      allow create: if isSuperAdmin();
+      allow update, delete: if false;
     }
     match /financialResetBackups/{backupId} {
       allow read: if isSuperAdmin();
-      allow write: if false;
+      allow create: if isSuperAdmin();
+      allow update, delete: if false;
       match /chunks/{chunkId} {
         allow read: if isSuperAdmin();
-        allow write: if false;
+        allow create: if isSuperAdmin();
+        allow update, delete: if false;
       }
     }
     match /accountRestrictions/{restrictionId} {
-      allow read: if isAnyAdmin();
-      allow write: if false;
+      allow read: if isAnyAdmin() || (
+        isAuth() && (
+          resource.data.get('targetAccountId', '') == request.auth.uid ||
+          resource.data.get('parentId', '') == request.auth.uid ||
+          resource.data.get('studentId', '') == request.auth.uid ||
+          (userParentId() != null && resource.data.get('parentId', '') == userParentId()) ||
+          (userStudentDocId() != null && (
+            resource.data.get('studentId', '') == userStudentDocId() ||
+            resource.data.get('targetAccountId', '') == userStudentDocId() ||
+            (resource.data.get('affectedStudentIds', []) is list && userStudentDocId() in resource.data.get('affectedStudentIds', []))
+          )) ||
+          (resource.data.get('affectedStudentIds', []) is list && request.auth.uid in resource.data.get('affectedStudentIds', [])) ||
+          (resource.data.get('schoolId', '') != '' && isSameSchool(resource.data.get('schoolId', ''))) ||
+          (resource.data.get('targetAccountId', '') != '' && isSameSchool(resource.data.get('targetAccountId', '')))
+        )
+      );
+      allow create, update: if isAnyAdmin();
+      allow delete: if isSuperAdmin();
     }
     match /restrictionAuditLogs/{logId} {
       allow read: if isAnyAdmin();
-      allow write: if false;
+      allow create: if isAnyAdmin();
+      allow update, delete: if false;
     }
     match /restrictionNotificationLogs/{logId} {
       allow read: if isAnyAdmin();
-      allow write: if false;
+      allow create, update: if isAnyAdmin();
+      allow delete: if isSuperAdmin();
     }
     match /{document=**} { allow read, write: if false; }
   }

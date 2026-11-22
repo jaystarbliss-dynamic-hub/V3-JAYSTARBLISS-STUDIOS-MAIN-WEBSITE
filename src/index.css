@@ -33,8 +33,8 @@ body {
 }
 
 html.dark body {
-  background-color: #0B1120;
-  color: #F8FAFC;
+  background-color: #09090B;
+  color: #FAFAFA;
 }
 
 /* =========================================================================
@@ -159,28 +159,28 @@ html.high-contrast.dark input:focus-visible {
 }
 
 html.dark .glass-card {
-  background-color: rgba(15, 23, 42, 0.65);
+  background-color: rgba(17, 17, 20, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+  border: 1px solid #27272A;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.55);
 }
 
 html.dark .glass-card:hover {
-  border-color: rgba(148, 163, 184, 0.3);
-  box-shadow: 0 16px 40px 0 rgba(0, 0, 0, 0.5);
+  border-color: #3F3F46;
+  box-shadow: 0 16px 40px 0 rgba(0, 0, 0, 0.65);
 }
 
 html.dark .glass-card-subtle {
-  background-color: rgba(15, 23, 42, 0.4);
+  background-color: rgba(17, 17, 20, 0.65);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid #27272A;
 }
 
 html.dark .glass-card-subtle:hover {
-  border-color: rgba(148, 163, 184, 0.25);
-  box-shadow: 0 12px 32px 0 rgba(0, 0, 0, 0.4);
+  border-color: #3F3F46;
+  box-shadow: 0 12px 32px 0 rgba(0, 0, 0, 0.55);
 }
 
 /* Jaystarbliss 2026 interface system --------------------------------------- */
@@ -196,10 +196,9 @@ html.dark .glass-card-subtle:hover {
 
 .dark .digital-canvas {
   background:
-    radial-gradient(circle at 0% 15%, rgba(230, 57, 70, 0.18), transparent 36rem),
-    radial-gradient(circle at 100% 25%, rgba(230, 57, 70, 0.15), transparent 34rem),
-    radial-gradient(circle at 50% 85%, rgba(230, 57, 70, 0.12), transparent 38rem),
-    #0c1017;
+    radial-gradient(circle at 0% 15%, rgba(185, 28, 28, 0.14), transparent 36rem),
+    radial-gradient(circle at 100% 25%, rgba(185, 28, 28, 0.1), transparent 34rem),
+    #09090B;
 }
 
 .digital-canvas::before {
@@ -223,25 +222,25 @@ html.dark .glass-card-subtle:hover {
 html.dark input,
 html.dark select,
 html.dark textarea {
-  background-color: #0f172a !important;
-  color: #f8fafc !important;
-  border-color: #334155 !important;
-  caret-color: #f8fafc;
+  background-color: #141417 !important;
+  color: #FAFAFA !important;
+  border-color: #27272A !important;
+  caret-color: #FAFAFA;
 }
 html.dark input::placeholder,
 html.dark textarea::placeholder {
-  color: #94a3b8 !important;
+  color: #71717A !important;
 }
 html.dark select option {
-  background-color: #0f172a;
-  color: #f8fafc;
+  background-color: #111114;
+  color: #FAFAFA;
 }
 html.dark input:focus,
 html.dark select:focus,
 html.dark textarea:focus {
   border-color: #b91c1c !important;
   outline: none;
-  box-shadow: 0 0 0 2px rgba(185, 28, 28, 0.18);
+  box-shadow: 0 0 0 2px rgba(185, 28, 28, 0.22);
 }
 
 .pro-surface {
@@ -251,9 +250,9 @@ html.dark textarea:focus {
 }
 
 .dark .pro-surface {
-  background: #111827;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.35);
+  background: #111114;
+  border: 1px solid #27272A;
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.55);
 }
 
 .admin-glass-card {
@@ -263,9 +262,9 @@ html.dark textarea:focus {
 }
 
 .dark .admin-glass-card {
-  background: #111827 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.35) !important;
+  background: #111114 !important;
+  border: 1px solid #27272A !important;
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.55) !important;
 }
 
 .pro-interactive {
@@ -277,8 +276,8 @@ html.dark textarea:focus {
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06); 
 }
 .dark .pro-interactive:hover { 
-  border-color: rgba(148, 163, 184, 0.25); 
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45); 
+  border-color: #3F3F46; 
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.65); 
 }
 
 .tech-label { font-size: .68rem; line-height: 1rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
@@ -294,9 +293,9 @@ html.dark textarea:focus {
 .dark .dashboard-interface > [class*="grid"] > [class*="bg-white"],
 .dark .dashboard-interface > [class*="bg-white"],
 .dark .dashboard-interface [class*="rounded-3xl"][class*="bg-white"] {
-  background: #111827 !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.35) !important;
+  background: #111114 !important;
+  border-color: #27272A !important;
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.55) !important;
 }
 .dashboard-interface h1, .dashboard-interface h2 { letter-spacing: -.02em; }
 .dashboard-interface [class*="shadow"] { transition: border-color .18s ease, box-shadow .18s ease; }
@@ -367,9 +366,9 @@ html.dark .glass-ripple {
 html.dark .glass-skeleton-pulse {
   background: linear-gradient(
     90deg,
-    rgba(30, 41, 59, 0.7) 0%,
-    rgba(51, 65, 85, 0.9) 50%,
-    rgba(30, 41, 59, 0.7) 100%
+    rgba(24, 24, 27, 0.85) 0%,
+    rgba(39, 39, 42, 0.95) 50%,
+    rgba(24, 24, 27, 0.85) 100%
   );
   background-size: 200% 100%;
   animation: glassShimmer 1.7s infinite ease-in-out;
@@ -382,12 +381,12 @@ html.dark .glass-skeleton-pulse {
   }
   html.dark .glass-skeleton-pulse {
     animation: none !important;
-    background: rgba(30, 41, 59, 0.8) !important;
+    background: rgba(24, 24, 27, 0.9) !important;
   }
 }
 
 html.dark .bg-brand-neutral {
-  background-color: #0B1120;
+  background-color: #09090B;
 }
 
 @keyframes pulse-glow {

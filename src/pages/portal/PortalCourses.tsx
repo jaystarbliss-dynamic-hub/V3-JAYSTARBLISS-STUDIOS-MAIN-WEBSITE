@@ -28,10 +28,13 @@ import {
   type StudentPathwayProgressSummary,
   type PriorLearningRecognitionType,
   calculateStudentPathwayProgress,
+  fetchStudentAttendanceRecords,
   fetchStudentProgressRecords,
   fetchStudentPriorLearningRecognitions,
   submitPriorLearningRecognition,
 } from '../../lib/learningPathwayEngine';
+import { SyllabusTopicsList } from '../../components/portal/SyllabusTopicsList';
+import learningJourneyHeroArt from '../../assets/images/learning_journey_hero_1795350254449.jpg';
 
 interface CourseModule { 
   id: string; 
@@ -43,6 +46,8 @@ interface CourseModule {
   topics: string[]; 
   lessonsCount: number; 
   completedLessons: number; 
+  progressPercent?: number;
+  completedTopics?: string[];
   duration: string; 
   badgeUnlocked: boolean; 
   activeLessonUrl?: string; 
@@ -291,12 +296,18 @@ export const PortalCourses: React.FC = () => {
       setResolvedStudentId(effectiveStudentId);
       setResolvedStudentName(resolvedName);
 
-      // 2. Fetch full recursive programme hierarchy + student progress + prior-learning recognitions + self-funded enrolments
-      const [allProgramsMap, progressRecs, priorRecs, selfEnrollments] = await Promise.all([
+      // 2. Fetch full recursive programme hierarchy + student progress + prior-learning recognitions + attendance + self-funded enrolments
+      const studentIdKeys = Array.from(
+        new Set([effectiveStudentId, currentUid, studentRecord?.studentId].filter(Boolean) as string[])
+      );
+      const [allProgramsMap, progressRecs, priorRecs, attendanceRecs, selfEnrollments] = await Promise.all([
         fetchAllProgramsMap(),
         effectiveStudentId ? fetchStudentProgressRecords(effectiveStudentId) : Promise.resolve([]),
         effectiveStudentId
           ? fetchStudentPriorLearningRecognitions(effectiveStudentId)
+          : Promise.resolve([]),
+        studentIdKeys.length > 0
+          ? fetchStudentAttendanceRecords(studentIdKeys).catch(() => [])
           : Promise.resolve([]),
         currentUid && eligibility.canSelfDiscoverAndEnroll
           ? fetchStudentProgrammeEnrollments(currentUid).catch(() => [])
@@ -318,6 +329,7 @@ export const PortalCourses: React.FC = () => {
         programsMap: allProgramsMap,
         progressRecords: progressRecs,
         priorLearningRecords: priorRecs,
+        attendanceRecords: attendanceRecs,
       });
       setPathwaySummary(computedSummary);
 
@@ -336,6 +348,8 @@ export const PortalCourses: React.FC = () => {
         mod.stageName = node.breadcrumbPath || mod.stageName;
         mod.lessonsCount = node.totalLessons || mod.lessonsCount || 8;
         mod.completedLessons = Math.round((node.selfProgress / 100) * mod.lessonsCount);
+        mod.progressPercent = node.selfProgress;
+        mod.completedTopics = node.completedTopics || [];
         mod.badgeUnlocked =
           node.selfStatus === 'COMPLETED' || node.selfStatus === 'PRIOR_LEARNING_APPROVED';
         programMap.set(p.id, mod);
@@ -451,20 +465,86 @@ export const PortalCourses: React.FC = () => {
     }
   };
 
+  const overallProgressPct = useMemo(() => {
+    if (pathwaySummary) return Math.min(100, Math.max(0, Math.round(pathwaySummary.overallProgress || 0)));
+    if (!modules.length) return 0;
+    const sum = modules.reduce((acc, m) => {
+      const p =
+        typeof m.progressPercent === 'number'
+          ? m.progressPercent
+          : m.lessonsCount > 0
+          ? Math.round((m.completedLessons / m.lessonsCount) * 100)
+          : 0;
+      return acc + p;
+    }, 0);
+    return Math.round(sum / modules.length);
+  }, [pathwaySummary, modules]);
+
+  const completedUnitsCount = pathwaySummary
+    ? pathwaySummary.completedRequiredUnits
+    : modules.filter((m) => (m.progressPercent ?? 0) >= 100 || m.badgeUnlocked).length;
+  const totalUnitsCount = pathwaySummary ? pathwaySummary.totalRequiredUnits : modules.length;
+
+  const nextMilestoneText = useMemo(() => {
+    if (!modules.length) return 'Await programme confirmation';
+    const nextIncomplete = modules.find(
+      (m) => (m.progressPercent ?? 0) < 100 && !m.badgeUnlocked
+    );
+    if (!nextIncomplete) return 'All assigned learning units completed';
+    if (completedUnitsCount === 0 && overallProgressPct === 0) {
+      return 'Complete your first learning unit';
+    }
+    return `Advance ${nextIncomplete.title}`;
+  }, [modules, completedUnitsCount, overallProgressPct]);
+
+  const rootProgrammeTitle =
+    pathwaySummary?.rootBranches?.[0]?.program?.title || studentTrackTitle || 'Technology Programme';
+
+  const [showPathwayTree, setShowPathwayTree] = useState(false);
+
+  const ringRadius = 26;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringOffset = ringCircumference * (1 - overallProgressPct / 100);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 pb-8 sm:pb-12">
       <SEO 
-        title="Curriculum & Course Tracks | Jaystarbliss Studios" 
-        description="View your assigned Jaystarbliss learning programs, curriculum stages, and recorded progress." 
+        title="Learning & Tracks | Jaystarbliss Studios" 
+        description="Explore your assigned Jaystarbliss learning tracks, monitor syllabus milestones, and advance through your programme." 
         noindex={true}
       />
 
-      {/* Compact Track, Tabs & Scratch IDE Toolbar */}
-      <div className="bg-white dark:bg-[#0c1220] rounded-2xl border border-gray-200/80 dark:border-slate-800 p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
+      {/* ============================================================== */}
+      {/* 1. HERO BANNER — YOUR LEARNING JOURNEY                         */}
+      {/* ============================================================== */}
+      <header className="relative rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#09090B] shadow-2xs">
+        <div className="absolute inset-0 pointer-events-none select-none overflow-hidden">
+          <img
+            src={learningJourneyHeroArt}
+            alt=""
+            aria-hidden="true"
+            className="absolute right-0 top-0 h-full w-full md:w-[60%] object-cover object-right opacity-25 md:opacity-95 dark:opacity-25 md:dark:opacity-45"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-white via-white/95 to-white/10 dark:from-[#09090B] dark:via-[#09090B]/92 dark:to-[#09090B]/20" />
+        </div>
+
+        <div className="relative z-10 px-4 sm:px-7 py-5 sm:py-8 flex flex-col justify-between gap-4">
+          <div className="space-y-2 max-w-xl">
+            <div className="inline-flex items-center gap-2 text-xs font-bold text-[#B91C1C] dark:text-red-400">
+              <GraduationCap size={16} className="shrink-0" />
+              <span>Learning &amp; Tracks</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-[#14284B] dark:text-white leading-tight">
+              Your Learning Journey
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-400 leading-relaxed max-w-md">
+              Explore your learning tracks, track your syllabus progress, and achieve more.
+            </p>
+          </div>
+
           {studentEligibility.canSelfDiscoverAndEnroll && (
             <div
-              className="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700"
+              className="inline-flex self-start rounded-xl p-1 bg-slate-100/90 dark:bg-[#141418]/90 border border-slate-200 dark:border-zinc-800"
               role="tablist"
             >
               <button
@@ -479,10 +559,10 @@ export const PortalCourses: React.FC = () => {
                   next.delete('programSlug');
                   setSearchParams(next, { replace: true });
                 }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-colors cursor-pointer ${
                   activeTab === 'tracks'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    ? 'bg-[#B91C1C] text-white shadow-xs'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-[#14284B] dark:hover:text-white'
                 }`}
               >
                 <BookOpen size={13} />
@@ -498,10 +578,10 @@ export const PortalCourses: React.FC = () => {
                   next.set('tab', 'explore');
                   setSearchParams(next, { replace: true });
                 }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-colors cursor-pointer ${
                   activeTab === 'explore'
                     ? 'bg-[#B91C1C] text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-[#14284B] dark:hover:text-white'
                 }`}
               >
                 <Compass size={13} />
@@ -509,36 +589,114 @@ export const PortalCourses: React.FC = () => {
               </button>
             </div>
           )}
-
-          <div className="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-            <GraduationCap size={16} className="text-brand-red shrink-0" />
-            <span>
-              Active Track:{' '}
-              <strong className="text-slate-900 dark:text-white font-bold">
-                {studentTrackTitle}
-              </strong>
-            </span>
-          </div>
         </div>
+      </header>
 
-        <a 
-          href="https://scratch.mit.edu" 
-          target="_blank" 
-          rel="noreferrer" 
-          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 dark:bg-slate-800 text-white text-xs font-bold rounded-xl shrink-0 shadow-xs hover:bg-slate-800 transition-colors"
+      {/* ============================================================== */}
+      {/* 2. HORIZONTAL PROGRESS, PROGRAMME & MILESTONE SUMMARY BAR      */}
+      {/* ============================================================== */}
+      {activeTab === 'tracks' && !loading && (
+        <section
+          aria-label="Overall progress summary"
+          className="rounded-2xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 p-4 sm:p-5 shadow-2xs"
         >
-          <Code size={14} className="text-brand-red" /> Launch Scratch IDE <ExternalLink size={12} />
-        </a>
-      </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 lg:gap-0 lg:divide-x divide-slate-200 dark:divide-zinc-800 items-center">
+            {/* Overall Progress Ring + Bar */}
+            <div className="sm:col-span-2 lg:col-span-4 flex items-center gap-3.5 sm:gap-4 lg:pr-5">
+              <div className="relative w-14 h-14 sm:w-16 sm:h-16 shrink-0 flex items-center justify-center">
+                <svg viewBox="0 0 64 64" className="w-full h-full -rotate-90" aria-hidden="true">
+                  <circle
+                    cx="32"
+                    cy="32"
+                    r={ringRadius}
+                    fill="none"
+                    strokeWidth="5.5"
+                    className="stroke-slate-100 dark:stroke-zinc-800"
+                  />
+                  <circle
+                    cx="32"
+                    cy="32"
+                    r={ringRadius}
+                    fill="none"
+                    strokeWidth="5.5"
+                    strokeLinecap="round"
+                    strokeDasharray={ringCircumference}
+                    strokeDashoffset={ringOffset}
+                    className="stroke-[#B91C1C] transition-all duration-700 ease-out"
+                  />
+                </svg>
+                <span className="absolute inset-0 flex items-center justify-center text-xs sm:text-sm font-extrabold text-[#14284B] dark:text-white tabular-nums">
+                  {overallProgressPct}%
+                </span>
+              </div>
+
+              <div className="flex-1 min-w-0 space-y-1.5">
+                <p className="text-xs sm:text-sm font-bold text-[#14284B] dark:text-white">
+                  Overall Progress
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums">
+                  {completedUnitsCount} of {totalUnitsCount} required units completed
+                </p>
+                <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[#B91C1C] transition-all duration-700"
+                    style={{ width: `${overallProgressPct}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Enrolled Programme */}
+            <div className="lg:col-span-3 lg:px-5 flex items-start gap-2.5 min-w-0">
+              <BookOpen size={17} className="text-[#B91C1C] shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-slate-500 dark:text-zinc-400">
+                  Enrolled Programme
+                </p>
+                <p className="text-xs sm:text-sm font-bold text-[#14284B] dark:text-white truncate mt-0.5">
+                  {rootProgrammeTitle}
+                </p>
+              </div>
+            </div>
+
+            {/* Next Milestone */}
+            <div className="lg:col-span-3 lg:px-5 flex items-start gap-2.5 min-w-0">
+              <Calendar size={17} className="text-[#B91C1C] shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-slate-500 dark:text-zinc-400">
+                  Next Milestone
+                </p>
+                <p className="text-xs sm:text-sm font-bold text-[#14284B] dark:text-white truncate mt-0.5">
+                  {nextMilestoneText}
+                </p>
+              </div>
+            </div>
+
+            {/* Primary Scratch IDE CTA */}
+            <div className="sm:col-span-2 lg:col-span-2 lg:pl-5 flex lg:justify-end">
+              <a
+                href="https://scratch.mit.edu"
+                target="_blank"
+                rel="noreferrer"
+                className="w-full lg:w-auto min-h-[40px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-[#991B1B] text-white text-xs font-bold shadow-xs transition-colors whitespace-nowrap"
+              >
+                <Code size={14} />
+                <span>Launch Scratch IDE</span>
+                <ChevronRight size={14} />
+              </a>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Approved Self-Funded Enrolments Awaiting Payment Strip */}
       {studentEligibility.canSelfDiscoverAndEnroll &&
         selfFundedEnrollments.some((e) =>
           PAYABLE_ENROLLMENT_STATUSES.has(e.enrollmentStatus)
         ) && (
-          <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-0.5 text-xs">
-              <div className="font-extrabold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+              <div className="font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
                 <CreditCard size={15} />
                 <span>Approved Programme Ready for Payment</span>
               </div>
@@ -559,7 +717,7 @@ export const PortalCourses: React.FC = () => {
                   PAYABLE_ENROLLMENT_STATUSES.has(e.enrollmentStatus)
                 )!.id
               )}`}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shrink-0"
             >
               <CreditCard size={13} />
               <span>Continue to Payment</span>
@@ -567,6 +725,9 @@ export const PortalCourses: React.FC = () => {
           </div>
         )}
 
+      {/* ============================================================== */}
+      {/* 3. MAIN CONTENT: EXPLORE TAB OR MASTER-DETAIL TRACKS           */}
+      {/* ============================================================== */}
       {studentEligibility.canSelfDiscoverAndEnroll && activeTab === 'explore' ? (
         <PortalProgramExplorer
           mode="student"
@@ -592,21 +753,21 @@ export const PortalCourses: React.FC = () => {
           }}
         />
       ) : loading ? (
-        <div className="flex items-center justify-center py-24 text-gray-500">
-          <Loader2 className="animate-spin mr-2" size={22} /> Loading your assigned courses…
+        <div className="flex items-center justify-center py-20 text-slate-500 dark:text-zinc-400 text-sm">
+          <Loader2 className="animate-spin mr-2 text-[#B91C1C]" size={20} /> Loading your learning tracks…
         </div>
       ) : message && !modules.length ? (
-        <div className="p-12 text-center rounded-3xl border border-dashed border-gray-200 dark:border-slate-800 text-sm text-gray-500 bg-white dark:bg-[#0c1220] space-y-3">
-          <BookOpen size={32} className="mx-auto text-slate-400" />
-          <p className="font-bold text-slate-700 dark:text-slate-300">{message}</p>
-          <p className="text-xs text-slate-400">
+        <div className="p-8 sm:p-12 text-center rounded-2xl border border-dashed border-slate-200 dark:border-zinc-800 text-sm text-slate-500 dark:text-zinc-400 bg-white dark:bg-[#111114] space-y-3">
+          <BookOpen size={30} className="mx-auto text-slate-400 dark:text-zinc-500" />
+          <p className="font-bold text-[#14284B] dark:text-white">{message}</p>
+          <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-md mx-auto">
             Contact your institution administrator or tutor to assign your curriculum track.
           </p>
           {studentEligibility.canSelfDiscoverAndEnroll && (
             <button
               type="button"
               onClick={() => setActiveTab('explore')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-[#991B1B] text-white text-xs font-bold cursor-pointer"
             >
               <Compass size={14} />
               <span>Explore Available Programmes</span>
@@ -614,371 +775,453 @@ export const PortalCourses: React.FC = () => {
           )}
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* Recursive Programme Hierarchy & Progress Tree Card */}
-          {pathwaySummary && pathwaySummary.rootBranches.length > 0 && (
-            <div className="bg-white dark:bg-[#0c1220] rounded-3xl border border-gray-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
-                <div>
-                  <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    <FolderTree size={18} className="text-brand-red" />
-                    <span>My Enrolled Programme Hierarchy &amp; Progress</span>
+        <div className="space-y-5 sm:space-y-6">
+          {/* MASTER-DETAIL 2-COLUMN TRACKS WORKSPACE */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            {/* LEFT COLUMN: Your Learning Tracks Selector */}
+            <aside className="lg:col-span-5 xl:col-span-4 space-y-3">
+              <div className="rounded-2xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 px-4 py-3.5 flex items-center justify-between gap-2 shadow-2xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Layers size={16} className="text-[#B91C1C] shrink-0" />
+                  <h2 className="text-sm font-bold text-[#14284B] dark:text-white truncate">
+                    Your Learning Tracks
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
-                    Overall Pathway Completion: <strong>{pathwaySummary.overallProgress}%</strong> ({pathwaySummary.completedRequiredUnits} of {pathwaySummary.totalRequiredUnits} required learning units completed)
-                  </p>
                 </div>
-                {pathwaySummary.priorLearningApprovedUnits > 0 && (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#1E293B] dark:text-slate-200 tabular-nums">
-                    <Award size={14} className="text-[#B91C1C]" /> {pathwaySummary.priorLearningApprovedUnits} Prior-Learning Credit(s) Approved
-                  </span>
-                )}
+                <span className="text-xs font-bold text-[#B91C1C] dark:text-red-400 tabular-nums shrink-0">
+                  {modules.length} {modules.length === 1 ? 'Track' : 'Tracks'}
+                </span>
               </div>
 
-              <div className="space-y-1.5">
-                {(() => {
-                  const renderStudentNode = (node: ComputedProgramNodeProgress): React.ReactNode => {
-                    const p = node.program;
-                    const hasChildren = node.children.length > 0;
-                    const isExpanded = expandedBranchIds.has(p.id);
-                    const countsOwnUnit =
-                      node.isDirectlyEnrolledScope &&
-                      !node.isContainer &&
-                      (node.children.length === 0 || node.isHybrid);
-                    const pct = hasChildren && !countsOwnUnit ? node.aggregateProgress : node.selfProgress;
-                    const status = hasChildren && !countsOwnUnit ? node.status : node.selfStatus;
+              <div className="space-y-3">
+                {modules.map((mod, idx) => {
+                  const progress =
+                    typeof mod.progressPercent === 'number'
+                      ? Math.min(100, Math.max(0, Math.round(mod.progressPercent)))
+                      : mod.lessonsCount > 0
+                      ? Math.round((mod.completedLessons / mod.lessonsCount) * 100)
+                      : 0;
+                  const isSelected = selectedId === mod.id;
+                  const isCodingTrack = /cod|program|dev|scratch|web|python|js/i.test(mod.title);
 
-                    return (
-                      <div key={p.id} className="select-none">
-                        <div
-                          onClick={() => {
-                            if (countsOwnUnit) setSelectedId(p.id);
-                            else if (hasChildren) {
-                              setExpandedBranchIds((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(p.id)) next.delete(p.id);
-                                else next.add(p.id);
-                                return next;
-                              });
-                            }
-                          }}
-                          className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-wrap items-center justify-between gap-3 mb-1.5 ${
-                            selectedId === p.id
-                              ? 'border-brand-red bg-red-50/30 dark:bg-red-950/20'
-                              : 'border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/60'
-                          }`}
-                          style={{ marginLeft: `${Math.min(node.depth, 8) * 18}px` }}
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            {hasChildren ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setExpandedBranchIds((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(p.id)) next.delete(p.id);
-                                    else next.add(p.id);
-                                    return next;
-                                  });
-                                }}
-                                className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500"
-                              >
-                                {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                              </button>
-                            ) : (
-                              <span className="w-4 text-center text-slate-300">•</span>
-                            )}
+                  return (
+                    <button
+                      key={mod.id}
+                      type="button"
+                      onClick={() => setSelectedId(mod.id)}
+                      className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer flex items-center gap-3.5 ${
+                        isSelected
+                          ? 'border-[#B91C1C] bg-red-50/40 dark:bg-[#B91C1C]/10 shadow-sm'
+                          : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#111114] hover:border-slate-300 dark:hover:border-zinc-700'
+                      }`}
+                    >
+                      {/* Track Icon Tile */}
+                      <div
+                        className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected
+                            ? 'bg-red-100/80 dark:bg-[#B91C1C]/20 text-[#B91C1C] dark:text-red-400'
+                            : 'bg-slate-100 dark:bg-[#18181B] text-[#14284B] dark:text-zinc-300'
+                        }`}
+                      >
+                        {isCodingTrack || idx % 2 === 1 ? (
+                          <Code size={22} />
+                        ) : (
+                          <BookOpen size={22} />
+                        )}
+                      </div>
 
-                            {hasChildren || node.isContainer ? (
-                              isExpanded ? (
-                                <FolderOpen size={16} className="text-brand-red shrink-0" />
-                              ) : (
-                                <Folder size={16} className="text-brand-red shrink-0" />
-                              )
-                            ) : (
-                              <BookOpen size={15} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
-                            )}
-
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                <span className="text-xs font-bold text-slate-900 dark:text-white">
-                                  {p.title}
-                                </span>
-                                {hasChildren && (
-                                  <span className="text-[11px] font-black text-[#1E293B] dark:text-slate-300 tabular-nums">
-                                    · {pct}% complete
-                                  </span>
-                                )}
-                                {status === 'PRIOR_LEARNING_APPROVED' ? (
-                                  <span className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200">
-                                    · Prior Learning Approved
-                                  </span>
-                                ) : status === 'COMPLETED' ? (
-                                  <span className="text-[11px] font-bold text-[#1E293B] dark:text-slate-200">
-                                    · Completed
-                                  </span>
-                                ) : status === 'CURRENT' ? (
-                                  <span className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400">
-                                    · Currently Learning
-                                  </span>
-                                ) : status === 'LOCKED' ? (
-                                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 inline-flex items-center gap-1">
-                                    · <Lock size={10} /> Locked (Requires{' '}
-                                    {node.missingPrerequisites.map((m) => m.title).join(', ')})
-                                  </span>
-                                ) : status === 'OPTIONAL' ? (
-                                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                                    · Optional
-                                  </span>
-                                ) : (
-                                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                                    · Upcoming
-                                  </span>
-                                )}
-                              </div>
-                              {node.depth > 0 && (
-                                <div className="text-[10px] text-slate-400 truncate">
-                                  {node.breadcrumbPath}
-                                </div>
-                              )}
-                            </div>
+                      {/* Track Content */}
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h3 className="font-bold text-sm text-[#14284B] dark:text-white truncate">
+                              {mod.title}
+                            </h3>
+                            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-zinc-400 line-clamp-2 mt-0.5 leading-snug">
+                              {mod.description}
+                            </p>
                           </div>
+                          <span
+                            className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                              isSelected
+                                ? 'bg-[#B91C1C] text-white'
+                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400'
+                            }`}
+                          >
+                            <ChevronRight size={15} />
+                          </span>
+                        </div>
 
-                          <div className="flex items-center gap-2.5 shrink-0 tabular-nums">
-                            <span className="text-xs font-black text-slate-700 dark:text-slate-300">
-                              {pct}%
-                            </span>
-                            {countsOwnUnit &&
-                              node.selfStatus !== 'COMPLETED' &&
-                              node.selfStatus !== 'PRIOR_LEARNING_APPROVED' &&
-                              node.priorLearningRecord?.status !== 'PENDING' && (
+                        <div className="flex items-center gap-2.5 pt-1">
+                          <div className="flex-1 h-1.5 rounded-full bg-slate-200/80 dark:bg-zinc-800 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-[#B91C1C] transition-all duration-500"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                          <span className="text-[11px] font-bold text-[#14284B] dark:text-zinc-200 tabular-nums shrink-0">
+                            {progress}%
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </aside>
+
+            {/* RIGHT COLUMN: Selected Track Detail Card */}
+            {selectedModule && (
+              <article className="lg:col-span-7 xl:col-span-8 bg-white dark:bg-[#111114] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-2xs flex flex-col">
+                {/* Brand Crimson-Navy Visual Hero Strip */}
+                <div className="relative bg-gradient-to-br from-[#7F1D1D] via-[#991B1B] to-[#14284B] p-5 sm:p-7 text-white overflow-hidden">
+                  {/* Subtle Geometric Code Motif on Right */}
+                  <div
+                    aria-hidden="true"
+                    className="hidden sm:flex absolute right-6 top-1/2 -translate-y-1/2 w-36 h-24 rounded-2xl border border-white/15 bg-[#09090B]/35 backdrop-blur-xs items-center justify-center shadow-2xl rotate-[-3deg]"
+                  >
+                    <Code size={42} className="text-white/90" />
+                  </div>
+                  <div
+                    aria-hidden="true"
+                    className="absolute -right-10 -bottom-12 w-48 h-48 rounded-full bg-white/5 blur-2xl"
+                  />
+
+                  <div className="relative z-10 max-w-lg space-y-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold uppercase tracking-wider text-red-100/90">
+                      <span>{selectedModule.stageName}</span>
+                      <span>·</span>
+                      <span>{selectedModule.duration}</span>
+                      {selectedModule.badgeUnlocked && (
+                        <>
+                          <span>·</span>
+                          <span className="inline-flex items-center gap-1 text-white">
+                            <Award size={12} /> Certified
+                          </span>
+                        </>
+                      )}
+                    </div>
+
+                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-white leading-tight">
+                      {selectedModule.title}
+                    </h2>
+
+                    <p className="text-xs sm:text-sm text-white/85 leading-relaxed">
+                      {selectedModule.description}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Card Body */}
+                <div className="p-4 sm:p-6 space-y-5 flex-1">
+                  {/* About this Track + Faculty Lead */}
+                  <div className="space-y-2 pb-4 border-b border-slate-100 dark:border-zinc-800">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm sm:text-base font-bold text-[#14284B] dark:text-white flex items-center gap-2">
+                        <FileText size={16} className="text-[#B91C1C]" />
+                        <span>About this Track</span>
+                      </h3>
+                      {selectedModule.instructor && (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-zinc-300">
+                          <UserCheck size={14} className="text-[#B91C1C]" />
+                          <span>Faculty Lead: {selectedModule.instructor}</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-300 leading-relaxed">
+                      {selectedModule.curriculumSummary || selectedModule.description}
+                    </p>
+                  </div>
+
+                  {/* Official Curriculum PDF Strip */}
+                  {(selectedModule.curriculumPdfUrl || canManageCurriculum) && (
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50 dark:bg-[#18181B] border border-slate-200/80 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-lg bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-700 text-[#14284B] dark:text-zinc-200 flex items-center justify-center shrink-0">
+                          <FileText size={17} />
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="text-xs sm:text-sm font-bold text-[#14284B] dark:text-white truncate">
+                            {selectedModule.curriculumTitle || `${selectedModule.title} Syllabus Guide`}
+                          </h4>
+                          <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
+                            {selectedModule.curriculumPdfUrl
+                              ? 'Official syllabus PDF and milestone checklist ready to read.'
+                              : 'No PDF linked yet. Tutors and admins can upload a curriculum guide.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        {selectedModule.curriculumPdfUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setReadingCurriculum(selectedModule)}
+                            className="px-3.5 py-2 bg-[#14284B] hover:bg-[#1E3A6D] dark:bg-zinc-800 dark:hover:bg-zinc-700 text-white rounded-xl text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Eye size={13} />
+                            <span>Read Syllabus</span>
+                          </button>
+                        )}
+                        {canManageCurriculum && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCurriculumModal(selectedModule)}
+                            className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:border-[#B91C1C] hover:text-[#B91C1C] text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Upload size={13} />
+                            <span>{selectedModule.curriculumPdfUrl ? 'Update' : 'Upload PDF'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* What You'll Learn / Structured Vertical Syllabus Topics */}
+                  <div>
+                    {selectedModule.topics.length ? (
+                      <SyllabusTopicsList
+                        topics={selectedModule.topics}
+                        overallProgress={
+                          typeof selectedModule.progressPercent === 'number'
+                            ? selectedModule.progressPercent
+                            : selectedModule.lessonsCount
+                            ? Math.round((selectedModule.completedLessons / selectedModule.lessonsCount) * 100)
+                            : 0
+                        }
+                        completedTopics={selectedModule.completedTopics || []}
+                        heading="What You'll Learn"
+                        collapsedLimit={6}
+                      />
+                    ) : (
+                      <div className="p-4 rounded-xl border border-dashed border-slate-200 dark:border-zinc-800 text-xs text-slate-500 dark:text-zinc-400">
+                        Structured syllabus topics and practical laboratory exercises are active for this track.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Primary Action Footer */}
+                  <div className="pt-4 border-t border-slate-100 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        to="/portal/student/assignments"
+                        className="min-h-[38px] inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 px-3 text-xs font-bold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-900 transition-colors"
+                      >
+                        <ClipboardList size={14} className="text-[#B91C1C]" />
+                        <span>Deliverables</span>
+                      </Link>
+                      <Link
+                        to="/portal/student/milestones"
+                        className="min-h-[38px] inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 px-3 text-xs font-bold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-900 transition-colors"
+                      >
+                        <Flag size={14} className="text-[#B91C1C]" />
+                        <span>Milestones</span>
+                      </Link>
+                    </div>
+
+                    {selectedModule.activeLessonUrl ? (
+                      <a
+                        href={selectedModule.activeLessonUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-full sm:w-auto min-h-[42px] px-5 py-2.5 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold text-xs sm:text-sm rounded-xl inline-flex items-center justify-center gap-2 shadow-sm transition-colors"
+                      >
+                        <PlayCircle size={16} />
+                        <span>{selectedModule.activeLessonTitle || 'Start Learning'}</span>
+                        <ExternalLink size={12} />
+                      </a>
+                    ) : selectedModule.curriculumPdfUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => setReadingCurriculum(selectedModule)}
+                        className="w-full sm:w-auto min-h-[42px] px-5 py-2.5 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold text-xs sm:text-sm rounded-xl inline-flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
+                      >
+                        <PlayCircle size={16} />
+                        <span>Start Learning</span>
+                      </button>
+                    ) : (
+                      <a
+                        href="https://scratch.mit.edu"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-full sm:w-auto min-h-[42px] px-5 py-2.5 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold text-xs sm:text-sm rounded-xl inline-flex items-center justify-center gap-2 shadow-sm transition-colors"
+                      >
+                        <PlayCircle size={16} />
+                        <span>Start Learning</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </article>
+            )}
+          </div>
+
+          {/* ============================================================== */}
+          {/* 4. FULL PROGRAMME PATHWAY TREE & PRIOR-LEARNING RECOGNITION    */}
+          {/* ============================================================== */}
+          {pathwaySummary && pathwaySummary.rootBranches.length > 0 && (
+            <section className="bg-white dark:bg-[#111114] rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setShowPathwayTree((prev) => !prev)}
+                className="w-full px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-left hover:bg-slate-50/70 dark:hover:bg-zinc-900/40 transition-colors cursor-pointer"
+              >
+                <div className="min-w-0">
+                  <h2 className="text-sm sm:text-base font-bold text-[#14284B] dark:text-white flex items-center gap-2">
+                    <FolderTree size={17} className="text-[#B91C1C] shrink-0" />
+                    <span>Programme Pathway &amp; Prior-Learning Credits</span>
+                  </h2>
+                  <p className="text-[11px] sm:text-xs text-slate-500 dark:text-zinc-400 mt-0.5 tabular-nums">
+                    Full curriculum tree ({pathwaySummary.completedRequiredUnits} of {pathwaySummary.totalRequiredUnits} required units)
+                    {pathwaySummary.priorLearningApprovedUnits > 0
+                      ? ` · ${pathwaySummary.priorLearningApprovedUnits} Prior-Learning Credit(s) Approved`
+                      : ''}
+                  </p>
+                </div>
+
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#B91C1C] dark:text-red-400 shrink-0">
+                  <span>{showPathwayTree ? 'Hide Pathway Tree' : 'View Full Pathway'}</span>
+                  {showPathwayTree ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                </span>
+              </button>
+
+              {showPathwayTree && (
+                <div className="px-4 sm:px-6 pb-5 pt-2 border-t border-slate-100 dark:border-zinc-800 space-y-1.5 overflow-x-auto">
+                  {(() => {
+                    const renderStudentNode = (node: ComputedProgramNodeProgress): React.ReactNode => {
+                      const p = node.program;
+                      const hasChildren = node.children.length > 0;
+                      const isExpanded = expandedBranchIds.has(p.id);
+                      const countsOwnUnit =
+                        node.isDirectlyEnrolledScope &&
+                        !node.isContainer &&
+                        (node.children.length === 0 || node.isHybrid);
+                      const pct = hasChildren && !countsOwnUnit ? node.aggregateProgress : node.selfProgress;
+                      const status = hasChildren && !countsOwnUnit ? node.status : node.selfStatus;
+
+                      return (
+                        <div key={p.id} className="select-none">
+                          <div
+                            onClick={() => {
+                              if (countsOwnUnit) setSelectedId(p.id);
+                              else if (hasChildren) {
+                                setExpandedBranchIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(p.id)) next.delete(p.id);
+                                  else next.add(p.id);
+                                  return next;
+                                });
+                              }
+                            }}
+                            className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-wrap items-center justify-between gap-2.5 mb-1.5 ${
+                              selectedId === p.id
+                                ? 'border-[#B91C1C] bg-red-50/35 dark:bg-[#B91C1C]/10'
+                                : 'border-slate-200/80 dark:border-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-900/60'
+                            }`}
+                            style={{ marginLeft: `${Math.min(node.depth, 6) * 14}px` }}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              {hasChildren ? (
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setPriorRequestNode(node);
-                                    setPriorReqEvidence('');
-                                    setPriorReqNotes('');
+                                    setExpandedBranchIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(p.id)) next.delete(p.id);
+                                      else next.add(p.id);
+                                      return next;
+                                    });
                                   }}
-                                  className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-bold hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                                  className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-zinc-800 text-slate-500"
                                 >
-                                  Already Completed? Request Credit
+                                  {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                                 </button>
+                              ) : (
+                                <span className="w-4 text-center text-slate-300 dark:text-zinc-600">•</span>
                               )}
-                            {node.priorLearningRecord?.status === 'PENDING' && (
-                              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                                Prior Credit Pending Verification
+
+                              {hasChildren || node.isContainer ? (
+                                isExpanded ? (
+                                  <FolderOpen size={15} className="text-[#B91C1C] shrink-0" />
+                                ) : (
+                                  <Folder size={15} className="text-[#B91C1C] shrink-0" />
+                                )
+                              ) : (
+                                <BookOpen size={14} className="text-[#14284B] dark:text-zinc-300 shrink-0" />
+                              )}
+
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <span className="text-xs font-bold text-[#14284B] dark:text-white">
+                                    {p.title}
+                                  </span>
+                                  {status === 'PRIOR_LEARNING_APPROVED' ? (
+                                    <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                      · Prior Learning Approved
+                                    </span>
+                                  ) : status === 'COMPLETED' ? (
+                                    <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                      · Completed
+                                    </span>
+                                  ) : status === 'CURRENT' ? (
+                                    <span className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400">
+                                      · Currently Learning
+                                    </span>
+                                  ) : status === 'LOCKED' ? (
+                                    <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 inline-flex items-center gap-1">
+                                      · <Lock size={10} /> Locked (Requires{' '}
+                                      {node.missingPrerequisites.map((m) => m.title).join(', ')})
+                                    </span>
+                                  ) : (
+                                    <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400">
+                                      · {status === 'OPTIONAL' ? 'Optional' : 'Upcoming'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2.5 shrink-0 tabular-nums">
+                              <span className="text-xs font-bold text-slate-700 dark:text-zinc-300">
+                                {pct}%
                               </span>
-                            )}
+                              {countsOwnUnit &&
+                                node.selfStatus !== 'COMPLETED' &&
+                                node.selfStatus !== 'PRIOR_LEARNING_APPROVED' &&
+                                node.priorLearningRecord?.status !== 'PENDING' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPriorRequestNode(node);
+                                      setPriorReqEvidence('');
+                                      setPriorReqNotes('');
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 text-[#14284B] dark:text-zinc-200 border border-slate-200 dark:border-zinc-700 text-[10px] font-bold hover:border-[#B91C1C] hover:text-[#B91C1C] cursor-pointer"
+                                  >
+                                    Request Credit
+                                  </button>
+                                )}
+                              {node.priorLearningRecord?.status === 'PENDING' && (
+                                <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400">
+                                  Credit Pending
+                                </span>
+                              )}
+                            </div>
                           </div>
+
+                          {hasChildren && isExpanded && (
+                            <div>{node.children.map((c) => renderStudentNode(c))}</div>
+                          )}
                         </div>
-
-                        {hasChildren && isExpanded && (
-                          <div>{node.children.map((c) => renderStudentNode(c))}</div>
-                        )}
-                      </div>
-                    );
-                  };
-                  return pathwaySummary.rootBranches.map((r) => renderStudentNode(r));
-                })()}
-              </div>
-            </div>
+                      );
+                    };
+                    return pathwaySummary.rootBranches.map((r) => renderStudentNode(r));
+                  })()}
+                </div>
+              )}
+            </section>
           )}
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left: Sequential Stage Cards List */}
-            <div className="space-y-3">
-              <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 px-1 flex items-center justify-between">
-                <span>Assigned Learning Units</span>
-                <span className="text-[11px] font-bold text-brand-red">{modules.length} Units</span>
-              </h2>
-
-            {modules.map((mod) => {
-              const progress = mod.lessonsCount > 0 ? Math.round((mod.completedLessons / mod.lessonsCount) * 100) : 0;
-              const isSelected = selectedId === mod.id;
-
-              return (
-                <button
-                  key={mod.id}
-                  type="button"
-                  onClick={() => setSelectedId(mod.id)}
-                  className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer ${
-                    isSelected
-                      ? 'border-brand-red bg-white dark:bg-[#0c1220] shadow-md ring-2 ring-brand-red/20'
-                      : 'border-gray-200/80 dark:border-slate-800 bg-white/70 dark:bg-[#0c1220]/60 hover:border-slate-300 dark:hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5 gap-2">
-                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#B91C1C] dark:text-red-400 truncate">
-                      {mod.stageName}
-                    </span>
-                    {mod.badgeUnlocked && (
-                      <span className="flex items-center gap-1 text-[11px] font-bold text-[#1E293B] dark:text-slate-200 shrink-0">
-                        <Award size={11} className="text-[#B91C1C]" /> Certified
-                      </span>
-                    )}
-                  </div>
-
-                  <h3 className="font-bold text-sm text-gray-900 dark:text-white mb-2 line-clamp-1">
-                    {mod.title}
-                  </h3>
-
-                  {mod.seriesName && (
-                    <p className="text-[10px] text-slate-400 font-medium mb-2 truncate">
-                      Series: {mod.seriesName}
-                    </p>
-                  )}
-
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-slate-400">
-                      <span>{mod.lessonsCount ? `${mod.completedLessons} of ${mod.lessonsCount} lessons` : 'Syllabus modules active'}</span>
-                      <span className="font-bold text-slate-700 dark:text-slate-300">{progress}%</span>
-                    </div>
-                    <div className="w-full bg-gray-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                      <div className="h-full bg-brand-red transition-all" style={{ width: `${progress}%` }} />
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Right: Selected Stage Syllabus & Details */}
-          {selectedModule && (
-            <div className="lg:col-span-2 bg-white dark:bg-[#0c1220] rounded-3xl border border-gray-200/80 dark:border-slate-800 p-6 sm:p-8 shadow-xs flex flex-col justify-between">
-              <div>
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-                  <span className="text-xs font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
-                    {selectedModule.stageName}
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-slate-400 font-mono font-bold tabular-nums">
-                    Duration: {selectedModule.duration}
-                  </span>
-                </div>
-
-                <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2 tracking-tight">
-                  {selectedModule.title}
-                </h2>
-
-                {selectedModule.instructor && (
-                  <div className="mb-4 inline-flex items-center gap-1.5 text-xs font-bold text-[#1E293B] dark:text-slate-300">
-                    <UserCheck size={14} className="text-[#B91C1C]" /> Faculty Lead: {selectedModule.instructor}
-                  </div>
-                )}
-
-                <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 leading-relaxed">
-                  {selectedModule.description}
-                </p>
-
-                {/* Dedicated Curriculum Document Banner / Preview Button */}
-                <div className="mb-6 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#1E293B]/10 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 flex items-center justify-center shrink-0 mt-0.5">
-                      <FileText size={20} />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                        {selectedModule.curriculumTitle || `${selectedModule.title} Official Curriculum Document`}
-                      </h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        {selectedModule.curriculumPdfUrl 
-                          ? 'Complete syllabus, learning objectives, class timetable & milestone checklist available to read.'
-                          : 'No external PDF document linked yet. Tutors and admins can upload or link the curriculum syllabus.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    {selectedModule.curriculumPdfUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => setReadingCurriculum(selectedModule)}
-                        className="px-4 py-2 bg-[#1E293B] hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Eye size={14} />
-                        <span>Read Curriculum</span>
-                      </button>
-                    ) : (
-                      <span className="px-3.5 py-2 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 text-xs font-bold">Curriculum not linked yet</span>
-                    )}
-                    {canManageCurriculum && (
-                      <button
-                        type="button"
-                        onClick={() => handleOpenCurriculumModal(selectedModule)}
-                        className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-brand-red hover:text-brand-red text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Upload size={14} />
-                        <span>{selectedModule.curriculumPdfUrl ? 'Update Curriculum' : 'Upload Curriculum'}</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Core Subject Syllabus / Topics Grid */}
-                <div className="space-y-3 mb-6">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-gray-400">
-                      Stage Syllabus &amp; Core Topics ({selectedModule.topics.length} Units)
-                    </h4>
-                  </div>
-                  {selectedModule.topics.length ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {selectedModule.topics.map((topic, i) => (
-                        <div
-                          key={`${topic}-${i}`}
-                          className="p-3.5 rounded-xl border border-gray-100 dark:border-slate-800 bg-gray-50/70 dark:bg-slate-900/50 flex items-center gap-3 text-xs font-semibold text-gray-800 dark:text-gray-200"
-                        >
-                          <CheckCircle2 size={16} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
-                          <span className="truncate">{topic}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-4 rounded-xl border border-dashed border-gray-200 dark:border-slate-800 text-xs text-gray-500">
-                      Curriculum topics and laboratory exercises are active for this stage.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="pt-6 border-t border-gray-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
-                  <BookOpen size={16} className="text-brand-red" />
-                  <span>
-                    {selectedModule.lessonsCount
-                      ? `${selectedModule.completedLessons}/${selectedModule.lessonsCount} lessons recorded`
-                      : 'Structured stage milestones'}
-                  </span>
-                </div>
-
-                {selectedModule.activeLessonUrl ? (
-                  <a
-                    href={selectedModule.activeLessonUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-5 py-2.5 bg-brand-red hover:bg-red-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all"
-                  >
-                    <PlayCircle size={15} /> {selectedModule.activeLessonTitle || 'Open Active Lesson'} <ExternalLink size={12} />
-                  </a>
-                ) : (
-                  <div className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 px-4 py-2.5 text-xs font-bold text-slate-400">
-                    <PlayCircle size={15} /> Stage Active in Laboratory
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2 pt-3 border-t border-slate-100 dark:border-slate-800/60">
-                <Link to="/portal/student/assignments" className="min-h-10 inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 px-3.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
-                  <ClipboardList size={14} /> Deliverables &amp; Assignments
-                </Link>
-                <Link to="/portal/student/milestones" className="min-h-10 inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 px-3.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
-                  <Flag size={14} /> Stage Milestones
-                </Link>
-              </div>
-            </div>
-          )}
-          </div>
         </div>
       )}
 
@@ -1015,35 +1258,35 @@ export const PortalCourses: React.FC = () => {
                 setSubmittingPriorReq(false);
               }
             }}
-            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-w-lg w-full p-6 space-y-4 shadow-2xl"
+            className="bg-white dark:bg-[#111114] rounded-2xl border border-slate-200 dark:border-zinc-800 max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl"
           >
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <h3 className="text-base font-black text-[#14284B] dark:text-white flex items-center gap-2">
                   <Award size={18} className="text-[#B91C1C]" />
                   <span>Request Prior-Learning Recognition</span>
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                   Unit: <strong>{priorRequestNode.breadcrumbPath}</strong>
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setPriorRequestNode(null)}
-                className="p-1 text-slate-400 hover:text-slate-700"
+                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
                 How did you complete this unit?
               </label>
               <select
                 value={priorReqType}
                 onChange={(e) => setPriorReqType(e.target.value as PriorLearningRecognitionType)}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 dark:text-white"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-zinc-700 rounded-xl text-xs font-bold bg-white dark:bg-[#18181B] dark:text-white"
               >
                 <option value="PRIOR_COMPLETION">Completed Previously</option>
                 <option value="PORTFOLIO_VERIFIED">Built Practical Project / Portfolio</option>
@@ -1053,7 +1296,7 @@ export const PortalCourses: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
                 Project Link / Certificate / Evidence *
               </label>
               <input
@@ -1062,12 +1305,12 @@ export const PortalCourses: React.FC = () => {
                 value={priorReqEvidence}
                 onChange={(e) => setPriorReqEvidence(e.target.value)}
                 placeholder="Paste link to your project, GitHub repo, or certificate..."
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs dark:bg-slate-800 dark:text-white"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-zinc-700 rounded-xl text-xs bg-white dark:bg-[#18181B] dark:text-white"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
                 Summary of What You Know *
               </label>
               <textarea
@@ -1076,7 +1319,7 @@ export const PortalCourses: React.FC = () => {
                 value={priorReqNotes}
                 onChange={(e) => setPriorReqNotes(e.target.value)}
                 placeholder="Briefly describe the concepts and projects you have already built..."
-                className="w-full p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs dark:bg-slate-800 dark:text-white"
+                className="w-full p-2.5 border border-slate-300 dark:border-zinc-700 rounded-xl text-xs bg-white dark:bg-[#18181B] dark:text-white"
               />
             </div>
 
@@ -1084,14 +1327,14 @@ export const PortalCourses: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setPriorRequestNode(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600"
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submittingPriorReq}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#B91C1C] hover:bg-[#991B1B] text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
               >
                 <Send size={13} />
                 <span>{submittingPriorReq ? 'Submitting...' : 'Submit for Tutor Verification'}</span>
@@ -1103,64 +1346,64 @@ export const PortalCourses: React.FC = () => {
 
       {/* ══ INTERACTIVE CURRICULUM READER MODAL ══ */}
       {readingCurriculum && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-gray-200 dark:border-slate-800 w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#111114] rounded-2xl border border-gray-200 dark:border-zinc-800 w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
-            <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-start justify-between gap-4">
+            <div className="p-5 sm:p-6 border-b border-slate-200 dark:border-zinc-800 flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 mb-1.5 text-[11px] font-bold">
                   <span className="text-[#B91C1C] dark:text-red-400 uppercase tracking-wider">
                     Official Curriculum Reader
                   </span>
-                  <span className="text-slate-400">
+                  <span className="text-slate-400 dark:text-zinc-500">
                     · {readingCurriculum.stageName}
                   </span>
                 </div>
-                <h2 className="text-xl font-black text-slate-900 dark:text-white">
+                <h2 className="text-lg sm:text-xl font-black text-[#14284B] dark:text-white">
                   {readingCurriculum.curriculumTitle || readingCurriculum.title}
                 </h2>
               </div>
 
               <button
                 onClick={() => setReadingCurriculum(null)}
-                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
               >
                 <X size={20} />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs sm:text-sm custom-scrollbar">
+            <div className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1 text-xs sm:text-sm custom-scrollbar">
               {readingCurriculum.curriculumSummary && (
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Overview</h4>
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 mb-1">Overview</h4>
                   <p className="leading-relaxed">{readingCurriculum.curriculumSummary}</p>
                 </div>
               )}
 
               {/* Topics Breakdown */}
               {readingCurriculum.topics.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-                    Curriculum Syllabus Topics ({readingCurriculum.topics.length} Core Modules)
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {readingCurriculum.topics.map((topic, i) => (
-                      <div key={i} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex items-center gap-3">
-                        <CheckCircle2 size={16} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">{topic}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <SyllabusTopicsList
+                  topics={readingCurriculum.topics}
+                  overallProgress={
+                    typeof readingCurriculum.progressPercent === 'number'
+                      ? readingCurriculum.progressPercent
+                      : readingCurriculum.lessonsCount
+                      ? Math.round((readingCurriculum.completedLessons / readingCurriculum.lessonsCount) * 100)
+                      : 0
+                  }
+                  completedTopics={readingCurriculum.completedTopics || []}
+                  heading="Curriculum Syllabus Topics"
+                  defaultExpanded={true}
+                />
               )}
 
               {/* If Google Drive or Web PDF Link */}
               {readingCurriculum.curriculumPdfUrl && (
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h5 className="font-bold text-slate-900 dark:text-white text-sm">Full Curriculum PDF / Document Link</h5>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-mono truncate max-w-md">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h5 className="font-bold text-[#14284B] dark:text-white text-sm">Full Curriculum PDF / Document Link</h5>
+                    <p className="text-xs text-slate-600 dark:text-zinc-400 mt-0.5 font-mono truncate max-w-md">
                       {readingCurriculum.curriculumPdfUrl}
                     </p>
                   </div>
@@ -1168,7 +1411,7 @@ export const PortalCourses: React.FC = () => {
                     href={readingCurriculum.curriculumPdfUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-4 py-2 bg-[#1E293B] hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors inline-flex items-center gap-1.5 shrink-0"
+                    className="px-4 py-2 bg-[#14284B] hover:bg-[#1E3A6A] text-white rounded-xl text-xs font-bold transition-colors inline-flex items-center gap-1.5 shrink-0"
                   >
                     <span>Open in Full Viewer</span>
                     <ExternalLink size={13} />
@@ -1178,8 +1421,8 @@ export const PortalCourses: React.FC = () => {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 sm:p-6 border-t border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <span className="text-xs text-slate-500">
+            <div className="p-4 sm:p-6 border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-[#09090B] flex flex-col sm:flex-row items-center justify-between gap-3">
+              <span className="text-xs text-slate-500 dark:text-zinc-400">
                 Official syllabus authorized for Jaystarbliss Studio learners.
               </span>
 
@@ -1187,7 +1430,7 @@ export const PortalCourses: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="flex-1 sm:flex-none px-4 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-xs font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-100 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="flex-1 sm:flex-none px-4 py-2.5 bg-white dark:bg-[#18181B] border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Printer size={14} /> Print Syllabus
                 </button>
@@ -1197,7 +1440,7 @@ export const PortalCourses: React.FC = () => {
                     target="_blank"
                     rel="noreferrer"
                     download
-                    className="flex-1 sm:flex-none px-4 py-2.5 bg-brand-red hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 sm:flex-none px-4 py-2.5 bg-[#B91C1C] hover:bg-[#991B1B] text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2"
                   >
                     <Download size={14} /> Download PDF
                   </a>
@@ -1211,40 +1454,40 @@ export const PortalCourses: React.FC = () => {
       {/* ══ UPLOAD / UPDATE CURRICULUM MODAL ══ */}
       {showUploadModal && selectedModule && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-gray-200 dark:border-slate-800 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-start justify-between gap-4">
+          <div className="bg-white dark:bg-[#111114] rounded-2xl border border-slate-200 dark:border-zinc-800 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-5 sm:p-6 border-b border-slate-200 dark:border-zinc-800 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-lg font-black text-gray-900 dark:text-white">
+                <h3 className="text-lg font-black text-[#14284B] dark:text-white">
                   Upload / Link Program Curriculum
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
                   Attach curriculum documents and syllabus units for <strong>{selectedModule.title}</strong>.
                 </p>
               </div>
 
               <button
                 onClick={() => setShowUploadModal(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveCurriculum} className="p-6 overflow-y-auto space-y-4 flex-1 custom-scrollbar text-xs">
+            <form onSubmit={handleSaveCurriculum} className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1 custom-scrollbar text-xs">
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Curriculum Title</label>
+                <label className="block font-bold text-slate-700 dark:text-zinc-300 mb-1">Curriculum Title</label>
                 <input
                   required
                   type="text"
                   value={curriculumForm.title}
                   onChange={e => setCurriculumForm(prev => ({ ...prev, title: e.target.value }))}
                   placeholder="e.g. Weekend Coding 2026 Core Curriculum"
-                  className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-900 dark:text-white outline-hidden focus:border-brand-red"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 rounded-xl text-xs text-slate-900 dark:text-white outline-hidden focus:border-[#B91C1C]"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block font-bold text-slate-700 dark:text-zinc-300 mb-1">
                   Curriculum PDF / Google Drive Document Link
                 </label>
                 <input
@@ -1252,23 +1495,23 @@ export const PortalCourses: React.FC = () => {
                   value={curriculumForm.pdfUrl}
                   onChange={e => setCurriculumForm(prev => ({ ...prev, pdfUrl: e.target.value }))}
                   placeholder="https://drive.google.com/... or https://..."
-                  className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-900 dark:text-white outline-hidden focus:border-brand-red font-mono"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 rounded-xl text-xs text-slate-900 dark:text-white outline-hidden focus:border-[#B91C1C] font-mono"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Short Description / Overview</label>
+                <label className="block font-bold text-slate-700 dark:text-zinc-300 mb-1">Short Description / Overview</label>
                 <textarea
                   rows={3}
                   value={curriculumForm.summary}
                   onChange={e => setCurriculumForm(prev => ({ ...prev, summary: e.target.value }))}
                   placeholder="Brief description of the skills, technologies, and term goals covered in this curriculum..."
-                  className="w-full p-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-900 dark:text-white outline-hidden focus:border-brand-red resize-none"
+                  className="w-full p-2.5 bg-slate-50 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 rounded-xl text-xs text-slate-900 dark:text-white outline-hidden focus:border-[#B91C1C] resize-none"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block font-bold text-slate-700 dark:text-zinc-300 mb-1">
                   Syllabus Units &amp; Topics (One item per line)
                 </label>
                 <textarea
@@ -1276,7 +1519,7 @@ export const PortalCourses: React.FC = () => {
                   value={curriculumForm.topicsText}
                   onChange={e => setCurriculumForm(prev => ({ ...prev, topicsText: e.target.value }))}
                   placeholder="Unit 1: Computational Thinking&#10;Unit 2: Algorithms & Loops&#10;Unit 3: Capstone Game Project"
-                  className="w-full p-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-900 dark:text-white outline-hidden focus:border-brand-red resize-none font-mono"
+                  className="w-full p-2.5 bg-slate-50 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 rounded-xl text-xs text-slate-900 dark:text-white outline-hidden focus:border-[#B91C1C] resize-none font-mono"
                 />
               </div>
 
@@ -1286,9 +1529,9 @@ export const PortalCourses: React.FC = () => {
                     type="checkbox"
                     checked={curriculumForm.notifyUsers}
                     onChange={e => setCurriculumForm(prev => ({ ...prev, notifyUsers: e.target.checked }))}
-                    className="rounded border-slate-700 text-brand-red focus:ring-brand-red"
+                    className="rounded border-zinc-700 text-[#B91C1C] focus:ring-[#B91C1C]"
                   />
-                  <span className="text-slate-700 dark:text-slate-300 font-bold text-xs">
+                  <span className="text-slate-700 dark:text-zinc-300 font-bold text-xs">
                     Notify enrolled students &amp; schools about this curriculum update
                   </span>
                 </label>
@@ -1298,7 +1541,7 @@ export const PortalCourses: React.FC = () => {
                 <button
                   type="submit"
                   disabled={uploading}
-                  className="w-full py-2.5 bg-brand-red hover:bg-red-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-brand-red/20 cursor-pointer disabled:opacity-50"
+                  className="w-full py-2.5 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
                 >
                   {uploading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                   <span>Save Curriculum &amp; Publish</span>

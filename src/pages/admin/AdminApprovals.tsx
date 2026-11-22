@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { db } from '../../lib/firebase';
 import { collection, doc, setDoc, addDoc, updateDoc, getDocs, limit, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
 import { 
@@ -23,9 +24,23 @@ import {
 
 const AdminApprovals: React.FC = () => {
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const resolveTabParam = (val: string | null): 'tutors' | 'subjects' | 'students' | 'enrollments' | 'programme_apps' => {
+    if (val === 'students' || val === 'enrollments' || val === 'programme_apps' || val === 'tutors' || val === 'subjects') {
+      return val;
+    }
+    return 'tutors';
+  };
   const [activeTab, setActiveTab] = useState<
     'tutors' | 'subjects' | 'students' | 'enrollments' | 'programme_apps'
-  >('tutors');
+  >(() => resolveTabParam(searchParams.get('tab')));
+
+  useEffect(() => {
+    const paramTab = searchParams.get('tab');
+    if (paramTab) {
+      setActiveTab(resolveTabParam(paramTab));
+    }
+  }, [searchParams]);
   const [search, setSearch] = useState('');
   const [studentReqs, setStudentReqs] = useState<any[]>([]);
   const [tutorReqs, setTutorReqs] = useState<any[]>([]);
@@ -446,27 +461,31 @@ const AdminApprovals: React.FC = () => {
       <SEO title="Approvals & Onboarding | Admin" description="Review and approve incoming tutor applications, student enrollment requests, and program leads." noindex={true} />
 
       {/* Responsive Filter / Dropdown Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 shadow-sm">
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+      <div className="bg-white dark:bg-[#111114] border border-slate-200/80 dark:border-zinc-800 rounded-2xl p-3.5 shadow-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
           
-          {/* Category Dropdown for Mobile / Compact selector */}
+          {/* Approval Queue Type Selector */}
           <div className="sm:col-span-6">
-            <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+            <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-400 mb-1">
               Approval Queue Type
             </label>
             <div className="relative">
               <select
                 value={activeTab}
-                onChange={e => setActiveTab(e.target.value as any)}
-                className="w-full min-h-9 pl-3 pr-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-bold focus:ring-2 focus:ring-brand-red focus:border-brand-red outline-none appearance-none cursor-pointer"
+                onChange={e => {
+                  const next = e.target.value as any;
+                  setActiveTab(next);
+                  setSearchParams({ tab: next }, { replace: true });
+                }}
+                className="w-full min-h-10 pl-3 pr-8 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#18181B] text-slate-900 dark:text-white text-xs font-bold focus:ring-2 focus:ring-brand-red focus:border-brand-red outline-none appearance-none cursor-pointer"
               >
                 <option value="tutors">Tutor Applications ({tutorReqs.length})</option>
                 <option value="students">Student Requests ({studentReqs.length})</option>
                 <option value="enrollments">Parent Course Requests ({enrollmentReqs.length})</option>
                 <option value="programme_apps">
                   Student Programme Applications (
-                  {programmeApps.filter((a) => a.enrollmentStatus === 'PENDING_ADMIN_REVIEW').length}
-                  )
+                  {programmeApps.filter((a) => a.enrollmentStatus === 'PENDING_ADMIN_REVIEW').length}{' '}
+                  pending / {programmeApps.length})
                 </option>
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
@@ -475,7 +494,7 @@ const AdminApprovals: React.FC = () => {
 
           {/* Instant Search Box */}
           <div className="sm:col-span-6">
-            <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+            <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-400 mb-1">
               Search Applicants
             </label>
             <div className="relative">
@@ -484,13 +503,13 @@ const AdminApprovals: React.FC = () => {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Name, email or contact..."
-                className="w-full min-h-9 pl-8 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-brand-red focus:border-brand-red outline-none"
+                className="w-full min-h-10 pl-8 pr-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#18181B] text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-brand-red focus:border-brand-red outline-none"
               />
               {search && (
                 <button
                   type="button"
                   onClick={() => setSearch('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200"
                 >
                   <X size={13} />
                 </button>
@@ -499,68 +518,13 @@ const AdminApprovals: React.FC = () => {
           </div>
 
         </div>
-
-        {/* Quick pill toggle row */}
-        <div className="flex items-center gap-1.5 mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 text-[11px] overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('tutors')}
-            className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeTab === 'tutors'
-                ? 'bg-brand-red text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-            }`}
-          >
-            Tutor Applications <span className="text-[10px] opacity-80">({tutorReqs.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('students')}
-            className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeTab === 'students'
-                ? 'bg-brand-red text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-            }`}
-          >
-            Student Requests <span className="text-[10px] opacity-80">({studentReqs.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('enrollments')}
-            className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeTab === 'enrollments'
-                ? 'bg-brand-red text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-            }`}
-          >
-            Course Enrollments <span className="text-[10px] opacity-80">({enrollmentReqs.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('programme_apps')}
-            className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeTab === 'programme_apps'
-                ? 'bg-brand-red text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-            }`}
-          >
-            Programme Applications{' '}
-            <span className="text-[10px] opacity-80">
-              ({programmeApps.filter((a) => a.enrollmentStatus === 'PENDING_ADMIN_REVIEW').length}{' '}
-              pending / {programmeApps.length})
-            </span>
-          </button>
-        </div>
       </div>
 
       {/* Main Table / Directory List */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-[#111114] border border-slate-200/80 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs min-w-[760px]">
-            <thead className="bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase font-black text-[10px]">
+            <thead className="bg-slate-50 dark:bg-[#18181B] border-b border-slate-200 dark:border-zinc-800 text-slate-400 dark:text-zinc-400 uppercase font-black text-[10px]">
               <tr>
                 <th className="py-3 px-3.5">Applicant / Name</th>
                 <th className="py-3 px-3.5">Tracks & Details</th>
@@ -569,7 +533,7 @@ const AdminApprovals: React.FC = () => {
                 <th className="py-3 px-3.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+            <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/70">
               {/* TUTOR APPLICATIONS */}
               {activeTab === 'tutors' && filteredTutors.map(req => {
                 const candidatePhoto = String(req.photoURL || req.photoUrl || req.profilePhotoUrl || '').trim();
@@ -1108,9 +1072,9 @@ const AdminApprovals: React.FC = () => {
             </div>
 
             {approvalTargetApp.studentRegistrationType === 'school' && (
-              <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 text-[11px]">
+              <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 text-[11px]">
                 <strong>School Student (Self-Funded):</strong> Approving this unlocks personal
-                student payment only. School-funded tracks and school invoices remain untouched.
+                student payment only and notifies the student in their portal inbox. School-funded tracks and school invoices remain untouched.
               </div>
             )}
 
@@ -1136,14 +1100,23 @@ const AdminApprovals: React.FC = () => {
                     allowDepositAccess: approveAllowDeposit,
                     depositAmount: approveAllowDeposit ? Number(approveDepositAmount) : 0,
                     adminNotes: approveAdminNotes,
+                    studentContext: {
+                      studentUid: approvalTargetApp.studentUid,
+                      studentDocId: approvalTargetApp.studentDocId,
+                      studentName: approvalTargetApp.studentName,
+                      studentEmail: approvalTargetApp.studentEmail,
+                      programId: approvalTargetApp.programId,
+                      programTitle: approvalTargetApp.programTitle,
+                      schoolId: approvalTargetApp.schoolId,
+                      schoolName: approvalTargetApp.schoolName,
+                    },
                   });
-                  if (!res.emailSent) {
-                    toast.info(
-                      res.emailError ||
-                        'Approved & saved! Use Retry Email if the student has a valid email address.'
-                    );
+                  if (res.emailSent) {
+                    toast.success('Approved! Student notified in-app and via branded admission email.');
                   } else {
-                    toast.success('Approved & branded admission email sent to student!');
+                    toast.success(
+                      'Approved! Student inbox notification sent with a direct link to Billing & Fees.'
+                    );
                   }
                   setApprovalTargetApp(null);
                 } catch (err: any) {

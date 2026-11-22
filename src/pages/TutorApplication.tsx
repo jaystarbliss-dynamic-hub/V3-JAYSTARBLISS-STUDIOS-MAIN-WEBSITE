@@ -23,6 +23,7 @@ import {
   buildCanonicalTutorApplicationPayload,
   isValidTutorPhotoUrl,
 } from '../lib/tutorDirectory';
+import { dispatchActionableAlert } from '../lib/adminAlertDispatcher';
 
 const steps = [
   { id: 'personal', title: 'Personal Info', subtitle: 'Photo & contact details', icon: User },
@@ -184,11 +185,34 @@ const TutorApplication: React.FC = () => {
         source: 'TUTOR_APPLICATION_PAGE',
       });
 
-      await addDoc(collection(db, 'tutor_applications'), {
+      const appRef = await addDoc(collection(db, 'tutor_applications'), {
         ...canonicalPayload,
         preferredAgeGroup: formData.ageGroup,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+      });
+
+      const applicantName = formData.name.trim() || 'Tutor Applicant';
+      void dispatchActionableAlert({
+        category: 'tutor_application',
+        categoryLabel: 'New Tutor Application',
+        notificationType: 'registration',
+        priority: 'high',
+        title: `New Tutor Application: ${applicantName}`,
+        message: `${applicantName} submitted a tutor application (${subjectList.slice(0, 3).join(', ') || 'General'}) and is awaiting approval.`,
+        actionPath: '/admin/approvals?tab=tutors',
+        actionText: 'Review Tutor Application',
+        notifyPlatformAdmins: true,
+        details: [
+          { label: 'Applicant', value: applicantName },
+          { label: 'Email', value: formData.email.trim().toLowerCase() },
+          { label: 'Location', value: formData.location || '—' },
+          { label: 'Subjects', value: subjectList.join(', ') || '—' },
+        ],
+        senderName: applicantName,
+        senderRole: 'Tutor Applicant',
+        replyTo: formData.email.trim().toLowerCase(),
+        dedupeKey: `tut_app_${appRef.id}`,
       });
 
       setSuccess(true);

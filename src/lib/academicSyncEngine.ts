@@ -68,6 +68,9 @@ export interface LinkedLearnerProfile {
   schoolName: string;
   isSchoolStudent: boolean;
   programName: string;
+  programIds?: string[];
+  programTitles?: string[];
+  track?: string;
   subjects?: string[];
   tutorId?: string;
   tutorName?: string;
@@ -1068,6 +1071,10 @@ export async function fetchAssignmentsForLearner(
         schoolName: learner.schoolName,
         className: learner.className,
         class: learner.className,
+        programIds: learner.programIds,
+        programTitles: learner.programTitles,
+        programName: learner.programName,
+        track: learner.track,
       },
       exam
     );
@@ -1495,6 +1502,13 @@ export async function fetchAssignmentsForTutor(params: {
             schoolId: targetStudent.schoolId,
             schoolName: targetStudent.schoolName,
             className: targetStudent.class || targetStudent.grade,
+            selectedProgramIds: targetStudent.selectedProgramIds,
+            assignedProgramIds: targetStudent.assignedProgramIds,
+            assignedTrackIds: targetStudent.assignedTrackIds,
+            enrolledProgramIds: targetStudent.enrolledProgramIds,
+            programId: targetStudent.programId,
+            programName: targetStudent.programName,
+            track: targetStudent.track,
           },
           exam
         );
@@ -2327,6 +2341,10 @@ export async function fetchAssessmentsAndQuizzesForLearner(
         schoolName: learner.schoolName,
         className: learner.className,
         class: learner.className,
+        programIds: learner.programIds,
+        programTitles: learner.programTitles,
+        programName: learner.programName,
+        track: learner.track,
       },
       exam
     );

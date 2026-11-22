@@ -16,6 +16,12 @@ import {
   Tag,
 } from 'lucide-react';
 import type { AcademicWorkType } from '../../lib/classes';
+import {
+  FloatingActionMenu,
+  RowActionMenuButton,
+  type RowActionItem,
+  useRowActionMenu,
+} from '../ui/RowActionMenu';
 
 export interface AssessmentListItem {
   id: string;
@@ -83,8 +89,47 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
   const [deliveryFilter, setDeliveryFilter] = useState<string>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
 
-  // Delete Confirmation State
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Shared floating menu state for both three-dot button clicks and right-click context menu
+  const rowContextMenu = useRowActionMenu<AssessmentListItem>();
+
+  const buildRowActions = (exam: AssessmentListItem): RowActionItem[] => {
+    return [
+      {
+        id: 'edit',
+        label: 'Edit Assessment',
+        icon: <Edit3 size={14} />,
+        onClick: () => onEditAssessment(exam),
+      },
+      {
+        id: 'monitor',
+        label: 'Monitor Responses',
+        icon: <Activity size={14} />,
+        onClick: () => onMonitorAssessment(exam),
+      },
+      {
+        id: 'preview',
+        label: 'Preview Student View',
+        icon: <Eye size={14} />,
+        onClick: () => onPreviewAssessment(exam),
+      },
+      {
+        id: 'duplicate',
+        label: 'Duplicate Assessment',
+        icon: <Copy size={14} />,
+        onClick: () => onDuplicateAssessment(exam),
+      },
+      {
+        id: 'delete',
+        label: 'Delete Assessment',
+        icon: <Trash2 size={14} />,
+        onClick: () => onDeleteAssessment(exam.id),
+        danger: true,
+        confirmDanger: true,
+        confirmLabel: 'Delete this assessment?',
+        dividerBefore: true,
+      },
+    ];
+  };
 
   // Compute counts for the 3 primary tabs
   const tabCounts = useMemo(() => {
@@ -361,11 +406,11 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
           </button>
         </div>
       ) : (
-        <div className="bg-white dark:bg-[#161B26] rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs overflow-hidden">
+        <div className="bg-white dark:bg-[#111114] rounded-2xl border border-slate-200/90 dark:border-zinc-800 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/40 text-[11px] font-black uppercase tracking-wider text-slate-400">
+                <tr className="border-b border-slate-100 dark:border-zinc-800 bg-slate-50/70 dark:bg-[#18181B] text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-400">
                   <th className="py-3.5 px-4 sm:px-6">Assessment &amp; Type</th>
                   <th className="py-3.5 px-4">Subject &amp; Target</th>
                   <th className="py-3.5 px-4">Recipients</th>
@@ -374,7 +419,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                   <th className="py-3.5 px-4 sm:px-6 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+              <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/70 text-xs">
                 {filteredAssessments.map((exam) => {
                   const isExternal = exam.deliveryMode === 'EXTERNAL_LINK';
                   const wt = exam.workType || 'EXAMINATION';
@@ -395,16 +440,19 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                   return (
                     <tr
                       key={exam.id}
-                      className="hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition-colors group"
+                      onContextMenu={(e) => {
+                        rowContextMenu.openFromContextMenu(e, exam);
+                      }}
+                      className="hover:bg-slate-50/80 dark:hover:bg-zinc-900/60 transition-colors group"
                     >
                       {/* 1. Assessment Title & Format */}
                       <td className="py-4 px-4 sm:px-6">
                         <div className="space-y-1 min-w-[180px]">
-                          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            <span className={wt === 'EXAMINATION' ? 'text-[#B91C1C] dark:text-red-400' : 'text-[#1E293B] dark:text-slate-200'}>
+                          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                            <span className={wt === 'EXAMINATION' ? 'text-[#B91C1C] dark:text-red-400' : 'text-[#1E293B] dark:text-zinc-200'}>
                               {wt}
                             </span>
-                            <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
+                            <span className="mx-1.5 text-slate-300 dark:text-zinc-700">·</span>
                             <span>{isExternal ? 'External Link' : 'Native Studio'}</span>
                           </p>
                           <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm group-hover:text-[#B91C1C] dark:group-hover:text-red-400 transition-colors">
@@ -416,19 +464,29 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                       {/* 2. Subject & Target Class */}
                       <td className="py-4 px-4">
                         <div className="space-y-1">
-                          <p className="font-bold text-slate-800 dark:text-slate-200">
+                          <p className="font-bold text-slate-800 dark:text-zinc-200">
                             {exam.subject || 'General Studies'}
                           </p>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            {exam.targetClass || exam.className || 'All Grades'}
+                          <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                            {(exam as any).gradeRange?.from && (exam as any).gradeRange?.to
+                              ? `${(exam as any).gradeRange.from} – ${(exam as any).gradeRange.to}`
+                              : exam.targetClass || exam.className || 'All Grades'}
                           </p>
-                          {(exam.programTitle || exam.programBreadcrumbs) && (
+                          {(exam.programTitle || exam.programBreadcrumbs || (Array.isArray((exam as any).targetProgramTitles) && (exam as any).targetProgramTitles.length > 0)) && (
                             <p
-                              className="inline-flex items-center gap-1 text-[10px] font-bold text-[#1E293B] dark:text-slate-300 max-w-[200px] truncate"
-                              title={exam.programBreadcrumbs || exam.programTitle}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-[#1E293B] dark:text-zinc-300 max-w-[220px] truncate"
+                              title={
+                                Array.isArray((exam as any).targetProgramTitles) && (exam as any).targetProgramTitles.length > 0
+                                  ? (exam as any).targetProgramTitles.join(', ')
+                                  : exam.programBreadcrumbs || exam.programTitle
+                              }
                             >
                               <Tag size={9} className="shrink-0 text-[#B91C1C] dark:text-red-400" />
-                              <span className="truncate">{exam.programBreadcrumbs || exam.programTitle}</span>
+                              <span className="truncate">
+                                {Array.isArray((exam as any).targetProgramTitles) && (exam as any).targetProgramTitles.length > 1
+                                  ? `${(exam as any).targetProgramTitles[0]} +${(exam as any).targetProgramTitles.length - 1} more`
+                                  : exam.programBreadcrumbs || exam.programTitle || (exam as any).targetProgramTitles?.[0]}
+                              </span>
                             </p>
                           )}
                         </div>
@@ -438,35 +496,40 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                       <td className="py-4 px-4">
                         <div className="space-y-1">
                           {isMultiTarget ? (
-                            <div className="flex items-center gap-1.5 text-[#1E293B] dark:text-slate-200 font-bold tabular-nums">
+                            <div className="flex items-center gap-1.5 text-[#1E293B] dark:text-zinc-200 font-bold tabular-nums">
                               <Users size={13} className="text-[#B91C1C] dark:text-red-400" />
                               <span>Multi-Target ({exam.targetSchoolIds?.length || 0} Schools, {exam.targetStudentIds?.length || 0} Private)</span>
                             </div>
                           ) : isPriv ? (
-                            <div className="flex items-center gap-1.5 text-[#1E293B] dark:text-slate-200 font-bold tabular-nums">
-                              <User size={13} className="text-slate-500 dark:text-slate-400" />
+                            <div className="flex items-center gap-1.5 text-[#1E293B] dark:text-zinc-200 font-bold tabular-nums">
+                              <User size={13} className="text-slate-500 dark:text-zinc-400" />
                               <span>Private Learners ({exam.targetStudentIds?.length || 1})</span>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-medium">
-                              <School size={13} className="text-slate-400" />
+                            <div className="flex items-center gap-1.5 text-slate-700 dark:text-zinc-300 font-medium">
+                              <School size={13} className="text-slate-400 dark:text-zinc-500" />
                               <span className="truncate max-w-[150px]">{exam.schoolName || 'Partner School'}</span>
                             </div>
+                          )}
+                          {Array.isArray((exam as any).excludedStudentIds) && (exam as any).excludedStudentIds.length > 0 && (
+                            <p className="text-[10px] font-semibold text-slate-500 dark:text-zinc-400 tabular-nums">
+                              {(exam as any).excludedStudentIds.length} excluded
+                            </p>
                           )}
                         </div>
                       </td>
 
                       {/* 4. Questions & Marks */}
                       <td className="py-4 px-4 whitespace-nowrap">
-                        <div className="space-y-0.5 text-[11px] text-slate-500 tabular-nums">
+                        <div className="space-y-0.5 text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums">
                           {isExternal ? (
-                            <span className="font-semibold text-slate-400">External Form</span>
+                            <span className="font-semibold text-slate-400 dark:text-zinc-500">External Form</span>
                           ) : (
                             <>
-                              <p className="font-bold text-slate-800 dark:text-slate-200">
+                              <p className="font-bold text-slate-800 dark:text-zinc-200">
                                 {exam.questionCount || 0} Question(s)
                               </p>
-                              <p className="text-slate-400">
+                              <p className="text-slate-400 dark:text-zinc-500">
                                 {exam.maxScore || 0} Marks · {exam.durationMinutes ? `${exam.durationMinutes}m` : 'Untimed'}
                               </p>
                             </>
@@ -482,91 +545,33 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                               statusLower === 'active'
                                 ? 'text-[#B91C1C] dark:text-red-400'
                                 : statusLower === 'scheduled'
-                                ? 'text-[#1E293B] dark:text-slate-200'
-                                : 'text-slate-500 dark:text-slate-400'
+                                ? 'text-[#1E293B] dark:text-zinc-200'
+                                : 'text-slate-500 dark:text-zinc-400'
                             }`}
                           >
                             {statusLower === 'active' ? 'Active' : statusLower === 'scheduled' ? 'Scheduled' : 'Draft'}
                           </span>
                           {exam.passcode && (
-                            <p className="text-[10px] font-mono text-slate-400 tabular-nums">
+                            <p className="text-[10px] font-mono text-slate-400 dark:text-zinc-500 tabular-nums">
                               Passcode: <strong>{exam.passcode}</strong>
                             </p>
                           )}
                         </div>
                       </td>
 
-                      {/* 6. Action Buttons */}
+                      {/* 6. More Actions (Three-Dot Menu & Right-Click Supported) */}
                       <td className="py-4 px-4 sm:px-6 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onEditAssessment(exam)}
-                            className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                            title="Edit Assessment"
-                          >
-                            <Edit3 size={14} />
-                          </button>
-
-                          {!isExternal && (
-                            <button
-                              type="button"
-                              onClick={() => onMonitorAssessment(exam)}
-                              className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 hover:border-[#B91C1C] hover:text-[#B91C1C] dark:hover:text-red-400 transition-colors cursor-pointer"
-                              title="Monitor Responses & Submissions"
-                            >
-                              <Activity size={14} />
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => onPreviewAssessment(exam)}
-                            className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                            title="Preview Student View"
-                          >
-                            <Eye size={14} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => onDuplicateAssessment(exam)}
-                            className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                            title="Duplicate as New Draft"
-                          >
-                            <Copy size={14} />
-                          </button>
-
-                          {deletingId === exam.id ? (
-                            <div className="inline-flex items-center gap-1 animate-in fade-in">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onDeleteAssessment(exam.id);
-                                  setDeletingId(null);
-                                }}
-                                className="px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded-lg hover:bg-red-700 cursor-pointer"
-                              >
-                                Delete
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeletingId(null)}
-                                className="p-1 text-slate-400 hover:text-slate-600"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setDeletingId(exam.id)}
-                              className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-red-200 hover:bg-red-50 dark:hover:bg-red-950/40 text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
-                              title="Delete Assessment"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
+                        <div className="flex items-center justify-end">
+                          <RowActionMenuButton
+                            onClick={(e) => {
+                              if (rowContextMenu.state?.data?.id === exam.id) {
+                                rowContextMenu.close();
+                              } else {
+                                rowContextMenu.openFromButton(e, exam);
+                              }
+                            }}
+                            ariaLabel={`Actions for ${exam.title || 'assessment'}`}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -576,6 +581,15 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
             </table>
           </div>
         </div>
+      )}
+
+      {rowContextMenu.state && (
+        <FloatingActionMenu
+          coords={rowContextMenu.coords}
+          items={buildRowActions(rowContextMenu.state.data)}
+          onClose={rowContextMenu.close}
+          title={rowContextMenu.state.data.title || 'Assessment Actions'}
+        />
       )}
     </div>
   );

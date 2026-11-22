@@ -21,6 +21,7 @@ import {
   X,
   Layers,
   GitBranch,
+  RotateCcw,
 } from 'lucide-react';
 import {
   type ProgramRecord,
@@ -33,6 +34,7 @@ import {
   type PriorLearningRecognitionRecord,
   type PriorLearningRecognitionType,
   calculateStudentPathwayProgress,
+  fetchStudentAttendanceRecords,
   fetchStudentProgressRecords,
   fetchStudentPriorLearningRecognitions,
   updateStudentUnitProgress,
@@ -72,6 +74,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
   const [priorLearningRecords, setPriorLearningRecords] = useState<
     PriorLearningRecognitionRecord[]
   >([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingUnitId, setSavingUnitId] = useState<string | null>(null);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
@@ -125,16 +128,25 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
   const loadStudentLearningState = async (studentObj: any) => {
     setLoading(true);
     try {
-      const [progMap, progDocs, priorDocs] = await Promise.all([
+      const studentIdKeys = Array.from(
+        new Set(
+          [studentObj?.id, studentObj?.firebaseUid, studentObj?.uid, studentObj?.studentId].filter(Boolean)
+        )
+      );
+      const [progMap, progDocs, priorDocs, attDocs] = await Promise.all([
         fetchAllProgramsMap(),
         studentObj?.id ? fetchStudentProgressRecords(studentObj.id) : Promise.resolve([]),
         studentObj?.id
           ? fetchStudentPriorLearningRecognitions(studentObj.id)
           : Promise.resolve([]),
+        studentIdKeys.length > 0
+          ? fetchStudentAttendanceRecords(studentIdKeys).catch(() => [])
+          : Promise.resolve([]),
       ]);
       setProgramsMap(progMap);
       setProgressRecords(progDocs);
       setPriorLearningRecords(priorDocs);
+      setAttendanceRecords(attDocs);
 
       if (studentObj) {
         const ext = extractStudentSelectedProgramIds(studentObj, progMap);
@@ -163,8 +175,9 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
       programsMap,
       progressRecords,
       priorLearningRecords,
+      attendanceRecords,
     });
-  }, [currentStudent, programsMap, progressRecords, priorLearningRecords]);
+  }, [currentStudent, programsMap, progressRecords, priorLearningRecords, attendanceRecords]);
 
   const pendingPriorRequests = useMemo(
     () => priorLearningRecords.filter((r) => r.status === 'PENDING'),
@@ -224,6 +237,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
         programsMap,
         progress: nextProgress,
         selfProgress: nextProgress,
+        isManualOverride: true,
         tutorNotes: explicitNotes !== undefined ? explicitNotes : node.tutorNotes,
         evidenceReference:
           explicitEvidence !== undefined ? explicitEvidence : node.evidenceReference,
@@ -232,10 +246,40 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
       });
       await loadStudentLearningState(currentStudent);
       setEditingNode(null);
-      setFeedbackBanner(`Updated progress for "${node.program.title}" to ${nextProgress}%.`);
+      setFeedbackBanner(`Tutor override applied for "${node.program.title}" (${nextProgress}%).`);
       if (onRefresh) onRefresh();
     } catch (err: any) {
       setFeedbackBanner(err?.message || 'Failed to update unit progress.');
+    } finally {
+      setSavingUnitId(null);
+    }
+  };
+
+  const handleResetUnitToAuto = async (node: ComputedProgramNodeProgress) => {
+    if (!currentStudent) return;
+    setSavingUnitId(node.program.id);
+    try {
+      const user = auth.currentUser;
+      await updateStudentUnitProgress({
+        studentId: currentStudent.id,
+        program: node.program,
+        programsMap,
+        progress: 0,
+        selfProgress: 0,
+        resetToAuto: true,
+        tutorNotes: node.tutorNotes,
+        evidenceReference: node.evidenceReference,
+        actorUid: user?.uid || 'tutor',
+        actorName: user?.displayName || user?.email || 'Tutor',
+      });
+      await loadStudentLearningState(currentStudent);
+      setEditingNode(null);
+      setFeedbackBanner(
+        `Restored automatic attendance tracking for "${node.program.title}" (${node.autoAttendanceProgress}%).`
+      );
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      setFeedbackBanner(err?.message || 'Failed to reset unit to automatic attendance tracking.');
     } finally {
       setSavingUnitId(null);
     }
@@ -366,10 +410,10 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
         <div
           className={`p-3.5 rounded-xl border transition-all mb-2 ${
             node.selfStatus === 'PRIOR_LEARNING_APPROVED' || node.status === 'COMPLETED'
-              ? 'bg-slate-50/90 dark:bg-slate-800/40 border-slate-300 dark:border-slate-700'
+              ? 'bg-slate-50/90 dark:bg-[#18181B] border-slate-300 dark:border-zinc-700'
               : node.status === 'CURRENT'
-              ? 'bg-white dark:bg-slate-900 border-[#1E293B]/40 dark:border-slate-600'
-              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+              ? 'bg-white dark:bg-[#111114] border-[#14284B]/40 dark:border-zinc-700'
+              : 'bg-white dark:bg-[#111114] border-slate-200 dark:border-zinc-800'
           }`}
           style={{ marginLeft: `${Math.min(node.depth, 8) * 20}px` }}
         >
@@ -380,12 +424,12 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => toggleExpand(p.id)}
-                  className="mt-0.5 p-1 rounded-md hover:bg-slate-200/60 dark:hover:bg-slate-800 text-slate-600"
+                  className="mt-0.5 p-1 rounded-md hover:bg-slate-200/60 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400"
                 >
                   {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
               ) : (
-                <span className="w-5 text-center text-slate-300 mt-0.5">•</span>
+                <span className="w-5 text-center text-slate-300 dark:text-zinc-700 mt-0.5">•</span>
               )}
 
               <div className="mt-0.5 shrink-0">
@@ -396,7 +440,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                     <Folder size={18} className="text-[#B91C1C]" />
                   )
                 ) : (
-                  <BookOpen size={17} className="text-[#1E293B] dark:text-slate-300" />
+                  <BookOpen size={17} className="text-[#14284B] dark:text-zinc-300" />
                 )}
               </div>
 
@@ -405,26 +449,36 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                   <span className="font-black text-sm text-slate-900 dark:text-white">
                     {p.title}
                   </span>
-                  <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                  <span className="text-slate-300 dark:text-zinc-700" aria-hidden="true">·</span>
                   {renderStatusBadge(node)}
+                  {countsOwnUnit && (
+                    <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 tabular-nums">
+                      ·{' '}
+                      {node.isManualOverride
+                        ? `Tutor Override (Auto: ${node.autoAttendanceProgress}%)`
+                        : node.progressSource === 'PRIOR_LEARNING'
+                        ? 'Prior Credit'
+                        : `Auto · Attendance (${node.attendedSessionsCount}/${node.expectedDurationSessions} sessions)`}
+                    </span>
+                  )}
                   {node.isContainer && (
-                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                    <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 tabular-nums">
                       · Branch ({node.completedRequiredUnitsCount}/{node.totalRequiredUnitsCount} units done)
                     </span>
                   )}
                   {node.isHybrid && (
-                    <span className="text-[11px] font-semibold text-[#1E293B] dark:text-slate-300">
+                    <span className="text-[11px] font-semibold text-[#14284B] dark:text-zinc-300">
                       · Hybrid Branch
                     </span>
                   )}
                   {node.isAncestorContextOnly && (
-                    <span className="text-[11px] font-medium text-slate-500">
+                    <span className="text-[11px] font-medium text-slate-500 dark:text-zinc-400">
                       · Parent Context
                     </span>
                   )}
                 </div>
 
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                <div className="text-[11px] text-slate-500 dark:text-zinc-400">
                   Path: {node.breadcrumbPath}
                 </div>
 
@@ -439,19 +493,19 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                 )}
 
                 {p.learningObjectives && p.learningObjectives.length > 0 && (
-                  <div className="text-[11px] text-slate-600 dark:text-slate-400 pt-0.5">
+                  <div className="text-[11px] text-slate-600 dark:text-zinc-400 pt-0.5">
                     <strong>Objectives:</strong> {p.learningObjectives.slice(0, 3).join(' · ')}
                   </div>
                 )}
 
                 {node.tutorNotes && (
-                  <div className="text-[11px] bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg text-slate-700 dark:text-slate-300">
+                  <div className="text-[11px] bg-slate-100 dark:bg-[#18181B] px-2.5 py-1 rounded-lg text-slate-700 dark:text-zinc-300">
                     <strong>Tutor Note:</strong> {node.tutorNotes}
                   </div>
                 )}
 
                 {node.priorLearningRecord?.status === 'APPROVED' && (
-                  <div className="text-[11px] bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 px-2.5 py-1 rounded-lg">
+                  <div className="text-[11px] bg-slate-100 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 px-2.5 py-1 rounded-lg">
                     <strong>Prior-Learning Credit ({node.priorLearningRecord.recognitionType}):</strong>{' '}
                     {node.priorLearningRecord.verificationNotes ||
                       node.priorLearningRecord.evidenceReference}{' '}
@@ -468,20 +522,20 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
               {/* Branch or Unit Progress Display */}
               <div className="w-36">
                 <div className="flex items-center justify-between text-[11px] font-bold mb-1 tabular-nums">
-                  <span className="text-slate-500">
+                  <span className="text-slate-500 dark:text-zinc-400">
                     {hasChildren && !countsOwnUnit ? 'Branch Aggregate' : 'Unit Progress'}
                   </span>
                   <span className="text-slate-900 dark:text-white">
                     {hasChildren && !countsOwnUnit ? node.aggregateProgress : node.selfProgress}%
                   </span>
                 </div>
-                <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div className="w-full h-2 bg-slate-100 dark:bg-zinc-800 rounded-full overflow-hidden">
                   <div
                     className={`h-full transition-all ${
                       (hasChildren && !countsOwnUnit
                         ? node.aggregateProgress
                         : node.selfProgress) >= 100
-                        ? 'bg-[#1E293B] dark:bg-white'
+                        ? 'bg-[#14284B] dark:bg-white'
                         : 'bg-[#B91C1C]'
                     }`}
                     style={{
@@ -502,15 +556,33 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                     disabled={isUpdating || node.isLockedByPrerequisite}
                     value={node.selfProgress}
                     onChange={(e) => handleQuickProgressUpdate(node, Number(e.target.value))}
-                    className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 dark:text-white disabled:opacity-40"
-                    title="Update learning unit completion percentage"
+                    className="px-2.5 py-1.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-xs font-bold bg-white dark:bg-[#18181B] dark:text-white disabled:opacity-40"
+                    title="Override learning unit completion percentage"
                   >
+                    {![0, 25, 50, 75, 100].includes(node.selfProgress) && (
+                      <option value={node.selfProgress}>
+                        {node.selfProgress}% ({node.isManualOverride ? 'Override' : 'Auto'})
+                      </option>
+                    )}
                     <option value={0}>0% (Not Started)</option>
                     <option value={25}>25% (Started)</option>
                     <option value={50}>50% (Midway)</option>
                     <option value={75}>75% (Project Stage)</option>
                     <option value={100}>100% (Completed)</option>
                   </select>
+
+                  {node.isManualOverride && (
+                    <button
+                      type="button"
+                      disabled={isUpdating}
+                      onClick={() => handleResetUnitToAuto(node)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 text-[11px] font-bold text-[#B91C1C] dark:text-red-400 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-40 cursor-pointer"
+                      title="Revert to automatic attendance-driven progress"
+                    >
+                      <RotateCcw size={12} />
+                      <span>Reset Auto</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"
@@ -520,8 +592,8 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                       setUnitNotes(node.tutorNotes || '');
                       setUnitEvidence(node.evidenceReference || '');
                     }}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50"
-                    title="Add progress notes or assessment evidence"
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 text-xs font-bold text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
+                    title="Manual progress slider, notes, or assessment evidence"
                   >
                     <FileText size={13} />
                   </button>
@@ -534,7 +606,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                         setPriorEvidence('');
                         setPriorNotes('');
                       }}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-bold hover:bg-slate-200 dark:hover:bg-slate-700"
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-[#18181B] text-[#14284B] dark:text-zinc-200 border border-slate-200 dark:border-zinc-700 text-[11px] font-bold hover:bg-slate-200 dark:hover:bg-zinc-800 cursor-pointer"
                       title="Verify Prior-Learning Recognition for this unit"
                     >
                       Prior Credit
@@ -564,17 +636,14 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
+    <div className="bg-white dark:bg-[#111114] rounded-2xl border border-slate-200 dark:border-zinc-800 p-6 shadow-sm space-y-6">
       {/* Header & Student Selector */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-zinc-800 pb-4">
         <div>
           <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
             <GitBranch className="w-5 h-5 text-[#B91C1C]" />
-            <span>Recursive Programme Pathway &amp; Progress Manager</span>
+            <span>Programme Pathway &amp; Progress Manager</span>
           </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Track exact nested sub-programmes, update unit completion, record assessment notes, and verify prior-learning recognition.
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
@@ -759,8 +828,8 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
 
       {/* MODAL 1: Detailed Unit Progress & Assessment Notes */}
       {editingNode && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-w-lg w-full p-6 space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#111114] rounded-2xl border border-slate-200 dark:border-zinc-800 max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-base font-black text-slate-900 dark:text-white">
@@ -769,25 +838,28 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                 <p className="text-xs text-[#B91C1C] dark:text-red-400 font-semibold mt-0.5">
                   {editingNode.breadcrumbPath}
                 </p>
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1 tabular-nums">
+                  Attendance Auto-Calculated: {editingNode.autoAttendanceProgress}% ({editingNode.attendedSessionsCount}/{editingNode.expectedDurationSessions} sessions)
+                </p>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingNode(null)}
-                className="p-1 text-slate-400 hover:text-slate-700"
+                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white"
               >
                 <X size={18} />
               </button>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Completion Percentage ({unitProgressVal}%)
+              <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1 tabular-nums">
+                Manual Override Percentage ({unitProgressVal}%)
               </label>
               <input
                 type="range"
                 min={0}
                 max={100}
-                step={5}
+                step={1}
                 value={unitProgressVal}
                 onChange={(e) => setUnitProgressVal(Number(e.target.value))}
                 className="w-full accent-brand-red"
@@ -795,7 +867,7 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
                 Tutor Progress Notes &amp; Milestone Feedback
               </label>
               <textarea
@@ -803,12 +875,12 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                 value={unitNotes}
                 onChange={(e) => setUnitNotes(e.target.value)}
                 placeholder="Record topics mastered, practical project feedback, or areas for next session..."
-                className="w-full p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs dark:bg-slate-800 dark:text-white"
+                className="w-full p-2.5 border border-slate-300 dark:border-zinc-700 rounded-xl text-xs bg-white dark:bg-[#18181B] dark:text-white"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
                 Assessment / Project Evidence Reference (Optional)
               </label>
               <input
@@ -816,28 +888,42 @@ export const TutorLearningTracksManager: React.FC<Props> = ({
                 value={unitEvidence}
                 onChange={(e) => setUnitEvidence(e.target.value)}
                 placeholder="e.g. Portfolio URL, Assessment Score 92%, GitHub Repo Link"
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs dark:bg-slate-800 dark:text-white"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-zinc-700 rounded-xl text-xs bg-white dark:bg-[#18181B] dark:text-white"
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setEditingNode(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleQuickProgressUpdate(editingNode, unitProgressVal, unitNotes, unitEvidence)
-                }
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-brand-red text-white text-xs font-bold hover:bg-red-700"
-              >
-                <Save size={14} />
-                <span>Save Progress &amp; Notes</span>
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+              {editingNode.isManualOverride ? (
+                <button
+                  type="button"
+                  onClick={() => handleResetUnitToAuto(editingNode)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
+                >
+                  <RotateCcw size={13} />
+                  <span>Reset to Auto ({editingNode.autoAttendanceProgress}%)</span>
+                </button>
+              ) : (
+                <span />
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingNode(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-zinc-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleQuickProgressUpdate(editingNode, unitProgressVal, unitNotes, unitEvidence)
+                  }
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-brand-red text-white text-xs font-bold hover:bg-red-700 cursor-pointer"
+                >
+                  <Save size={14} />
+                  <span>Save Override &amp; Notes</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

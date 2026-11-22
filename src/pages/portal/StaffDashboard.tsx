@@ -54,6 +54,12 @@ import {
   resolveTutorAssignedContext,
   type AcademicStudentRecord,
 } from '../../lib/academicFallback';
+import PortalHeroBanner, {
+  PORTAL_BANNER_BTN_GLASS,
+  PORTAL_BANNER_BTN_LIGHT,
+  PORTAL_BANNER_BTN_PRIMARY,
+} from '../../components/portal/PortalHeroBanner';
+import { Bar3DShape } from '../../components/charts/Bar3DShape';
 
 type ScopeMode = 'OVERALL' | 'SCHOOL' | 'PRIVATE';
 
@@ -539,6 +545,13 @@ const StaffDashboard: React.FC = () => {
     }
   };
 
+  const effectiveAuth = getEffectiveAuth();
+  const tutorDisplayName =
+    effectiveAuth.effectiveName ||
+    sessionStorage.getItem('userName') ||
+    auth.currentUser?.displayName ||
+    'Tutor';
+
   return (
     <div className="dashboard-interface space-y-6">
       <SEO
@@ -551,53 +564,42 @@ const StaffDashboard: React.FC = () => {
         noindex={true}
       />
 
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-widest text-[#B91C1C]">
-            {isStudentsDirectoryRoute ? 'Assigned Learners Roster' : 'Faculty Workspace'}
-          </p>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5">
-            {isStudentsDirectoryRoute
-              ? 'School Cohorts & Private Learners'
-              : 'Teaching Analytics & Session Operations'}
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {isStudentsDirectoryRoute
-              ? 'Open individual learner profiles, author assessments, record attendance, and manage milestones.'
-              : 'Track lessons delivered, real recorded attendance trends, and upcoming sessions across cohorts.'}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => void fetchStaffData()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
-          >
-            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh
-          </button>
-          {!isStudentsDirectoryRoute ? (
-            <Link
-              to="/portal/staff/students"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white px-3.5 py-2 text-xs font-bold whitespace-nowrap"
+      <PortalHeroBanner
+        role="staff"
+        title={tutorDisplayName}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => void fetchStaffData()}
+              className={PORTAL_BANNER_BTN_GLASS}
             >
-              <Users size={14} /> Assigned Learners ({students.length})
-            </Link>
-          ) : (
+              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
+            </button>
+            {!isStudentsDirectoryRoute ? (
+              <Link
+                to="/portal/staff/students"
+                className={PORTAL_BANNER_BTN_PRIMARY}
+              >
+                <Users size={13} /> Assigned Learners ({students.length})
+              </Link>
+            ) : (
+              <Link
+                to="/portal/staff"
+                className={PORTAL_BANNER_BTN_PRIMARY}
+              >
+                <BarChart3 size={13} /> Analytics
+              </Link>
+            )}
             <Link
-              to="/portal/staff"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white px-3.5 py-2 text-xs font-bold whitespace-nowrap"
+              to="/portal/staff/assessments"
+              className={PORTAL_BANNER_BTN_LIGHT}
             >
-              <BarChart3 size={14} /> View Analytics Dashboard
+              <BookOpenCheck size={13} className="text-[#B91C1C]" /> Assessments
             </Link>
-          )}
-          <Link
-            to="/portal/staff/assessments"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white px-3.5 py-2 text-xs font-bold whitespace-nowrap"
-          >
-            <BookOpenCheck size={14} /> Assessments Workspace
-          </Link>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {successMsg && (
         <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs flex items-center gap-3">
@@ -852,7 +854,7 @@ const StaffDashboard: React.FC = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={dashboardAnalytics.weeklySeries}
-                      margin={{ top: 10, right: 12, left: -16, bottom: 0 }}
+                      margin={{ top: 14, right: 16, left: -16, bottom: 0 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.25} vertical={false} />
                       <XAxis
@@ -870,7 +872,9 @@ const StaffDashboard: React.FC = () => {
                       <RechartsTooltip
                         contentStyle={{
                           borderRadius: '10px',
-                          border: '1px solid #cbd5e1',
+                          border: '1px solid #27272A',
+                          backgroundColor: '#111114',
+                          color: '#F8FAFC',
                           fontSize: '12px',
                           fontWeight: 700,
                         }}
@@ -880,13 +884,13 @@ const StaffDashboard: React.FC = () => {
                         dataKey="lessonsTaken"
                         name="Lessons Delivered"
                         fill="#1E293B"
-                        radius={[6, 6, 0, 0]}
+                        shape={<Bar3DShape />}
                       />
                       <Bar
                         dataKey="scheduled"
                         name="Scheduled Upcoming"
                         fill="#B91C1C"
-                        radius={[6, 6, 0, 0]}
+                        shape={<Bar3DShape />}
                       />
                     </BarChart>
                   </ResponsiveContainer>

@@ -1,11 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  FileText, Download, Eye, ExternalLink, Calendar, Search, 
-  Filter, X, Users, CheckCircle2, Bookmark, Trash2, 
-  School, BookOpen, Clock, Tag, Mail, MailOpen,
-  ArrowUpDown, SlidersHorizontal, Check, RefreshCw, Edit3
+  FileText, Search, 
+  X, Users, CheckCircle2, Bookmark, Trash2, 
+  School, BookOpen, Clock, Mail, MailOpen,
+  SlidersHorizontal, RefreshCw, Edit3
 } from 'lucide-react';
 import { useResourceReadTracker, matchesDateFilter, type DateFilterType } from '../../utils/resourceTracking';
+import {
+  FloatingActionMenu,
+  RowActionMenuButton,
+  type RowActionItem,
+  useRowActionMenu,
+} from '../ui/RowActionMenu';
 
 export interface ResourceItem {
   id: string;
@@ -114,6 +120,9 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
   const [selectedDocType, setSelectedDocType] = useState<string>('All Formats');
   const [readFilter, setReadFilter] = useState<'all' | 'unread' | 'read'>('all');
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+
+  const rowContextMenu = useRowActionMenu();
+  const [contextResource, setContextResource] = useState<ResourceItem | null>(null);
 
   // Extract unique subjects and docTypes from the current resource pool
   const availableSubjects = useMemo(() => {
@@ -293,6 +302,59 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
     }
   };
 
+  const buildResourceActions = (item: ResourceItem): RowActionItem[] => {
+    const unread = !isRead(item.id);
+    const isBookmarked = bookmarkedIds.includes(item.id);
+    const canEdit = Boolean((showEditButton || onEdit) && (!canEditItem || canEditItem(item)));
+    const canDelete = Boolean(showDeleteButton && onDelete && (!canDeleteItem || canDeleteItem(item)));
+    const canAssign = Boolean(role !== 'student' && (showAssignButton || onAssign));
+
+    return [
+      {
+        id: 'open',
+        label: 'Open & Read',
+        icon: <BookOpen size={14} />,
+        onClick: () => handleOpenResource(item),
+      },
+      {
+        id: 'read-toggle',
+        label: unread ? 'Mark as Read' : 'Mark as Unread',
+        icon: unread ? <MailOpen size={14} /> : <Mail size={14} />,
+        onClick: () => (unread ? markRead(item.id) : markUnread(item.id)),
+      },
+      {
+        id: 'bookmark',
+        label: isBookmarked ? 'Remove Bookmark' : 'Bookmark Resource',
+        icon: <Bookmark size={14} />,
+        onClick: () => onBookmark && onBookmark(item.id),
+        hidden: !onBookmark,
+      },
+      {
+        id: 'assign',
+        label: 'Manage / Assign Classes',
+        icon: <Users size={14} />,
+        onClick: () => onAssign && onAssign(item),
+        hidden: !canAssign,
+      },
+      {
+        id: 'edit',
+        label: 'Edit Resource',
+        icon: <Edit3 size={14} />,
+        onClick: () => onEdit && onEdit(item),
+        hidden: !canEdit,
+      },
+      {
+        id: 'delete',
+        label: 'Delete Resource',
+        icon: <Trash2 size={14} />,
+        onClick: () => onDelete && onDelete(item),
+        danger: true,
+        dividerBefore: true,
+        hidden: !canDelete,
+      },
+    ];
+  };
+
   return (
     <div className={`space-y-4 resource-list-view role-${role}`}>
       {/* Optional Title & Context Header */}
@@ -315,7 +377,7 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
       )}
 
       {/* Search and Filter Control Bar */}
-      <div className="bg-white dark:bg-[#161B26] p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-3">
+      <div className="bg-white dark:bg-[#111114] p-4 rounded-2xl border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-3">
         <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
           {/* Search Input */}
           <div className="relative flex-1">
@@ -325,7 +387,7 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search resources by title, subject, class grade, or topic..."
-              className="w-full pl-10 pr-9 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 outline-none focus:border-brand-red transition-colors"
+              className="w-full pl-10 pr-9 py-2.5 bg-slate-50 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 outline-none focus:border-brand-red transition-colors"
             />
             {searchQuery && (
               <button
@@ -510,8 +572,8 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
 
       {/* Main List Layout Container */}
       {filteredResources.length === 0 ? (
-        <div className="bg-white dark:bg-[#161B26] rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 p-10 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto mb-3">
+        <div className="bg-white dark:bg-[#111114] rounded-2xl border border-dashed border-slate-300 dark:border-zinc-800 p-10 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-400 flex items-center justify-center mx-auto mb-3">
             <BookOpen size={22} />
           </div>
           <h3 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -526,16 +588,16 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
             <button
               type="button"
               onClick={resetFilters}
-              className="mt-3 px-3.5 py-1.5 bg-slate-900 dark:bg-slate-800 text-white text-xs font-bold rounded-xl hover:bg-slate-800 cursor-pointer"
+              className="mt-3 px-3.5 py-1.5 bg-slate-900 dark:bg-zinc-800 text-white text-xs font-bold rounded-xl hover:bg-slate-800 cursor-pointer"
             >
               Reset Filters
             </button>
           )}
         </div>
       ) : (
-        <div className="bg-white dark:bg-[#161B26] rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs overflow-hidden">
+        <div className="bg-white dark:bg-[#111114] rounded-2xl border border-slate-200/80 dark:border-zinc-800 shadow-xs overflow-hidden">
           {/* Table-Like Column Header for Desktop */}
-          <div className="hidden md:grid grid-cols-[2.2fr_1.1fr_1fr_0.9fr_1.4fr] gap-4 px-5 py-3 border-b border-slate-200/70 dark:border-slate-800 text-[11px] uppercase tracking-wider font-black text-slate-400 bg-slate-50/70 dark:bg-slate-900/60">
+          <div className="hidden md:grid grid-cols-[2.2fr_1fr_1fr_0.85fr_72px] gap-4 px-5 py-3 border-b border-slate-200/70 dark:border-zinc-800 text-[11px] uppercase tracking-wider font-black text-slate-400 dark:text-zinc-500 bg-slate-50/70 dark:bg-[#18181B]">
             <span>Document / Resource</span>
             <span>Target Class</span>
             <span>Type &amp; Subject</span>
@@ -544,22 +606,25 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
           </div>
 
           {/* List Rows */}
-          <div className="divide-y divide-slate-100 dark:divide-slate-800/70">
+          <div className="divide-y divide-slate-100 dark:divide-zinc-800/80">
             {filteredResources.map((item) => {
               const unread = !isRead(item.id);
-              const isBookmarked = bookmarkedIds.includes(item.id);
               const formattedDate = formatResourceDate(item);
-              const hasExternalLink = Boolean(item.fileUrl || item.url);
+              const resourceActions = buildResourceActions(item);
 
               return (
                 <div
-                  key={item.id}
-                  className={`group grid grid-cols-1 md:grid-cols-[2.2fr_1.1fr_1fr_0.9fr_1.4fr] gap-3 md:gap-4 px-4 sm:px-5 py-3.5 items-center transition-all cursor-pointer ${
+                  key={`${item._collection || 'res'}-${item.id}`}
+                  className={`group grid grid-cols-1 md:grid-cols-[2.2fr_1fr_1fr_0.85fr_72px] gap-3 md:gap-4 px-4 sm:px-5 py-3.5 items-center transition-all cursor-pointer ${
                     unread
-                      ? 'bg-slate-50/90 dark:bg-slate-900/80 border-l-4 border-l-[#B91C1C] hover:bg-slate-100/80 dark:hover:bg-slate-800/70'
-                      : 'bg-white dark:bg-[#161B26] hover:bg-slate-50/80 dark:hover:bg-slate-850/60'
+                      ? 'bg-slate-50/90 dark:bg-[#18181B]/70 hover:bg-slate-100/80 dark:hover:bg-zinc-800/60'
+                      : 'bg-white dark:bg-[#111114] hover:bg-slate-50/80 dark:hover:bg-zinc-900/60'
                   }`}
                   onClick={() => handleOpenResource(item)}
+                  onContextMenu={(e) => {
+                    setContextResource(item);
+                    rowContextMenu.openFromEvent(e);
+                  }}
                 >
                   {/* Column 1: Document Details & Unread Indicator */}
                   <div className="flex items-start gap-3 min-w-0">
@@ -671,107 +736,34 @@ export const ResourceListView: React.FC<ResourceListViewProps> = ({
                     </span>
                   </div>
 
-                  {/* Column 5: Manage / Actions Row */}
-                  <div 
-                    className="flex items-center justify-end gap-1.5 pt-2 md:pt-0"
-                    onClick={(e) => e.stopPropagation()} // Prevent row click
+                  {/* Column 5: Three-Dot More Actions (Right-Click Supported) */}
+                  <div
+                    className="flex items-center justify-end pt-2 md:pt-0 shrink-0"
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    {/* Mark Read/Unread Toggle (Gmail style) */}
-                    <button
-                      type="button"
-                      onClick={() => unread ? markRead(item.id) : markUnread(item.id)}
-                      title={unread ? 'Mark as read' : 'Mark as unread'}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                    >
-                      {unread ? <Mail size={15} /> : <MailOpen size={15} />}
-                    </button>
-
-                    {/* Bookmark Toggle */}
-                    {onBookmark && (
-                      <button
-                        type="button"
-                        onClick={(e) => onBookmark(item.id, e)}
-                        title={isBookmarked ? 'Remove bookmark' : 'Bookmark resource'}
-                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                          isBookmarked 
-                            ? 'text-brand-red bg-red-50 dark:bg-red-950/40' 
-                            : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <Bookmark size={15} fill={isBookmarked ? 'currentColor' : 'none'} />
-                      </button>
-                    )}
-
-                    {/* Edit Resource Button */}
-                    {(showEditButton || onEdit) && (!canEditItem || canEditItem(item)) && (
-                      <button
-                        type="button"
-                        onClick={() => onEdit && onEdit(item)}
-                        title="Edit resource links, details & classes"
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-[#1E293B] hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                      >
-                        <Edit3 size={15} />
-                      </button>
-                    )}
-
-                    {/* Class assignment is an administrator function only. Students can read/download resources but never manage assignments. */}
-                    {role !== 'student' && (showAssignButton || onAssign) && (
-                      <button
-                        type="button"
-                        onClick={() => onAssign && onAssign(item)}
-                        title="Assign resource to classes"
-                        className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:border-brand-red hover:text-brand-red text-xs font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <Users size={13} />
-                        <span className="hidden xl:inline">Manage</span>
-                      </button>
-                    )}
-
-                    {/* Direct Download/External Link */}
-                    {hasExternalLink && (
-                      <a
-                        href={item.fileUrl || item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Read curriculum"
-                        aria-label={`Read ${item.title}`}
-                        className="px-2 py-1.5 rounded-lg text-slate-500 hover:text-brand-red hover:bg-slate-100 dark:text-slate-400 dark:hover:text-brand-red dark:hover:bg-slate-800 transition-colors cursor-pointer inline-flex items-center gap-1.5 text-[11px] font-bold"
-                        onClick={() => markRead(item.id)}
-                      >
-                        <Eye size={15} />
-                        <span>Read</span>
-                      </a>
-                    )}
-
-                    {/* Read / Preview Primary Button */}
-                    <button
-                      type="button"
-                      onClick={() => handleOpenResource(item)}
-                      className="px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-brand-red dark:hover:bg-brand-red text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                      title="Read resource document"
-                    >
-                      <BookOpen size={13} />
-                      <span>Read</span>
-                    </button>
-
-                    {/* Delete button (Admin: all resources; Tutors: only resources they sent) */}
-                    {showDeleteButton && onDelete && (!canDeleteItem || canDeleteItem(item)) && (
-                      <button
-                        type="button"
-                        onClick={() => onDelete(item)}
-                        title="Delete resource"
-                        aria-label={`Delete ${item.title}`}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-[#B91C1C] hover:bg-red-50 dark:text-slate-400 dark:hover:text-red-400 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    )}
+                    <RowActionMenuButton
+                      items={resourceActions}
+                      title={item.title}
+                      ariaLabel={`Actions for ${item.title}`}
+                    />
                   </div>
                 </div>
               );
             })}
           </div>
         </div>
+      )}
+
+      {contextResource && (
+        <FloatingActionMenu
+          coords={rowContextMenu.coords}
+          items={buildResourceActions(contextResource)}
+          onClose={() => {
+            rowContextMenu.close();
+            setContextResource(null);
+          }}
+          title={contextResource.title}
+        />
       )}
     </div>
   );

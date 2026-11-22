@@ -70,26 +70,82 @@
 
 .dark .btn-portal-secondary,
 .dark .portal-btn-secondary {
-  background-color: #1E293B !important;
-  color: #F8FAFC !important;
-  border-color: #334155 !important;
+  background-color: #18181B !important;
+  color: #FAFAFA !important;
+  border-color: #27272A !important;
 }
 
 .dark .btn-portal-secondary:hover:not(:disabled),
 .dark .portal-btn-secondary:hover:not(:disabled) {
-  background-color: #334155 !important;
-  border-color: #475569 !important;
+  background-color: #27272A !important;
+  border-color: #3F3F46 !important;
 }
 
-/* Light & dark portal interface styling — keep cards, canvas, and action buttons clearly distinct */
+/* Light & dark portal interface styling — matte black surfaces with crisp dark outlines */
 .dashboard-interface .pro-surface {
   background-color: #FFFFFF;
   border-color: #E2E8F0;
 }
 
 .dark .dashboard-interface .pro-surface {
-  background-color: #111827 !important;
-  border-color: #1E293B !important;
+  background-color: #111114 !important;
+  border-color: #27272A !important;
+}
+
+/* Cohesive matte-black dark mode overrides across all portal & admin shells (eliminates blue-navy tint) */
+.dark .portal-shell [class*="dark:bg-slate-950"],
+.dark .portal-shell [class*="dark:bg-[#0B1120]"],
+.dark .portal-shell [class*="dark:bg-[#070b14]"],
+.dark .admin-shell [class*="dark:bg-slate-950"],
+.dark .admin-shell [class*="dark:bg-[#0B1120]"],
+.dark .admin-shell [class*="dark:bg-[#070b14]"] {
+  background-color: #09090B !important;
+}
+
+.dark .portal-shell [class*="dark:bg-[#111827]"],
+.dark .portal-shell [class*="dark:bg-[#0F172A]"],
+.dark .portal-shell [class*="dark:bg-[#0f172a]"],
+.dark .portal-shell [class*="dark:bg-slate-900"]:not([class*="dark:bg-slate-900/"]),
+.dark .admin-shell [class*="dark:bg-[#111827]"],
+.dark .admin-shell [class*="dark:bg-[#0F172A]"],
+.dark .admin-shell [class*="dark:bg-[#0f172a]"],
+.dark .admin-shell [class*="dark:bg-slate-900"]:not([class*="dark:bg-slate-900/"]) {
+  background-color: #111114 !important;
+}
+
+.dark .portal-shell [class*="dark:bg-slate-900/"],
+.dark .portal-shell [class*="dark:bg-[#14284B]"],
+.dark .portal-shell [class*="dark:bg-[#1A2436]"],
+.dark .portal-shell [class*="dark:bg-[#12223F]"],
+.dark .portal-shell [class*="dark:bg-slate-800"]:not([class*="dark:bg-slate-800/"]),
+.dark .admin-shell [class*="dark:bg-slate-900/"],
+.dark .admin-shell [class*="dark:bg-[#14284B]"],
+.dark .admin-shell [class*="dark:bg-slate-800"]:not([class*="dark:bg-slate-800/"]) {
+  background-color: #18181B !important;
+}
+
+.dark .portal-shell [class*="dark:bg-slate-800/"],
+.dark .admin-shell [class*="dark:bg-slate-800/"] {
+  background-color: rgba(24, 24, 27, 0.72) !important;
+}
+
+.dark .portal-shell [class*="dark:border-slate-800"],
+.dark .portal-shell [class*="dark:border-slate-700"],
+.dark .admin-shell [class*="dark:border-slate-800"],
+.dark .admin-shell [class*="dark:border-slate-700"] {
+  border-color: #27272A !important;
+}
+
+.dark .portal-shell [class*="dark:divide-slate-800"] > :not([hidden]) ~ :not([hidden]),
+.dark .portal-shell [class*="dark:divide-slate-700"] > :not([hidden]) ~ :not([hidden]),
+.dark .admin-shell [class*="dark:divide-slate-800"] > :not([hidden]) ~ :not([hidden]),
+.dark .admin-shell [class*="dark:divide-slate-700"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #27272A !important;
+}
+
+.dark .portal-shell [class*="dark:hover:bg-slate-800"]:hover,
+.dark .admin-shell [class*="dark:hover:bg-slate-800"]:hover {
+  background-color: #1F1F24 !important;
 }
 
 /* Ensure dark buttons inside dark cards stand out with crisp contrast */

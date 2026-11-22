@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -6,11 +6,12 @@ import {
   GraduationCap, ClipboardCheck, CalendarDays, KeyRound, Users, FileCheck2,
   Library, SlidersHorizontal, WalletCards, ExternalLink, Award, Headphones,
   HelpCircle, Keyboard, ChevronDown, PanelLeftClose, FileText, History,
-  ChartNoAxesColumn, UserRoundCog, Wallet, Headset, Settings, Menu, Lock, Loader2
+  ChartNoAxesColumn, UserRoundCog, Wallet, Headset, Settings, Menu, Lock, Loader2,
+  Pin, PinOff
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToast } from '../../contexts/ToastContext';
 import {
@@ -31,9 +32,11 @@ import PWAInstallButton from '../ui/PWAInstallButton';
 import { getExternalMainWebsiteUrl, useStandalonePWA } from '../../utils/pwa';
 import {
   fetchStudentProgrammeEnrollments,
+  normalizeProgrammeEnrollmentDoc,
   resolveStudentPortalEligibility,
   shouldUnlockStudentBillingTab,
 } from '../../lib/programmeEnrollments';
+import { checkAndNotifyExpiredAssessments } from '../../lib/assessmentNotificationHelpers';
 import PortalOnboardingTour from './PortalOnboardingTour';
 import type { PortalTourRole } from '../../lib/portalTour';
 import './portal-polish.css';
@@ -44,6 +47,7 @@ type NavItem = {
   icon: React.ReactNode;
   desc: string;
   tourId?: string;
+  badgeCount?: number;
 };
 
 type NavGroup = {
@@ -150,12 +154,30 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [sidebarExpanded, setSidebarExpanded] = useState<boolean>(() => {
+  const [sidebarPinned, setSidebarPinned] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return window.innerWidth >= 1024;
+      try {
+        return localStorage.getItem('portal_sidebar_pinned') === 'true';
+      } catch {
+        return false;
+      }
     }
-    return true;
+    return false;
   });
+  const [isHoverExpanded, setIsHoverExpanded] = useState(false);
+  const sidebarExpanded = sidebarPinned || isHoverExpanded;
+  const toggleSidebarPin = () => {
+    setSidebarPinned(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('portal_sidebar_pinned', String(next));
+      } catch {
+        // ignore storage restrictions
+      }
+      if (!next) setIsHoverExpanded(false);
+      return next;
+    });
+  };
   const [collapsedNavGroups] = useState<Record<string, boolean>>({});
   const [impersonation, setImpersonation] = useState<any>(() => getActiveImpersonation());
   const [studentFeatures, setStudentFeatures] = useState<StudentPortalFeatures>({});
@@ -169,6 +191,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
     return 'individual';
   });
   const [tourReplayToken, setTourReplayToken] = useState(0);
+  const [sidebarBadgeCounts, setSidebarBadgeCounts] = useState<Record<string, number>>({});
   const profileRef = useRef<HTMLDivElement>(null);
 
   useEdgeSwipeDrawer(mobileMenuOpen, setMobileMenuOpen, 768);
@@ -269,7 +292,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
         })
         .catch(() => undefined);
     }
-  }, [location.pathname, role]);
+  }, [role]);
 
   useEffect(() => {
     const close = (event: MouseEvent) => {
@@ -296,6 +319,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
     let active = true;
     const uid = getActiveImpersonation()?.uid || sessionStorage.getItem('userId') || auth.currentUser?.uid || '';
     const studentDocId = sessionStorage.getItem('studentDocId') || '';
+    let resolvedEligibility: ReturnType<typeof resolveStudentPortalEligibility> | null = null;
 
     const hydrateStudentState = async () => {
       try {
@@ -353,6 +377,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
           isIndependent: userData?.isIndependent ?? studentData?.isIndependent,
         });
 
+        resolvedEligibility = eligibility;
         setStudentOriginType(eligibility.registrationType);
 
         setStudentBillingUnlocked(
@@ -361,16 +386,186 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
             selfFundedEnrollments: enrollments,
           })
         );
+
+        const awaitingPaymentCount = enrollments.filter(
+          (en) =>
+            en.enrollmentStatus === 'APPROVED_AWAITING_PAYMENT' ||
+            en.enrollmentStatus === 'PARTIALLY_PAID' ||
+            en.enrollmentStatus === 'RENEWAL_DUE'
+        ).length;
+        setSidebarBadgeCounts((prev) => ({
+          ...prev,
+          '/portal/student/payments': awaitingPaymentCount,
+        }));
       } catch {
         // Keep safe defaults
       }
     };
 
     void hydrateStudentState();
+
+    // Live listener so approving a school student's programme immediately unlocks Payments & Fees without page reload
+    let unsubEnrollments: (() => void) | undefined;
+    if (uid) {
+      unsubEnrollments = onSnapshot(
+        query(collection(db, 'programme_enrollments'), where('studentUid', '==', uid)),
+        (snap) => {
+          if (!active) return;
+          const liveEnrollments = snap.docs.map((d) =>
+            normalizeProgrammeEnrollmentDoc(d.id, d.data() as Record<string, any>)
+          );
+          const elig =
+            resolvedEligibility ||
+            resolveStudentPortalEligibility({
+              registrationType: sessionStorage.getItem('studentRegistrationType'),
+              registrationSource: sessionStorage.getItem('studentRegistrationSource'),
+              parentId: sessionStorage.getItem('parentId') || sessionStorage.getItem('studentParentId'),
+              schoolId: sessionStorage.getItem('schoolId'),
+            });
+          setStudentBillingUnlocked(
+            shouldUnlockStudentBillingTab({
+              eligibility: elig,
+              selfFundedEnrollments: liveEnrollments,
+            })
+          );
+          const awaitingPaymentCount = liveEnrollments.filter(
+            (en) =>
+              en.enrollmentStatus === 'APPROVED_AWAITING_PAYMENT' ||
+              en.enrollmentStatus === 'PARTIALLY_PAID' ||
+              en.enrollmentStatus === 'RENEWAL_DUE'
+          ).length;
+          setSidebarBadgeCounts((prev) => ({
+            ...prev,
+            '/portal/student/payments': awaitingPaymentCount,
+          }));
+        },
+        () => undefined
+      );
+    }
+
     return () => {
       active = false;
+      unsubEnrollments?.();
     };
-  }, [role, location.pathname]);
+  }, [role]);
+
+  // Live actionable sidebar counters & expired-assessment summary check for Tutor, School Admin, and Parent portals
+  useEffect(() => {
+    const uid = getActiveImpersonation()?.uid || sessionStorage.getItem('userId') || auth.currentUser?.uid || '';
+    if (!uid) return;
+    const activeSchoolId =
+      sessionStorage.getItem('schoolId') ||
+      sessionStorage.getItem('schoolDocId') ||
+      localStorage.getItem('jaystar_cached_school_id') ||
+      '';
+    const unsubs: Array<() => void> = [];
+
+    // Support replies waiting for user across all portals
+    const supportPath = `/portal/${role}/support`;
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, 'supportTickets'), where('userId', '==', uid)),
+        (snap) => {
+          const unreadReplies = snap.docs.filter((d) => d.data()?.unreadByUser === true).length;
+          setSidebarBadgeCounts((prev) => ({ ...prev, [supportPath]: unreadReplies }));
+        },
+        () => undefined
+      )
+    );
+
+    if (role === 'staff') {
+      // Pending prior-learning / recognition requests for tutors
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'priorLearningRecognitions'), where('status', '==', 'PENDING')),
+          (snap) => {
+            setSidebarBadgeCounts((prev) => ({
+              ...prev,
+              '/portal/staff/milestones': snap.size,
+            }));
+          },
+          () => undefined
+        )
+      );
+
+      // Pending coursework assignment submissions awaiting tutor grading
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'assignmentSubmissions'), where('status', '==', 'submitted'), limit(100)),
+          (snap) => {
+            setSidebarBadgeCounts((prev) => ({
+              ...prev,
+              '/portal/staff/assignments': snap.size,
+            }));
+          },
+          () => undefined
+        )
+      );
+
+      // Unread assessment submission notifications + ungraded attempts for tutor's exams
+      unsubs.push(
+        onSnapshot(
+          query(
+            collection(db, 'jdiNotifications'),
+            where('recipientUid', '==', uid),
+            where('isRead', '==', false)
+          ),
+          (snap) => {
+            const examAlertCount = snap.docs.filter((d) => {
+              const t = String(d.data()?.type || '').toLowerCase();
+              return t === 'exam_submitted' || t === 'exam_deadline_summary' || t === 'exam_expired';
+            }).length;
+            setSidebarBadgeCounts((prev) => ({
+              ...prev,
+              '/portal/staff/exam-history': examAlertCount,
+            }));
+          },
+          () => undefined
+        )
+      );
+
+      void checkAndNotifyExpiredAssessments({ role: 'staff', uid });
+    } else if (role === 'school' && activeSchoolId) {
+      unsubs.push(
+        onSnapshot(
+          query(
+            collection(db, 'jdiNotifications'),
+            where('recipientUid', '==', uid),
+            where('isRead', '==', false)
+          ),
+          (snap) => {
+            const examAlertCount = snap.docs.filter((d) => {
+              const t = String(d.data()?.type || '').toLowerCase();
+              return t === 'exam_submitted' || t === 'exam_deadline_summary' || t === 'exam_expired';
+            }).length;
+            setSidebarBadgeCounts((prev) => ({
+              ...prev,
+              '/portal/school/exam-history': examAlertCount,
+            }));
+          },
+          () => undefined
+        )
+      );
+
+      // Also check active school assessments needing attention
+      void getDocs(
+        query(collection(db, 'jdiExams'), where('schoolId', '==', activeSchoolId), where('status', '==', 'active'), limit(30))
+      )
+        .then((snap) => {
+          setSidebarBadgeCounts((prev) => ({
+            ...prev,
+            '/portal/school/exams': snap.size,
+          }));
+        })
+        .catch(() => undefined);
+
+      void checkAndNotifyExpiredAssessments({ role: 'school', uid, schoolId: activeSchoolId });
+    }
+
+    return () => {
+      unsubs.forEach((fn) => fn());
+    };
+  }, [role]);
 
   const parentEnrolledStudent = role === 'student' && (
     studentOriginType === 'parent' ||
@@ -600,6 +795,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
   const NavLinkComponent = ({ item, mobile = false }: { item: NavItem; mobile?: boolean }) => {
     const active = isItemActive(item.path);
     const locked = isNavPathLocked(item.path);
+    const count = item.badgeCount ?? sidebarBadgeCounts[item.path] ?? 0;
 
     const handleLockedClick = () => {
       toast.error(
@@ -627,9 +823,9 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
         );
       }
 
-      // Collapsed rail mode: icon-only with tooltip
+      // Collapsed rail mode: icon-only with tooltip + compact numeric badge
       return (
-        <Tooltip content={`${item.name} • ${item.desc}`} placement="right" delay={150}>
+        <Tooltip content={`${item.name}${count > 0 ? ` (${count})` : ''} • ${item.desc}`} placement="right" delay={150}>
           <Link
             to={item.path}
             data-tour-id={item.tourId}
@@ -644,6 +840,11 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
               <span className="absolute left-1 w-1 h-5 rounded-sm bg-[#B91C1C]" />
             )}
             <span className="shrink-0 flex items-center justify-center">{item.icon}</span>
+            {count > 0 && (
+              <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-[#B91C1C] text-white text-[9px] font-black tabular-nums flex items-center justify-center leading-none shadow-xs">
+                {count > 99 ? '99+' : count}
+              </span>
+            )}
           </Link>
         </Tooltip>
       );
@@ -651,15 +852,15 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
 
     if (locked) {
       return (
-        <Tooltip content={!mobile ? 'Locked until subscription payment is completed' : undefined} placement="right" delay={200}>
+        <Tooltip content={!mobile ? 'Locked until subscription payment is completed' : undefined} placement="right" delay={200} fullWidth>
           <button
             type="button"
             onClick={handleLockedClick}
             aria-disabled="true"
-            className="w-full relative group flex items-center justify-between h-11 min-h-[44px] px-3 my-0.5 rounded-xl text-xs text-slate-400 dark:text-slate-500 opacity-60 cursor-not-allowed hover:bg-red-50/40 dark:hover:bg-red-950/20 transition-colors overflow-hidden text-left"
+            className="w-full relative group flex items-center justify-between h-11 min-h-[44px] px-3 my-0.5 rounded-xl text-xs text-slate-400 dark:text-zinc-500 opacity-60 cursor-not-allowed hover:bg-red-50/40 dark:hover:bg-red-950/20 transition-colors overflow-hidden text-left"
           >
             <span className="flex items-center min-w-0">
-              <span className="w-8 h-8 flex items-center justify-center shrink-0 ml-1 text-slate-400 dark:text-slate-500">
+              <span className="w-8 h-8 flex items-center justify-center shrink-0 ml-1 text-slate-400 dark:text-zinc-500">
                 {item.icon}
               </span>
               <span className="min-w-0 truncate pl-2.5 text-[13px] font-medium">{item.name}</span>
@@ -670,28 +871,35 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
       );
     }
 
-    // Expanded / Mobile mode: full row with deliberate spacing, active indicator and white icon contrast
+    // Expanded / Mobile mode: full row with uniform full-width highlight, active indicator and numeric count badge
     return (
-      <Tooltip content={!mobile ? item.desc : undefined} placement="right" delay={300}>
+      <Tooltip content={!mobile ? item.desc : undefined} placement="right" delay={300} fullWidth>
         <Link
           to={item.path}
           data-tour-id={!mobile ? item.tourId : undefined}
           onClick={() => { if (mobile) setMobileMenuOpen(false); }}
-          className={`relative group flex items-center h-11 min-h-[44px] px-3 my-0.5 rounded-xl text-xs transition-colors overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C] focus-visible:ring-offset-1 ${
+          className={`w-full relative group flex items-center justify-between h-11 min-h-[44px] px-3 my-0.5 rounded-xl text-xs transition-colors overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C] focus-visible:ring-offset-1 ${
             active
               ? 'bg-[#1E293B] dark:bg-white/10 text-white font-semibold shadow-xs'
-              : 'text-[#14284B] dark:text-slate-200 hover:bg-[#F8FAFC] dark:hover:bg-white/5 hover:text-[#1E293B] dark:hover:text-white font-medium'
+              : 'text-[#14284B] dark:text-zinc-200 hover:bg-[#F1F5F9] dark:hover:bg-white/10 hover:text-[#1E293B] dark:hover:text-white font-medium'
           }`}
         >
           {active && (
             <span className="absolute left-1.5 w-1 h-5 rounded-sm bg-[#B91C1C]" />
           )}
-          <span className={`w-8 h-8 flex items-center justify-center shrink-0 ml-1 transition-colors ${
-            active ? 'text-white' : 'text-[#64748B] dark:text-slate-400 group-hover:text-[#1E293B] dark:group-hover:text-white'
-          }`}>
-            {item.icon}
+          <span className="flex items-center min-w-0 flex-1">
+            <span className={`w-8 h-8 flex items-center justify-center shrink-0 ml-1 transition-colors ${
+              active ? 'text-white' : 'text-[#64748B] dark:text-zinc-400 group-hover:text-[#1E293B] dark:group-hover:text-white'
+            }`}>
+              {item.icon}
+            </span>
+            <span className="min-w-0 truncate pl-2.5 text-[13px]">{item.name}</span>
           </span>
-          <span className="min-w-0 truncate pl-2.5 text-[13px]">{item.name}</span>
+          {count > 0 && (
+            <span className="ml-2 px-1.5 py-0.5 rounded-md bg-[#B91C1C] text-white text-[10px] font-black tabular-nums leading-none shrink-0">
+              {count > 99 ? '99+' : count}
+            </span>
+          )}
         </Link>
       </Tooltip>
     );
@@ -717,7 +925,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
   };
 
   return (
-    <div className="portal-shell h-screen w-full bg-[#F7F9FC] dark:bg-[#1A2436] text-[#14284B] dark:text-slate-100 flex flex-col md:flex-row overflow-hidden font-sans">
+    <div className="portal-shell h-screen w-full bg-[#F7F9FC] dark:bg-[#09090B] text-[#14284B] dark:text-zinc-100 flex flex-col md:flex-row overflow-hidden font-sans">
       <SEO title={`${currentPageTitle} | ${roleTitle} | Jaystarbliss Studios`} description={`Jaystarbliss Studios ${roleTitle} portal.`} noindex />
 
       {/* Mobile Drawer */}
@@ -726,7 +934,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
           <div className="md:hidden fixed inset-0 z-50">
             <motion.button
               aria-label="Close menu"
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs"
+              className="absolute inset-0 bg-black/75 backdrop-blur-xs"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -737,9 +945,9 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-              className="absolute inset-y-0 left-0 w-[80vw] max-w-[280px] bg-white dark:bg-[#14284B] text-[#14284B] dark:text-white border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col p-4 overflow-y-auto"
+              className="absolute inset-y-0 left-0 w-[80vw] max-w-[280px] bg-white dark:bg-[#111114] text-[#14284B] dark:text-white border-r border-slate-200 dark:border-zinc-800 shadow-2xl flex flex-col p-4 overflow-y-auto"
             >
-              <div className="flex items-center justify-between min-h-14 pb-2.5 border-b border-slate-200 dark:border-slate-800 shrink-0 gap-2">
+              <div className="flex items-center justify-between min-h-14 pb-2.5 border-b border-slate-200 dark:border-zinc-800 shrink-0 gap-2">
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(false)}
@@ -807,31 +1015,34 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
         )}
       </AnimatePresence>
 
-      {/* Desktop Responsive Sidebar (Expanded: 268px, Collapsed: 72px) */}
+      {/* Desktop Responsive Sidebar (Collapsed rail: 72px, expands on hover or manual pin: 268px) */}
       <motion.aside
         initial={false}
         animate={{ width: sidebarExpanded ? 268 : 72 }}
         transition={{ type: 'spring', stiffness: 360, damping: 32, mass: 0.8 }}
-        className="hidden md:flex bg-white dark:bg-[#14284B] text-[#14284B] dark:text-white flex-col h-full border-r border-[#E2E8F0] dark:border-slate-800 shrink-0 select-none overflow-hidden shadow-xs"
+        onMouseEnter={() => setIsHoverExpanded(true)}
+        onMouseLeave={() => setIsHoverExpanded(false)}
+        className="hidden md:flex bg-white dark:bg-[#111114] text-[#14284B] dark:text-white flex-col h-full border-r border-[#E2E8F0] dark:border-zinc-800 shrink-0 select-none overflow-hidden shadow-xs"
       >
-        {/* Top Header: Profile Identity + Collapse Toggle */}
-        <div className="min-h-16 px-4 py-2.5 border-b border-[#E2E8F0] dark:border-slate-800 flex items-center justify-between gap-2 shrink-0 overflow-hidden">
+        {/* Top Header: Profile Identity + Pin Toggle */}
+        <div className="min-h-16 px-4 py-2.5 border-b border-[#E2E8F0] dark:border-zinc-800 flex items-center justify-between gap-2 shrink-0 overflow-hidden">
           <Tooltip
-            content={`${displayName} • ${roleSubtitle}${sidebarExpanded ? ' (Click to collapse)' : ' (Click to expand)'}`}
+            content={`${displayName} • ${roleSubtitle}${sidebarPinned ? ' (Click to unpin sidebar)' : ' (Click to pin sidebar open)'}`}
             placement="right"
+            fullWidth
           >
             <button
               type="button"
-              onClick={() => setSidebarExpanded(prev => !prev)}
+              onClick={toggleSidebarPin}
               className="flex items-center min-w-0 flex-1 h-full overflow-hidden text-left cursor-pointer group"
-              aria-label={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-label={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar open'}
             >
               <span className="w-10 h-10 flex items-center justify-center shrink-0">
                 {photoURL ? (
                   <img
                     src={photoURL}
                     alt={displayName}
-                    className="w-9 h-9 rounded-lg object-cover border border-slate-300 dark:border-slate-700"
+                    className="w-9 h-9 rounded-lg object-cover border border-slate-300 dark:border-zinc-700"
                     referrerPolicy="no-referrer"
                   />
                 ) : (
@@ -850,7 +1061,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
                   <span className="block text-xs font-bold tracking-tight text-[#14284B] dark:text-white leading-snug line-clamp-2">
                     {displayName}
                   </span>
-                  <span className="block text-[11px] text-[#64748B] dark:text-slate-400 font-medium truncate">
+                  <span className="block text-[11px] text-[#64748B] dark:text-zinc-400 font-medium truncate">
                     {impersonation ? `Viewing as ${roleSubtitle}` : roleSubtitle}
                   </span>
                 </motion.span>
@@ -859,14 +1070,18 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
           </Tooltip>
 
           {sidebarExpanded && (
-            <Tooltip content="Collapse sidebar" placement="right">
+            <Tooltip content={sidebarPinned ? 'Unpin sidebar (auto-hide on leave)' : 'Pin sidebar open'} placement="right">
               <button
                 type="button"
-                onClick={() => setSidebarExpanded(false)}
-                aria-label="Collapse sidebar"
-                className="p-1.5 rounded-lg text-[#64748B] hover:text-[#14284B] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-white/10 transition-colors shrink-0 cursor-pointer"
+                onClick={toggleSidebarPin}
+                aria-label={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar open'}
+                className={`p-1.5 rounded-lg transition-colors shrink-0 cursor-pointer ${
+                  sidebarPinned
+                    ? 'text-[#B91C1C] bg-red-50 dark:bg-[#B91C1C]/20 dark:text-red-400'
+                    : 'text-[#64748B] dark:text-zinc-400 hover:text-[#14284B] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-white/10'
+                }`}
               >
-                <PanelLeftClose size={18} />
+                {sidebarPinned ? <PinOff size={16} /> : <Pin size={16} />}
               </button>
             </Tooltip>
           )}
@@ -878,15 +1093,15 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
         </nav>
 
         {/* External & Account actions utility area */}
-        <div className="p-3 border-t border-[#E2E8F0] dark:border-slate-800 shrink-0 flex flex-col gap-1 bg-[#F8FAFC] dark:bg-[#12223F]">
+        <div className="p-3 border-t border-[#E2E8F0] dark:border-zinc-800 shrink-0 flex flex-col gap-1 bg-[#F8FAFC] dark:bg-[#0C0C0E]">
           <PWAInstallButton variant="sidebar" expanded={sidebarExpanded} />
-          <Tooltip content={isStandalone ? "Open Main Website in Browser" : "Return to Main Website"} placement="right">
+          <Tooltip content={isStandalone ? "Open Main Website in Browser" : "Return to Main Website"} placement="right" fullWidth>
             {isStandalone ? (
               <a
                 href={getExternalMainWebsiteUrl('/')}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-slate-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors ${
+                className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-zinc-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors ${
                   !sidebarExpanded ? 'justify-center px-0' : ''
                 }`}
               >
@@ -898,7 +1113,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
             ) : (
               <Link
                 to="/"
-                className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-slate-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors ${
+                className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-zinc-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors ${
                   !sidebarExpanded ? 'justify-center px-0' : ''
                 }`}
               >
@@ -910,26 +1125,26 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
             )}
           </Tooltip>
 
-          <Tooltip content="Appearance" placement="right">
+          <Tooltip content="Appearance" placement="right" fullWidth>
             <button
               type="button"
               onClick={toggleTheme}
-              className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-slate-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors cursor-pointer ${
+              className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-zinc-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors cursor-pointer ${
                 !sidebarExpanded ? 'justify-center px-0' : ''
               }`}
             >
               <span className="w-8 h-8 flex items-center justify-center shrink-0">
-                {theme === 'dark' ? <Sun size={17} className="text-slate-200" /> : <Moon size={17} />}
+                {theme === 'dark' ? <Sun size={17} className="text-zinc-200" /> : <Moon size={17} />}
               </span>
               {sidebarExpanded && <span className="pl-2 whitespace-nowrap truncate">Appearance</span>}
             </button>
           </Tooltip>
 
-          <Tooltip content="Log Out" placement="right">
+          <Tooltip content="Log Out" placement="right" fullWidth>
             <button
               type="button"
               onClick={logout}
-              className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/30 text-[#64748B] hover:text-red-600 dark:hover:text-red-400 text-xs font-semibold overflow-hidden transition-colors cursor-pointer ${
+              className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/30 text-[#64748B] dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 text-xs font-semibold overflow-hidden transition-colors cursor-pointer ${
                 !sidebarExpanded ? 'justify-center px-0' : ''
               }`}
             >
@@ -943,9 +1158,9 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
       </motion.aside>
 
       {/* Main Content Workspace */}
-      <main className="portal-main-content flex-1 h-full min-w-0 flex flex-col overflow-y-auto custom-scrollbar bg-[#F7F9FC] dark:bg-[#1A2436]">
+      <main className="portal-main-content flex-1 h-full min-w-0 flex flex-col overflow-y-auto custom-scrollbar bg-[#F7F9FC] dark:bg-[#09090B]">
         {/* Standardised Compact Route-Aware Dashboard Header (48-56px height, only current page title visible as text) */}
-        <header className="flex items-center justify-between h-13 sm:h-14 px-4 sm:px-6 bg-white/90 dark:bg-[#14284B]/90 backdrop-blur-md border-b border-[#E2E8F0] dark:border-slate-800 sticky top-0 z-20 shrink-0">
+        <header className="flex items-center justify-between h-13 sm:h-14 px-4 sm:px-6 bg-white/95 dark:bg-[#111114]/95 backdrop-blur-md border-b border-[#E2E8F0] dark:border-zinc-800 sticky top-0 z-20 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
@@ -1011,9 +1226,9 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 8 }}
-                    className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 py-2 z-50 text-xs font-semibold"
+                    className="absolute right-0 mt-2 w-56 bg-white dark:bg-[#111114] rounded-2xl shadow-xl border border-slate-200 dark:border-zinc-800 py-2 z-50 text-xs font-semibold"
                   >
-                    <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
+                    <div className="px-4 py-2 border-b border-slate-100 dark:border-zinc-800">
                       <p className="font-bold text-[#14284B] dark:text-white truncate">{displayName}</p>
                       <p className="text-[11px] text-[#64748B] dark:text-slate-400 truncate">{userEmail || `${role} account`}</p>
                     </div>
@@ -1048,7 +1263,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
                     <button
                       type="button"
                       onClick={logout}
-                      className="w-full flex items-center gap-2.5 px-4 py-2 hover:bg-red-50 dark:hover:bg-red-950/30 text-red-600 text-left font-bold cursor-pointer"
+                      className="w-full flex items-center gap-2.5 px-4 py-2 hover:bg-red-50 dark:hover:bg-white/10 text-[#B91C1C] dark:text-white text-left font-bold cursor-pointer"
                     >
                       <LogOut size={14} /> Sign Out
                     </button>
@@ -1073,9 +1288,19 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
             <PortalLockdownView
               entitlement={entitlement}
               restrictedFeatureName={currentPageTitle}
+              showHeroBanner
             />
           ) : (
-            <Outlet />
+            <Suspense
+              fallback={
+                <div className="min-h-[280px] flex items-center justify-center gap-2.5 text-xs font-semibold text-slate-500 dark:text-zinc-400">
+                  <Loader2 className="animate-spin text-[#B91C1C]" size={18} />
+                  <span>Loading view…</span>
+                </div>
+              }
+            >
+              <Outlet />
+            </Suspense>
           )}
         </div>
       </main>

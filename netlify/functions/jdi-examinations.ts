@@ -514,6 +514,13 @@ export const handler: Handler = async event => {
               schoolAliases: Array.from(schoolAliases),
               schoolName: resolvedSchoolName,
               class: studentClassNormalized || studentClassRaw,
+              selectedProgramIds: student.data.selectedProgramIds,
+              assignedProgramIds: student.data.assignedProgramIds,
+              assignedTrackIds: student.data.assignedTrackIds,
+              enrolledProgramIds: student.data.enrolledProgramIds,
+              programId: student.data.programId || c.user.programId,
+              programName: student.data.programName || c.user.programName,
+              track: student.data.track || student.data.plan || c.user.track,
             },
             exam._raw
           )
@@ -672,6 +679,13 @@ export const handler: Handler = async event => {
           schoolId,
           schoolName: studentSchoolName,
           class: studentClass,
+          selectedProgramIds: student.data.selectedProgramIds,
+          assignedProgramIds: student.data.assignedProgramIds,
+          assignedTrackIds: student.data.assignedTrackIds,
+          enrolledProgramIds: student.data.enrolledProgramIds,
+          programId: student.data.programId || c.user.programId,
+          programName: student.data.programName || c.user.programName,
+          track: student.data.track || student.data.plan || c.user.track,
         },
         exam
       );

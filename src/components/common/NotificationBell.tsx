@@ -105,7 +105,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
         id="header-notification-bell"
         type="button"
         onClick={() => setIsOpen(prev => !prev)}
-        className="relative p-2.5 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
+        className="relative p-2.5 rounded-xl text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
         aria-label="View notifications"
         title="Notifications & Alerts"
       >
@@ -123,19 +123,19 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       {isOpen && (
         <div 
           id="notification-popover-dropdown"
-          className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150"
+          className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150"
         >
           {/* Header */}
-          <div className="px-4 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-900/90 backdrop-blur-xs">
+          <div className="px-4 py-3.5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between bg-slate-50/80 dark:bg-[#18181B]">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-slate-200/70 dark:bg-slate-800 text-[#B91C1C] dark:text-red-400 flex items-center justify-center font-bold">
+              <div className="w-7 h-7 rounded-lg bg-slate-200/70 dark:bg-zinc-900 border border-transparent dark:border-zinc-800 text-[#B91C1C] dark:text-red-400 flex items-center justify-center font-bold">
                 <Bell size={14} />
               </div>
               <div>
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
                   Notifications &amp; Alerts
                 </h3>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">
+                <p className="text-[10px] text-slate-500 dark:text-zinc-400 tabular-nums">
                   {unreadCount === 0 ? 'All caught up' : `${unreadCount} unread update${unreadCount > 1 ? 's' : ''}`}
                 </p>
               </div>
@@ -146,7 +146,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                 <button
                   type="button"
                   onClick={markAllAsRead}
-                  className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400 hover:text-red-800 flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
+                  className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400 hover:text-red-800 flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer"
                   title="Mark all notifications as read"
                 >
                   <CheckCheck size={13} />
@@ -157,17 +157,14 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
           </div>
 
           {/* Quick List */}
-          <div className="max-h-[340px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+          <div className="max-h-[340px] overflow-y-auto divide-y divide-slate-100 dark:divide-zinc-800/80 bg-white dark:bg-[#111114]">
             {notifications.length === 0 ? (
               <div className="p-8 text-center space-y-2">
-                <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-[#18181B] text-slate-400 dark:text-zinc-500 mx-auto flex items-center justify-center">
                   <Bell size={18} />
                 </div>
-                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                <p className="text-xs font-bold text-slate-700 dark:text-zinc-300">
                   No notifications yet
-                </p>
-                <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                  Broadcasts, personal messages, and curriculum updates will appear here.
                 </p>
               </div>
             ) : (
@@ -179,12 +176,12 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                     onClick={() => handleOpenItem(item)}
                     className={`p-3.5 flex items-start gap-3 transition-colors cursor-pointer group ${
                       !isRead 
-                        ? 'bg-slate-50/90 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/70' 
-                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                        ? 'bg-slate-50/90 dark:bg-[#18181B] hover:bg-slate-100 dark:hover:bg-zinc-900' 
+                        : 'hover:bg-slate-50 dark:hover:bg-zinc-900/60'
                     }`}
                   >
                     {/* Icon */}
-                    <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs border border-slate-200/50 dark:border-slate-700/50">
+                    <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-[#09090B] flex items-center justify-center shrink-0 mt-0.5 border border-slate-200/50 dark:border-zinc-800">
                       {getNotificationIcon(item.type, item.priority)}
                     </div>
 
@@ -192,7 +189,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center justify-between gap-2">
                         <h4 className={`text-xs font-bold truncate ${
-                          !isRead ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-300'
+                          !isRead ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-zinc-300'
                         }`}>
                           {item.title}
                         </h4>
@@ -203,11 +200,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                         )}
                       </div>
 
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                      <p className="text-[11px] text-slate-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
                         {item.message}
                       </p>
 
-                      <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400 dark:text-slate-500">
+                      <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400 dark:text-zinc-500">
                         <span className="flex items-center gap-1 tabular-nums">
                           <Clock size={10} />
                           {formatRelativeTime(item.timestamp)}
@@ -227,14 +224,14 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
           </div>
 
           {/* Footer - Open Full Inbox Drawer */}
-          <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900 flex items-center justify-between text-xs">
-            <span className="text-slate-500 dark:text-slate-400 text-[11px] tabular-nums">
+          <div className="px-4 py-3 border-t border-slate-100 dark:border-zinc-800 bg-slate-50/90 dark:bg-[#18181B] flex items-center justify-between text-xs">
+            <span className="text-slate-500 dark:text-zinc-400 text-[11px] tabular-nums">
               {notifications.length} message{notifications.length === 1 ? '' : 's'} total
             </span>
             <button
               type="button"
               onClick={handleOpenFullInbox}
-              className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:text-red-800 flex items-center gap-1.5 transition-colors"
+              className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:text-red-800 flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Inbox size={13} />
               <span>Open Full Inbox Drawer</span>

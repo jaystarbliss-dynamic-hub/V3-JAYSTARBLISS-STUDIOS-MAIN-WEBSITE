@@ -204,6 +204,27 @@ export function normalizeClassList(input) {
   });
 }
 
+/**
+ * Expands a canonical grade range (inclusive) into an ordered array of canonical class names.
+ * Automatically normalizes reversed bounds (e.g., Grade 6 to Grade 3).
+ */
+export function expandGradeRange(fromClass, toClass) {
+  const fromNorm = normalizeClassName(fromClass, "");
+  const toNorm = normalizeClassName(toClass, "");
+  if (!fromNorm && !toNorm) return [];
+  if (fromNorm && !toNorm) return [fromNorm];
+  if (!fromNorm && toNorm) return [toNorm];
+
+  const fromIdx = CANONICAL_CLASS_ORDER.get(fromNorm);
+  const toIdx = CANONICAL_CLASS_ORDER.get(toNorm);
+  if (fromIdx === undefined || toIdx === undefined) {
+    return normalizeClassList([fromNorm, toNorm]);
+  }
+  const start = Math.min(fromIdx, toIdx);
+  const end = Math.max(fromIdx, toIdx);
+  return CANONICAL_CLASSES.slice(start, end + 1);
+}
+
 export function formatNormalizedClassDisplay(input, fallback = "Grade 1") {
   const list = normalizeClassList(input);
   if (list.length > 0) return list.join(", ");
@@ -1070,7 +1091,8 @@ export function validateWorkTypeTransition(existingRecordOrOpts, nextWorkType, a
 }
 
 /**
- * Normalises recipient targeting across School + Class, Private Learners, and Multi-target modes.
+ * Normalises recipient targeting across School + Class, Grade Ranges, Multi-Programmes,
+ * Private Learners, Explicit Student Exclusions, and Multi-target modes.
  */
 export function normalizeRecipientTargets(body = {}, existingDoc = null) {
   const rawMode = String(body.recipientMode ?? existingDoc?.recipientMode ?? "").trim().toUpperCase();
@@ -1084,9 +1106,49 @@ export function normalizeRecipientTargets(body = {}, existingDoc = null) {
     .filter(s => s && s !== "all" && s !== "none" && s !== "private");
   const targetSchoolIds = [...new Set(rawSchoolIds)];
 
-  const classIds = normalizeClassList(
-    body.classIds ?? body.targetClass ?? body.className ?? existingDoc?.classIds ?? existingDoc?.targetClass ?? []
-  );
+  const rawGradeRange = body.gradeRange !== undefined ? body.gradeRange : existingDoc?.gradeRange;
+  let gradeRange = null;
+  if (rawGradeRange && typeof rawGradeRange === "object" && (rawGradeRange.from || rawGradeRange.to)) {
+    const fromNorm = normalizeClassName(rawGradeRange.from || rawGradeRange.to, "");
+    const toNorm = normalizeClassName(rawGradeRange.to || rawGradeRange.from, "");
+    if (fromNorm && toNorm) {
+      const expanded = expandGradeRange(fromNorm, toNorm);
+      gradeRange = {
+        from: expanded[0] || fromNorm,
+        to: expanded[expanded.length - 1] || toNorm,
+      };
+    }
+  }
+
+  const rawGradeTargetMode = String(body.gradeTargetMode ?? existingDoc?.gradeTargetMode ?? "")
+    .trim()
+    .toUpperCase();
+
+  let classIds = [];
+  if (rawGradeTargetMode === "RANGE" && gradeRange) {
+    classIds = expandGradeRange(gradeRange.from, gradeRange.to);
+  } else if (rawGradeTargetMode === "ALL") {
+    classIds = [];
+    gradeRange = null;
+  } else {
+    const explicitClasses = normalizeClassList(
+      body.classIds ?? body.targetClass ?? body.className ?? existingDoc?.classIds ?? existingDoc?.targetClass ?? []
+    );
+    if (gradeRange && explicitClasses.length === 0) {
+      classIds = expandGradeRange(gradeRange.from, gradeRange.to);
+    } else {
+      classIds = explicitClasses;
+    }
+  }
+
+  const gradeTargetMode =
+    rawGradeTargetMode === "RANGE" && gradeRange
+      ? "RANGE"
+      : classIds.length > 0
+        ? gradeRange && rawGradeTargetMode !== "SPECIFIC"
+          ? "RANGE"
+          : "SPECIFIC"
+        : "ALL";
 
   const rawStudentIds = [
     ...(Array.isArray(body.targetStudentIds) ? body.targetStudentIds : []),
@@ -1097,6 +1159,42 @@ export function normalizeRecipientTargets(body = {}, existingDoc = null) {
     .map(id => String(id ?? "").trim())
     .filter(Boolean);
   const targetStudentIds = [...new Set(rawStudentIds)];
+
+  const rawExcludedIds =
+    body.excludedStudentIds !== undefined
+      ? Array.isArray(body.excludedStudentIds)
+        ? body.excludedStudentIds
+        : []
+      : Array.isArray(existingDoc?.excludedStudentIds)
+        ? existingDoc.excludedStudentIds
+        : [];
+  const excludedStudentIds = [
+    ...new Set(rawExcludedIds.map(id => String(id ?? "").trim()).filter(Boolean)),
+  ];
+
+  const rawProgramIds =
+    body.targetProgramIds !== undefined
+      ? Array.isArray(body.targetProgramIds)
+        ? body.targetProgramIds
+        : []
+      : Array.isArray(existingDoc?.targetProgramIds)
+        ? existingDoc.targetProgramIds
+        : [];
+  const targetProgramIds = [
+    ...new Set(rawProgramIds.map(id => String(id ?? "").trim()).filter(Boolean)),
+  ];
+
+  const rawProgramTitles =
+    body.targetProgramTitles !== undefined
+      ? Array.isArray(body.targetProgramTitles)
+        ? body.targetProgramTitles
+        : []
+      : Array.isArray(existingDoc?.targetProgramTitles)
+        ? existingDoc.targetProgramTitles
+        : [];
+  const targetProgramTitles = [
+    ...new Set(rawProgramTitles.map(t => String(t ?? "").trim()).filter(Boolean)),
+  ];
 
   let recipientMode = "SCHOOL_CLASS";
   if (rawMode === "PRIVATE_LEARNERS" || rawMode === "PRIVATE" || (targetStudentIds.length > 0 && targetSchoolIds.length === 0)) {
@@ -1112,12 +1210,25 @@ export function normalizeRecipientTargets(body = {}, existingDoc = null) {
     schoolIds: targetSchoolIds,
     classIds,
     targetClass: classIds[0] || "",
+    gradeTargetMode,
+    gradeRange,
+    targetProgramIds,
+    targetProgramTitles,
     targetStudentIds,
+    excludedStudentIds,
   };
 }
 
 /**
  * Checks whether a student is eligible to view/attempt a work item or resource.
+ * Precedence:
+ * 1. Draft / archived items are never eligible.
+ * 2. Explicit exclusions (excludedStudentIds) ALWAYS block access.
+ * 3. Direct targetStudentIds match grants access (unless excluded above).
+ * 4. School / Private audience isolation.
+ * 5. Grade / Grade Range match (when classIds / gradeRange / targetClass is configured).
+ * 6. Multi-Programme & Sub-Programme match (when targetProgramIds / targetProgramTitles is configured).
+ *    When BOTH Grade Range and Programmes are configured, BOTH must match (intersection).
  */
 export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
   let student = studentOrOpts;
@@ -1136,6 +1247,15 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
       schoolAliases: studentOrOpts.schoolAliases,
       schoolName: studentOrOpts.schoolName,
       className: studentOrOpts.studentClass ?? studentOrOpts.className ?? studentOrOpts.class,
+      programIds: studentOrOpts.programIds ?? studentOrOpts.studentProgramIds,
+      programTitles: studentOrOpts.programTitles ?? studentOrOpts.studentProgramTitles,
+      selectedProgramIds: studentOrOpts.selectedProgramIds,
+      assignedProgramIds: studentOrOpts.assignedProgramIds,
+      assignedTrackIds: studentOrOpts.assignedTrackIds,
+      enrolledProgramIds: studentOrOpts.enrolledProgramIds,
+      programId: studentOrOpts.programId,
+      track: studentOrOpts.track,
+      programName: studentOrOpts.programName,
     };
   } else if (
     studentOrOpts &&
@@ -1150,6 +1270,9 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
       "recipientMode" in studentOrOpts ||
       "targetClass" in studentOrOpts ||
       "classIds" in studentOrOpts ||
+      "gradeRange" in studentOrOpts ||
+      "targetProgramIds" in studentOrOpts ||
+      "excludedStudentIds" in studentOrOpts ||
       "targetStudentIds" in studentOrOpts ||
       "targetSchoolIds" in studentOrOpts) &&
     !("questions" in workItemArg) &&
@@ -1171,6 +1294,16 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
   const studentIds = [student.id, student.uid, student.studentUid, student.studentId]
     .map(v => String(v ?? "").trim())
     .filter(Boolean);
+
+  // 1. Explicit exclusion gate takes highest precedence
+  const excludedStudentIds = (
+    Array.isArray(workItem.excludedStudentIds) ? workItem.excludedStudentIds : []
+  )
+    .map(v => String(v ?? "").trim())
+    .filter(Boolean);
+  if (excludedStudentIds.length > 0 && studentIds.some(id => excludedStudentIds.includes(id))) {
+    return false;
+  }
 
   const targetStudentIds = [
     ...(Array.isArray(workItem.targetStudentIds) ? workItem.targetStudentIds : []),
@@ -1229,12 +1362,81 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
     }
   }
 
+  // 2. Grade / Grade Range check
   const studentClass = student.className || student.grade || student.class || student.level || "";
+  const rangeClasses =
+    workItem.gradeRange && typeof workItem.gradeRange === "object"
+      ? expandGradeRange(workItem.gradeRange.from, workItem.gradeRange.to)
+      : [];
   const targetClasses =
     Array.isArray(workItem.classIds) && workItem.classIds.length > 0
       ? workItem.classIds
-      : workItem.targetClass || workItem.className || workItem.class || [];
-  return classesMatch(studentClass, targetClasses, { allowEmptyTarget: true });
+      : rangeClasses.length > 0
+        ? rangeClasses
+        : workItem.targetClass || workItem.className || workItem.class || [];
+  if (!classesMatch(studentClass, targetClasses, { allowEmptyTarget: true })) {
+    return false;
+  }
+
+  // 3. Multi-Programme & Sub-Programme intersection check (only enforced when explicitly configured)
+  const workProgramIds = (
+    Array.isArray(workItem.targetProgramIds) ? workItem.targetProgramIds : []
+  )
+    .map(v => String(v ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  const workProgramTitles = (
+    Array.isArray(workItem.targetProgramTitles) ? workItem.targetProgramTitles : []
+  )
+    .map(v => String(v ?? "").trim().toLowerCase())
+    .filter(Boolean);
+
+  if (workProgramIds.length > 0 || workProgramTitles.length > 0) {
+    const studentProgramKeys = new Set(
+      [
+        ...(Array.isArray(student.programIds) ? student.programIds : []),
+        ...(Array.isArray(student.selectedProgramIds) ? student.selectedProgramIds : []),
+        ...(Array.isArray(student.assignedProgramIds) ? student.assignedProgramIds : []),
+        ...(Array.isArray(student.assignedTrackIds) ? student.assignedTrackIds : []),
+        ...(Array.isArray(student.enrolledProgramIds) ? student.enrolledProgramIds : []),
+        ...(Array.isArray(student.programTitles) ? student.programTitles : []),
+        student.programId,
+        student.programTitle,
+        student.programName,
+        student.track,
+      ]
+        .flatMap(v => {
+          if (!v) return [];
+          if (typeof v === "string") {
+            return v.split(/[,•|]/).map(s => s.trim().toLowerCase()).filter(Boolean);
+          }
+          if (typeof v === "object") {
+            return [v.id, v.programId, v.title, v.name]
+              .map(x => String(x ?? "").trim().toLowerCase())
+              .filter(Boolean);
+          }
+          return [String(v).trim().toLowerCase()];
+        })
+        .filter(Boolean)
+    );
+
+    const matchesProgramId =
+      workProgramIds.length > 0 && workProgramIds.some(pid => studentProgramKeys.has(pid));
+    const matchesProgramTitle =
+      workProgramTitles.length > 0 &&
+      workProgramTitles.some(pt => {
+        if (studentProgramKeys.has(pt)) return true;
+        for (const sk of studentProgramKeys) {
+          if (sk.length >= 4 && (sk.includes(pt) || pt.includes(sk))) return true;
+        }
+        return false;
+      });
+
+    if (!matchesProgramId && !matchesProgramTitle) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 // ============================================================================

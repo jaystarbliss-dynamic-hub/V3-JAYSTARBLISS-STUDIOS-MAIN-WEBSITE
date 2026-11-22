@@ -28,6 +28,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
   ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
+import { Bar3DShape } from '../../components/charts/Bar3DShape';
 
 const ROLE_COLORS = ['#1E293B', '#B91C1C', '#475569', '#64748B', '#334155', '#94A3B8'];
 
@@ -988,19 +989,19 @@ const AdminDashboard: React.FC = () => {
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartDataInquiries} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <BarChart data={chartDataInquiries} margin={{ top: 14, right: 16, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.2} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="#64748b" />
                       <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="#64748b" />
                       <RechartsTooltip 
                         contentStyle={{ 
-                          backgroundColor: '#0F172A', 
+                          backgroundColor: '#111114', 
                           borderRadius: '12px', 
-                          border: '1px solid #334155', 
+                          border: '1px solid #27272A', 
                           color: '#fff'
                         }} 
                       />
-                      <Bar dataKey="value" name="Inquiries" fill="#1E293B" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="value" name="Inquiries" fill="#1E293B" shape={<Bar3DShape />} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}

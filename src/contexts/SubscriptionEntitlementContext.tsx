@@ -1,8 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 import type { PortalEntitlementResult } from '../../api/_lib/subscription-core';
 import { isPortalRouteAllowedDuringLockdown } from '../../api/_lib/subscription-core';
+import { evaluatePortalEntitlementFromFirestore } from '../lib/subscriptionEntitlementFallback';
+import { isMasqueradingActive } from '../utils/impersonation';
 
 export const ENTITLEMENT_REFRESH_EVENT = 'jaystarbliss:entitlement-refresh';
 
@@ -36,7 +39,8 @@ export const SubscriptionEntitlementProvider: React.FC<{
   role: string;
   children: React.ReactNode;
 }> = ({ role, children }) => {
-  const isManagedRole = ['school', 'student', 'parent'].includes(role.toLowerCase());
+  const normalizedRole = role.toLowerCase();
+  const isManagedRole = ['school', 'student', 'parent'].includes(normalizedRole);
   const [entitlement, setEntitlement] = useState<PortalEntitlementResult | null>(null);
   const [loading, setLoading] = useState<boolean>(isManagedRole);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +58,27 @@ export const SubscriptionEntitlementProvider: React.FC<{
       return null;
     }
 
+    const resolveViaFirestore = async (): Promise<PortalEntitlementResult | null> => {
+      try {
+        const clientResult = await evaluatePortalEntitlementFromFirestore(normalizedRole);
+        if (clientResult) {
+          setEntitlement(clientResult);
+          setError(null);
+          return clientResult;
+        }
+      } catch (fallbackErr) {
+        setError(fallbackErr instanceof Error ? fallbackErr.message : 'Unable to verify subscription status.');
+      }
+      return null;
+    };
+
     try {
+      // When a platform administrator is impersonating/viewing a school, parent, or student account,
+      // evaluate the target account's actual entitlement from Firestore so restricted states are faithfully shown.
+      if (isMasqueradingActive()) {
+        return await resolveViaFirestore();
+      }
+
       const token = await user.getIdToken();
       const response = await fetch('/api/subscription-status', {
         method: 'GET',
@@ -64,26 +88,25 @@ export const SubscriptionEntitlementProvider: React.FC<{
           'Cache-Control': 'no-cache',
         },
       });
-      const payload = await response.json().catch(() => ({}));
-      if (response.ok && payload?.entitlement) {
+      const contentType = response.headers.get('content-type') || '';
+      const payload = contentType.includes('application/json')
+        ? await response.json().catch(() => ({}))
+        : {};
+
+      if ((response.ok || response.status === 423) && payload?.entitlement) {
         setEntitlement(payload.entitlement as PortalEntitlementResult);
         setError(null);
         return payload.entitlement as PortalEntitlementResult;
       }
-      if (response.status === 423 && payload?.entitlement) {
-        setEntitlement(payload.entitlement as PortalEntitlementResult);
-        setError(null);
-        return payload.entitlement as PortalEntitlementResult;
-      }
-      setError(payload?.error || null);
-      return null;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to verify subscription status.');
-      return null;
+
+      // Preview / Vite dev fallback (`{ ok: true, fallback: true }`) or unavailable serverless function
+      return await resolveViaFirestore();
+    } catch {
+      return await resolveViaFirestore();
     } finally {
       setLoading(false);
     }
-  }, [isManagedRole]);
+  }, [isManagedRole, normalizedRole]);
 
   useEffect(() => {
     if (!isManagedRole) {
@@ -125,6 +148,26 @@ export const SubscriptionEntitlementProvider: React.FC<{
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [isManagedRole, fetchEntitlement]);
+
+  // Live Firestore listener on the active subscription document so admin lock/unlock changes
+  // take effect immediately on open school, parent, and student portals without manual reload.
+  const activeSubscriptionId = entitlement?.subscriptionId || null;
+  useEffect(() => {
+    if (!isManagedRole || !activeSubscriptionId || !auth.currentUser) return;
+    let firstSnapshot = true;
+    const unsub = onSnapshot(
+      doc(db, 'billingSubscriptions', activeSubscriptionId),
+      () => {
+        if (firstSnapshot) {
+          firstSnapshot = false;
+          return;
+        }
+        void fetchEntitlement();
+      },
+      () => undefined
+    );
+    return () => unsub();
+  }, [isManagedRole, activeSubscriptionId, fetchEntitlement]);
 
   const isRouteAllowed = useCallback(
     (pathname: string) => {

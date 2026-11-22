@@ -254,13 +254,13 @@ const AdminNotifications: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Broadcast Form (5 cols) */}
-        <div className="lg:col-span-5 bg-white dark:bg-slate-900 p-6 rounded-3xl border border-gray-200 dark:border-slate-800 shadow-sm space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-slate-800">
-            <h2 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
-              <Send size={18} className="text-brand-red" />
+        <div className="lg:col-span-5 bg-white dark:bg-[#111114] p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-xs space-y-5">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-800">
+            <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <Send size={18} className="text-[#B91C1C]" />
               Dispatch Notification
             </h2>
-            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-red-50 dark:bg-red-950/40 text-brand-red">
+            <span className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400">
               Live Delivery
             </span>
           </div>
@@ -268,7 +268,7 @@ const AdminNotifications: React.FC = () => {
           <form onSubmit={handleBroadcast} className="space-y-4">
             {/* Target Audience */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1.5">
                 Recipient Audience *
               </label>
               <select
@@ -278,25 +278,25 @@ const AdminNotifications: React.FC = () => {
                   setSelectedSchoolId('');
                   setSpecificId('');
                 }}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-red"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
               >
-                <optgroup label="🌐 Global & Broad Groups">
-                  <option value="all">🌐 Everyone (All Users &amp; Portals)</option>
-                  <option value="all_students">👥 All Enrolled Students</option>
-                  <option value="all_parents">👪 All Registered Parents</option>
-                  <option value="all_staff">👨‍🏫 All Faculty, Tutors &amp; Mentors</option>
-                  <option value="all_schools">🏫 All Partner School Administrations</option>
+                <optgroup label="Global & Broad Groups">
+                  <option value="all">Everyone (All Users &amp; Portals)</option>
+                  <option value="all_students">All Enrolled Students</option>
+                  <option value="all_parents">All Registered Parents</option>
+                  <option value="all_staff">All Faculty, Tutors &amp; Mentors</option>
+                  <option value="all_schools">All Partner School Administrations</option>
                 </optgroup>
 
-                <optgroup label="🏫 Institutional / School-Specific">
-                  <option value="school">🏫 Specific School Administration</option>
-                  <option value="school_students">🎓 Students under Specific School</option>
+                <optgroup label="Institutional / School-Specific">
+                  <option value="school">Specific School Administration</option>
+                  <option value="school_students">Students under Specific School</option>
                 </optgroup>
 
-                <optgroup label="👤 Targeted Individuals">
-                  <option value="specific_student">👤 Specific Student (Cadet)</option>
-                  <option value="specific_parent">👪 Specific Parent / Guardian</option>
-                  <option value="specific_staff">👨‍🏫 Specific Faculty Member / Tutor</option>
+                <optgroup label="Targeted Individuals">
+                  <option value="specific_student">Specific Student</option>
+                  <option value="specific_parent">Specific Parent / Guardian</option>
+                  <option value="specific_staff">Specific Faculty Member / Tutor</option>
                 </optgroup>
               </select>
             </div>
@@ -304,14 +304,14 @@ const AdminNotifications: React.FC = () => {
             {/* School Selector */}
             {(recipientType === 'school' || recipientType === 'school_students') && (
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1.5">
                   Select Partner School *
                 </label>
                 <select
                   required
                   value={selectedSchoolId}
                   onChange={(e) => setSelectedSchoolId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-red"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
                 >
                   <option value="">-- Choose Partner School --</option>
                   {schoolList.map(s => (
@@ -326,14 +326,14 @@ const AdminNotifications: React.FC = () => {
             {/* Staff Selector */}
             {recipientType === 'specific_staff' && (
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1.5">
                   Select Faculty / Staff Member *
                 </label>
                 <select
                   required
                   value={specificId}
                   onChange={(e) => setSpecificId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-red"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
                 >
                   <option value="">-- Choose Staff Member --</option>
                   {staffList.map(s => (
@@ -348,14 +348,14 @@ const AdminNotifications: React.FC = () => {
             {/* Student Selector */}
             {recipientType === 'specific_student' && (
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
-                  Select Student (Cadet) *
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1.5">
+                  Select Student *
                 </label>
                 <select
                   required
                   value={specificId}
                   onChange={(e) => setSpecificId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-red"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
                 >
                   <option value="">-- Choose Student --</option>
                   {studentList.map(s => (
@@ -370,14 +370,14 @@ const AdminNotifications: React.FC = () => {
             {/* Parent Selector */}
             {recipientType === 'specific_parent' && (
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1.5">
                   Select Parent *
                 </label>
                 <select
                   required
                   value={specificId}
                   onChange={(e) => setSpecificId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-red"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
                 >
                   <option value="">-- Choose Parent --</option>
                   {parentList.map(p => (
@@ -392,41 +392,41 @@ const AdminNotifications: React.FC = () => {
             {/* Priority & Category Grid */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1.5">
                   Priority
                 </label>
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value as NotificationPriority)}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-red"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
                 >
-                  <option value="normal">🟢 Normal</option>
-                  <option value="high">🟡 High Priority</option>
-                  <option value="urgent">🔴 Urgent Alert</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High Priority</option>
+                  <option value="urgent">Urgent Alert</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1.5">
                   Category
                 </label>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value as NotificationCategory)}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-red"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
                 >
-                  <option value="broadcast">📢 Broadcast</option>
-                  <option value="academic">📚 Academic &amp; Class</option>
-                  <option value="billing">💳 Billing &amp; Finance</option>
-                  <option value="exam">📝 Exam &amp; Quiz</option>
-                  <option value="system">⚙️ System Alert</option>
+                  <option value="broadcast">Broadcast</option>
+                  <option value="academic">Academic &amp; Class</option>
+                  <option value="billing">Billing &amp; Finance</option>
+                  <option value="exam">Assessment &amp; Quiz</option>
+                  <option value="system">System Alert</option>
                 </select>
               </div>
             </div>
 
             {/* Headline */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1.5">
                 Headline / Subject *
               </label>
               <input
@@ -435,13 +435,13 @@ const AdminNotifications: React.FC = () => {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Schedule Update: Robotics & Coding Hackathon"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-red"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
               />
             </div>
 
             {/* Message */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1.5">
                 Broadcast Body *
               </label>
               <textarea
@@ -449,15 +449,15 @@ const AdminNotifications: React.FC = () => {
                 required
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Write your comprehensive message..."
-                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-brand-red leading-relaxed"
+                placeholder="Write your message..."
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-slate-900 dark:text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#B91C1C] leading-relaxed"
               ></textarea>
             </div>
 
             {/* Optional Action Link */}
-            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-gray-100 dark:border-slate-800/80">
+            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100 dark:border-zinc-800">
               <div>
-                <label className="block text-[11px] font-bold text-gray-600 dark:text-gray-400 mb-1">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-zinc-400 mb-1">
                   Action Link (Optional)
                 </label>
                 <input
@@ -465,12 +465,12 @@ const AdminNotifications: React.FC = () => {
                   value={link}
                   onChange={(e) => setLink(e.target.value)}
                   placeholder="e.g. /portal/student/calendar"
-                  className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-slate-700 bg-transparent text-gray-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-brand-red"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-gray-600 dark:text-gray-400 mb-1">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-zinc-400 mb-1">
                   Button Text (Optional)
                 </label>
                 <input
@@ -478,7 +478,7 @@ const AdminNotifications: React.FC = () => {
                   value={linkText}
                   onChange={(e) => setLinkText(e.target.value)}
                   placeholder="e.g. View Schedule"
-                  className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-slate-700 bg-transparent text-gray-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-brand-red"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
                 />
               </div>
             </div>
@@ -486,10 +486,10 @@ const AdminNotifications: React.FC = () => {
             <button
               type="submit"
               disabled={sending}
-              className="w-full py-3.5 bg-brand-red hover:bg-red-700 text-white font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-50 active:scale-98"
+              className="w-full py-3.5 bg-[#B91C1C] hover:bg-red-800 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
             >
               <Send size={15} />
-              <span>{sending ? 'Dispatching...' : 'Transmit Broadcast to Selected Recipients'}</span>
+              <span>{sending ? 'Dispatching...' : 'Transmit Broadcast'}</span>
             </button>
           </form>
         </div>
@@ -497,19 +497,14 @@ const AdminNotifications: React.FC = () => {
         {/* Sent History & Audit (7 cols) */}
         <div className="lg:col-span-7 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
-                <span>Broadcast Dispatch History</span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
-                  {notifications.length}
-                </span>
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Audit delivery status, targeted recipients, and individual user read rates.
-              </p>
-            </div>
+            <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <span>Broadcast Dispatch History</span>
+              <span className="text-xs text-slate-500 dark:text-zinc-400 font-mono tabular-nums">
+                ({notifications.length})
+              </span>
+            </h2>
 
-            {/* Filter Pills */}
+            {/* Filter Controls */}
             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
               {[
                 { id: 'all', label: 'All' },
@@ -523,10 +518,10 @@ const AdminNotifications: React.FC = () => {
                   key={f.id}
                   type="button"
                   onClick={() => setHistoryFilter(f.id)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     historyFilter === f.id
-                      ? 'bg-brand-red text-white'
-                      : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700'
+                      ? 'bg-[#B91C1C] text-white'
+                      : 'bg-slate-100 dark:bg-[#18181B] text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-800'
                   }`}
                 >
                   {f.label}
@@ -536,55 +531,59 @@ const AdminNotifications: React.FC = () => {
           </div>
 
           {loading ? (
-            <div className="py-16 text-center text-gray-400 font-mono text-xs">
+            <div className="py-16 text-center text-slate-400 dark:text-zinc-500 font-mono text-xs">
               Loading broadcast audit logs...
             </div>
           ) : filteredHistory.length === 0 ? (
-            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-gray-200 dark:border-slate-800 text-gray-400 text-xs">
+            <div className="p-12 text-center bg-white dark:bg-[#111114] rounded-2xl border border-slate-200 dark:border-zinc-800 text-slate-400 dark:text-zinc-500 text-xs">
               No notifications matching current filter.
             </div>
           ) : (
-            <div className="space-y-3.5 max-h-[700px] overflow-y-auto pr-1">
+            <div className="space-y-3 max-h-[700px] overflow-y-auto pr-1">
               {filteredHistory.map((n) => {
                 const readCount = Array.isArray(n.readBy) ? n.readBy.length : (n.read ? 1 : 0);
                 return (
                   <div 
                     key={n.id} 
-                    className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-gray-200/80 dark:border-slate-800 shadow-2xs hover:border-gray-300 dark:hover:border-slate-700 transition-all flex items-start justify-between gap-4 group"
+                    className="p-5 rounded-2xl bg-white dark:bg-[#111114] border border-slate-200/80 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 transition-all flex items-start justify-between gap-4 group"
                   >
                     <div className="space-y-2 flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-lg bg-brand-red/10 text-brand-red">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold">
+                        <span className="text-[#14284B] dark:text-zinc-200 uppercase tracking-wider text-[10px]">
                           {getRecipientLabel(n)}
                         </span>
 
                         {n.priority === 'urgent' && (
-                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-lg bg-red-500 text-white flex items-center gap-1">
-                            <ShieldAlert size={10} /> Urgent
-                          </span>
+                          <>
+                            <span className="text-slate-300 dark:text-zinc-700">·</span>
+                            <span className="text-[#B91C1C] dark:text-red-400 uppercase text-[10px] inline-flex items-center gap-1">
+                              <ShieldAlert size={11} /> Urgent
+                            </span>
+                          </>
                         )}
 
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 flex items-center gap-1">
+                        <span className="text-slate-300 dark:text-zinc-700">·</span>
+                        <span className="text-slate-600 dark:text-zinc-400 inline-flex items-center gap-1 tabular-nums">
                           <CheckCheck size={12} />
                           <span>Read by {readCount} user{readCount === 1 ? '' : 's'}</span>
                         </span>
 
-                        <span className="text-xs text-gray-400 font-mono flex items-center gap-1 ml-auto">
+                        <span className="text-xs text-slate-400 dark:text-zinc-500 font-mono flex items-center gap-1 ml-auto tabular-nums">
                           <Clock size={11} />
                           {n.timestamp?.toDate ? n.timestamp.toDate().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent'}
                         </span>
                       </div>
 
-                      <h3 className="font-bold text-sm text-gray-900 dark:text-white leading-snug">
+                      <h3 className="font-bold text-sm text-slate-900 dark:text-white leading-snug">
                         {n.title}
                       </h3>
 
-                      <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed whitespace-pre-wrap">
+                      <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed whitespace-pre-wrap">
                         {n.message}
                       </p>
 
                       {n.link && (
-                        <div className="text-[11px] text-brand-red font-semibold flex items-center gap-1 pt-1">
+                        <div className="text-[11px] text-[#B91C1C] dark:text-red-400 font-semibold flex items-center gap-1 pt-1">
                           <ExternalLink size={12} />
                           <span>Link: {n.linkText || n.link} ({n.link})</span>
                         </div>
@@ -593,7 +592,7 @@ const AdminNotifications: React.FC = () => {
 
                     <button
                       onClick={() => handleDeleteNotification(n.id)}
-                      className="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 shrink-0 opacity-80 group-hover:opacity-100"
+                      className="text-slate-400 hover:text-[#B91C1C] dark:hover:text-red-400 transition-colors p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-900 shrink-0 opacity-80 group-hover:opacity-100 cursor-pointer"
                       title="Delete Notification"
                     >
                       <Trash2 size={16} />

@@ -191,11 +191,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           targetName: data.targetName,
           targetEmail: data.targetEmail,
           targetUid: data.targetUid,
-          link: data.link,
-          linkText: data.linkText,
+          link: data.link || data.actionUrl,
+          linkText: data.linkText || data.actionText,
           read: data.isRead === true || data.read,
           readBy: Array.isArray(data.readBy) ? data.readBy : (data.isRead === true ? [uid] : []),
-          timestamp: data.timestamp instanceof Timestamp ? data.timestamp.toMillis() : (data.timestamp || data.createdAt || Date.now()),
+          timestamp:
+            data.timestamp instanceof Timestamp
+              ? data.timestamp.toMillis()
+              : data.createdAt instanceof Timestamp
+              ? data.createdAt.toMillis()
+              : data.timestamp || data.createdAt || Date.now(),
           createdAt: data.createdAt,
           senderName: data.senderName || 'Jaystar Central',
           senderRole: data.senderRole || 'Administration'
@@ -255,8 +260,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       try {
         if (isAdmin) {
           const [adminSnap, jdiSnap] = await Promise.allSettled([
-            getDocs(query(collection(db, 'notifications'), orderBy('timestamp', 'desc'), limit(40))),
-            getDocs(query(collection(db, 'jdiNotifications'), where('recipientUid', '==', uid), limit(30))),
+            getDocs(query(collection(db, 'notifications'), orderBy('timestamp', 'desc'), limit(60))),
+            getDocs(query(collection(db, 'jdiNotifications'), where('recipientUid', '==', uid), limit(40))),
           ]);
           const allDocs: any[] = [];
           if (adminSnap.status === 'fulfilled') allDocs.push(...adminSnap.value.docs);
@@ -264,13 +269,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           updateFromDocs(allDocs);
         } else {
           const queryList = [
-            query(collection(db, 'notifications'), where('recipientId', '==', uid), limit(15)),
-            query(collection(db, "jdiNotifications"), where("recipientUid", "==", uid), limit(20)),
+            query(collection(db, 'notifications'), where('recipientId', '==', uid), limit(25)),
+            query(collection(db, 'notifications'), where('targetUid', '==', uid), limit(25)),
+            query(collection(db, 'jdiNotifications'), where('recipientUid', '==', uid), limit(30)),
           ];
-          if (role === 'student' && currentStudentDocId) {
-            queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', currentStudentDocId), limit(15)));
+          if (role === 'student' && currentStudentDocId && currentStudentDocId !== uid) {
+            queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', currentStudentDocId), limit(25)));
           } else if (role === 'school' && currentSchoolId) {
-            queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', currentSchoolId), limit(15)));
+            queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', currentSchoolId), limit(25)));
+            queryList.push(query(collection(db, 'notifications'), where('recipientId', '==', `school_${currentSchoolId}`), limit(25)));
+            queryList.push(query(collection(db, 'notifications'), where('schoolId', '==', currentSchoolId), limit(25)));
           }
           const snaps = await Promise.allSettled(queryList.map(q => getDocs(q)));
           const allDocs: any[] = [];
@@ -411,49 +419,39 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [currentUser, notifications, localReadIds, saveLocalReadState, toast]);
 
-  // Open Drawer and optionally pick a notification
-  const openDrawer = useCallback((notificationId?: string) => {
-    setIsDrawerOpen(true);
-    if (notificationId) {
-      const found = notifications.find(n => n.id === notificationId);
-      if (found) {
-        setSelectedNotification(found);
-        markAsRead(found.id);
-      }
-    }
-  }, [notifications, markAsRead]);
-
-  const closeDrawer = useCallback(() => {
-    setIsDrawerOpen(false);
-  }, []);
-
-  const selectNotification = useCallback((notification: AppNotification | null) => {
-    setSelectedNotification(notification);
-    if (notification) {
-      markAsRead(notification.id);
-    }
-  }, [markAsRead]);
-
   const refreshNotifications = useCallback(async () => {
     if (!currentUser) return;
     // Refresh only recipient-scoped records. Broad collection reads here would
     // bypass the audience filtering used by the live listeners.
-    setLoading(true);
     try {
       const uid = currentUser.uid;
       const role = userRole;
-      const isAdmin = ['super_admin', 'admin', 'content_admin', 'education_admin', 'services_admin', 'marketing_admin', 'support_admin'].includes(role);
-      const [direct, jdi, broadcasts] = await Promise.all([
-        isAdmin
-          ? getDocs(query(collection(db, 'notifications'), orderBy('timestamp', 'desc'), limit(100)))
-          : getDocs(query(collection(db, 'notifications'), where('recipientId', '==', uid), limit(50))),
-        isAdmin
-          ? getDocs(query(collection(db, 'jdiNotifications'), orderBy('createdAt', 'desc'), limit(100)))
-          : getDocs(query(collection(db, 'jdiNotifications'), where('recipientUid', '==', uid), limit(50))),
-        isAdmin
-          ? Promise.resolve(null)
-          : getDocs(query(collection(db, 'notifications'), where('recipientType', '==', 'all'), where('targetRole', '==', 'all'), limit(50)))
-      ]);
+      const currentSchoolId = schoolId;
+      const currentStudentDocId = studentDocId;
+      const isAdmin = ['super_admin', 'superadmin', 'admin', 'content_admin', 'education_admin', 'services_admin', 'marketing_admin', 'support_admin'].includes(role);
+      const queries = isAdmin
+        ? [
+            getDocs(query(collection(db, 'notifications'), orderBy('timestamp', 'desc'), limit(100))),
+            getDocs(query(collection(db, 'jdiNotifications'), orderBy('createdAt', 'desc'), limit(100))),
+          ]
+        : [
+            getDocs(query(collection(db, 'notifications'), where('recipientId', '==', uid), limit(50))),
+            getDocs(query(collection(db, 'jdiNotifications'), where('recipientUid', '==', uid), limit(50))),
+            getDocs(query(collection(db, 'notifications'), where('targetUid', '==', uid), limit(50))),
+            getDocs(query(collection(db, 'notifications'), where('recipientType', '==', 'all'), where('targetRole', '==', 'all'), limit(30))),
+            ...(role === 'student' && currentStudentDocId && currentStudentDocId !== uid
+              ? [getDocs(query(collection(db, 'notifications'), where('recipientId', '==', currentStudentDocId), limit(50)))]
+              : []),
+            ...(role === 'school' && currentSchoolId
+              ? [
+                  getDocs(query(collection(db, 'notifications'), where('recipientId', '==', currentSchoolId), limit(50))),
+                  getDocs(query(collection(db, 'notifications'), where('recipientId', '==', `school_${currentSchoolId}`), limit(50))),
+                  getDocs(query(collection(db, 'notifications'), where('schoolId', '==', currentSchoolId), limit(50))),
+                ]
+              : []),
+          ];
+
+      const settled = await Promise.allSettled(queries);
       const toNotification = (d: any, isJdi = false): AppNotification => {
         const data = d.data();
         return {
@@ -470,29 +468,73 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           targetName: data.targetName,
           targetEmail: data.targetEmail,
           targetUid: data.targetUid,
-          link: data.link,
-          linkText: data.linkText,
+          link: data.link || data.actionUrl,
+          linkText: data.linkText || data.actionText,
           read: data.isRead === true || data.read === true,
           readBy: Array.isArray(data.readBy) ? data.readBy : [],
-          timestamp: data.timestamp || data.createdAt || Date.now(),
+          timestamp:
+            data.timestamp instanceof Timestamp
+              ? data.timestamp.toMillis()
+              : data.createdAt instanceof Timestamp
+              ? data.createdAt.toMillis()
+              : data.timestamp || data.createdAt || Date.now(),
           createdAt: data.createdAt,
           senderName: data.senderName || 'Jaystar Central',
           senderRole: data.senderRole || 'Administration'
         };
       };
-      const refreshed = [...direct.docs.map(d => toNotification(d)), ...jdi.docs.map(d => toNotification(d, true)), ...(broadcasts?.docs || []).map(d => toNotification(d))];
-      const byId = new Map(notifications.map(n => [n.id, n]));
+      const refreshed: AppNotification[] = [];
+      settled.forEach((res) => {
+        if (res.status !== 'fulfilled' || !res.value) return;
+        res.value.docs.forEach((d) => {
+          const isJdi = d.ref.parent.id === 'jdiNotifications';
+          refreshed.push(toNotification(d, isJdi));
+        });
+      });
+
+      const byId = new Map<string, AppNotification>();
       refreshed.forEach(n => byId.set(n.id, n));
-      setNotifications(Array.from(byId.values()).sort((a, b) => {
+      const sorted = Array.from(byId.values()).sort((a, b) => {
         const time = (value: any) => value instanceof Timestamp ? value.toMillis() : new Date(value || 0).getTime() || 0;
         return time(b.timestamp) - time(a.timestamp);
-      }));
+      });
+      setNotifications(sorted);
+      try {
+        const CACHE_KEY = `jaystar_notif_cache_v1_${uid}_${role || 'user'}`;
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), items: sorted }));
+      } catch {
+        // Ignore storage quota
+      }
     } catch (e) {
       console.warn('Refresh notifications note:', e);
     } finally {
       setLoading(false);
     }
-  }, [currentUser, userRole, notifications]);
+  }, [currentUser, userRole, schoolId, studentDocId]);
+
+  // Open Drawer and optionally pick a notification — also refresh inbox in background so new alerts appear immediately
+  const openDrawer = useCallback((notificationId?: string) => {
+    setIsDrawerOpen(true);
+    if (notificationId) {
+      const found = notifications.find(n => n.id === notificationId);
+      if (found) {
+        setSelectedNotification(found);
+        markAsRead(found.id);
+      }
+    }
+    void refreshNotifications();
+  }, [notifications, markAsRead, refreshNotifications]);
+
+  const closeDrawer = useCallback(() => {
+    setIsDrawerOpen(false);
+  }, []);
+
+  const selectNotification = useCallback((notification: AppNotification | null) => {
+    setSelectedNotification(notification);
+    if (notification) {
+      markAsRead(notification.id);
+    }
+  }, [markAsRead]);
 
   const handleSetActiveFilter = useCallback((filter: NotificationFilter) => {
     setActiveFilter(filter);

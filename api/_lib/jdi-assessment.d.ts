@@ -20,6 +20,7 @@ export const CANONICAL_CLASSES: CanonicalClassName[];
 export function normalizeClassName(input: unknown, fallback?: string): string;
 export function isCanonicalClass(input: unknown): boolean;
 export function normalizeClassList(input: unknown): string[];
+export function expandGradeRange(fromClass: unknown, toClass: unknown): string[];
 export function formatNormalizedClassDisplay(input: unknown, fallback?: string): string;
 export function classesMatch(
   studentClass: unknown,
@@ -177,7 +178,12 @@ export function normalizeRecipientTargets(
   schoolIds: string[];
   classIds: string[];
   targetClass: string;
+  gradeTargetMode: "ALL" | "SPECIFIC" | "RANGE";
+  gradeRange: { from: string; to: string } | null;
+  targetProgramIds: string[];
+  targetProgramTitles: string[];
   targetStudentIds: string[];
+  excludedStudentIds: string[];
 };
 
 export function isStudentEligibleForWork(

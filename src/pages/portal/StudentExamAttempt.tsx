@@ -19,6 +19,7 @@ import {
   buildExamReportViewModel,
   generateExamReportPdf,
 } from "../../lib/examReportPdfGenerator";
+import { notifyOnClientAssessmentSubmit } from "../../lib/assessmentNotificationHelpers";
 import EmbeddedLearningMedia from "../../components/portal/EmbeddedLearningMedia";
 import {
   Clock,
@@ -935,6 +936,35 @@ export default function StudentExamAttempt() {
               ).catch(() => undefined)
             )
           );
+
+          void notifyOnClientAssessmentSubmit({
+            examId: data.attempt.examId,
+            attemptId,
+            exam: fullExam || data.exam,
+            studentUid: auth.currentUser?.uid || sessionStorage.getItem("userId") || "",
+            studentId: data.attempt.studentId || sessionStorage.getItem("studentDocId") || "",
+            studentName:
+              (data.attempt as any).studentName ||
+              sessionStorage.getItem("userName") ||
+              sessionStorage.getItem("studentName") ||
+              auth.currentUser?.displayName ||
+              "Student",
+            parentId:
+              sessionStorage.getItem("parentId") ||
+              sessionStorage.getItem("studentParentId") ||
+              null,
+            schoolId:
+              (data.attempt as any).schoolId ||
+              (fullExam as any)?.schoolId ||
+              sessionStorage.getItem("schoolId") ||
+              null,
+            schoolName:
+              (data.attempt as any).schoolName ||
+              (fullExam as any)?.schoolName ||
+              sessionStorage.getItem("schoolName") ||
+              null,
+            wasExpired: action === "expire",
+          });
 
           setData((prev) => {
             if (!prev) return null;

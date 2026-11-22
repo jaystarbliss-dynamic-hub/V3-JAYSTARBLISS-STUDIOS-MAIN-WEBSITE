@@ -2898,10 +2898,10 @@ const AdminBilling: React.FC<AdminBillingProps> = ({ initialView = 'hub' }) => {
           ['tutors', 'Tutor Allocations & Disbursals', 'Allocate approved payouts and manage tutor settlement operations.'],
           ['policies', 'Fee Policies & Plans', 'Configure platform billing rules and pricing plans.']
         ].map(([id, title, description]) => (
-          <button key={id} type="button" onClick={() => setActiveView(id as any)} className="text-left rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 hover:border-brand-red/50 hover:shadow-sm transition-all">
+          <button key={id} type="button" onClick={() => setActiveView(id as any)} className="text-left rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 hover:border-[#B91C1C]/60 dark:hover:border-slate-600 hover:shadow-sm transition-all cursor-pointer">
             <h2 className="text-sm font-black text-slate-900 dark:text-white">{title}</h2>
-            <p className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</p>
-            <span className="mt-4 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-brand-red">Open module <ChevronRight size={13} /></span>
+            <p className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-300">{description}</p>
+            <span className="mt-4 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-white">Open module <ChevronRight size={13} /></span>
           </button>
         ))}
       </div>

@@ -27,6 +27,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { Bar3DShape, HorizontalBar3DShape } from '../charts/Bar3DShape';
 
 const BRAND_NAVY = '#1E293B';
 const BRAND_CRIMSON = '#B91C1C';
@@ -118,17 +119,23 @@ const resolveGradeBand = (pct: number): string => {
   return 'Needs Review';
 };
 
+const EMPTY_SUBJECTS: string[] = [];
+const EMPTY_TRACKS: LearningProgressItem[] = [];
+const EMPTY_ASSIGNMENTS: StudentAssignmentRecord[] = [];
+const EMPTY_GRADES: StudentGradeRecord[] = [];
+const EMPTY_MILESTONES: StudentMilestoneRecord[] = [];
+
 export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
   studentName = 'Student',
   studentClass = 'Not recorded',
-  enrolledSubjects = [],
+  enrolledSubjects = EMPTY_SUBJECTS,
   completedModulesCount = 0,
   totalModulesCount = 0,
   className = '',
-  learningTracks = [],
-  assignments = [],
-  gradeRecords = [],
-  milestones = [],
+  learningTracks = EMPTY_TRACKS,
+  assignments = EMPTY_ASSIGNMENTS,
+  gradeRecords = EMPTY_GRADES,
+  milestones = EMPTY_MILESTONES,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'progress' | 'assignments' | 'grades'>(
     'overview'
@@ -136,11 +143,11 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
   const [selectedSubject, setSelectedSubject] = useState<string>('ALL');
   const [timeRange, setTimeRange] = useState<'30days' | 'term' | 'all'>('all');
 
-  const safeEnrolledSubjects = Array.isArray(enrolledSubjects) ? enrolledSubjects : [];
-  const safeLearningTracks = Array.isArray(learningTracks) ? learningTracks : [];
-  const safeAssignments = Array.isArray(assignments) ? assignments : [];
-  const safeGradeRecords = Array.isArray(gradeRecords) ? gradeRecords : [];
-  const safeMilestones = Array.isArray(milestones) ? milestones : [];
+  const safeEnrolledSubjects = Array.isArray(enrolledSubjects) ? enrolledSubjects : EMPTY_SUBJECTS;
+  const safeLearningTracks = Array.isArray(learningTracks) ? learningTracks : EMPTY_TRACKS;
+  const safeAssignments = Array.isArray(assignments) ? assignments : EMPTY_ASSIGNMENTS;
+  const safeGradeRecords = Array.isArray(gradeRecords) ? gradeRecords : EMPTY_GRADES;
+  const safeMilestones = Array.isArray(milestones) ? milestones : EMPTY_MILESTONES;
 
   const filterSubjectList = useMemo(() => {
     const combined = new Set<string>(safeEnrolledSubjects.filter(Boolean));
@@ -784,7 +791,7 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={learningProgressData}
-                    margin={{ top: 10, right: 12, left: -18, bottom: 16 }}
+                    margin={{ top: 14, right: 16, left: -18, bottom: 16 }}
                   >
                     <CartesianGrid
                       strokeDasharray="3 3"
@@ -808,7 +815,7 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
                       dataKey="progress"
                       name="Completion %"
                       fill={BRAND_NAVY}
-                      radius={[4, 4, 0, 0]}
+                      shape={<Bar3DShape />}
                       maxBarSize={48}
                     />
                   </BarChart>
@@ -843,7 +850,7 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
                   <BarChart
                     data={subjectPerformanceData}
                     layout="vertical"
-                    margin={{ top: 5, right: 16, left: 10, bottom: 5 }}
+                    margin={{ top: 10, right: 20, left: 10, bottom: 5 }}
                   >
                     <CartesianGrid
                       strokeDasharray="3 3"
@@ -870,7 +877,7 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
                       dataKey="averageGrade"
                       name="Average Score %"
                       fill={BRAND_CRIMSON}
-                      radius={[0, 4, 4, 0]}
+                      shape={<HorizontalBar3DShape />}
                       maxBarSize={24}
                     />
                   </BarChart>
@@ -916,7 +923,7 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={assignmentWeeklyData}
-                    margin={{ top: 10, right: 10, left: -18, bottom: 0 }}
+                    margin={{ top: 14, right: 16, left: -18, bottom: 0 }}
                   >
                     <CartesianGrid
                       strokeDasharray="3 3"
@@ -937,19 +944,20 @@ export const StudentAnalyticsVisualizer: React.FC<StudentAnalyticsProps> = ({
                     />
                     <RechartsTooltip content={<CustomTooltip />} />
                     <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
-                    <Bar dataKey="completed" name="Completed" fill={BRAND_NAVY} stackId="a" />
+                    <Bar dataKey="completed" name="Completed" fill={BRAND_NAVY} stackId="a" shape={<Bar3DShape />} />
                     <Bar
                       dataKey="inProgress"
                       name="Submitted / In Review"
                       fill={BRAND_CRIMSON}
                       stackId="a"
+                      shape={<Bar3DShape />}
                     />
                     <Bar
                       dataKey="pending"
                       name="Pending"
                       fill={BRAND_SLATE_MUTED}
                       stackId="a"
-                      radius={[4, 4, 0, 0]}
+                      shape={<Bar3DShape />}
                     />
                   </BarChart>
                 </ResponsiveContainer>

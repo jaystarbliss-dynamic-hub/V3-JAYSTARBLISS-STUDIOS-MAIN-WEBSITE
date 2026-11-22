@@ -13,7 +13,7 @@ const PortalHomeWithBilling: React.FC<{ role: 'student' | 'parent' | 'staff' | '
 
   // Locked students see the full-screen lockdown view without mounting academic widgets or Ed Club
   if (role === 'student' && entitlement?.isLocked) {
-    return <PortalLockdownView entitlement={entitlement} />;
+    return <PortalLockdownView entitlement={entitlement} showHeroBanner />;
   }
 
   const dashboard = role === 'parent'
@@ -31,7 +31,7 @@ const PortalHomeWithBilling: React.FC<{ role: 'student' | 'parent' | 'staff' | '
   const hideParentTracks = role === 'parent' && Boolean(entitlement?.isLocked && entitlement?.allChildrenLocked);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {dashboard}
       {role === 'parent' && !hideParentTracks && <ParentLearningTracks />}
       {role === 'student' && !entitlement?.isLocked && (

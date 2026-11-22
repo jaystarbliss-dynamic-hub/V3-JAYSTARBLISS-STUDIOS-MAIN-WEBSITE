@@ -40,6 +40,10 @@ import { TypingMastersAcademyCard } from '../../components/portal/TypingMastersA
 import { useToast } from '../../contexts/ToastContext';
 import { useSubscriptionEntitlement } from '../../contexts/SubscriptionEntitlementContext';
 import { PortalLockdownView } from '../../components/portal/PortalLockdownView';
+import PortalHeroBanner, {
+  PORTAL_BANNER_BTN_LIGHT,
+  PORTAL_BANNER_BTN_PRIMARY,
+} from '../../components/portal/PortalHeroBanner';
 import {
   calculateGradeLetter,
   calculateScorePercentage,
@@ -56,6 +60,15 @@ import {
   type LinkedLearnerProfile,
   fetchAssignmentsForLearner,
 } from '../../lib/academicSyncEngine';
+import { SyllabusTopicsList } from '../../components/portal/SyllabusTopicsList';
+import { fetchAllProgramsMap } from '../../lib/programHierarchy';
+import {
+  calculateStudentPathwayProgress,
+  computeAttendanceDerivedProgress,
+  fetchStudentAttendanceRecords,
+  fetchStudentPriorLearningRecognitions,
+  fetchStudentProgressRecords,
+} from '../../lib/learningPathwayEngine';
 import {
   ResponsiveContainer,
   PieChart,
@@ -242,6 +255,19 @@ export const StudentDashboard: React.FC = () => {
   const [studentAssignments, setStudentAssignments] = useState<DynamicAssignment[]>([]);
   const [curriculumTopics, setCurriculumTopics] = useState<string[]>([]);
   const [enrolledProgramName, setEnrolledProgramName] = useState<string>('');
+  const [attendanceProgressInfo, setAttendanceProgressInfo] = useState<{
+    percentage: number;
+    attendedSessions: number;
+    expectedSessions: number;
+    source: 'MANUAL_OVERRIDE' | 'AUTO_ATTENDANCE' | 'PRIOR_LEARNING' | 'NONE';
+    completedTopics: string[];
+  }>({
+    percentage: 0,
+    attendedSessions: 0,
+    expectedSessions: 12,
+    source: 'NONE',
+    completedTopics: [],
+  });
   const [isEdclubAllowed, setIsEdclubAllowed] = useState<boolean>(false);
   const [, setHasResourcesAllowed] = useState<boolean>(true);
   const [programDetails, setProgramDetails] = useState<{
@@ -531,6 +557,67 @@ export const StudentDashboard: React.FC = () => {
       const currentStudentId = studentId;
       const currentUid = authUser?.uid;
 
+      // 0. Attendance-Driven Automatic Learning Progress (respects manual tutor overrides & prior learning)
+      try {
+        const studentIdKeys = Array.from(
+          new Set([currentStudentId, currentUid, (studentRecord as any).studentId].filter(Boolean) as string[])
+        );
+        const [allProgramsMap, progressRecs, priorRecs, attendanceRecs] = await Promise.all([
+          fetchAllProgramsMap().catch(() => new Map()),
+          currentStudentId ? fetchStudentProgressRecords(currentStudentId).catch(() => []) : Promise.resolve([]),
+          currentStudentId ? fetchStudentPriorLearningRecognitions(currentStudentId).catch(() => []) : Promise.resolve([]),
+          fetchStudentAttendanceRecords(studentIdKeys).catch(() => []),
+        ]);
+
+        const pathway = calculateStudentPathwayProgress({
+          studentRecord,
+          programsMap: allProgramsMap,
+          progressRecords: progressRecs,
+          priorLearningRecords: priorRecs,
+          attendanceRecords: attendanceRecs,
+        });
+
+        const activeUnit =
+          pathway.currentUnits[0] ||
+          pathway.nextRecommendedUnits[0] ||
+          pathway.completedUnitsList[0] ||
+          null;
+
+        if (activeUnit) {
+          setAttendanceProgressInfo({
+            percentage: activeUnit.selfProgress,
+            attendedSessions: activeUnit.attendedSessionsCount,
+            expectedSessions: activeUnit.expectedDurationSessions,
+            source: activeUnit.progressSource,
+            completedTopics: activeUnit.completedTopics || [],
+          });
+          if (
+            (!Array.isArray(matchedProgramDoc?.curriculum) || matchedProgramDoc.curriculum.length === 0) &&
+            Array.isArray(activeUnit.program.curriculum) &&
+            activeUnit.program.curriculum.length > 0
+          ) {
+            setCurriculumTopics(activeUnit.program.curriculum);
+          }
+        } else {
+          const fallbackTopicsLen = Array.isArray(matchedProgramDoc?.curriculum)
+            ? matchedProgramDoc.curriculum.length
+            : 0;
+          const derived = computeAttendanceDerivedProgress(attendanceRecs, matchedProgramDoc, {
+            studentIds: studentIdKeys,
+            fallbackTopicsCount: fallbackTopicsLen,
+          });
+          setAttendanceProgressInfo({
+            percentage: derived.percentage,
+            attendedSessions: derived.attendedSessions,
+            expectedSessions: derived.expectedSessions,
+            source: derived.attendedSessions > 0 ? 'AUTO_ATTENDANCE' : 'NONE',
+            completedTopics: [],
+          });
+        }
+      } catch (progErr) {
+        console.warn('Attendance-driven learning progress lookup warning:', progErr);
+      }
+
       // 1. Fetch Dynamic Milestones from Firestore
       const milestoneList: DynamicMilestone[] = [];
       try {
@@ -587,6 +674,24 @@ export const StudentDashboard: React.FC = () => {
             .filter(Boolean),
           schoolName: studentRecord.schoolName || studentRecord.school || '',
           programName: resolvedProgramTitle,
+          programIds: Array.from(
+            new Set([
+              ...((studentRecord as any).selectedProgramIds || []),
+              ...((studentRecord as any).assignedProgramIds || []),
+              ...((studentRecord as any).assignedTrackIds || []),
+              ...((studentRecord as any).enrolledProgramIds || []),
+              ...((studentRecord as any).programId ? [(studentRecord as any).programId] : []),
+            ].filter(Boolean))
+          ),
+          programTitles: Array.from(
+            new Set([
+              resolvedProgramTitle,
+              (studentRecord as any).programName,
+              (studentRecord as any).track,
+              studentRecord.plan,
+            ].filter(Boolean))
+          ),
+          track: (studentRecord as any).track || studentRecord.plan || '',
           isSchoolStudent: Boolean(studentRecord.schoolId || studentRecord.schoolName),
           source: studentRecord.schoolId ? 'students' : 'individualStudents',
         };
@@ -807,6 +912,13 @@ export const StudentDashboard: React.FC = () => {
               schoolAliases: studentSchoolAliases,
               schoolName: studentRecord?.schoolName || '',
               class: assignedClass,
+              selectedProgramIds: (studentRecord as any).selectedProgramIds,
+              assignedProgramIds: (studentRecord as any).assignedProgramIds,
+              assignedTrackIds: (studentRecord as any).assignedTrackIds,
+              enrolledProgramIds: (studentRecord as any).enrolledProgramIds,
+              programId: (studentRecord as any).programId,
+              programName: resolvedProgramTitle,
+              track: (studentRecord as any).track || studentRecord.plan || '',
             },
             raw
           )
@@ -984,9 +1096,30 @@ export const StudentDashboard: React.FC = () => {
   }, [dynamicMilestones]);
 
   const curriculumScorePercentage = useMemo(() => {
-    if (dynamicMilestones.length === 0) return 0;
-    return Math.round((completedMilestonesCount / dynamicMilestones.length) * 100);
-  }, [dynamicMilestones.length, completedMilestonesCount]);
+    if (attendanceProgressInfo.source !== 'NONE') {
+      return attendanceProgressInfo.percentage;
+    }
+    if (dynamicMilestones.length > 0) {
+      return Math.round((completedMilestonesCount / dynamicMilestones.length) * 100);
+    }
+    return attendanceProgressInfo.percentage;
+  }, [attendanceProgressInfo, dynamicMilestones.length, completedMilestonesCount]);
+
+  const curriculumProgressSubtitle = useMemo(() => {
+    if (attendanceProgressInfo.source === 'MANUAL_OVERRIDE') {
+      return 'Tutor-verified progress';
+    }
+    if (attendanceProgressInfo.source === 'PRIOR_LEARNING') {
+      return 'Prior-learning credit approved';
+    }
+    if (attendanceProgressInfo.source === 'AUTO_ATTENDANCE') {
+      return `${attendanceProgressInfo.attendedSessions} of ${attendanceProgressInfo.expectedSessions} sessions attended`;
+    }
+    if (dynamicMilestones.length > 0) {
+      return `${completedMilestonesCount} of ${dynamicMilestones.length} milestones`;
+    }
+    return `0 of ${attendanceProgressInfo.expectedSessions} sessions attended`;
+  }, [attendanceProgressInfo, dynamicMilestones.length, completedMilestonesCount]);
 
   // Real Dynamic Assignment Statistics
   const assignmentStats = useMemo(() => {
@@ -1033,18 +1166,24 @@ export const StudentDashboard: React.FC = () => {
         progress: counts.total > 0 ? Math.round((counts.done / counts.total) * 100) : 0,
       }));
     }
-    if (dynamicMilestones.length > 0 && enrolledProgramName) {
+    if (enrolledProgramName && enrolledProgramName !== 'Pending Programme Confirmation') {
       return [
         {
           subject: enrolledProgramName,
-          modulesDone: completedMilestonesCount,
-          modulesTotal: dynamicMilestones.length,
+          modulesDone:
+            attendanceProgressInfo.source === 'AUTO_ATTENDANCE'
+              ? attendanceProgressInfo.attendedSessions
+              : completedMilestonesCount,
+          modulesTotal:
+            attendanceProgressInfo.source === 'AUTO_ATTENDANCE'
+              ? attendanceProgressInfo.expectedSessions
+              : Math.max(1, dynamicMilestones.length || attendanceProgressInfo.expectedSessions),
           progress: curriculumScorePercentage,
         },
       ];
     }
     return [];
-  }, [modules, dynamicMilestones, enrolledProgramName, completedMilestonesCount, curriculumScorePercentage]);
+  }, [modules, dynamicMilestones, enrolledProgramName, completedMilestonesCount, curriculumScorePercentage, attendanceProgressInfo]);
 
   const enrolledSubjectNames = useMemo(() => {
     const set = new Set<string>();
@@ -1233,34 +1372,27 @@ export const StudentDashboard: React.FC = () => {
         </section>
       ) : (
         <>
-          {/* Concise Institutional Workspace Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
-            <div>
-              <h1 className="text-lg sm:text-xl font-bold text-[#1E293B] dark:text-white tracking-tight">
-                {student.fullName || student.name || 'Student'}
-              </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                {enrolledProgramName || student.plan || 'Enrolled Track'}
-                {(student.class || student.grade) ? ` · ${student.class || student.grade}` : ''}
-                {schoolDisplayName ? ` · ${schoolDisplayName}` : ' · Private Learner'}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <Link
-                to="/portal/student/assessments"
-                className="min-h-9 px-3.5 py-2 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
-              >
-                <span>Assessments</span>
-                <ArrowRight size={13} aria-hidden="true" />
-              </Link>
-              <Link
-                to="/portal/student/assignments"
-                className="min-h-9 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold text-[#1E293B] dark:text-slate-200 inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
-              >
-                <span>Assignments</span>
-              </Link>
-            </div>
-          </div>
+          <PortalHeroBanner
+            role="student"
+            title={student.fullName || student.name || 'Student'}
+            actions={
+              <>
+                <Link
+                  to="/portal/student/assessments"
+                  className={PORTAL_BANNER_BTN_PRIMARY}
+                >
+                  <span>Assessments</span>
+                  <ArrowRight size={12} aria-hidden="true" />
+                </Link>
+                <Link
+                  to="/portal/student/assignments"
+                  className={PORTAL_BANNER_BTN_LIGHT}
+                >
+                  <span>Assignments</span>
+                </Link>
+              </>
+            }
+          />
 
           {/* Active Live Class Banner */}
           {scheduleAnalysis.liveSession && (
@@ -1310,32 +1442,30 @@ export const StudentDashboard: React.FC = () => {
           )}
 
           {/* Programme & Deliverables Overview */}
-          <section className="rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 p-5 sm:p-6">
+          <section className="rounded-xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 p-5 sm:p-6">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               <div className="lg:col-span-7 space-y-5">
                 <div>
-                  <h2 className="text-lg sm:text-xl font-bold text-[#1E293B] dark:text-white tracking-tight">
+                  <h2 className="text-lg sm:text-xl font-bold text-[#14284B] dark:text-white tracking-tight">
                     {enrolledProgramName || student.plan || 'Digital Literacy'}
                   </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
                     {student.class || student.grade ? `Class Cohort: ${student.class || student.grade}` : 'Standard Curriculum Track'}
                     {(student.schoolName || schoolDisplayName) ? ` · ${student.schoolName || schoolDisplayName}` : ''}
                   </p>
                 </div>
 
                 {/* Divided Metrics Strip */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40">
+                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-[#18181B]">
                   <div className="p-4">
-                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                    <p className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400">
                       Curriculum Progress
                     </p>
-                    <p className="text-xl font-bold text-[#1E293B] dark:text-white mt-1 tabular-nums">
-                      {dynamicMilestones.length > 0 ? `${curriculumScorePercentage}%` : '—'}
+                    <p className="text-xl font-bold text-[#14284B] dark:text-white mt-1 tabular-nums">
+                      {curriculumScorePercentage}%
                     </p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
-                      {dynamicMilestones.length > 0
-                        ? `${completedMilestonesCount} of ${dynamicMilestones.length} milestones`
-                        : 'No milestones set yet'}
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5 tabular-nums">
+                      {curriculumProgressSubtitle}
                     </p>
                   </div>
                   <div className="p-4">
@@ -1457,30 +1587,24 @@ export const StudentDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Dynamic Curriculum Progression Path */}
+            {/* Structured Vertical Syllabus Topics List */}
             {curriculumTopics.length > 0 && (
-              <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                    Syllabus Topics ({curriculumTopics.length} Weekly Topics)
-                  </span>
-                  <Link
-                    to="/portal/student/assignments"
-                    className="text-xs font-semibold text-[#B91C1C] hover:underline inline-flex items-center gap-1"
-                  >
-                    View Topics <ArrowRight size={11} aria-hidden="true" />
-                  </Link>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-700 dark:text-slate-300">
-                  {curriculumTopics.map((topic, idx) => (
-                    <span key={`topic-${idx}`} className="inline-flex items-center gap-1.5">
-                      <span className="font-mono font-bold text-[#B91C1C] tabular-nums">
-                        {String(idx + 1).padStart(2, '0')}.
-                      </span>
-                      <span>{topic}</span>
-                    </span>
-                  ))}
-                </div>
+              <div className="mt-6 pt-5 border-t border-slate-200 dark:border-zinc-800">
+                <SyllabusTopicsList
+                  topics={curriculumTopics}
+                  overallProgress={curriculumScorePercentage}
+                  completedTopics={attendanceProgressInfo.completedTopics}
+                  heading="Syllabus Topics"
+                  collapsedLimit={8}
+                  headerAction={
+                    <Link
+                      to="/portal/student/courses"
+                      className="text-xs font-semibold text-[#B91C1C] dark:text-red-400 hover:underline inline-flex items-center gap-1"
+                    >
+                      Open Curriculum <ArrowRight size={11} aria-hidden="true" />
+                    </Link>
+                  }
+                />
               </div>
             )}
           </section>

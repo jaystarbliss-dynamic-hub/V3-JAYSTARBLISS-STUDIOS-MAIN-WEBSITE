@@ -2,15 +2,18 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { billingPost } from './billing';
+import { dispatchActionableAlert } from './adminAlertDispatcher';
 
 export type ProgrammeEnrollmentStatus =
   | 'PENDING_ADMIN_REVIEW'
@@ -370,6 +373,36 @@ export async function submitStudentProgrammeApplication(params: {
   };
 
   const docRef = await addDoc(collection(db, 'programme_enrollments'), payload);
+
+  // Notify platform admins (and school admin if school student) in-app + via email
+  void dispatchActionableAlert({
+    category: 'programme_application',
+    categoryLabel: 'Student Programme Application',
+    notificationType: 'registration',
+    priority: 'high',
+    title: `New Programme Application: ${params.programTitle}`,
+    message: `${payload.studentName}${
+      payload.schoolName ? ` (${payload.schoolName})` : ''
+    } registered for ${params.programTitle} (${payload.deliveryOption}) and is awaiting admin approval.`,
+    actionPath: '/admin/approvals?tab=programme_apps',
+    schoolActionPath: '/portal/school',
+    actionText: 'Review Application',
+    schoolId: payload.schoolId,
+    schoolName: payload.schoolName,
+    notifyPlatformAdmins: true,
+    details: [
+      { label: 'Student', value: payload.studentName },
+      { label: 'Programme', value: params.programTitle },
+      { label: 'Account Type', value: params.studentRegistrationType === 'school' ? 'School Student (Self-Funded)' : 'Individual Student' },
+      ...(payload.schoolName ? [{ label: 'School', value: payload.schoolName }] : []),
+      { label: 'Delivery Mode', value: payload.deliveryOption },
+    ],
+    senderName: payload.studentName,
+    senderRole: 'Student Application',
+    replyTo: payload.studentEmail || undefined,
+    dedupeKey: `prog_app_${docRef.id}`,
+  });
+
   return { id: docRef.id, alreadyExists: false };
 }
 
@@ -382,16 +415,32 @@ export async function approveProgrammeEnrollmentAsAdmin(params: {
   depositAmount?: number;
   feeSource?: string;
   adminNotes?: string;
+  studentContext?: {
+    studentUid?: string;
+    studentDocId?: string;
+    studentName?: string;
+    studentEmail?: string;
+    programId?: string;
+    programTitle?: string;
+    schoolId?: string | null;
+    schoolName?: string | null;
+  };
 }): Promise<{
   success: boolean;
   emailSent: boolean;
   emailError?: string | null;
   fallbackUsed?: boolean;
 }> {
+  const { studentContext, ...apiPayload } = params;
+  const fee = Math.max(0, Number(params.approvedFee) || 0);
+  if (fee <= 0) {
+    throw new Error('Please enter a valid tuition fee greater than ₦0 before approving.');
+  }
+
   try {
     const res = await billingPost<any>('programme-enrollment-admin', {
       action: 'approve',
-      ...params,
+      ...apiPayload,
     });
     return {
       success: true,
@@ -399,28 +448,59 @@ export async function approveProgrammeEnrollmentAsAdmin(params: {
       emailError: res?.emailError || res?.emailDeliveryError || null,
     };
   } catch (serverErr: any) {
-    // Graceful Firestore fallback if local dev server does not run Netlify Functions
-    const isNetworkOrMissingFn =
-      String(serverErr?.message || '').toLowerCase().includes('404') ||
-      String(serverErr?.message || '').toLowerCase().includes('not found') ||
-      String(serverErr?.message || '').toLowerCase().includes('failed to fetch');
-    if (!isNetworkOrMissingFn) {
+    // Only rethrow explicit client/permission validation failures from a live server
+    const msg = String(serverErr?.message || '').toLowerCase();
+    const isExplicitValidationOrAuth =
+      msg.includes('permission') ||
+      msg.includes('forbidden') ||
+      msg.includes('unauthorized') ||
+      msg.includes('not authorized') ||
+      msg.includes('must be greater than') ||
+      msg.includes('already active') ||
+      msg.includes('valid fee');
+    if (isExplicitValidationOrAuth) {
       throw serverErr;
     }
 
+    // Resilient direct Firestore approval + student inbox notification + optional email fallback
     const adminUser = auth.currentUser;
-    const fee = Math.max(0, Number(params.approvedFee) || 0);
-    const deposit = params.allowDepositAccess ? Math.min(fee, Math.max(0, Number(params.depositAmount) || 0)) : 0;
+    const deposit = params.allowDepositAccess
+      ? Math.min(fee, Math.max(0, Number(params.depositAmount) || 0))
+      : 0;
     const weeks =
       params.durationWeeks ||
       (params.billingCycle === 'termly' ? 12 : params.billingCycle === 'cohort' ? 8 : 4);
 
+    let recordData: Record<string, any> = studentContext ? { ...studentContext } : {};
+    if (!recordData.studentUid || !recordData.programTitle) {
+      const snap = await getDoc(doc(db, 'programme_enrollments', params.enrollmentId)).catch(
+        () => null
+      );
+      if (snap?.exists()) {
+        recordData = { ...(snap.data() as Record<string, any>), ...recordData };
+      }
+    }
+
+    const existingPaid = Math.max(0, Number(recordData.amountPaid) || 0);
+    const remainingBalance = Math.max(0, fee - existingPaid);
+    const nextStatus: ProgrammeEnrollmentStatus =
+      remainingBalance <= 0 && existingPaid > 0
+        ? 'ACTIVE'
+        : existingPaid > 0
+        ? 'PARTIALLY_PAID'
+        : 'APPROVED_AWAITING_PAYMENT';
+
     await updateDoc(doc(db, 'programme_enrollments', params.enrollmentId), {
-      enrollmentStatus: 'APPROVED_AWAITING_PAYMENT',
-      paymentStatus: 'UNPAID',
+      enrollmentStatus: nextStatus,
+      paymentStatus:
+        remainingBalance <= 0 && existingPaid > 0
+          ? 'PAID'
+          : existingPaid > 0
+          ? 'PARTIALLY_PAID'
+          : 'UNPAID',
       approvedFee: fee,
-      amountPaid: 0,
-      remainingBalance: fee,
+      amountPaid: existingPaid,
+      remainingBalance,
       billingCycle: params.billingCycle,
       durationWeeks: weeks,
       allowDepositAccess: Boolean(params.allowDepositAccess && deposit > 0),
@@ -430,15 +510,129 @@ export async function approveProgrammeEnrollmentAsAdmin(params: {
       approvedBy: adminUser?.uid || 'admin',
       approvedByName: adminUser?.displayName || adminUser?.email || 'Administrator',
       approvedAt: new Date().toISOString(),
-      emailDeliveryStatus: 'FAILED',
-      emailDeliveryError: 'Admission email service unavailable in local preview; use Retry Email in production.',
       updatedAt: serverTimestamp(),
     });
 
+    // Write deterministic in-app notification to student's inbox directing straight to Billing
+    const studentUid = String(recordData.studentUid || '').trim();
+    const studentDocId = String(recordData.studentDocId || '').trim();
+    const programTitle = String(recordData.programTitle || 'your programme').trim();
+    const billingLink = `/portal/student/payments?enrollmentId=${encodeURIComponent(
+      params.enrollmentId
+    )}`;
+    const notifBody = {
+      title: `Admission Approved: ${programTitle}`,
+      message: `Your application for ${programTitle} has been approved (Tuition Fee: ₦${fee.toLocaleString()}). Click below to open your Billing section and complete payment to activate access.`,
+      type: 'billing',
+      subType: 'PROGRAMME_ADMISSION_APPROVED',
+      priority: 'high',
+      enrollmentId: params.enrollmentId,
+      programId: String(recordData.programId || ''),
+      link: billingLink,
+      actionUrl: billingLink,
+      linkText: 'Open Billing & Pay Now',
+      actionText: 'Open Billing & Pay Now',
+      senderName: adminUser?.displayName || 'Jaystarbliss Admissions',
+      senderRole: 'Admissions Office',
+      read: false,
+      readBy: [],
+      timestamp: serverTimestamp(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    const notifWrites: Promise<unknown>[] = [];
+    if (studentUid) {
+      notifWrites.push(
+        setDoc(
+          doc(db, 'notifications', `prog_adm_${params.enrollmentId}`),
+          {
+            ...notifBody,
+            userId: studentUid,
+            recipientId: studentUid,
+            targetUid: studentUid,
+            recipientType: 'specific_user',
+          },
+          { merge: true }
+        )
+      );
+    }
+    if (studentDocId && studentDocId !== studentUid) {
+      notifWrites.push(
+        setDoc(
+          doc(db, 'notifications', `prog_adm_${params.enrollmentId}_doc`),
+          {
+            ...notifBody,
+            userId: studentDocId,
+            recipientId: studentDocId,
+            targetUid: studentUid || studentDocId,
+            recipientType: 'specific_user',
+          },
+          { merge: true }
+        )
+      );
+    }
+    await Promise.allSettled(notifWrites);
+
+    // Best-effort email dispatch if send-client-email is available and student has a deliverable email
+    const studentEmail = String(recordData.studentEmail || '').trim().toLowerCase();
+    const hasDeliverableEmail =
+      Boolean(studentEmail) &&
+      studentEmail.includes('@') &&
+      !studentEmail.endsWith('.local');
+    let emailSent = false;
+    let emailError: string | null = hasDeliverableEmail
+      ? 'Admission approved & student inbox notified. Email delivery runs when Resend backend is active.'
+      : 'Admission approved & student inbox notified (student account has no external email address).';
+
+    if (hasDeliverableEmail && adminUser) {
+      try {
+        const token = await adminUser.getIdToken();
+        const emailRes = await fetch('/.netlify/functions/send-client-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action: 'direct_email',
+            to: studentEmail,
+            recipientName: String(recordData.studentName || 'Student'),
+            subject: `Admission Approved: ${programTitle} — Continue to Payment`,
+            message: `Congratulations! Your application for ${programTitle} has been approved.\n\nApproved Tuition Fee: ₦${fee.toLocaleString()} (${params.billingCycle})\nOutstanding Balance: ₦${remainingBalance.toLocaleString()}${
+              params.adminNotes ? `\n\nAdmissions Note: ${params.adminNotes}` : ''
+            }\n\nOpen your Student Portal Billing & Fees section to complete payment and activate access immediately.`,
+            actionUrl: `${window.location.origin}${billingLink}`,
+            actionText: 'Open Billing & Pay Now',
+          }),
+        });
+        const contentType = emailRes.headers.get('content-type') || '';
+        if (emailRes.ok && contentType.includes('application/json')) {
+          const emailJson = await emailRes.json().catch(() => null);
+          if (emailJson?.success) {
+            emailSent = true;
+            emailError = null;
+          }
+        }
+      } catch {
+        // Silent in preview without Netlify functions
+      }
+    }
+
+    await updateDoc(doc(db, 'programme_enrollments', params.enrollmentId), {
+      emailDeliveryStatus: emailSent
+        ? 'SENT'
+        : hasDeliverableEmail
+        ? 'FAILED'
+        : 'SKIPPED_NO_EMAIL',
+      emailDeliveryError: emailError,
+      updatedAt: serverTimestamp(),
+    }).catch(() => undefined);
+
     return {
       success: true,
-      emailSent: false,
-      emailError: 'Admission saved. Email dispatch requires Netlify Functions + Resend.',
+      emailSent,
+      emailError,
       fallbackUsed: true,
     };
   }
@@ -471,14 +665,72 @@ export async function retryProgrammeAdmissionEmail(enrollmentId: string): Promis
   emailSent: boolean;
   emailError?: string | null;
 }> {
-  const res = await billingPost<any>('programme-enrollment-admin', {
-    action: 'retry_email',
-    enrollmentId,
-  });
-  return {
-    emailSent: Boolean(res?.emailSent || res?.emailDeliveryStatus === 'SENT'),
-    emailError: res?.emailError || res?.emailDeliveryError || null,
-  };
+  try {
+    const res = await billingPost<any>('programme-enrollment-admin', {
+      action: 'retry_email',
+      enrollmentId,
+    });
+    return {
+      emailSent: Boolean(res?.emailSent || res?.emailDeliveryStatus === 'SENT'),
+      emailError: res?.emailError || res?.emailDeliveryError || null,
+    };
+  } catch (err: any) {
+    const snap = await getDoc(doc(db, 'programme_enrollments', enrollmentId)).catch(() => null);
+    if (!snap || !snap.exists()) {
+      throw err;
+    }
+    const existing = snap.data() as Record<string, any>;
+    const recipientEmail = String(existing.studentEmail || '').trim().toLowerCase();
+    const hasDeliverableEmail =
+      Boolean(recipientEmail) &&
+      recipientEmail.includes('@') &&
+      !recipientEmail.endsWith('.local') &&
+      !recipientEmail.endsWith('.invalid');
+
+    let emailSent = false;
+    let emailError: string | null = hasDeliverableEmail
+      ? null
+      : 'Student does not have a personal email address on file.';
+
+    if (hasDeliverableEmail) {
+      try {
+        const portalBillingUrl = `${window.location.origin}/portal/student/billing`;
+        const emailRes = await fetch('/.netlify/functions/send-client-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: recipientEmail,
+            subject: `Admission Approved: ${existing.programTitle || 'Programme'} — Jaystarbliss Studios`,
+            title: `Congratulations! Your ${existing.programTitle || 'Programme'} Application is Approved`,
+            recipientName: existing.studentName || 'Student',
+            message: `Your application for ${existing.programTitle || 'your selected programme'} has been approved.\n\nApproved Tuition Fee: ₦${Number(existing.approvedFee || 0).toLocaleString()}\n\nPlease log in to your Student Portal Billing section to complete payment and unlock access: ${portalBillingUrl}`,
+          }),
+        });
+        const emailPayload = await emailRes.json().catch(() => ({}));
+        if (emailRes.ok && emailPayload?.sent !== false && !emailPayload?.fallback) {
+          emailSent = true;
+        } else {
+          emailError =
+            emailPayload?.error ||
+            'Email delivery service is not active in this environment. The student still has their in-app notification.';
+        }
+      } catch (e: any) {
+        emailError = e?.message || 'Unable to reach email service right now.';
+      }
+    }
+
+    await updateDoc(doc(db, 'programme_enrollments', enrollmentId), {
+      emailDeliveryStatus: emailSent
+        ? 'SENT'
+        : hasDeliverableEmail
+        ? 'FAILED'
+        : 'SKIPPED_NO_EMAIL',
+      emailDeliveryError: emailError,
+      updatedAt: serverTimestamp(),
+    }).catch(() => undefined);
+
+    return { emailSent, emailError };
+  }
 }
 
 export async function fetchAllProgrammeEnrollmentsForAdmin(): Promise<ProgrammeEnrollmentRecord[]> {

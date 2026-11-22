@@ -1,6 +1,7 @@
 import type { Handler } from "@netlify/functions";
 import { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { sendActionableNotificationEmail } from "../../api/_lib/email";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -24,32 +25,60 @@ export const handler: Handler = async event => {
 
     const adminSnap = await adminDb.collection("users").limit(1000).get();
     const recipients = adminSnap.docs.filter(d => adminRoles.has(normalise(d.data().role)));
-    if (!recipients.length) return json(200, { ok: true, notified: 0 });
+    const registrantName = String(user.name || user.fullName || user.email || "A new user");
+    const registrantEmail = String(user.email || decoded.email || "");
+    const title = role === "parent" ? "New parent registration" : "New student registration";
+    const message = `${registrantName} registered for a ${role} portal account and may require approval.`;
+    const actionPath = role === "student" ? "/admin/approvals?tab=students" : "/admin/parents";
+    const actionText = role === "student" ? "Review Student Request" : "Open Parents Directory";
 
-    const batch = adminDb.batch();
-    const now = FieldValue.serverTimestamp();
-    for (const admin of recipients) {
-      const ref = adminDb.collection("notifications").doc(`registration-${decoded.uid}-${admin.id}`);
-      batch.set(ref, {
-        recipientId: admin.id,
-        recipientType: "specific_user",
-        type: "system",
-        priority: "normal",
-        title: role === "parent" ? "New parent registration" : "New student registration",
-        message: `${String(user.name || user.fullName || user.email || "A new user")} registered for a ${role} portal account.`,
-        registeredUserId: decoded.uid,
-        targetRole: role,
-        targetName: String(user.name || user.fullName || ""),
-        registeredEmail: String(user.email || decoded.email || ""),
-        readBy: [],
-        read: false,
-        timestamp: now,
-        createdAt: now,
-        senderName: "Jaystarbliss Central",
-        senderRole: "System"
-      }, { merge: true });
+    if (recipients.length) {
+      const batch = adminDb.batch();
+      const now = FieldValue.serverTimestamp();
+      for (const admin of recipients) {
+        const ref = adminDb.collection("notifications").doc(`registration-${decoded.uid}-${admin.id}`);
+        batch.set(ref, {
+          recipientId: admin.id,
+          recipientType: "specific_user",
+          type: "registration",
+          priority: "high",
+          title,
+          message,
+          link: actionPath,
+          actionUrl: actionPath,
+          linkText: actionText,
+          actionText,
+          registeredUserId: decoded.uid,
+          targetRole: role,
+          targetName: registrantName,
+          registeredEmail: registrantEmail,
+          readBy: [],
+          read: false,
+          timestamp: now,
+          createdAt: now,
+          senderName: "Jaystarbliss Central",
+          senderRole: "System"
+        }, { merge: true });
+      }
+      await batch.commit();
     }
-    await batch.commit();
+
+    await sendActionableNotificationEmail({
+      title,
+      message,
+      category: role === "parent" ? "Parent Registration" : "Student Registration",
+      priority: "high",
+      details: [
+        { label: "Name", value: registrantName },
+        { label: "Email", value: registrantEmail || "—" },
+        { label: "Role", value: role.toUpperCase() },
+      ],
+      actionPath,
+      actionText,
+      notifyPlatformAdmins: true,
+      replyTo: registrantEmail || undefined,
+    }).catch((err) => console.warn("Registration admin email alert warning:", err));
+
     return json(200, { ok: true, notified: recipients.length });
   } catch (error) {
     console.error("Admin registration notification failed:", error);

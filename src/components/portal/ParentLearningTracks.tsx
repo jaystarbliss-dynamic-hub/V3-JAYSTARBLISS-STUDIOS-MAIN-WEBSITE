@@ -34,7 +34,9 @@ interface Props {
   students?: any[];
 }
 
-export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
+const EMPTY_STUDENTS: any[] = [];
+
+export const ParentLearningTracks: React.FC<Props> = ({ students = EMPTY_STUDENTS }) => {
   const [programsMap, setProgramsMap] = useState<Map<string, ProgramRecord>>(new Map());
   const [progressByStudent, setProgressByStudent] = useState<
     Record<string, StudentUnitProgressRecord[]>
@@ -55,6 +57,11 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
   const [reqEvidence, setReqEvidence] = useState('');
   const [reqNotes, setReqNotes] = useState('');
   const [submittingReq, setSubmittingReq] = useState(false);
+
+  const studentsKey = useMemo(
+    () => (Array.isArray(students) ? students.map((s) => String(s?.id || '')).filter(Boolean).join(',') : ''),
+    [students]
+  );
 
   const loadAll = async () => {
     setLoading(true);
@@ -92,12 +99,12 @@ export const ParentLearningTracks: React.FC<Props> = ({ students = [] }) => {
   };
 
   useEffect(() => {
-    if (students.length > 0) {
-      loadAll();
+    if (studentsKey) {
+      void loadAll();
     } else {
       setLoading(false);
     }
-  }, [students]);
+  }, [studentsKey]);
 
   const toggleExpand = (key: string) => {
     setExpandedNodes((prev) => {

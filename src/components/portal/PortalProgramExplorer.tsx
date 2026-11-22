@@ -19,6 +19,7 @@ import {
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { billingPost } from '../../lib/billing';
+import { dispatchActionableAlert } from '../../lib/adminAlertDispatcher';
 import { useToast } from '../../contexts/ToastContext';
 import {
   type CanonicalRootKey,
@@ -353,12 +354,15 @@ export const PortalProgramExplorer: React.FC<PortalProgramExplorerProps> = ({
           alreadyExists = Boolean(apiRes?.alreadyExists);
         } catch (serverErr: any) {
           const msg = String(serverErr?.message || '').toLowerCase();
-          const isLocalPreviewMissingFn =
-            msg.includes('404') || msg.includes('failed to fetch') || msg.includes('not found');
-          if (!isLocalPreviewMissingFn) {
+          const isExplicitValidationOrAuth =
+            msg.includes('only submit programme') ||
+            msg.includes('could not be found') ||
+            msg.includes('required') ||
+            msg.includes('forbidden');
+          if (isExplicitValidationOrAuth) {
             throw serverErr;
           }
-          await addDoc(collection(db, 'enrollment_requests'), {
+          const reqDoc = await addDoc(collection(db, 'enrollment_requests'), {
             parentId: parentContext.parentUid,
             parentEmail: parentContext.parentEmail.toLowerCase(),
             parentName: parentContext.parentName,
@@ -368,6 +372,26 @@ export const PortalProgramExplorer: React.FC<PortalProgramExplorerProps> = ({
             status: 'pending',
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
+          });
+          void dispatchActionableAlert({
+            category: 'enrollment_request',
+            categoryLabel: 'Parent Course Enrollment Request',
+            notificationType: 'registration',
+            priority: 'high',
+            title: `New Parent Course Request: ${selectedProgram.title}`,
+            message: `${parentContext.parentName} requested enrollment for ${targetChild.name} in ${selectedProgram.title}.`,
+            actionPath: '/admin/approvals?tab=enrollments',
+            actionText: 'Review Course Request',
+            notifyPlatformAdmins: true,
+            details: [
+              { label: 'Parent', value: parentContext.parentName },
+              { label: 'Student', value: targetChild.name },
+              { label: 'Programme', value: selectedProgram.title },
+            ],
+            senderName: parentContext.parentName,
+            senderRole: 'Parent Portal',
+            replyTo: parentContext.parentEmail || undefined,
+            dedupeKey: `enr_req_${reqDoc.id}`,
           });
         }
         if (alreadyExists) {

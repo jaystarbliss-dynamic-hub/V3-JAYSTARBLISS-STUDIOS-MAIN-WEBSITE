@@ -3,6 +3,7 @@ import {
   normalizeClassName as sharedNormalizeClassName,
   isCanonicalClass as sharedIsCanonicalClass,
   normalizeClassList as sharedNormalizeClassList,
+  expandGradeRange as sharedExpandGradeRange,
   formatNormalizedClassDisplay as sharedFormatNormalizedClassDisplay,
   classesMatch as sharedClassesMatch,
   canAuthorOrMutateExam as sharedCanAuthorOrMutateExam,
@@ -82,6 +83,10 @@ export function validateWorkTypeTransition(
   attemptCount = 0
 ) {
   return sharedValidateWorkTypeTransition(existingRecord, nextWorkType, attemptCount);
+}
+
+export function expandGradeRange(fromClass: unknown, toClass: unknown): string[] {
+  return sharedExpandGradeRange(fromClass, toClass);
 }
 
 export function normalizeRecipientTargets(

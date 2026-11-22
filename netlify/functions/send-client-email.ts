@@ -8,6 +8,7 @@ import {
   sendAdminInquiryAlert,
   sendDirectClientEmail,
   sendPasswordResetEmailResend,
+  sendActionableNotificationEmail,
   RESEND_CONFIG 
 } from '../../api/_lib/email';
 
@@ -86,6 +87,10 @@ export const handler: Handler = async (event) => {
             message: (clientName || 'A new client') + ' submitted a ' + inquiryType + ' inquiry.',
             targetName: clientName || 'Anonymous Visitor',
             clientEmail,
+            link: '/admin/inquiries',
+            actionUrl: '/admin/inquiries',
+            linkText: 'Open Inquiries & Leads',
+            actionText: 'Open Inquiries & Leads',
             data: { subject, phone: clientPhone || null, messagePreview: message.slice(0, 240) },
             readBy: [],
             read: false,
@@ -105,6 +110,161 @@ export const handler: Handler = async (event) => {
         clientEmailDelivered: clientResult.success,
         adminAlertDelivered: adminResult.success,
         clientId: clientResult.id || null
+      });
+    }
+
+    // 1B. ACTIONABLE NOTIFICATION EMAIL DISPATCH (ADMINS, SCHOOL ADMINS, TUTORS)
+    if (action === 'admin_attention_alert') {
+      const PUBLIC_ALLOWED_CATEGORIES = new Set([
+        'inquiry',
+        'tutor_application',
+        'student_request',
+        'school_partnership',
+      ]);
+      const category = clean(body.category || 'system', 60).toLowerCase();
+      const bearer = getBearer(event);
+      let decoded: any = null;
+      if (bearer) {
+        decoded = await adminAuth.verifyIdToken(bearer).catch(() => null);
+      }
+
+      // Unauthenticated requests may only trigger bounded public intake alerts to admins
+      if (!decoded && !PUBLIC_ALLOWED_CATEGORIES.has(category)) {
+        return json(401, { error: 'Authentication required for this notification dispatch.' });
+      }
+
+      const title = clean(body.title, 180);
+      const message = clean(body.message, 1500);
+      if (!title || !message) {
+        return json(400, { error: 'Notification title and message are required.' });
+      }
+
+      const priorityRaw = clean(body.priority || 'high', 20).toLowerCase();
+      const priority: 'normal' | 'high' | 'urgent' =
+        priorityRaw === 'urgent' ? 'urgent' : priorityRaw === 'normal' ? 'normal' : 'high';
+      const actionPath = clean(body.actionPath || '/admin/approvals', 300);
+      const actionText = clean(body.actionText || 'Review in Portal', 80);
+      const schoolId = decoded ? clean(body.schoolId, 120) : '';
+      const notifyPlatformAdmins = body.notifyPlatformAdmins !== false;
+      const recipientUids =
+        decoded && Array.isArray(body.recipientUids)
+          ? body.recipientUids.map((u: unknown) => clean(u, 128)).filter(Boolean).slice(0, 25)
+          : [];
+      const details = Array.isArray(body.details)
+        ? body.details
+            .slice(0, 8)
+            .map((item: any) => ({
+              label: clean(item?.label, 80),
+              value: clean(item?.value, 240),
+            }))
+            .filter((item: { label: string; value: string }) => item.label && item.value)
+        : [];
+      const replyTo = clean(body.replyTo || decoded?.email || '', 160);
+
+      // Persist school-admin & direct in-app notifications server-side if requested
+      if (body.persistInApp !== false) {
+        try {
+          const batch = adminDb.batch();
+          const now = FieldValue.serverTimestamp();
+          const baseNotif = {
+            type: clean(body.notificationType || category || 'system', 60),
+            priority,
+            title,
+            message,
+            link: actionPath,
+            actionUrl: actionPath,
+            linkText: actionText,
+            actionText,
+            schoolId: schoolId || null,
+            readBy: [],
+            read: false,
+            timestamp: now,
+            createdAt: now,
+            senderName: clean(body.senderName || 'Jaystarbliss Portal', 100),
+            senderRole: clean(body.senderRole || 'System', 60),
+          };
+
+          const dedupeKey = clean(body.dedupeKey, 120).replace(/[^a-zA-Z0-9_-]/g, '');
+          let writes = 0;
+
+          if (notifyPlatformAdmins) {
+            const adminRef = dedupeKey
+              ? adminDb.collection('notifications').doc(`adm_${dedupeKey}`)
+              : adminDb.collection('notifications').doc();
+            batch.set(
+              adminRef,
+              {
+                ...baseNotif,
+                recipientId: 'all',
+                recipientType: 'all',
+                targetRole: 'admin',
+              },
+              { merge: true }
+            );
+            writes++;
+          }
+
+          if (schoolId) {
+            const schoolRef = dedupeKey
+              ? adminDb.collection('notifications').doc(`sch_${schoolId}_${dedupeKey}`)
+              : adminDb.collection('notifications').doc();
+            batch.set(
+              schoolRef,
+              {
+                ...baseNotif,
+                recipientId: `school_${schoolId}`,
+                recipientType: 'school_admin',
+                targetRole: 'school',
+                link: clean(body.schoolActionPath || actionPath, 300),
+                actionUrl: clean(body.schoolActionPath || actionPath, 300),
+              },
+              { merge: true }
+            );
+            writes++;
+          }
+
+          for (const uid of recipientUids) {
+            const uRef = dedupeKey
+              ? adminDb.collection('notifications').doc(`usr_${uid}_${dedupeKey}`)
+              : adminDb.collection('notifications').doc();
+            batch.set(
+              uRef,
+              {
+                ...baseNotif,
+                recipientId: uid,
+                recipientType: 'specific_user',
+                targetUid: uid,
+              },
+              { merge: true }
+            );
+            writes++;
+          }
+
+          if (writes > 0) await batch.commit();
+        } catch (dbErr) {
+          console.warn('In-app notification persistence warning:', dbErr);
+        }
+      }
+
+      const emailResult = await sendActionableNotificationEmail({
+        title,
+        message,
+        category: clean(body.categoryLabel || category, 80),
+        priority,
+        details,
+        actionPath,
+        actionText,
+        notifyPlatformAdmins,
+        schoolId: schoolId || null,
+        recipientUids,
+        replyTo: replyTo || undefined,
+      });
+
+      return json(200, {
+        success: true,
+        emailDelivered: emailResult.success,
+        recipientCount: emailResult.recipients.length,
+        emailError: emailResult.error || null,
       });
     }
 

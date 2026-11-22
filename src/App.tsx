@@ -110,7 +110,7 @@ const AdminReports = lazy(() => import("./pages/admin/AdminReports"));
 const AdminTutorSubjects = lazy(() => import("./pages/admin/AdminTutorSubjects"));
 const AdminPromotions = lazy(() => import("./pages/admin/AdminPromotions"));
 const StudentEdgeClub = lazy(() => import("./pages/portal/StudentEdgeClub"));
-const PortalWireframesShowcase = lazy(() => import("./pages/PortalWireframesShowcase"));
+const AdminSupportCenter = lazy(() => import("./pages/admin/AdminSupportCenter"));
 const AcademicReportingCenter = lazy(() => import("./pages/portal/AcademicReportingCenter"));
 
 const StudentBillingGate = () => {
@@ -212,7 +212,6 @@ function AnimatedRoutes() {
             )
           }
         />
-        <Route path="/wireframes" element={<PortalWireframesShowcase />} />
         <Route
           path="/portal-preview"
           element={
@@ -373,7 +372,7 @@ function AnimatedRoutes() {
           <Route path="resources" element={<AdminResources />} />
           <Route path="notifications" element={<AdminNotifications />} />
           <Route path="activity" element={<AdminActivityLogs />} />
-          <Route path="support" element={<PortalSupport />} />
+          <Route path="support" element={<AdminSupportCenter />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
         {isStandalone && <Route path="*" element={<Navigate to="/portal" replace />} />}

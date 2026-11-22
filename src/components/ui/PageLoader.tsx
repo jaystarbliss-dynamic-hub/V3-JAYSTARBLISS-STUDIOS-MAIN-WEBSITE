@@ -1,12 +1,29 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+
+function getShellKey(pathname: string): string {
+  if (pathname.startsWith('/admin')) return 'admin';
+  const match = pathname.match(/^\/portal\/([^/]+)/);
+  if (match) return `portal:${match[1]}`;
+  return `public:${pathname}`;
+}
 
 const PageLoader: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [visible, setVisible] = useState(false);
   const location = useLocation();
+  const prevShellRef = useRef<string | null>(null);
 
   useEffect(() => {
+    const nextShell = getShellKey(location.pathname);
+    const prevShell = prevShellRef.current;
+    prevShellRef.current = nextShell;
+
+    // Switching tabs within the same portal or admin shell should never flash a page reload bar
+    if (prevShell && prevShell === nextShell && (nextShell === 'admin' || nextShell.startsWith('portal:'))) {
+      return;
+    }
+
     setVisible(true);
     setProgress(10);
     
@@ -16,7 +33,7 @@ const PageLoader: React.FC = () => {
       setProgress(100);
       setTimeout(() => {
         setVisible(false);
-        setTimeout(() => setProgress(0), 200); // reset after fade out
+        setTimeout(() => setProgress(0), 200);
       }, 300);
     }, 600);
 

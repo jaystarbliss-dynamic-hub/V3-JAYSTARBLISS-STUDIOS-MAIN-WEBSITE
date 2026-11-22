@@ -26,6 +26,11 @@ import { FintechTransactionHistory } from '../../components/portal/FintechTransa
 import { FintechWalletCard } from '../../components/portal/FintechWalletCard';
 import { FintechWithdrawalModal } from '../../components/portal/FintechWithdrawalModal';
 import { PaystackPaymentReviewModal } from '../../components/portal/PaystackPaymentReviewModal';
+import {
+  BillingEditorialShell,
+  type BillingSubTab,
+  type BillingFeeLineSummary,
+} from '../../components/portal/BillingEditorialShell';
 import { auth, db } from '../../lib/firebase';
 import { collection, getDocs, getDoc, doc, query, where, limit } from 'firebase/firestore';
 import { useSearchParams } from 'react-router-dom';
@@ -88,6 +93,9 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
 
   const [searchParams] = useSearchParams();
   const focusEnrollmentId = searchParams.get('enrollmentId') || '';
+  const [billingSubTab, setBillingSubTab] = useState<BillingSubTab>(() =>
+    focusEnrollmentId ? 'structure' : 'overview'
+  );
 
   // Self-funded student programme enrollment checkout states
   const [programmeEnrollments, setProgrammeEnrollments] = useState<ProgrammeEnrollmentRecord[]>([]);
@@ -399,7 +407,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
 
   // Active School custom billing
   const schoolBilling = data.schoolBilling;
-  const schoolPrograms = data.schoolPrograms || data.schoolInfo?.programs || [];
+  const schoolPrograms = useMemo(
+    () => (Array.isArray(data.schoolPrograms) ? data.schoolPrograms : Array.isArray(data.schoolInfo?.programs) ? data.schoolInfo.programs : []),
+    [data.schoolPrograms, data.schoolInfo?.programs]
+  );
   const configuredFee = Number(schoolBilling?.baseAmount || 0);
   const schoolCycle = schoolBilling?.cycle || 'termly';
   const allowedSchoolModes = schoolBilling?.allowedModes || ['advance_termly', 'advance_monthly', 'post_termly', 'post_monthly'];
@@ -967,37 +978,38 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
       ? 'Post Termly'
       : 'Post Monthly';
 
-    return (
-      <section className="space-y-6" aria-label="School billing center">
-        <SEO title="Institutional Subscription | Jaystarbliss Studios" description="Institutional subscription and billing portal." noindex={true} />
+    const schoolVerifiedPaid = payments.reduce((acc: number, p: PaymentRecord) => acc + extractPaymentAmountNaira(p), 0);
+    const schoolBalanceDue =
+      schoolBilling?.remainingBalance !== undefined && schoolBilling?.remainingBalance !== null
+        ? Math.max(0, Number(schoolBilling.remainingBalance))
+        : Math.max(0, baseTotalForPrograms - schoolVerifiedPaid);
+    const schoolTotalFees = Math.max(baseTotalForPrograms, schoolVerifiedPaid + schoolBalanceDue);
+    const schoolDueDateLabel = schoolBilling?.nextDueDate
+      ? new Date(schoolBilling.nextDueDate).toLocaleDateString('en-NG', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        })
+      : schoolBalanceDue > 0
+      ? 'Payment Due'
+      : 'Active Access';
 
-        <div className="flex items-center justify-end">
-          <button 
-            type="button" 
-            onClick={() => void load()} 
-            className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
-          >
-            <RefreshCw size={14} /> Refresh Records
-          </button>
-        </div>
-
-        {/* Due date notice if applicable */}
+    const schoolBanners = (
+      <>
         {hasReminder && (
           <div className="p-5 rounded-2xl bg-red-50/70 dark:bg-red-950/20 border border-brand-red/30 flex items-start gap-3 text-xs text-slate-800 dark:text-slate-200">
             <Bell className="text-brand-red mt-0.5 flex-shrink-0" size={18} />
             <div>
               <strong className="font-black text-sm block text-brand-red">Payment Renewal Notice</strong>
               <span className="mt-1 block leading-relaxed">
-                Your institutional subscription is scheduled for renewal. 
+                Your institutional subscription is scheduled for renewal.
                 {schoolBilling?.nextDueDate && ` Scheduled Due Date: ${new Date(schoolBilling.nextDueDate).toLocaleDateString('en-NG', { dateStyle: 'long' })}.`}
               </span>
             </div>
           </div>
         )}
-
-        {/* Impersonation Notice */}
         {isMasqueradingActive() && (
-          <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs flex items-center justify-between gap-3 shadow-xs">
+          <div className="p-4 rounded-2xl bg-slate-100 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 text-xs flex items-center justify-between gap-3 shadow-xs">
             <div className="flex items-center gap-2.5">
               <ShieldCheck size={18} className="text-brand-red shrink-0" />
               <div>
@@ -1010,275 +1022,321 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
             </span>
           </div>
         )}
+      </>
+    );
 
-        {/* Undergoing Programmes Card with multi-select */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-base font-black text-slate-900 dark:text-white">
-                Undergoing Programmes &amp; Tracks
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Active curriculum and practical tracks. Select programs to include in this invoice settlement.
-              </p>
-            </div>
-            <BookOpen className="text-brand-red" size={20} />
-          </div>
+    const schoolFeeSummaryItems: BillingFeeLineSummary[] = activeProgramsList.map((prog: any) => {
+      const statusNorm = String(prog.status || 'ACTIVE').toUpperCase();
+      return {
+        id: prog.id,
+        title: prog.name,
+        subtitle: prog.details || prog.description || 'Institutional Curriculum Track',
+        amount: Number(prog.fee || 0),
+        durationLabel:
+          (prog.billingFrequency || schoolCycle) === 'monthly' ? '4 Weeks' : '12 Weeks',
+        statusLabel:
+          schoolBalanceDue > 0
+            ? 'Payment Due'
+            : statusNorm === 'ACTIVE'
+            ? 'Active'
+            : statusNorm,
+        statusTone: schoolBalanceDue > 0 ? 'due' : 'active',
+      };
+    });
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {activeProgramsList.map((prog: any) => {
-              const isSelected = selectedProgramIds.length === 0 || selectedProgramIds.includes(prog.id);
-              return (
-                <div 
-                  key={prog.id} 
-                  onClick={() => {
-                    if (selectedProgramIds.length === 0) {
-                      // Currently all selected, switch to just this one unselected
-                      setSelectedProgramIds(activeProgramsList.filter((p: any) => p.id !== prog.id).map((p: any) => p.id));
-                    } else if (selectedProgramIds.includes(prog.id)) {
-                      const next = selectedProgramIds.filter((id: string) => id !== prog.id);
-                      setSelectedProgramIds(next.length ? next : activeProgramsList.map((p: any) => p.id));
-                    } else {
-                      setSelectedProgramIds([...selectedProgramIds, prog.id]);
-                    }
-                  }}
-                  className={`p-4 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
-                    isSelected 
-                      ? 'border-brand-red bg-red-50/40 dark:bg-red-950/20 shadow-xs' 
-                      : 'border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 opacity-70'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-brand-red">
-                        {prog.status || 'ACTIVE'}
-                      </span>
-                      <span className="text-xs font-mono font-black text-slate-900 dark:text-white">
-                        {formatNaira(prog.fee)}
+    return (
+      <section aria-label="School billing center">
+        <SEO title="Billing & Fees | Jaystarbliss Studios" description="Institutional subscription and billing portal." noindex={true} />
+
+        <BillingEditorialShell
+          role="school"
+          subtitle="View your institutional fee details, settle programme invoices, and download verified receipts in one place."
+          sessionLabel={schoolCycle === 'monthly' ? '4 Weeks Cycle' : '12 Weeks Term'}
+          totalFees={schoolTotalFees}
+          amountPaid={schoolVerifiedPaid}
+          balanceDue={schoolBalanceDue}
+          payableNowAmount={schoolFee > 0 ? schoolFee : schoolBalanceDue}
+          dueDateLabel={schoolDueDateLabel}
+          activeTab={billingSubTab}
+          onTabChange={setBillingSubTab}
+          onRefresh={() => void load()}
+          paymentDisabled={isMasqueradingActive()}
+          feeSummaryItems={schoolFeeSummaryItems}
+          onMakePayment={() => {
+            if (hasConfiguredSubscription && schoolFee > 0 && !isMasqueradingActive()) {
+              startCheckout();
+            } else {
+              setBillingSubTab('structure');
+            }
+          }}
+          banners={schoolBanners}
+          paymentHistorySlot={
+            <FintechTransactionHistory
+              transactions={allTransactions.map(p => ({ ...p, amount: extractPaymentAmountNaira(p) }))}
+              title="Institutional Transactions & Receipts"
+              role="school"
+              emptyMessage="No transaction records on file"
+            />
+          }
+          feeStructureSlot={
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+              {/* Left Column (8 cols): Structured Programme Fee Table + Schedule Controls */}
+              <div className="lg:col-span-8 space-y-5">
+                {/* Active Programmes Table / Selector */}
+                <div className="bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-2xs">
+                  <div className="px-4 sm:px-6 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm sm:text-base font-bold text-[#14284B] dark:text-white">
+                        Institutional Fee Structure &amp; Active Tracks
+                      </h2>
+                      <p className="text-[11px] sm:text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+                        Select the curriculum tracks to include in your next Paystack invoice settlement.
+                      </p>
+                    </div>
+                    <BookOpen className="text-[#B91C1C] shrink-0" size={18} />
+                  </div>
+
+                  {activeProgramsList.length === 0 ? (
+                    <div className="p-8 text-center space-y-2">
+                      <p className="text-sm font-bold text-[#14284B] dark:text-white">
+                        No Institutional Subscription Configured
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-md mx-auto">
+                        No custom fee schedule has been assigned to {data.schoolInfo?.name || 'this school'} yet. Please contact the administration desk.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-zinc-800/80">
+                      {activeProgramsList.map((prog: any) => {
+                        const isSelected = selectedProgramIds.length === 0 || selectedProgramIds.includes(prog.id);
+                        return (
+                          <div
+                            key={prog.id}
+                            onClick={() => {
+                              if (selectedProgramIds.length === 0) {
+                                setSelectedProgramIds(activeProgramsList.filter((p: any) => p.id !== prog.id).map((p: any) => p.id));
+                              } else if (selectedProgramIds.includes(prog.id)) {
+                                const next = selectedProgramIds.filter((id: string) => id !== prog.id);
+                                setSelectedProgramIds(next.length ? next : activeProgramsList.map((p: any) => p.id));
+                              } else {
+                                setSelectedProgramIds([...selectedProgramIds, prog.id]);
+                              }
+                            }}
+                            className={`px-4 sm:px-6 py-4 cursor-pointer transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                              isSelected
+                                ? 'bg-red-50/30 dark:bg-[#B91C1C]/10'
+                                : 'hover:bg-slate-50 dark:hover:bg-zinc-900/50 opacity-65'
+                            }`}
+                          >
+                            <div className="flex items-start gap-3 min-w-0">
+                              <span className="mt-0.5 text-[#B91C1C] shrink-0">
+                                {isSelected ? <CheckSquare size={17} /> : <Square size={17} className="text-slate-400 dark:text-zinc-500" />}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <h3 className="font-bold text-xs sm:text-sm text-[#14284B] dark:text-white">
+                                    {prog.name}
+                                  </h3>
+                                  <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400">
+                                    · {prog.details || 'Fixed Package'}
+                                  </span>
+                                </div>
+                                {prog.description && (
+                                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5 line-clamp-2">
+                                    {prog.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between sm:justify-end gap-4 pl-7 sm:pl-0 shrink-0 tabular-nums">
+                              <span className="text-[11px] text-slate-500 dark:text-zinc-400">
+                                {(prog.billingFrequency || schoolCycle) === 'monthly' ? '4 Weeks' : '12 Weeks'}
+                              </span>
+                              <strong className="text-sm font-extrabold text-[#14284B] dark:text-white">
+                                {formatNaira(prog.fee)}
+                              </strong>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Settlement Configuration Card (Upfront Percentage & Billing Mode) */}
+                {hasConfiguredSubscription && baseTotalForPrograms > 0 && (
+                  <div className="bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-6 shadow-2xs space-y-5">
+                    <div>
+                      <h3 className="text-sm sm:text-base font-bold text-[#14284B] dark:text-white">
+                        Settlement Schedule Options
+                      </h3>
+                      <p className="text-[11px] sm:text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+                        Choose your approved upfront percentage and billing cycle before proceeding to Paystack.
+                      </p>
+                    </div>
+
+                    {/* Upfront Percentage */}
+                    <div className="space-y-2">
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                        Upfront Payment Percentage
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        {[
+                          { pct: 100, label: '100% Full Payment', desc: 'Settle total invoice in full' },
+                          { pct: 70, label: '70% Upfront', desc: '30% deferred balance' },
+                          { pct: 50, label: '50% Half Termly', desc: '50% deferred balance' }
+                        ].map(opt => (
+                          <button
+                            key={opt.pct}
+                            type="button"
+                            onClick={() => setPaymentPercentage(opt.pct)}
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                              paymentPercentage === opt.pct
+                                ? 'border-[#B91C1C] bg-red-50/50 dark:bg-[#B91C1C]/12 text-[#14284B] dark:text-white'
+                                : 'border-slate-200 dark:border-zinc-800 bg-slate-50/40 dark:bg-[#18181B] hover:border-slate-300 dark:hover:border-zinc-700 text-slate-600 dark:text-zinc-300'
+                            }`}
+                          >
+                            <div className="text-xs font-bold">{opt.label}</div>
+                            <div className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">{opt.desc}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {paymentPercentage < 100 && (
+                      <div className="p-3.5 rounded-xl bg-red-50/60 dark:bg-[#B91C1C]/10 border border-[#B91C1C]/30 text-xs text-slate-700 dark:text-zinc-300">
+                        <strong className="text-[#B91C1C] dark:text-red-400">
+                          Upfront Installment ({paymentPercentage}%):
+                        </strong>{' '}
+                        Paying <strong>{formatNaira(schoolFee)}</strong> now leaves a scheduled balance of{' '}
+                        <strong className="text-[#B91C1C] dark:text-red-400">{formatNaira(remainingBalance)}</strong>.
+                      </div>
+                    )}
+
+                    {/* Billing Mode */}
+                    <div className="space-y-2">
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                        Billing Mode
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {[
+                          { id: 'advance_termly', label: 'Advance Termly', desc: 'Upfront for the 12-week term.' },
+                          { id: 'advance_monthly', label: 'Advance Monthly', desc: 'Upfront for 4 weeks of access.' },
+                          { id: 'post_termly', label: 'Post Termly', desc: 'Settle invoice at end of term.' },
+                          { id: 'post_monthly', label: 'Post Monthly', desc: 'Settle invoice at end of month.' }
+                        ]
+                          .filter(m => allowedSchoolModes.includes(m.id))
+                          .map(modeOpt => (
+                            <button
+                              key={modeOpt.id}
+                              type="button"
+                              onClick={() => setSelectedMode(modeOpt.id)}
+                              className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                                selectedMode === modeOpt.id
+                                  ? 'border-[#B91C1C] bg-red-50/50 dark:bg-[#B91C1C]/12 text-[#14284B] dark:text-white'
+                                  : 'border-slate-200 dark:border-zinc-800 bg-slate-50/40 dark:bg-[#18181B] hover:border-slate-300 dark:hover:border-zinc-700 text-slate-600 dark:text-zinc-300'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between font-bold text-xs">
+                                <span>{modeOpt.label}</span>
+                                {selectedMode === modeOpt.id && <Check size={14} className="text-[#B91C1C]" />}
+                              </div>
+                              <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">{modeOpt.desc}</p>
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column (4 cols): Invoice Checkout Summary + School Account Status */}
+              <div className="lg:col-span-4 space-y-5">
+                <div className="bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-6 shadow-2xs space-y-4">
+                  <h3 className="text-sm sm:text-base font-bold text-[#14284B] dark:text-white">
+                    Invoice Checkout Summary
+                  </h3>
+
+                  <div className="divide-y divide-slate-100 dark:divide-zinc-800 text-xs">
+                    <div className="py-2.5 flex justify-between gap-2">
+                      <span className="text-slate-500 dark:text-zinc-400">Selected Tracks</span>
+                      <span className="font-bold text-[#14284B] dark:text-white tabular-nums">
+                        {selectedPrograms.length}
                       </span>
                     </div>
-                    <h3 className="font-black text-sm text-slate-900 dark:text-white mt-2">
-                      {prog.name}
-                    </h3>
-                    {prog.description && (
-                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
-                        {prog.description}
-                      </p>
-                    )}
+                    <div className="py-2.5 flex justify-between gap-2">
+                      <span className="text-slate-500 dark:text-zinc-400">Payable Subtotal ({paymentPercentage}%)</span>
+                      <span className="font-bold text-[#14284B] dark:text-white tabular-nums">
+                        {formatNaira(schoolFee)}
+                      </span>
+                    </div>
+                    <div className="py-2.5 flex justify-between gap-2">
+                      <span className="text-slate-500 dark:text-zinc-400">Est. Gateway Fee</span>
+                      <span className="font-semibold text-slate-700 dark:text-zinc-300 tabular-nums">
+                        {formatNaira(chargePreview.transactionFee)}
+                      </span>
+                    </div>
+                    <div className="py-2.5 flex justify-between gap-2 text-sm">
+                      <span className="font-bold text-[#14284B] dark:text-white">Est. Total</span>
+                      <strong className="font-extrabold text-[#B91C1C] dark:text-red-400 tabular-nums">
+                        {formatNaira(chargePreview.totalAmount)}
+                      </strong>
+                    </div>
                   </div>
-                  <div className="mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between text-[11px]">
-                    <span className="text-slate-500 font-medium">Click to toggle invoice selection</span>
-                    <span className={`font-bold ${isSelected ? 'text-brand-red' : 'text-slate-400'}`}>
-                      {isSelected ? '✓ Included' : '+ Excluded'}
+
+                  <button
+                    type="button"
+                    disabled={isMasqueradingActive() || !hasConfiguredSubscription || schoolFee <= 0}
+                    onClick={() => startCheckout()}
+                    className={`w-full min-h-[44px] px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-sm transition-all ${
+                      isMasqueradingActive() || !hasConfiguredSubscription || schoolFee <= 0
+                        ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-[#991B1B] to-[#B91C1C] hover:from-[#7F1D1D] hover:to-[#991B1B] text-white cursor-pointer'
+                    }`}
+                  >
+                    <CreditCard size={16} />
+                    <span className="tabular-nums">
+                      {isMasqueradingActive()
+                        ? 'Disabled in Impersonation'
+                        : `Pay Now · ${formatNaira(schoolFee)}`}
                     </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                  </button>
 
-        {/* Dynamic School Billing Fee Card */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {!hasConfiguredSubscription || baseTotalForPrograms === 0 ? (
-            <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 shadow-sm text-center space-y-4">
-              <div className="w-14 h-14 rounded-xl bg-red-50 dark:bg-red-950/40 text-brand-red flex items-center justify-center mx-auto shadow-xs">
-                <Bell size={28} />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                  No Institutional Subscription Configured
-                </h3>
-                <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 leading-relaxed">
-                  No institutional curriculum subscription or custom fee has been configured for {data.schoolInfo?.name || 'this school'} yet. Please contact the Jaystarbliss administration to set up your institution&apos;s custom fee schedule.
-                </p>
-              </div>
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono font-bold text-slate-600 dark:text-slate-300">
-                Institutional Subscription: Not Configured (₦0)
-              </div>
-            </div>
-          ) : (
-            <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm space-y-5">
-              <div className="flex items-start justify-between">
-                <div>
-                  <span className="text-[11px] font-black uppercase tracking-wider text-brand-red">
-                    Admin-Configured Institutional Fee
-                  </span>
-                  <h2 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white mt-1">
-                    {formatNaira(schoolFee)} <span className="text-xs text-slate-400 font-normal">({paymentPercentage}% of {formatNaira(baseTotalForPrograms)} full fee) / {schoolCycle === 'monthly' ? 'Month (4 Weeks)' : 'Term (12 Weeks)'}</span>
-                  </h2>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Active programs in this invoice: <strong className="text-slate-700 dark:text-slate-300">{selectedPrograms.map((p: any) => p.name).join(', ')}</strong>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 text-center">
+                    Opens Paystack Hosted Checkout (Card, Bank Transfer, USSD).
                   </p>
                 </div>
-                <span className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                  {schoolCycle === 'monthly' ? '4 Weeks Cycle' : '12 Weeks Term'}
-                </span>
-              </div>
 
-              {/* Percentage Payment Selector */}
-              <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-2">
-                  Select Upfront Payment Percentage
-                </label>
-                <div className="grid grid-cols-3 gap-2.5">
-                  {[
-                    { pct: 100, label: '100% Full Payment', desc: 'Pay total fee in full' },
-                    { pct: 70, label: '70% Termly Upfront', desc: '30% deferred balance' },
-                    { pct: 50, label: '50% Half Termly', desc: '50% deferred balance' }
-                  ].map(opt => (
-                    <button
-                      key={opt.pct}
-                      type="button"
-                      onClick={() => setPaymentPercentage(opt.pct)}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                        paymentPercentage === opt.pct
-                          ? 'border-brand-red bg-red-50/50 dark:bg-red-950/20 text-slate-900 dark:text-white font-black'
-                          : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-950/40 text-slate-600 dark:text-slate-400'
-                      }`}
-                    >
-                      <div className="text-xs font-bold">{opt.label}</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">{opt.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Partial Payment Notice */}
-              {paymentPercentage < 100 && (
-                <div className="p-4 rounded-xl bg-red-50/50 dark:bg-red-950/20 border border-brand-red/30 text-xs text-slate-800 dark:text-slate-200">
-                  <div className="font-bold flex items-center gap-1.5 text-brand-red">
-                    <Bell size={14} />
-                    <span>Upfront Installment Mode Active ({paymentPercentage}%)</span>
+                <div className="bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3 text-xs">
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                    Institutional Account
+                  </h3>
+                  <div className="divide-y divide-slate-100 dark:divide-zinc-800">
+                    <div className="py-2 flex justify-between gap-2">
+                      <span className="text-slate-500 dark:text-zinc-400">Institution</span>
+                      <span className="font-bold text-[#14284B] dark:text-white text-right truncate max-w-[180px]">
+                        {data.schoolInfo?.name || 'Partner School'}
+                      </span>
+                    </div>
+                    <div className="py-2 flex justify-between gap-2">
+                      <span className="text-slate-500 dark:text-zinc-400">Latest Payment</span>
+                      <span className="font-bold text-[#14284B] dark:text-white tabular-nums">
+                        {payments[0] ? formatNaira(extractPaymentAmountNaira(payments[0])) : '—'}
+                      </span>
+                    </div>
+                    <div className="py-2 flex justify-between gap-2">
+                      <span className="text-slate-500 dark:text-zinc-400">Next Due Date</span>
+                      <span className="font-bold text-[#B91C1C] dark:text-red-400">
+                        {schoolDueDateLabel}
+                      </span>
+                    </div>
                   </div>
-                  <p className="mt-1 leading-relaxed">
-                    You are paying <strong>{formatNaira(schoolFee)}</strong> now. A remaining balance of <strong className="font-black text-brand-red">{formatNaira(remainingBalance)}</strong> will be scheduled to be settled before the end of the term.
-                  </p>
-                </div>
-              )}
-
-              {/* Mode of Payment Selector */}
-              <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-2">
-                  Select Mode of Payment
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {[
-                    { id: 'advance_termly', label: 'Advance Termly', desc: 'Pay upfront for the entire 12-week term.' },
-                    { id: 'advance_monthly', label: 'Advance Monthly', desc: 'Pay upfront for 4 weeks of curriculum access.' },
-                    { id: 'post_termly', label: 'Post Termly', desc: 'Settle institutional invoice at end of term.' },
-                    { id: 'post_monthly', label: 'Post Monthly', desc: 'Settle institutional invoice at end of month.' }
-                  ]
-                    .filter(m => allowedSchoolModes.includes(m.id))
-                    .map(modeOpt => (
-                      <div
-                        key={modeOpt.id}
-                        onClick={() => setSelectedMode(modeOpt.id)}
-                        className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                          selectedMode === modeOpt.id
-                            ? 'border-brand-red bg-red-50/50 dark:bg-red-950/20 text-slate-900 dark:text-white'
-                            : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-950/40 text-slate-600 dark:text-slate-400'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between font-bold text-xs">
-                          <span>{modeOpt.label}</span>
-                          {selectedMode === modeOpt.id && <Check size={14} className="text-brand-red" />}
-                        </div>
-                        <p className="text-[11px] text-slate-500 mt-1 leading-snug">{modeOpt.desc}</p>
-                      </div>
-                    ))}
-                </div>
-              </div>
-
-              {/* Price breakdown */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800 grid grid-cols-3 gap-2 text-xs">
-                <div>
-                  <span className="block text-slate-400 text-[10px] uppercase font-bold">Payable Base</span>
-                  <strong className="text-slate-900 dark:text-white font-mono">{formatNaira(schoolFee)}</strong>
-                </div>
-                <div>
-                  <span className="block text-slate-400 text-[10px] uppercase font-bold">Est. Gateway Fee</span>
-                  <strong className="text-slate-900 dark:text-white font-mono">{formatNaira(chargePreview.transactionFee)}</strong>
-                </div>
-                <div>
-                  <span className="block text-slate-400 text-[10px] uppercase font-bold">Est. Total</span>
-                  <strong className="text-brand-red font-mono font-black">{formatNaira(chargePreview.totalAmount)}</strong>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                disabled={isMasqueradingActive()}
-                onClick={() => startCheckout()}
-                className={`w-full min-h-12 rounded-xl font-black text-xs md:text-sm inline-flex items-center justify-center gap-2 shadow-sm transition-all ${
-                  isMasqueradingActive()
-                    ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
-                    : 'bg-brand-red hover:bg-red-800 text-white cursor-pointer'
-                }`}
-              >
-                <CreditCard size={17} /> 
-                {isMasqueradingActive() 
-                  ? `Checkout Disabled in Impersonation Mode (${formatNaira(schoolFee)})` 
-                  : `Review & Pay (${formatNaira(schoolFee)})`}
-              </button>
-            </div>
-          )}
-
-          {/* Quick Metrics */}
-          <div className="space-y-4">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 mb-3">Institutional Status</h3>
-              <div className="space-y-3 text-xs">
-                <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                  <span className="text-slate-500">School:</span>
-                  <span className="font-bold">{data.schoolInfo?.name || 'Partner School'}</span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                  <span className="text-slate-500">Latest Verified Payment:</span>
-                  <span className="font-bold font-mono">{payments[0] ? formatNaira(extractPaymentAmountNaira(payments[0])) : '—'}</span>
-                </div>
-                <div className="flex justify-between py-1.5">
-                  <span className="text-slate-500">Next Due Date:</span>
-                  <span className="font-black text-brand-red">
-                    {schoolBilling?.nextDueDate ? new Date(schoolBilling.nextDueDate).toLocaleDateString('en-NG') : 'Active'}
-                  </span>
                 </div>
               </div>
             </div>
-
-            {/* Institutional Payment & Receipt Instructions */}
-            <div className="bg-slate-50/80 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 text-xs space-y-3">
-              <div className="flex items-center gap-2 text-slate-900 dark:text-white font-black text-xs uppercase tracking-wider">
-                <Building2 size={16} className="text-brand-red" />
-                <span>Payment &amp; Remittance Guide</span>
-              </div>
-              <ul className="space-y-2 text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
-                <li className="flex items-start gap-2">
-                  <span className="text-brand-red font-black">•</span>
-                  <span><strong>Paystack Hosted Checkout:</strong> Review your invoice and proceed to Paystack to complete payment securely using your preferred supported method.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-brand-red font-black">•</span>
-                  <span><strong>Automatic Receipts:</strong> Every verified transaction generates an official stamped PDF receipt with breakdown of student access allocations.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-brand-red font-black">•</span>
-                  <span><strong>Installment Options:</strong> Select 50%, 70%, or 100% upfront depending on your school board&apos;s approved billing schedule.</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        {/* Payment History & Receipts */}
-        <div className="mt-8">
-          <FintechTransactionHistory 
-            transactions={allTransactions.map(p => ({ ...p, amount: extractPaymentAmountNaira(p) }))} 
-            title="Institutional Transactions & Receipts"
-            role="school"
-            emptyMessage="No transaction records on file"
-          />
-        </div>
+          }
+        />
 
         {/* School Paystack Review Modal */}
         <PaystackPaymentReviewModal
@@ -1321,88 +1379,196 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   }
 
   // 3. DEFAULT/PARENT/STAFF/INDEPENDENT STUDENT BILLING VIEW
-  return (
-    <section className="space-y-6" aria-label="Billing center">
-      <SEO title="Billing Center | Jaystarbliss Studios" description="Payments, plans, receipts and staff wallet." noindex={true} />
+  const verifiedPaidSum = payments.reduce(
+    (acc: number, p: PaymentRecord) => acc + extractPaymentAmountNaira(p),
+    0
+  );
 
-      <div className="flex items-center justify-end">
-        <button 
-          type="button" 
-          onClick={() => void load()} 
-          className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
-        >
-          <RefreshCw size={14} /> Refresh Records
-        </button>
+  const parentTotalTuition = childGroups.reduce(
+    (acc, c) => acc + Math.max(0, Number(c.totalTuition || 0)),
+    0
+  );
+  const parentBalanceDue = childGroups.reduce(
+    (acc, c) => acc + Math.max(0, Number(c.totalDue || 0)),
+    0
+  );
+  const parentAmountPaid =
+    parentTotalTuition > 0
+      ? Math.max(0, parentTotalTuition - parentBalanceDue)
+      : verifiedPaidSum;
+
+  const studentApprovedTotal = programmeEnrollments.reduce(
+    (acc, e) => acc + Math.max(0, Number(e.approvedFee || 0)),
+    0
+  );
+  const studentPaidTotal =
+    programmeEnrollments.length > 0
+      ? programmeEnrollments.reduce((acc, e) => acc + Math.max(0, Number(e.amountPaid || 0)), 0)
+      : verifiedPaidSum;
+  const studentBalanceDue =
+    programmeEnrollments.length > 0
+      ? programmeEnrollments.reduce(
+          (acc, e) =>
+            acc +
+            Math.max(
+              0,
+              Number(e.remainingBalance ?? Math.max(0, Number(e.approvedFee || 0) - Number(e.amountPaid || 0)))
+            ),
+          0
+        )
+      : Math.max(0, Number(standardPlans[0]?.baseAmount || 0) - verifiedPaidSum);
+
+  const studentNextDueIso = programmeEnrollments.find((e) => e.nextDueDate)?.nextDueDate;
+  const roleTotalFees =
+    role === 'parent'
+      ? Math.max(parentTotalTuition, parentAmountPaid + parentBalanceDue)
+      : Math.max(studentApprovedTotal, studentPaidTotal + studentBalanceDue);
+  const roleAmountPaid = role === 'parent' ? parentAmountPaid : studentPaidTotal;
+  const roleBalanceDue = role === 'parent' ? parentBalanceDue : studentBalanceDue;
+  const roleDueDateLabel =
+    role === 'student' && studentNextDueIso
+      ? dateLabel(studentNextDueIso)
+      : dueDate
+      ? dueDate.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })
+      : roleBalanceDue > 0
+      ? 'Payment Due'
+      : 'Active Access';
+
+  const impersonationBanner = isMasqueradingActive() ? (
+    <div className="p-4 rounded-2xl bg-slate-100 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 text-xs flex items-center justify-between gap-3 shadow-xs">
+      <div className="flex items-center gap-2.5">
+        <ShieldCheck size={18} className="text-brand-red shrink-0" />
+        <div>
+          <strong className="block font-black">Superadmin Impersonation Mode Active</strong>
+          <span>Payment processing and withdrawal requests are disabled while impersonating. All ledger histories and account details are available in read-only mode.</span>
+        </div>
       </div>
+      <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-red-50 dark:bg-red-950/50 text-brand-red shrink-0 border border-brand-red/20">
+        Payments Disabled
+      </span>
+    </div>
+  ) : null;
 
-      {/* Impersonation Notice */}
-      {isMasqueradingActive() && (
-        <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs flex items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck size={18} className="text-brand-red shrink-0" />
-            <div>
-              <strong className="block font-black">Superadmin Impersonation Mode Active</strong>
-              <span>Payment processing and withdrawal requests are disabled while impersonating. All ledger histories and account details are available in read-only mode.</span>
+  const handleEditorialMakePayment = () => {
+    if (role === 'parent') {
+      if (selectedItems.length > 0 && !isMasqueradingActive()) {
+        setShowParentCheckoutModal(true);
+      } else {
+        selectAllDue();
+        setBillingSubTab('structure');
+      }
+      return;
+    }
+    if (role === 'student') {
+      const payableEnr = programmeEnrollments.find((enr) => {
+        const st = String(enr.enrollmentStatus || '').toUpperCase();
+        const fee = Number(enr.approvedFee || 0);
+        const rem = Number(enr.remainingBalance ?? Math.max(0, fee - Number(enr.amountPaid || 0)));
+        return fee > 0 && (st === 'APPROVED_AWAITING_PAYMENT' || st === 'APPROVED_PENDING_PAYMENT' || st === 'PARTIALLY_PAID' || st === 'RENEWAL_DUE' || rem > 0);
+      });
+      if (payableEnr && !isMasqueradingActive()) {
+        const paid = Number(payableEnr.amountPaid || 0);
+        const rem = Number(payableEnr.remainingBalance ?? Math.max(0, Number(payableEnr.approvedFee || 0) - paid));
+        openProgrammeEnrollmentCheckout(payableEnr, paid > 0 && rem > 0 ? 'balance' : 'full');
+      } else {
+        setBillingSubTab('structure');
+      }
+    }
+  };
+
+  if (role === 'staff') {
+    return (
+      <section className="space-y-6" aria-label="Billing center">
+        <SEO title="Billing Center | Jaystarbliss Studios" description="Payments, plans, receipts and staff wallet." noindex={true} />
+
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
+          >
+            <RefreshCw size={14} /> Refresh Records
+          </button>
+        </div>
+
+        {impersonationBanner}
+
+        <div className="space-y-6">
+          <FintechWalletCard
+            userName={data.wallet?.userName || auth.currentUser?.displayName || 'Faculty Instructor'}
+            userRole="staff"
+            balance={Number(data.wallet?.availableBalance || 0)}
+            subTitleText="Teaching Roster"
+            subTitleValue={`${data.students?.length || 0} Learners`}
+            latestTransaction={payments[0] || null}
+            onRefresh={load}
+            onViewTransactionHistory={() => setShowStaffTransactionHistory(true)}
+            onWithdraw={() => {
+              setWithdrawMode('bank');
+              setIsWithdrawModalOpen(true);
+            }}
+            onVaultClick={() => {
+              setWithdrawMode('bank');
+              setIsWithdrawModalOpen(true);
+            }}
+          />
+
+          {showStaffTransactionHistory && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-label="Teaching settlement history">
+              <div className="w-full max-w-4xl max-h-[88vh] overflow-y-auto rounded-3xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 shadow-2xl p-5 sm:p-7">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div><p className="text-[10px] font-black uppercase tracking-widest text-brand-red">Billing</p><h2 className="text-lg font-black text-slate-900 dark:text-white">Teaching Payouts &amp; Settlement History</h2></div>
+                  <button type="button" onClick={() => setShowStaffTransactionHistory(false)} className="p-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"><X size={16}/></button>
+                </div>
+                <FintechTransactionHistory transactions={allTransactions.map(p => ({ ...p, amount: extractPaymentAmountNaira(p) }))} title="Teaching Payouts & Settlement History" role="staff" emptyMessage="No teaching payout transactions are recorded yet." />
+              </div>
             </div>
-          </div>
-          <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-red-50 dark:bg-red-950/50 text-brand-red shrink-0 border border-brand-red/20">
-            Payments Disabled
-          </span>
+          )}
         </div>
-      )}
 
-      {role !== 'staff' && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
-            <p className="text-xs text-slate-500">Latest Verified Payment</p>
-            <p className="mt-1 text-xl font-black font-mono text-slate-900 dark:text-white">
-              {payments[0] ? formatNaira(extractPaymentAmountNaira(payments[0])) : '—'}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              {payments[0] ? dateLabel(payments[0].paidAt) : 'No verified payment yet'}
-            </p>
-          </div>
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
-            <p className="text-xs text-slate-500">Paid Through / Access Due</p>
-            <p className="mt-1 text-xl font-black text-slate-900 dark:text-white">
-              {dueDate ? dueDate.toLocaleDateString('en-NG') : 'Active Access'}
-            </p>
-          </div>
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
-            <p className="text-xs text-slate-500">Verified Transactions</p>
-            <p className="mt-1 text-xl font-black text-slate-900 dark:text-white">
-              {payments.length} Records
-            </p>
-          </div>
-        </div>
-      )}
+        <FintechWithdrawalModal
+          isOpen={isWithdrawModalOpen}
+          onClose={() => setIsWithdrawModalOpen(false)}
+          availableBalance={Number(data.wallet?.availableBalance || 0)}
+          initialMode="bank"
+          savedBankCode={data.wallet?.bankAccount?.bankCode || bankCode}
+          savedAccountNumber={data.wallet?.bankAccount?.accountNumber || accountNumber}
+          savedAccountName={data.wallet?.bankAccount?.accountName || ''}
+          banksList={banks}
+          onConfirmWithdrawal={handleConfirmWithdrawal}
+        />
+      </section>
+    );
+  }
 
+  const feeStructureNode = (
+    <>
       {/* Parent Hierarchical Progressive Payment & Student Plan Section */}
       {role === 'parent' ? (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {/* Section Header & Bulk Action Toolbar */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
+          <div className="bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-6 shadow-2xs">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2.5">
-                  <span className="w-8 h-8 rounded-xl bg-brand-red/10 text-brand-red flex items-center justify-center">
-                    <UserCheck size={18} />
+                  <span className="w-8 h-8 rounded-xl bg-red-50 dark:bg-[#B91C1C]/15 text-[#B91C1C] flex items-center justify-center shrink-0">
+                    <UserCheck size={17} />
                   </span>
-                  <h2 className="text-xl font-black text-slate-900 dark:text-white">
-                    Parent Tuition &amp; Flexible Billing ({childGroups.length} {childGroups.length === 1 ? 'Learner' : 'Learners'})
+                  <h2 className="text-base sm:text-lg font-bold text-[#14284B] dark:text-white">
+                    Family Fee Structure ({childGroups.length} {childGroups.length === 1 ? 'Learner' : 'Learners'})
                   </h2>
                 </div>
-                <p className="mt-1 text-xs text-slate-500 max-w-2xl leading-relaxed">
-                  Select and pay tuition at any level: individual program tracks, specific instructors, or settle all child tuition accounts simultaneously.
+                <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400 max-w-2xl leading-relaxed">
+                  Select individual programme tracks, specific instructors, or settle all due family tuition accounts at once via Paystack.
                 </p>
               </div>
 
               {/* Action Toolbar */}
-              <div className="flex flex-wrap items-center gap-2 pt-2 lg:pt-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={selectAllDue}
-                  className="px-3.5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-brand-red dark:bg-red-950/30 dark:hover:bg-red-950/50 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                  className="px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-[#B91C1C] dark:bg-[#B91C1C]/15 dark:hover:bg-[#B91C1C]/25 dark:text-red-400 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <Clock size={13} />
                   <span>Select All Due</span>
@@ -1411,7 +1577,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                 <button
                   type="button"
                   onClick={selectAllPrograms}
-                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-200 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <CheckSquare size={13} />
                   <span>Select All</span>
@@ -1421,7 +1587,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                   <button
                     type="button"
                     onClick={clearSelection}
-                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-200 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <X size={13} />
                     <span>Clear ({selectedFeeItemIds.length})</span>
@@ -1437,7 +1603,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                       setExpandedChildIds(childGroups.map(c => c.childId));
                     }
                   }}
-                  className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors inline-flex items-center gap-1 cursor-pointer"
                 >
                   <Layers size={13} />
                   <span>{expandedChildIds.length === childGroups.length ? 'Collapse All' : 'Expand All'}</span>
@@ -1446,15 +1612,15 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
             </div>
 
             {/* Filter Tabs */}
-            <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-3">
-              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-xs">
+            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between flex-wrap gap-3">
+              <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-[#18181B] border border-slate-200/70 dark:border-zinc-800 text-xs overflow-x-auto">
                 <button
                   type="button"
                   onClick={() => setParentFeeFilter('all')}
-                  className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
                     parentFeeFilter === 'all'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      ? 'bg-white dark:bg-zinc-800 text-[#14284B] dark:text-white shadow-xs'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-[#14284B] dark:hover:text-white'
                   }`}
                 >
                   All Items ({parentFeeItems.length})
@@ -1462,10 +1628,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                 <button
                   type="button"
                   onClick={() => setParentFeeFilter('due')}
-                  className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
                     parentFeeFilter === 'due'
-                      ? 'bg-white dark:bg-slate-700 text-brand-red shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-brand-red'
+                      ? 'bg-white dark:bg-zinc-800 text-[#B91C1C] dark:text-red-400 shadow-xs'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-[#B91C1C]'
                   }`}
                 >
                   Payment Due ({parentFeeItems.filter(i => i.status === 'DUE' || i.status === 'PARTIALLY_PAID').length})
@@ -1473,10 +1639,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                 <button
                   type="button"
                   onClick={() => setParentFeeFilter('paid')}
-                  className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
                     parentFeeFilter === 'paid'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      ? 'bg-white dark:bg-zinc-800 text-[#14284B] dark:text-white shadow-xs'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-[#14284B] dark:hover:text-white'
                   }`}
                 >
                   Paid &amp; Active ({parentFeeItems.filter(i => i.status === 'PAID').length})
@@ -1484,9 +1650,9 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
               </div>
 
               {selectedItems.length > 0 && (
-                <div className="text-xs text-slate-500 flex items-center gap-2">
-                  <span className="font-bold text-slate-900 dark:text-white">{selectedItems.length}</span> program{selectedItems.length > 1 ? 's' : ''} selected across <span className="font-bold text-slate-900 dark:text-white">{new Set(selectedItems.map(i => i.childName)).size}</span> child(ren):
-                  <strong className="font-mono font-black text-brand-red">{formatNaira(selectedBaseTotal)}</strong>
+                <div className="text-xs text-slate-500 dark:text-zinc-400 flex items-center gap-2 tabular-nums">
+                  <span className="font-bold text-[#14284B] dark:text-white">{selectedItems.length}</span> selected:
+                  <strong className="font-extrabold text-[#B91C1C] dark:text-red-400">{formatNaira(selectedBaseTotal)}</strong>
                 </div>
               )}
             </div>
@@ -1498,7 +1664,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
               {childGroups.map(child => {
                 const isExpanded = expandedChildIds.includes(child.childId);
                 const filteredPrograms = child.allPrograms.filter(prog => {
-                  if (parentFeeFilter === 'due') return prog.status === 'DUE';
+                  if (parentFeeFilter === 'due') return prog.status === 'DUE' || prog.status === 'PARTIALLY_PAID';
                   if (parentFeeFilter === 'paid') return prog.status === 'PAID';
                   return true;
                 });
@@ -1514,10 +1680,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                 return (
                   <div 
                     key={child.childId} 
-                    className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700"
+                    className="bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-2xs transition-all hover:border-slate-300 dark:hover:border-zinc-700"
                   >
                     {/* LEVEL 1: Child Header */}
-                    <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-950/30 border-b border-slate-100 dark:border-slate-800">
+                    <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60 dark:bg-[#18181B] border-b border-slate-100 dark:border-zinc-800">
                       <div className="flex items-center gap-3 min-w-0">
                         {/* Child Checkbox */}
                         <button
@@ -1567,10 +1733,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                       </div>
 
                       {/* Right side: Amount & Expand button */}
-                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200/60 dark:border-slate-800">
+                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200/60 dark:border-zinc-800">
                         <div className="text-left sm:text-right">
-                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Tuition Fee</span>
-                          <strong className="text-sm font-mono font-black text-slate-900 dark:text-white">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block tracking-wider">Tuition Fee</span>
+                          <strong className="text-sm font-mono font-black text-[#14284B] dark:text-white tabular-nums">
                             {formatNaira(child.totalTuition)}
                           </strong>
                         </div>
@@ -1578,7 +1744,7 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                         <button
                           type="button"
                           onClick={() => toggleExpandChild(child.childId)}
-                          className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
+                          className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 hover:bg-slate-100 dark:hover:bg-zinc-800 text-xs font-semibold text-slate-600 dark:text-zinc-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
                         >
                           <span>{isExpanded ? 'Hide Details' : 'View Tutors & Programs'}</span>
                           {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -1588,10 +1754,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
 
                     {/* EXPANDABLE SECTION: Level 2 (Tutors) & Level 3 (Programs) */}
                     {isExpanded && (
-                      <div className="p-4 sm:p-6 space-y-5 bg-white dark:bg-slate-900">
+                      <div className="p-4 sm:p-6 space-y-5 bg-white dark:bg-[#111114]">
                         {child.tutors.map(tutor => {
                           const tutorFilteredPrograms = tutor.programs.filter(prog => {
-                            if (parentFeeFilter === 'due') return prog.status === 'DUE';
+                            if (parentFeeFilter === 'due') return prog.status === 'DUE' || prog.status === 'PARTIALLY_PAID';
                             if (parentFeeFilter === 'paid') return prog.status === 'PAID';
                             return true;
                           });
@@ -1607,43 +1773,43 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                           return (
                             <div 
                               key={tutor.tutorId} 
-                              className="rounded-2xl border border-slate-200/70 dark:border-slate-800/80 bg-slate-50/40 dark:bg-slate-950/20 p-4"
+                              className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-[#18181B] p-4"
                             >
                               {/* LEVEL 2: Tutor Group Header */}
-                              <div className="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-slate-200/60 dark:border-slate-800">
+                              <div className="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-slate-200/60 dark:border-zinc-800">
                                 <div className="flex items-center gap-2.5 min-w-0">
                                   <button
                                     type="button"
                                     onClick={() => toggleTutor(tutorFilteredPrograms)}
-                                    className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800 text-brand-red transition-colors shrink-0 cursor-pointer"
+                                    className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-800 text-[#B91C1C] transition-colors shrink-0 cursor-pointer"
                                     title={tutorAllSelected ? "Deselect tutor's programs" : "Select all programs under this tutor"}
                                   >
                                     {tutorAllSelected ? (
-                                      <CheckSquare size={17} className="text-brand-red" />
+                                      <CheckSquare size={17} className="text-[#B91C1C]" />
                                     ) : tutorSomeSelected ? (
-                                      <MinusSquare size={17} className="text-brand-red" />
+                                      <MinusSquare size={17} className="text-[#B91C1C]" />
                                     ) : (
-                                      <Square size={17} className="text-slate-400 dark:text-slate-500" />
+                                      <Square size={17} className="text-slate-400 dark:text-zinc-500" />
                                     )}
                                   </button>
 
-                                  <div className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">
+                                  <div className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-zinc-800 text-[#14284B] dark:text-zinc-300 font-bold text-xs flex items-center justify-center shrink-0">
                                     <User size={14} />
                                   </div>
 
                                   <div className="min-w-0">
-                                    <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 truncate">
+                                    <h4 className="font-bold text-xs sm:text-sm text-[#14284B] dark:text-zinc-100 truncate">
                                       Instructor: {tutor.tutorName}
                                     </h4>
-                                    <span className="text-[11px] text-slate-500">
+                                    <span className="text-[11px] text-slate-500 dark:text-zinc-400">
                                       {tutorFilteredPrograms.length} assigned program track{tutorFilteredPrograms.length > 1 ? 's' : ''}
                                     </span>
                                   </div>
                                 </div>
 
                                 <div className="text-right shrink-0">
-                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Tutor Subtotal</span>
-                                  <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Tutor Subtotal</span>
+                                  <span className="text-xs font-mono font-bold text-[#14284B] dark:text-zinc-200 tabular-nums">
                                     {formatNaira(tutor.totalAmount)}
                                   </span>
                                 </div>
@@ -1661,39 +1827,39 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                                       onClick={() => toggleProgram(prog.id)}
                                       className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
                                         isSelected
-                                          ? 'border-brand-red bg-red-50/40 dark:bg-red-950/20 shadow-xs'
-                                          : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
+                                          ? 'border-[#B91C1C] bg-red-50/40 dark:bg-[#B91C1C]/10 shadow-xs'
+                                          : 'border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#111114] hover:border-slate-300 dark:hover:border-zinc-700'
                                       }`}
                                     >
                                       <div>
                                         <div className="flex items-start justify-between gap-2 mb-2">
                                           <div className="flex items-center gap-2 min-w-0">
-                                            <span className="text-brand-red shrink-0">
-                                              {isSelected ? <CheckSquare size={16} /> : <Square size={16} className="text-slate-400" />}
+                                            <span className="text-[#B91C1C] shrink-0">
+                                              {isSelected ? <CheckSquare size={16} /> : <Square size={16} className="text-slate-400 dark:text-zinc-500" />}
                                             </span>
-                                            <h5 className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                                            <h5 className="font-bold text-xs text-[#14284B] dark:text-white truncate">
                                               {prog.programName}
                                             </h5>
                                           </div>
                                           {isPaid ? (
-                                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 shrink-0">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 shrink-0">
                                               Settled
                                             </span>
                                           ) : (
-                                            <span className="text-[10px] font-black uppercase tracking-wider text-brand-red shrink-0">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400 shrink-0">
                                               {prog.status === 'PARTIALLY_PAID' ? 'Partial Due' : 'Due'}
                                             </span>
                                           )}
                                         </div>
 
-                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
-                                          {prog.cycle || 'Monthly'} cycle • Mentor support included
+                                        <p className="text-[11px] text-slate-500 dark:text-zinc-400 line-clamp-1">
+                                          {prog.cycle || 'Monthly'} cycle · Mentor support included
                                         </p>
                                       </div>
 
-                                      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                                        <span className="text-slate-400 text-[10px] uppercase font-bold">Payable</span>
-                                        <strong className="font-mono font-black text-brand-red">
+                                      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between text-xs">
+                                        <span className="text-slate-400 dark:text-zinc-500 text-[10px] uppercase font-bold">Payable</span>
+                                        <strong className="font-mono font-black text-[#B91C1C] dark:text-red-400 tabular-nums">
                                           {formatNaira(prog.amount)}
                                         </strong>
                                       </div>
@@ -1711,10 +1877,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
               })}
             </div>
           ) : (
-            <div className="rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center space-y-2 shadow-xs">
-              <CreditCard size={32} className="mx-auto text-slate-400" />
-              <h3 className="text-sm font-black text-slate-900 dark:text-white">No active tuition accounts found</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
+            <div className="rounded-2xl border border-dashed border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#111114] p-8 text-center space-y-2 shadow-2xs">
+              <CreditCard size={32} className="mx-auto text-slate-400 dark:text-zinc-500" />
+              <h3 className="text-sm font-black text-[#14284B] dark:text-white">No active tuition accounts found</h3>
+              <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-md mx-auto">
                 Once your child's enrollment is registered and approved by the academy admissions desk, customized tuition and learning schedules will appear here.
               </p>
             </div>
@@ -1722,66 +1888,72 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
 
           {/* Pending Enrollment Requests for Parents */}
           {data.enrollments && data.enrollments.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
+            <div className="bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 rounded-2xl p-5 sm:p-6 shadow-2xs">
               <div className="mb-4 flex items-center justify-between">
                 <div>
-                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  <h3 className="text-base font-bold text-[#14284B] dark:text-white">
                     Pending Enrollment Requests ({data.enrollments.length})
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Settle tuition online for children currently awaiting admissions review.
+                  <p className="text-xs text-slate-500 dark:text-zinc-400">
+                    Settle tuition online via Paystack for children currently awaiting admissions review.
                   </p>
                 </div>
               </div>
 
               <div className="space-y-2.5">
-                {data.enrollments.map((req: any) => (
-                  <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40">
-                    <div>
-                      <p className="text-xs font-bold text-slate-900 dark:text-white">{req.studentName || 'Child'}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{req.plan || 'Learning Track'} • {req.studentAge || 'Age not specified'}</p>
+                {data.enrollments.map((req: any) => {
+                  const matchedPlan = standardPlans.find(p => p.name === req.plan) || standardPlans[0];
+                  return (
+                    <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-[#18181B]">
+                      <div>
+                        <p className="text-xs font-bold text-[#14284B] dark:text-white">{req.studentName || 'Child'}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">{req.plan || 'Learning Track'} · {req.studentAge || 'Age not specified'}</p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isMasqueradingActive()}
+                        onClick={() => startCheckout({ 
+                          plan: matchedPlan,
+                          planName: req.plan 
+                        })}
+                        className="px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-[#991B1B] text-white text-xs font-bold transition-all shrink-0 cursor-pointer tabular-nums"
+                      >
+                        {matchedPlan?.baseAmount
+                          ? `Pay Now · ${formatNaira(matchedPlan.baseAmount)}`
+                          : `Pay Now`}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      disabled={isMasqueradingActive()}
-                      onClick={() => startCheckout({ 
-                        plan: standardPlans.find(p => p.name === req.plan) || standardPlans[0],
-                        planName: req.plan 
-                      })}
-                      className="px-4 py-2 rounded-xl bg-brand-red hover:bg-red-700 text-white text-xs font-bold transition-all shrink-0 cursor-pointer"
-                    >
-                      Pay for {req.studentName ? req.studentName.split(' ')[0] : 'Child'}
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
 
           {/* LEVEL 4: STICKY FLOATING PAYMENT CHECKOUT DRAWER */}
           {selectedItems.length > 0 && (
-            <div className="sticky bottom-4 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-2 border-brand-red/40 rounded-3xl p-4 sm:p-5 shadow-2xl transition-all">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2.5 py-0.5 rounded-md text-xs font-black bg-brand-red text-white">
+            <div className="sticky bottom-3 sm:bottom-4 z-40 bg-white/95 dark:bg-[#111114]/95 backdrop-blur-md border-2 border-[#B91C1C]/50 rounded-2xl p-3.5 sm:p-5 shadow-2xl transition-all">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3.5">
+                <div className="space-y-0.5 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    <span className="font-bold text-[#B91C1C] dark:text-red-400">
                       {selectedItems.length} {selectedItems.length === 1 ? 'Program' : 'Programs'} Selected
                     </span>
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      across {new Set(selectedItems.map(i => i.childName)).size} {new Set(selectedItems.map(i => i.childName)).size === 1 ? 'Child' : 'Children'}
+                    <span className="text-slate-400">·</span>
+                    <span className="font-semibold text-slate-700 dark:text-zinc-300">
+                      {new Set(selectedItems.map(i => i.childName)).size} {new Set(selectedItems.map(i => i.childName)).size === 1 ? 'Learner' : 'Learners'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 truncate max-w-xl">
-                    {selectedItems.map(i => `${i.childName} (${i.programName})`).join(' • ')}
+                  <p className="text-[11px] sm:text-xs text-slate-500 dark:text-zinc-400 truncate max-w-xl">
+                    {selectedItems.map(i => `${i.childName} (${i.programName})`).join(' · ')}
                   </p>
                 </div>
 
-                <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-zinc-800">
                   <div className="text-left md:text-right">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                      Selected Total
+                    <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block tracking-wider">
+                      Total Payable
                     </span>
-                    <strong className="text-lg font-mono font-black text-brand-red">
+                    <strong className="text-base sm:text-lg font-extrabold text-[#14284B] dark:text-white tabular-nums">
                       {formatNaira(selectedBaseTotal)}
                     </strong>
                   </div>
@@ -1790,88 +1962,48 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                     type="button"
                     disabled={isMasqueradingActive() || paying}
                     onClick={() => setShowParentCheckoutModal(true)}
-                    className="min-h-12 px-6 rounded-2xl bg-brand-red hover:bg-red-700 disabled:opacity-50 text-white font-black text-xs md:text-sm shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                    className="min-h-[42px] px-4 sm:px-6 rounded-xl bg-gradient-to-r from-[#991B1B] to-[#B91C1C] hover:from-[#7F1D1D] hover:to-[#991B1B] disabled:opacity-50 text-white font-bold text-xs sm:text-sm shadow-md transition-all flex items-center gap-2 cursor-pointer"
                   >
-                    <CreditCard size={16} />
-                    <span>Review &amp; Pay ({formatNaira(selectedBaseTotal)})</span>
-                    <ArrowRight size={14} />
+                    <CreditCard size={15} />
+                    <span className="tabular-nums">Pay Now · {formatNaira(selectedBaseTotal)}</span>
                   </button>
                 </div>
               </div>
             </div>
           )}
-
-          {/* PARENT ITEMIZED PAYSTACK REVIEW MODAL */}
-          <PaystackPaymentReviewModal
-            isOpen={showParentCheckoutModal}
-            onClose={() => { if (!paying) setShowParentCheckoutModal(false); }}
-            reviewKey={`parent-multi:${selectedItems.map(i => `${i.id}:${i.amount}`).join('|')}`}
-            subtitle="Family Tuition Settlement"
-            title="Review Your Payment"
-            description="Please verify each selected learner, programme track, and our Payment Policy before proceeding to Paystack."
-            contextRows={[
-              {
-                label: 'Learners Included',
-                value: Array.from(new Set(selectedItems.map(i => i.childName))).join(', ')
-              },
-              {
-                label: 'Selected Programmes',
-                value: `${selectedItems.length} programme track${selectedItems.length === 1 ? '' : 's'}`
-              },
-              {
-                label: 'Account Role',
-                value: 'Parent / Guardian'
-              }
-            ]}
-            lineItems={selectedItems.map(item => ({
-              id: item.id,
-              primary: item.childName,
-              secondary: item.programName,
-              meta: item.tutorName ? `Assigned Instructor: ${item.tutorName}` : undefined,
-              amount: Number(item.amount || 0)
-            }))}
-            subtotal={selectedBaseTotal}
-            estimatedFee={selectedChargePreview.transactionFee}
-            estimatedTotal={selectedChargePreview.totalAmount}
-            feeNote="Estimated Paystack fee is displayed for transparency. Only the exact verified base tuition items are settled, and Paystack confirms final gateway charges on checkout."
-            loading={paying}
-            disabled={isMasqueradingActive()}
-            disabledMessage="Payment checkout is restricted in Superadmin Impersonation mode."
-            onConfirmPaystack={processParentMultiPayment}
-          />
         </div>
       ) : role === 'student' ? (
         /* Independent & Self-Funded School Student Billing View */
         <div className="space-y-6">
           {/* Approved & Self-Funded Programme Enrolments */}
           {programmeEnrollments.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-sm space-y-5">
+            <div className="bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-6 shadow-2xs space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-brand-red">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#B91C1C]">
                     Personal Self-Funded Programmes
                   </span>
-                  <h3 className="text-xl font-black text-slate-900 dark:text-white mt-0.5">
+                  <h3 className="text-base sm:text-lg font-bold text-[#14284B] dark:text-white mt-0.5">
                     Approved Programme Tuition &amp; Renewals
                   </h3>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Settle approved fees directly via Paystack. Partial deposits, outstanding balances, and cycle renewals are tracked automatically.
+                  <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
+                    Settle approved fees directly via Paystack. Partial deposits, outstanding balances, and cycle renewals update automatically.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => void load()}
-                  className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 text-xs font-semibold text-white shrink-0 cursor-pointer"
+                  className="min-h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-[#14284B] hover:bg-[#1E3A6A] dark:bg-zinc-800 dark:hover:bg-zinc-700 px-4 py-2 text-xs font-semibold text-white shrink-0 cursor-pointer"
                 >
                   <RefreshCw size={14} /> Refresh
                 </button>
               </div>
 
               {sessionStorage.getItem('studentRegistrationType') === 'school' && (
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 flex items-start gap-3">
-                  <ShieldCheck size={18} className="text-brand-red shrink-0 mt-0.5" />
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 text-xs text-slate-600 dark:text-zinc-300 flex items-start gap-3">
+                  <ShieldCheck size={18} className="text-[#B91C1C] shrink-0 mt-0.5" />
                   <div>
-                    <strong className="font-bold text-slate-900 dark:text-white block">
+                    <strong className="font-bold text-[#14284B] dark:text-white block">
                       Independent Personal Billing Only
                     </strong>
                     Only your personal self-funded programmes appear here. Your school-sponsored classes remain completely unaffected, and your school is never billed for these enrolments.
@@ -1905,12 +2037,14 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                       ? 'balance'
                       : 'full';
 
-                  const primaryLabel =
+                  const payableForAction =
                     primaryOption === 'renewal'
-                      ? `Renew Programme (${formatNaira(approvedFee)})`
+                      ? approvedFee
                       : primaryOption === 'balance'
-                      ? `Pay Outstanding Balance (${formatNaira(remaining)})`
-                      : `Pay Full Tuition (${formatNaira(remaining || approvedFee)})`;
+                      ? remaining
+                      : remaining || approvedFee;
+
+                  const primaryLabel = `Pay Now · ${formatNaira(payableForAction)}`;
 
                   const historyList = Array.isArray(enr.paymentHistory) ? enr.paymentHistory : [];
                   const isHistoryOpen = Boolean(expandedProgHistoryIds[enr.id]);
@@ -1918,87 +2052,87 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                   return (
                     <article
                       key={enr.id}
-                      className={`rounded-2xl border p-5 flex flex-col justify-between transition-all ${
+                      className={`rounded-2xl border p-4 sm:p-5 flex flex-col justify-between transition-all ${
                         isFocused
-                          ? 'border-brand-red ring-2 ring-brand-red/20 bg-red-50/20 dark:bg-red-950/15'
-                          : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/60'
+                          ? 'border-[#B91C1C] ring-2 ring-[#B91C1C]/20 bg-red-50/20 dark:bg-[#B91C1C]/10'
+                          : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#18181B]'
                       }`}
                     >
                       <div>
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <span className="inline-block text-[10px] font-black uppercase tracking-wider text-brand-red">
-                              Student Self-Funded • {cycleNorm.replace(/_/g, ' ')}
+                            <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
+                              Self-Funded · {cycleNorm.replace(/_/g, ' ')}
                             </span>
-                            <h4 className="font-black text-base text-slate-900 dark:text-white mt-0.5 leading-snug">
+                            <h4 className="font-bold text-sm sm:text-base text-[#14284B] dark:text-white mt-0.5 leading-snug">
                               {enr.programTitle}
                             </h4>
                           </div>
                           <span
-                            className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider shrink-0 ${
+                            className={`text-[11px] font-bold uppercase tracking-wider shrink-0 ${
                               status === 'ACTIVE'
-                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                ? 'text-emerald-600 dark:text-emerald-400'
                                 : isAwaitingPayment || status === 'RENEWAL_DUE'
-                                ? 'bg-red-50 text-brand-red dark:bg-red-950/40'
+                                ? 'text-[#B91C1C] dark:text-red-400'
                                 : status === 'PARTIALLY_PAID'
-                                ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
-                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : 'text-slate-500 dark:text-zinc-400'
                             }`}
                           >
                             {status.replace(/_/g, ' ')}
                           </span>
                         </div>
 
-                        <div className="mt-4 grid grid-cols-3 gap-2 text-xs p-3 bg-slate-50 dark:bg-slate-950/40 rounded-xl">
+                        <div className="mt-4 grid grid-cols-3 gap-2 text-xs p-3 bg-slate-50 dark:bg-[#111114] border border-slate-100 dark:border-zinc-800 rounded-xl tabular-nums">
                           <div>
-                            <span className="block text-slate-400 text-[10px] font-bold uppercase">Approved Fee</span>
-                            <strong className="font-mono text-slate-900 dark:text-white">
+                            <span className="block text-slate-400 dark:text-zinc-500 text-[10px] font-bold uppercase">Approved</span>
+                            <strong className="font-mono text-[#14284B] dark:text-white">
                               {approvedFee > 0 ? formatNaira(approvedFee) : 'Pending'}
                             </strong>
                           </div>
                           <div>
-                            <span className="block text-slate-400 text-[10px] font-bold uppercase">Paid</span>
-                            <strong className="font-mono text-emerald-700 dark:text-emerald-400">
+                            <span className="block text-slate-400 dark:text-zinc-500 text-[10px] font-bold uppercase">Paid</span>
+                            <strong className="font-mono text-emerald-600 dark:text-emerald-400">
                               {formatNaira(amountPaid)}
                             </strong>
                           </div>
                           <div>
-                            <span className="block text-slate-400 text-[10px] font-bold uppercase">Balance</span>
-                            <strong className="font-mono text-brand-red font-black">
+                            <span className="block text-slate-400 dark:text-zinc-500 text-[10px] font-bold uppercase">Balance</span>
+                            <strong className="font-mono text-[#B91C1C] dark:text-red-400 font-black">
                               {formatNaira(remaining)}
                             </strong>
                           </div>
                         </div>
 
                         {(enr.paidThrough || enr.nextDueDate) && (
-                          <div className="mt-3 flex flex-wrap gap-4 text-[11px] text-slate-500">
+                          <div className="mt-3 flex flex-wrap gap-4 text-[11px] text-slate-500 dark:text-zinc-400">
                             {enr.paidThrough && (
                               <span>
-                                Paid Through: <strong className="text-slate-800 dark:text-slate-200">{dateLabel(enr.paidThrough)}</strong>
+                                Paid Through: <strong className="text-[#14284B] dark:text-zinc-200">{dateLabel(enr.paidThrough)}</strong>
                               </span>
                             )}
                             {enr.nextDueDate && (
                               <span>
-                                Next Due: <strong className="text-slate-800 dark:text-slate-200">{dateLabel(enr.nextDueDate)}</strong>
+                                Next Due: <strong className="text-[#14284B] dark:text-zinc-200">{dateLabel(enr.nextDueDate)}</strong>
                               </span>
                             )}
                           </div>
                         )}
 
                         {status === 'PENDING_ADMIN_REVIEW' && (
-                          <p className="mt-3 text-xs text-slate-500 leading-relaxed">
+                          <p className="mt-3 text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
                             Your application is under Admissions review. Once approved with your official tuition fee, Paystack payment will unlock here.
                           </p>
                         )}
 
                         {historyList.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800">
                             <button
                               type="button"
                               onClick={() =>
                                 setExpandedProgHistoryIds((prev) => ({ ...prev, [enr.id]: !prev[enr.id] }))
                               }
-                              className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-brand-red cursor-pointer"
+                              className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-zinc-300 hover:text-[#B91C1C] cursor-pointer"
                             >
                               {isHistoryOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                               Payment History ({historyList.length})
@@ -2008,12 +2142,12 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                                 {historyList.map((h: any, idx: number) => (
                                   <div
                                     key={h.reference || idx}
-                                    className="flex items-center justify-between text-[11px] px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950/50"
+                                    className="flex items-center justify-between text-[11px] px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-[#111114] border border-slate-100 dark:border-zinc-800"
                                   >
-                                    <span className="text-slate-600 dark:text-slate-300 truncate">
-                                      {dateLabel(h.paidAt)} • {h.paymentOption || 'payment'}
+                                    <span className="text-slate-600 dark:text-zinc-300 truncate">
+                                      {dateLabel(h.paidAt)} · {h.paymentOption || 'payment'}
                                     </span>
-                                    <strong className="font-mono text-slate-900 dark:text-white shrink-0">
+                                    <strong className="font-mono text-[#14284B] dark:text-white shrink-0 tabular-nums">
                                       {formatNaira(Number(h.amount || 0))}
                                     </strong>
                                   </div>
@@ -2030,10 +2164,10 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                             type="button"
                             disabled={isMasqueradingActive()}
                             onClick={() => openProgrammeEnrollmentCheckout(enr, primaryOption)}
-                            className={`flex-1 min-h-11 rounded-xl px-4 text-xs font-black shadow-sm transition-all ${
+                            className={`flex-1 min-h-[42px] rounded-xl px-4 text-xs font-bold shadow-sm transition-all tabular-nums ${
                               isMasqueradingActive()
-                                ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
-                                : 'bg-brand-red hover:bg-red-700 text-white cursor-pointer'
+                                ? 'bg-slate-300 dark:bg-zinc-800 text-slate-500 cursor-not-allowed opacity-60'
+                                : 'bg-gradient-to-r from-[#991B1B] to-[#B91C1C] hover:from-[#7F1D1D] hover:to-[#991B1B] text-white cursor-pointer'
                             }`}
                           >
                             {isMasqueradingActive() ? 'Disabled in Impersonation' : primaryLabel}
@@ -2044,9 +2178,9 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                               type="button"
                               disabled={isMasqueradingActive()}
                               onClick={() => openProgrammeEnrollmentCheckout(enr, 'deposit')}
-                              className="min-h-11 rounded-xl px-4 border border-brand-red/40 text-brand-red hover:bg-red-50 dark:hover:bg-red-950/30 text-xs font-black transition-all cursor-pointer shrink-0"
+                              className="min-h-[42px] rounded-xl px-4 border border-[#B91C1C]/40 text-[#B91C1C] dark:text-red-400 hover:bg-red-50 dark:hover:bg-[#B91C1C]/10 text-xs font-bold transition-all cursor-pointer shrink-0 tabular-nums"
                             >
-                              Pay Deposit ({formatNaira(Number(enr.depositAmount))})
+                              Pay Deposit · {formatNaira(Number(enr.depositAmount))}
                             </button>
                           )}
                         </div>
@@ -2060,13 +2194,13 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
 
           {/* Legacy Independent Student Standard Plans (only for individual students, never school students) */}
           {sessionStorage.getItem('studentRegistrationType') === 'individual' && standardPlans.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-sm">
+            <div className="bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 rounded-2xl p-5 sm:p-6 shadow-2xs">
               <div className="mb-5">
-                <h3 className="text-xl font-black text-slate-900 dark:text-white">
+                <h3 className="text-base sm:text-lg font-bold text-[#14284B] dark:text-white">
                   Available Learning Programs
                 </h3>
-                <p className="mt-1 text-xs text-slate-500">
-                  Select your enrolled curriculum track to proceed with tuition settlement.
+                <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
+                  Select your enrolled curriculum track to pay tuition directly via Paystack.
                 </p>
               </div>
 
@@ -2075,35 +2209,33 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                   const hasFee = plan.baseAmount > 0;
                   const fee = hasFee ? feeFromBase(plan.baseAmount, feePolicy) : null;
                   return (
-                    <article key={plan.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 flex flex-col justify-between hover:border-brand-red/40 transition-all">
+                    <article key={plan.id} className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-slate-50/40 dark:bg-[#18181B] p-4 sm:p-5 flex flex-col justify-between hover:border-[#B91C1C]/50 transition-all">
                       <div>
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-black text-slate-900 dark:text-white text-base">{plan.name}</h4>
-                            </div>
+                            <h4 className="font-bold text-[#14284B] dark:text-white text-sm sm:text-base">{plan.name}</h4>
                             {plan.description && (
-                              <p className="mt-1 text-xs leading-5 text-slate-500">{plan.description}</p>
+                              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-zinc-400">{plan.description}</p>
                             )}
                           </div>
-                          <span className="border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-0.5 rounded-md text-[10px] font-black text-slate-700 dark:text-slate-300 shrink-0">
+                          <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 shrink-0 tabular-nums">
                             {plan.durationWeeks} weeks
                           </span>
                         </div>
 
                         {hasFee && fee && (
-                          <div className="mt-5 grid grid-cols-3 gap-2 text-xs p-3 bg-slate-50 dark:bg-slate-950/40 rounded-xl">
+                          <div className="mt-4 grid grid-cols-3 gap-2 text-xs p-3 bg-white dark:bg-[#111114] border border-slate-100 dark:border-zinc-800 rounded-xl tabular-nums">
                             <div>
-                              <span className="block text-slate-400 text-[10px] font-bold uppercase">Base</span>
-                              <strong className="font-mono text-slate-900 dark:text-white">{formatNaira(plan.baseAmount)}</strong>
+                              <span className="block text-slate-400 dark:text-zinc-500 text-[10px] font-bold uppercase">Tuition</span>
+                              <strong className="font-mono text-[#14284B] dark:text-white">{formatNaira(plan.baseAmount)}</strong>
                             </div>
                             <div>
-                              <span className="block text-slate-400 text-[10px] font-bold uppercase">Est. fee</span>
-                              <strong className="font-mono text-slate-900 dark:text-white">{formatNaira(fee.transactionFee)}</strong>
+                              <span className="block text-slate-400 dark:text-zinc-500 text-[10px] font-bold uppercase">Est. Fee</span>
+                              <strong className="font-mono text-slate-700 dark:text-zinc-300">{formatNaira(fee.transactionFee)}</strong>
                             </div>
                             <div>
-                              <span className="block text-slate-400 text-[10px] font-bold uppercase">Est. total</span>
-                              <strong className="font-mono text-brand-red font-black">{formatNaira(fee.totalAmount)}</strong>
+                              <span className="block text-slate-400 dark:text-zinc-500 text-[10px] font-bold uppercase">Total</span>
+                              <strong className="font-mono text-[#B91C1C] dark:text-red-400 font-black">{formatNaira(fee.totalAmount)}</strong>
                             </div>
                           </div>
                         )}
@@ -2113,17 +2245,17 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
                         type="button" 
                         disabled={isMasqueradingActive()}
                         onClick={() => startCheckout({ plan })} 
-                        className={`mt-5 min-h-11 w-full rounded-xl px-4 text-xs font-black shadow-sm transition-all ${
+                        className={`mt-5 min-h-[42px] w-full rounded-xl px-4 text-xs font-bold shadow-sm transition-all tabular-nums ${
                           isMasqueradingActive()
-                            ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
-                            : 'bg-brand-red hover:bg-red-700 text-white cursor-pointer'
+                            ? 'bg-slate-300 dark:bg-zinc-800 text-slate-500 cursor-not-allowed opacity-60'
+                            : 'bg-gradient-to-r from-[#991B1B] to-[#B91C1C] hover:from-[#7F1D1D] hover:to-[#991B1B] text-white cursor-pointer'
                         }`}
                       >
                         {isMasqueradingActive()
-                          ? `Payment Disabled in Impersonation Mode`
+                          ? 'Payment Disabled in Impersonation Mode'
                           : hasFee
-                            ? `Continue to Payment (${formatNaira(plan.baseAmount)})`
-                            : `Select & Proceed to Checkout`}
+                            ? `Pay Now · ${formatNaira(plan.baseAmount)}`
+                            : 'Pay Now'}
                       </button>
                     </article>
                   );
@@ -2131,170 +2263,263 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
               </div>
             </div>
           )}
-
-          {/* Self-Funded Student Programme Paystack Review Modal */}
-          {activeProgEnrollment && (() => {
-            const approvedFee = Math.max(0, Number(activeProgEnrollment.approvedFee || 0));
-            const amountPaid = Math.max(0, Number(activeProgEnrollment.amountPaid || 0));
-            const remaining = Math.max(0, Number(activeProgEnrollment.remainingBalance ?? Math.max(0, approvedFee - amountPaid)));
-            const depositAmt = Math.max(0, Number(activeProgEnrollment.depositAmount || 0));
-            const canDeposit = Boolean(activeProgEnrollment.allowDepositAccess && depositAmt > 0 && depositAmt < approvedFee && amountPaid === 0);
-
-            const subtotal =
-              progPaymentOption === 'renewal'
-                ? approvedFee
-                : progPaymentOption === 'deposit' && canDeposit
-                ? depositAmt
-                : remaining > 0
-                ? remaining
-                : approvedFee;
-
-            const selfFundedPolicy = data.config?.studentSelfFundedFeePolicy || feePolicy;
-            const preview = feeFromBase(subtotal, selfFundedPolicy);
-            const emailValid =
-              studentPayerEmail.trim().includes('@') &&
-              !studentPayerEmail.trim().toLowerCase().endsWith('.local') &&
-              !studentPayerEmail.trim().toLowerCase().endsWith('.invalid');
-
-            return (
-              <PaystackPaymentReviewModal
-                isOpen={Boolean(activeProgEnrollment)}
-                onClose={() => { if (!paying) setActiveProgEnrollment(null); }}
-                reviewKey={`self-prog:${activeProgEnrollment.id}:${progPaymentOption}:${subtotal}`}
-                subtitle="Student Self-Funded Programme"
-                title="Review Programme Payment"
-                description="Verify your approved fee, billing responsibility, and receipt email before proceeding to Paystack."
-                contextRows={[
-                  { label: 'Programme', value: activeProgEnrollment.programTitle },
-                  { label: 'Billing Responsibility', value: 'Student Self-Funded (Personal)' },
-                  { label: 'Payment Option', value: progPaymentOption.toUpperCase() },
-                  { label: 'Billing Cycle', value: activeProgEnrollment.billingCycle || 'ONE_TIME' },
-                ]}
-                subtotal={subtotal}
-                estimatedFee={preview.transactionFee}
-                estimatedTotal={preview.totalAmount}
-                feeNote="The final amount is computed authoritatively on our server from your approved tuition record."
-                loading={paying}
-                disabled={isMasqueradingActive() || !emailValid}
-                disabledMessage={!emailValid ? 'Please provide a valid personal email address for your receipt.' : 'Disabled in Impersonation mode.'}
-                onConfirmPaystack={processProgrammeEnrollmentPayment}
-              >
-                <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-                  {canDeposit && (
-                    <div>
-                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-slate-500">
-                        Choose Payment Amount
-                      </span>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setProgPaymentOption('full')}
-                          className={`px-3 py-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
-                            progPaymentOption === 'full'
-                              ? 'border-brand-red bg-red-50 text-brand-red dark:bg-red-950/30'
-                              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          Full Tuition ({formatNaira(remaining || approvedFee)})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setProgPaymentOption('deposit')}
-                          className={`px-3 py-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
-                            progPaymentOption === 'deposit'
-                              ? 'border-brand-red bg-red-50 text-brand-red dark:bg-red-950/30'
-                              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          Min. Deposit ({formatNaira(depositAmt)})
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  <label className="block">
-                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-slate-500">
-                      Personal Receipt Email (Required by Paystack)
-                    </span>
-                    <input
-                      type="email"
-                      required
-                      value={studentPayerEmail}
-                      onChange={(e) => setStudentPayerEmail(e.target.value)}
-                      placeholder="your.email@example.com"
-                      className="min-h-11 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-900 dark:text-white"
-                    />
-                    <span className="mt-1 block text-[11px] text-slate-500">
-                      Enter your personal email address for official Paystack receipts. Do not enter a school email.
-                    </span>
-                  </label>
-                </div>
-              </PaystackPaymentReviewModal>
-            );
-          })()}
         </div>
       ) : null}
+    </>
+  );
 
-      {/* Staff Wallet View */}
-      {role === 'staff' && (
-        <div className="space-y-6">
-          <FintechWalletCard
-            userName={data.wallet?.userName || auth.currentUser?.displayName || 'Faculty Instructor'}
-            userRole="staff"
-            balance={Number(data.wallet?.availableBalance || 0)}
-            subTitleText="Teaching Roster"
-            subTitleValue={`${data.students?.length || 0} Learners`}
-            latestTransaction={payments[0] || null}
-            onRefresh={load}
-            onViewTransactionHistory={() => setShowStaffTransactionHistory(true)}
-            onWithdraw={() => {
-              setWithdrawMode('bank');
-              setIsWithdrawModalOpen(true);
-            }}
-            onVaultClick={() => {
-              setWithdrawMode('bank');
-              setIsWithdrawModalOpen(true);
-            }}
-          />
+  const roleFeeSummaryItems: BillingFeeLineSummary[] =
+    role === 'parent'
+      ? parentFeeItems.map((fi) => ({
+          id: fi.id,
+          title: fi.programName || 'Learning Track',
+          subtitle: `${fi.childName}${fi.tutorName ? ` · ${fi.tutorName}` : ''}`,
+          amount: Number(fi.contractAmount || fi.amount || 0),
+          paidAmount: fi.status === 'PAID' ? Number(fi.contractAmount || fi.amount || 0) : 0,
+          remainingAmount: fi.status === 'PAID' ? 0 : Number(fi.amount || 0),
+          durationLabel: fi.cycle === 'termly' ? '12 Weeks' : '4 Weeks',
+          statusLabel:
+            fi.status === 'PAID'
+              ? 'Active'
+              : fi.status === 'PARTIALLY_PAID'
+              ? 'Partial Due'
+              : 'Payment Due',
+          statusTone:
+            fi.status === 'PAID'
+              ? 'active'
+              : fi.status === 'PARTIALLY_PAID'
+              ? 'partial'
+              : 'due',
+        }))
+      : programmeEnrollments.length > 0
+      ? programmeEnrollments.map((enr) => {
+          const st = String(enr.enrollmentStatus || '').toUpperCase();
+          const fee = Math.max(0, Number(enr.approvedFee || 0));
+          const paid = Math.max(0, Number(enr.amountPaid || 0));
+          const rem = Math.max(0, Number(enr.remainingBalance ?? Math.max(0, fee - paid)));
+          const cycle = String(enr.billingCycle || 'one_time').toLowerCase();
+          return {
+            id: enr.id,
+            title: enr.programTitle || 'Programme Track',
+            subtitle: `Self-Funded · ${cycle.replace(/_/g, ' ')}`,
+            amount: fee,
+            paidAmount: paid,
+            remainingAmount: rem,
+            durationLabel:
+              cycle === 'monthly' ? '4 Weeks' : cycle === 'termly' ? '12 Weeks' : 'Full Track',
+            statusLabel:
+              st === 'ACTIVE' && rem === 0
+                ? 'Active'
+                : st === 'PARTIALLY_PAID'
+                ? 'Partially Paid'
+                : st === 'PENDING_ADMIN_REVIEW'
+                ? 'Pending Review'
+                : 'Payment Due',
+            statusTone:
+              st === 'ACTIVE' && rem === 0
+                ? 'active'
+                : st === 'PARTIALLY_PAID'
+                ? 'partial'
+                : st === 'PENDING_ADMIN_REVIEW'
+                ? 'pending'
+                : 'due',
+          };
+        })
+      : standardPlans.slice(0, 4).map((p) => ({
+          id: p.id,
+          title: p.name,
+          subtitle: p.description || 'Academy Learning Track',
+          amount: Number(p.baseAmount || 0),
+          durationLabel: `${p.durationWeeks || 4} Weeks`,
+          statusLabel: roleBalanceDue > 0 ? 'Payment Due' : 'Active',
+          statusTone: roleBalanceDue > 0 ? 'due' : 'active',
+        }));
 
-          {showStaffTransactionHistory && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-label="Teaching settlement history">
-              <div className="w-full max-w-4xl max-h-[88vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-5 sm:p-7">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                  <div><p className="text-[10px] font-black uppercase tracking-widest text-brand-red">Billing</p><h2 className="text-lg font-black text-slate-900 dark:text-white">Teaching Payouts &amp; Settlement History</h2></div>
-                  <button type="button" onClick={() => setShowStaffTransactionHistory(false)} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"><X size={16}/></button>
-                </div>
-                <FintechTransactionHistory transactions={allTransactions.map(p => ({ ...p, amount: extractPaymentAmountNaira(p) }))} title="Teaching Payouts & Settlement History" role="staff" emptyMessage="No teaching payout transactions are recorded yet." />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+  const rolePayableNow =
+    role === 'parent'
+      ? selectedBaseTotal > 0
+        ? selectedBaseTotal
+        : roleBalanceDue
+      : roleBalanceDue;
 
-      {/* Payment History for Student and Parent */}
-      {role !== 'staff' && (
-        <div id="fintech-tx-history" className="mt-8">
-          <FintechTransactionHistory 
-            transactions={allTransactions.map(p => ({ ...p, amount: extractPaymentAmountNaira(p) }))} 
-            title="Transactions & Invoices"
-            role={role}
-            emptyMessage="No transaction receipts on record yet"
-          />
-        </div>
-      )}
+  return (
+    <section aria-label="Billing center">
+      <SEO title="Billing & Fees | Jaystarbliss Studios" description="View your fee details, track payments, and manage your billing information easily." noindex={true} />
 
-      {/* Fintech Withdrawal Modal */}
-      <FintechWithdrawalModal
-        isOpen={isWithdrawModalOpen}
-        onClose={() => setIsWithdrawModalOpen(false)}
-        availableBalance={Number(data.wallet?.availableBalance || 0)}
-        initialMode="bank"
-        savedBankCode={data.wallet?.bankAccount?.bankCode || bankCode}
-        savedAccountNumber={data.wallet?.bankAccount?.accountNumber || accountNumber}
-        savedAccountName={data.wallet?.bankAccount?.accountName || ''}
-        banksList={banks}
-        onConfirmWithdrawal={handleConfirmWithdrawal}
+      <BillingEditorialShell
+        role={role}
+        subtitle={
+          role === 'parent'
+            ? 'View family tuition details, track verified payments, and settle programme fees in one place.'
+            : 'View your payment details, explore programmes, and manage your fees in one place.'
+        }
+        sessionLabel="Current Session"
+        totalFees={roleTotalFees}
+        amountPaid={roleAmountPaid}
+        balanceDue={roleBalanceDue}
+        payableNowAmount={rolePayableNow}
+        dueDateLabel={roleDueDateLabel}
+        activeTab={billingSubTab}
+        onTabChange={setBillingSubTab}
+        onRefresh={() => void load()}
+        onMakePayment={handleEditorialMakePayment}
+        paymentDisabled={isMasqueradingActive()}
+        feeSummaryItems={roleFeeSummaryItems}
+        banners={impersonationBanner}
+        feeStructureSlot={feeStructureNode}
+        paymentHistorySlot={
+          <div id="fintech-tx-history">
+            <FintechTransactionHistory
+              transactions={allTransactions.map(p => ({ ...p, amount: extractPaymentAmountNaira(p) }))}
+              title="Transactions & Invoices"
+              role={role}
+              emptyMessage="No transaction receipts on record yet"
+            />
+          </div>
+        }
       />
+
+      {/* PARENT ITEMIZED PAYSTACK REVIEW MODAL */}
+      {role === 'parent' && (
+        <PaystackPaymentReviewModal
+          isOpen={showParentCheckoutModal}
+          onClose={() => { if (!paying) setShowParentCheckoutModal(false); }}
+          reviewKey={`parent-multi:${selectedItems.map(i => `${i.id}:${i.amount}`).join('|')}`}
+          subtitle="Family Tuition Settlement"
+          title="Review Your Payment"
+          description="Please verify each selected learner, programme track, and our Payment Policy before proceeding to Paystack."
+          contextRows={[
+            {
+              label: 'Learners Included',
+              value: Array.from(new Set(selectedItems.map(i => i.childName))).join(', ')
+            },
+            {
+              label: 'Selected Programmes',
+              value: `${selectedItems.length} programme track${selectedItems.length === 1 ? '' : 's'}`
+            },
+            {
+              label: 'Account Role',
+              value: 'Parent / Guardian'
+            }
+          ]}
+          lineItems={selectedItems.map(item => ({
+            id: item.id,
+            primary: item.childName,
+            secondary: item.programName,
+            meta: item.tutorName ? `Assigned Instructor: ${item.tutorName}` : undefined,
+            amount: Number(item.amount || 0)
+          }))}
+          subtotal={selectedBaseTotal}
+          estimatedFee={selectedChargePreview.transactionFee}
+          estimatedTotal={selectedChargePreview.totalAmount}
+          feeNote="Estimated Paystack fee is displayed for transparency. Only the exact verified base tuition items are settled, and Paystack confirms final gateway charges on checkout."
+          loading={paying}
+          disabled={isMasqueradingActive()}
+          disabledMessage="Payment checkout is restricted in Superadmin Impersonation mode."
+          onConfirmPaystack={processParentMultiPayment}
+        />
+      )}
+
+      {/* Self-Funded Student Programme Paystack Review Modal */}
+      {role === 'student' && activeProgEnrollment && (() => {
+        const approvedFee = Math.max(0, Number(activeProgEnrollment.approvedFee || 0));
+        const amountPaid = Math.max(0, Number(activeProgEnrollment.amountPaid || 0));
+        const remaining = Math.max(0, Number(activeProgEnrollment.remainingBalance ?? Math.max(0, approvedFee - amountPaid)));
+        const depositAmt = Math.max(0, Number(activeProgEnrollment.depositAmount || 0));
+        const canDeposit = Boolean(activeProgEnrollment.allowDepositAccess && depositAmt > 0 && depositAmt < approvedFee && amountPaid === 0);
+
+        const subtotal =
+          progPaymentOption === 'renewal'
+            ? approvedFee
+            : progPaymentOption === 'deposit' && canDeposit
+            ? depositAmt
+            : remaining > 0
+            ? remaining
+            : approvedFee;
+
+        const selfFundedPolicy = data.config?.studentSelfFundedFeePolicy || feePolicy;
+        const preview = feeFromBase(subtotal, selfFundedPolicy);
+        const emailValid =
+          studentPayerEmail.trim().includes('@') &&
+          !studentPayerEmail.trim().toLowerCase().endsWith('.local') &&
+          !studentPayerEmail.trim().toLowerCase().endsWith('.invalid');
+
+        return (
+          <PaystackPaymentReviewModal
+            isOpen={Boolean(activeProgEnrollment)}
+            onClose={() => { if (!paying) setActiveProgEnrollment(null); }}
+            reviewKey={`self-prog:${activeProgEnrollment.id}:${progPaymentOption}:${subtotal}`}
+            subtitle="Student Self-Funded Programme"
+            title="Review Programme Payment"
+            description="Verify your approved fee, billing responsibility, and receipt email before proceeding to Paystack."
+            contextRows={[
+              { label: 'Programme', value: activeProgEnrollment.programTitle },
+              { label: 'Billing Responsibility', value: 'Student Self-Funded (Personal)' },
+              { label: 'Payment Option', value: progPaymentOption.toUpperCase() },
+              { label: 'Billing Cycle', value: activeProgEnrollment.billingCycle || 'ONE_TIME' },
+            ]}
+            subtotal={subtotal}
+            estimatedFee={preview.transactionFee}
+            estimatedTotal={preview.totalAmount}
+            feeNote="The final amount is computed authoritatively on our server from your approved tuition record."
+            loading={paying}
+            disabled={isMasqueradingActive() || !emailValid}
+            disabledMessage={!emailValid ? 'Please provide a valid personal email address for your receipt.' : 'Disabled in Impersonation mode.'}
+            onConfirmPaystack={processProgrammeEnrollmentPayment}
+          >
+            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+              {canDeposit && (
+                <div>
+                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-slate-500">
+                    Choose Payment Amount
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setProgPaymentOption('full')}
+                      className={`px-3 py-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
+                        progPaymentOption === 'full'
+                          ? 'border-brand-red bg-red-50 text-brand-red dark:bg-red-950/30'
+                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      Full Tuition ({formatNaira(remaining || approvedFee)})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProgPaymentOption('deposit')}
+                      className={`px-3 py-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
+                        progPaymentOption === 'deposit'
+                          ? 'border-brand-red bg-red-50 text-brand-red dark:bg-red-950/30'
+                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      Min. Deposit ({formatNaira(depositAmt)})
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <label className="block">
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-slate-500">
+                  Personal Receipt Email (Required by Paystack)
+                </span>
+                <input
+                  type="email"
+                  required
+                  value={studentPayerEmail}
+                  onChange={(e) => setStudentPayerEmail(e.target.value)}
+                  placeholder="your.email@example.com"
+                  className="min-h-11 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-900 dark:text-white"
+                />
+                <span className="mt-1 block text-[11px] text-slate-500">
+                  Enter your personal email address for official Paystack receipts. Do not enter a school email.
+                </span>
+              </label>
+            </div>
+          </PaystackPaymentReviewModal>
+        );
+      })()}
 
       {/* Single Paystack Review Modal for Parents / Independent Students */}
       {(() => {

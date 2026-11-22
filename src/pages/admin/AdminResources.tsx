@@ -148,21 +148,21 @@ const AdminResources: React.FC = () => {
       };
 
       const mergedResources = [
-        ...resSnap.docs.map((d: any) => ({ id: d.id, _collection: 'resources', sourceLabel: 'General Resource', ...d.data() })),
-        ...schoolResSnap.docs.map((d: any) => ({ id: d.id, _collection: 'schoolResources', sourceLabel: 'School Resource', ...d.data() })),
-        ...staffResSnap.docs.map((d: any) => ({ id: d.id, _collection: 'staffGeneralResources', sourceLabel: 'Staff Resource', ...d.data() })),
-        ...personalResSnap.docs.map((d: any) => ({ id: d.id, _collection: 'personalResources', sourceLabel: 'Student Dispatch', ...d.data() })),
+        ...resSnap.docs.map((d: any) => ({ ...d.data(), id: d.id, _collection: 'resources', sourceLabel: 'General Resource' })),
+        ...schoolResSnap.docs.map((d: any) => ({ ...d.data(), id: d.id, _collection: 'schoolResources', sourceLabel: 'School Resource' })),
+        ...staffResSnap.docs.map((d: any) => ({ ...d.data(), id: d.id, _collection: 'staffGeneralResources', sourceLabel: 'Staff Resource' })),
+        ...personalResSnap.docs.map((d: any) => ({ ...d.data(), id: d.id, _collection: 'personalResources', sourceLabel: 'Student Dispatch' })),
       ].sort((a, b) => toMillis(b) - toMillis(a));
 
       const mergedLinks = [
-        ...linksSnap.docs.map((d: any) => ({ id: d.id, _collection: 'links', sourceLabel: 'General Link', ...d.data() })),
-        ...schoolLinksSnap.docs.map((d: any) => ({ id: d.id, _collection: 'schoolLinks', sourceLabel: 'School Link', ...d.data() })),
-        ...personalLinksSnap.docs.map((d: any) => ({ id: d.id, _collection: 'personalLinks', sourceLabel: 'Student Link', ...d.data() })),
+        ...linksSnap.docs.map((d: any) => ({ ...d.data(), id: d.id, _collection: 'links', sourceLabel: 'General Link' })),
+        ...schoolLinksSnap.docs.map((d: any) => ({ ...d.data(), id: d.id, _collection: 'schoolLinks', sourceLabel: 'School Link' })),
+        ...personalLinksSnap.docs.map((d: any) => ({ ...d.data(), id: d.id, _collection: 'personalLinks', sourceLabel: 'Student Link' })),
       ].sort((a, b) => toMillis(b) - toMillis(a));
 
       setResources(mergedResources);
       setLinks(mergedLinks);
-      setExams(examsSnap.docs.map((d: any) => ({ id: d.id, _collection: 'exams', ...d.data() })));
+      setExams(examsSnap.docs.map((d: any) => ({ ...d.data(), id: d.id, _collection: 'exams' })));
 
       const schoolsData = schoolsSnap.docs.map((d: any) => ({
         id: d.id,
@@ -404,12 +404,44 @@ const AdminResources: React.FC = () => {
     setDeleteTarget({ id, collectionName, title, tab, sourceLabel });
   };
 
-  // Confirm delete from Firestore & remove immediately from local state
+  // Confirm delete from Firestore (with server-verified Admin SDK fallback) & remove immediately from local state
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     setDeletingItem(true);
     try {
-      await deleteDoc(doc(db, deleteTarget.collectionName, deleteTarget.id));
+      let deleted = false;
+      let clientErr: any = null;
+
+      try {
+        await deleteDoc(doc(db, deleteTarget.collectionName, deleteTarget.id));
+        deleted = true;
+      } catch (err: any) {
+        clientErr = err;
+      }
+
+      // Always invoke server-side Admin SDK fallback if client delete failed (or to purge any secondary DB mirror)
+      if (!deleted) {
+        const idToken = await auth.currentUser?.getIdToken(true).catch(() => null);
+        if (!idToken) {
+          throw clientErr || new Error('Your admin session expired. Please sign in again.');
+        }
+        const res = await fetch('/.netlify/functions/admin-resource-delete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            collectionName: deleteTarget.collectionName,
+            id: deleteTarget.id,
+          }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload?.error || clientErr?.message || 'Unable to delete resource.');
+        }
+        deleted = true;
+      }
 
       if (deleteTarget.tab === 'resources') {
         setResources((prev) =>

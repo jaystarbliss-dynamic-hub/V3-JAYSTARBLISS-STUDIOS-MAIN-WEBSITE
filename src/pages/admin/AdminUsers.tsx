@@ -9,6 +9,12 @@ import { auth, db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { startImpersonation } from '../../utils/impersonation';
 import { resolveRealName } from '../../utils/userNames';
+import {
+  FloatingActionMenu,
+  RowActionMenuButton,
+  useRowActionMenu,
+  type RowActionItem,
+} from '../../components/ui/RowActionMenu';
 
 const ROLE_OPTIONS = [
   ['USER', 'User (Default)'],
@@ -76,6 +82,7 @@ const AdminUsers: React.FC = () => {
   const [userToDelete, setUserToDelete] = useState<any | null>(null);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const rowActionMenu = useRowActionMenu<any>();
 
   // Current Admin Authority
   const currentUser = auth.currentUser;
@@ -761,74 +768,66 @@ const AdminUsers: React.FC = () => {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
-        <table className="min-w-[960px] w-full divide-y divide-gray-200 dark:divide-slate-800">
-          <thead className="bg-slate-50/80 dark:bg-slate-950">
+      <div className="overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-xs dark:border-zinc-800 dark:bg-[#111114]">
+        <table className="min-w-[820px] w-full divide-y divide-gray-200 dark:divide-zinc-800">
+          <thead className="bg-slate-50/80 dark:bg-[#09090B]">
             <tr>
-              {['User Profile', 'Role Classification', 'Security Policy', 'Portal Role Assignment', 'Account Access', 'Live Dashboard', 'Actions'].map((heading) => (
-                <th key={heading} className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              {['User Profile', 'Role Classification', 'Portal Role Assignment', 'Status & Policy', 'Actions'].map((heading) => (
+                <th
+                  key={heading}
+                  className={`px-5 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 ${
+                    heading === 'Actions' ? 'text-right' : 'text-left'
+                  }`}
+                >
                   {heading}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 text-xs dark:divide-slate-800/80">
+          <tbody className="divide-y divide-slate-100 text-xs dark:divide-zinc-800/80">
             {loading ? (
-              <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-400">Loading user records…</td></tr>
+              <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400">Loading user records…</td></tr>
             ) : filteredUsers.length === 0 ? (
-              <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-400">No matching user records found.</td></tr>
+              <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400">No matching user records found.</td></tr>
             ) : filteredUsers.map((user) => {
               const status = String(user.accountStatus || 'ACTIVE').toUpperCase();
               const role = String(user.role || 'user').toUpperCase();
-              const userEmail = (user.email || '').toLowerCase().trim();
               const isUpdatingThisRole = updatingRoleUserId === user.id;
-              const isSelf = currentUser && user.id === currentUser.uid;
-              const isProtected = PROTECTED_EMAILS.includes(userEmail);
 
               return (
-                <tr key={user.id} className="bg-white dark:bg-slate-900 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                <tr
+                  key={user.id}
+                  onContextMenu={(e) => rowActionMenu.openFromContextMenu(e, user)}
+                  className="bg-white dark:bg-[#111114] hover:bg-slate-50/80 dark:hover:bg-[#18181B] transition-colors"
+                >
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 text-xs font-bold">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-zinc-900 dark:text-zinc-300 text-xs font-bold">
                         {role.includes('ADMIN') ? <Shield size={16} className="text-brand-red" /> : <User size={16} />}
                       </div>
                       <div className="min-w-0">
                         <div className="font-bold text-slate-900 dark:text-white truncate">
                           {resolveRealName(user, user.email, 'Registered User')}
                         </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">
                           {user.email || 'No email registered'}
-                          {user.schoolName && <span className="text-slate-400"> · {user.schoolName}</span>}
+                          {user.schoolName && <span className="text-slate-400 dark:text-zinc-500"> · {user.schoolName}</span>}
                         </div>
                       </div>
                     </div>
                   </td>
                   <td className="px-5 py-3.5">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 text-xs">
+                    <span className="font-semibold text-slate-700 dark:text-zinc-300 text-xs">
                       {role}
                     </span>
                   </td>
                   <td className="px-5 py-3.5">
-                    <button 
-                      type="button"
-                      onClick={() => handleToggleForcePasswordReset(user.id, user.forcePasswordReset === true)} 
-                      className={`min-h-8 rounded-lg px-2.5 text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 ${
-                        user.forcePasswordReset 
-                          ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800' 
-                          : 'bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-slate-900'
-                      }`}
-                    >
-                      <KeyRound size={12} />
-                      <span>{user.forcePasswordReset ? 'Reset Required' : 'Password Active'}</span>
-                    </button>
-                  </td>
-                  <td className="px-5 py-3.5">
                     <div className="relative inline-flex items-center">
-                      <select 
-                        value={role} 
+                      <select
+                        value={role}
                         disabled={isUpdatingThisRole}
-                        onChange={(e) => void handleRoleChange(user.id, e.target.value)} 
-                        className="min-h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-red disabled:opacity-50"
+                        onChange={(e) => void handleRoleChange(user.id, e.target.value)}
+                        className="min-h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-900 dark:border-zinc-700 dark:bg-[#09090B] dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-red disabled:opacity-50"
                       >
                         {ROLE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                       </select>
@@ -840,57 +839,35 @@ const AdminUsers: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-5 py-3.5">
-                    <button 
-                      type="button"
-                      onClick={() => void handleAccountStatus(user.id, status)} 
-                      className={`min-h-8 rounded-lg border px-2.5 text-xs font-bold transition-colors cursor-pointer ${
-                        status === 'SUSPENDED' 
-                          ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300' 
-                          : 'border-slate-200 text-slate-600 hover:text-red-600 dark:border-slate-700 dark:text-slate-300 dark:hover:text-red-400'
-                      }`}
-                    >
-                      {status === 'SUSPENDED' ? 'Suspended · Restore' : 'Active · Suspend'}
-                    </button>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        toast.info(`Opening dashboard for ${user.name || user.email}...`);
-                        startImpersonation({
-                          id: user.id,
-                          uid: user.id,
-                          name: user.name || user.displayName,
-                          email: user.email,
-                          role: role,
-                          schoolId: user.schoolId,
-                          studentDocId: user.studentDocId || user.id,
-                          class: user.class || user.classLevel,
-                          phone: user.phone
-                        }, navigate);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-2xs transition-all active:scale-95 cursor-pointer whitespace-nowrap"
-                    >
-                      <UserCheck size={13} />
-                      <span>Log In As</span>
-                    </button>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    {isSuperAdmin && (
-                      <button
-                        type="button"
-                        disabled={Boolean(isSelf || isProtected)}
-                        title={isSelf ? 'Cannot delete your own account' : isProtected ? 'System protected account' : 'Permanently delete user and records'}
-                        onClick={() => {
-                          setUserToDelete(user);
-                          setDeleteConfirmationText('');
-                        }}
-                        className="inline-flex items-center justify-center p-2 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 dark:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                        aria-label={`Permanently delete user ${user.email || user.id}`}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                      <span
+                        className={
+                          status === 'SUSPENDED'
+                            ? 'font-bold text-[#B91C1C] dark:text-red-400'
+                            : 'font-semibold text-slate-800 dark:text-zinc-200'
+                        }
                       >
-                        <Trash2 size={15} />
-                      </button>
-                    )}
+                        {status === 'SUSPENDED' ? 'Suspended' : 'Active'}
+                      </span>
+                      <span className="text-slate-300 dark:text-zinc-700">·</span>
+                      <span
+                        className={
+                          user.forcePasswordReset
+                            ? 'font-semibold text-[#B91C1C] dark:text-red-400'
+                            : 'text-slate-500 dark:text-zinc-400'
+                        }
+                      >
+                        {user.forcePasswordReset ? 'Reset Required' : 'Password Active'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3.5 text-right">
+                    <div className="inline-flex justify-end">
+                      <RowActionMenuButton
+                        ariaLabel={`More actions for ${resolveRealName(user, user.email, 'user')}`}
+                        onClick={(e) => rowActionMenu.openFromButton(e, user)}
+                      />
+                    </div>
                   </td>
                 </tr>
               );
@@ -898,6 +875,75 @@ const AdminUsers: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {rowActionMenu.state && (() => {
+        const target = rowActionMenu.state.data;
+        const targetStatus = String(target.accountStatus || 'ACTIVE').toUpperCase();
+        const targetRole = String(target.role || 'user').toUpperCase();
+        const targetEmail = (target.email || '').toLowerCase().trim();
+        const targetIsSelf = Boolean(currentUser && target.id === currentUser.uid);
+        const targetIsProtected = PROTECTED_EMAILS.includes(targetEmail);
+
+        const actions: RowActionItem[] = [
+          {
+            id: 'impersonate',
+            label: 'Log In As User',
+            icon: <UserCheck size={14} />,
+            onClick: () => {
+              toast.info(`Opening dashboard for ${target.name || target.email}...`);
+              startImpersonation({
+                id: target.id,
+                uid: target.id,
+                name: target.name || target.displayName,
+                email: target.email,
+                role: targetRole,
+                schoolId: target.schoolId,
+                studentDocId: target.studentDocId || target.id,
+                class: target.class || target.classLevel,
+                phone: target.phone,
+              }, navigate);
+            },
+          },
+          {
+            id: 'password-policy',
+            label: target.forcePasswordReset ? 'Clear Forced Password Reset' : 'Require Password Reset',
+            icon: <KeyRound size={14} />,
+            onClick: () => void handleToggleForcePasswordReset(target.id, target.forcePasswordReset === true),
+          },
+          {
+            id: 'account-status',
+            label: targetStatus === 'SUSPENDED' ? 'Restore Account Access' : 'Suspend Account',
+            icon: <Shield size={14} />,
+            onClick: () => void handleAccountStatus(target.id, targetStatus),
+          },
+        ];
+
+        if (isSuperAdmin) {
+          actions.push({
+            id: 'delete',
+            label: 'Permanently Delete User',
+            icon: <Trash2 size={14} />,
+            danger: true,
+            dividerBefore: true,
+            disabled: targetIsSelf || targetIsProtected,
+            onClick: () => {
+              setUserToDelete(target);
+              setDeleteConfirmationText('');
+            },
+          });
+        }
+
+        return (
+          <FloatingActionMenu
+            open={true}
+            x={rowActionMenu.state.x}
+            y={rowActionMenu.state.y}
+            title={resolveRealName(target, target.email, 'User Actions')}
+            items={actions}
+            onClose={rowActionMenu.close}
+          />
+        );
+      })()}
     </div>
   );
 };

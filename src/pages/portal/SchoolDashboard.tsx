@@ -20,6 +20,12 @@ import { useToast } from '../../contexts/ToastContext';
 import { getEffectiveAuth } from '../../utils/impersonation';
 import { useSubscriptionEntitlement } from '../../contexts/SubscriptionEntitlementContext';
 import { PortalLockdownView } from '../../components/portal/PortalLockdownView';
+import PortalHeroBanner, {
+  PORTAL_BANNER_BTN_GLASS,
+  PORTAL_BANNER_BTN_LIGHT,
+  PORTAL_BANNER_BTN_PRIMARY,
+} from '../../components/portal/PortalHeroBanner';
+import { Bar3DShape, HorizontalBar3DShape } from '../../components/charts/Bar3DShape';
 
 export type SchoolDashboardTab = 'overview' | 'roster' | 'exams' | 'passcodes' | 'resources' | 'links' | 'schedules' | 'partnership';
 export interface SchoolDashboardProps { initialTab?: SchoolDashboardTab; }
@@ -450,26 +456,19 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
     return (
       <div className="space-y-6 max-w-5xl mx-auto pb-12">
         <SEO title={`Subscription Renewal Required | ${schoolName}`} description="School subscription renewal required." noindex />
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-[#B91C1C]">
-              Partner Institution Overview
-            </p>
-            <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] dark:text-white tracking-tight mt-0.5">
-              {schoolName}
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Coordinator: {school?.coordinator || 'School Administrator'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate('/portal/school/payments')}
-            className="min-h-10 px-4 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-extrabold uppercase tracking-wider inline-flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <CreditCard size={15} /> Open Billing Center
-          </button>
-        </header>
+        <PortalHeroBanner
+          role="school"
+          title={schoolName}
+          actions={
+            <button
+              type="button"
+              onClick={() => navigate('/portal/school/payments')}
+              className={PORTAL_BANNER_BTN_PRIMARY}
+            >
+              <CreditCard size={13} /> Open Billing Center
+            </button>
+          }
+        />
         <PortalLockdownView entitlement={entitlement} compact />
       </div>
     );
@@ -484,43 +483,35 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
 
       {tab === 'overview' && (
         <div className="space-y-6">
-          {/* Concise institutional heading & quick actions */}
-          <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-[#B91C1C]">
-                Partner Institution Portal
-              </p>
-              <h1 className="text-xl sm:text-2xl font-bold text-[#1E293B] dark:text-white tracking-tight mt-0.5">
-                {schoolName}
-              </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Coordinator: {school?.coordinator || 'School Administrator'} · Lab Days: {school?.labDays || 'Scheduled weekly'}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => navigate('/portal/school/roster')}
-                className="min-h-9 px-3.5 rounded-lg bg-[#1E293B] hover:bg-[#14284B] dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Users size={14} /> Open Roster
-              </button>
-              <button
-                type="button"
-                onClick={() => changeTab('schedules')}
-                className="min-h-9 px-3.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-[#1E293B] dark:hover:border-slate-500 text-slate-700 dark:text-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Calendar size={14} className="text-[#B91C1C]" /> Class Timetable
-              </button>
-              <button
-                type="button"
-                onClick={() => changeTab('partnership')}
-                className="min-h-9 px-3.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <CreditCard size={14} /> Invoices &amp; Billing
-              </button>
-            </div>
-          </header>
+          <PortalHeroBanner
+            role="school"
+            title={schoolName}
+            actions={
+              <>
+                <button
+                  type="button"
+                  onClick={() => navigate('/portal/school/roster')}
+                  className={PORTAL_BANNER_BTN_GLASS}
+                >
+                  <Users size={13} /> Open Roster
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeTab('schedules')}
+                  className={PORTAL_BANNER_BTN_LIGHT}
+                >
+                  <Calendar size={13} className="text-[#B91C1C]" /> Class Timetable
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeTab('partnership')}
+                  className={PORTAL_BANNER_BTN_PRIMARY}
+                >
+                  <CreditCard size={13} /> Invoices &amp; Billing
+                </button>
+              </>
+            }
+          />
 
           {/* Compact divided metrics summary strip */}
           <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
@@ -578,16 +569,16 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
               ) : (
                 <div className="h-56 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={classDistribution} margin={{ top: 8, right: 12, left: -16, bottom: 4 }}>
+                    <BarChart data={classDistribution} margin={{ top: 14, right: 16, left: -16, bottom: 4 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" strokeOpacity={0.6} />
                       <XAxis dataKey="className" tick={{ fill: '#64748B', fontSize: 11 }} axisLine={{ stroke: '#CBD5E1' }} tickLine={false} />
                       <YAxis allowDecimals={false} tick={{ fill: '#64748B', fontSize: 11 }} axisLine={false} tickLine={false} />
                       <RechartsTooltip
-                        contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '8px', color: '#F8FAFC', fontSize: '12px' }}
+                        contentStyle={{ backgroundColor: '#111114', border: '1px solid #27272A', borderRadius: '8px', color: '#F8FAFC', fontSize: '12px' }}
                         itemStyle={{ color: '#F8FAFC' }}
                         formatter={(val: any) => [`${val} learners`, 'Cohort Size']}
                       />
-                      <Bar dataKey="learners" name="Learners" fill="#1E293B" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                      <Bar dataKey="learners" name="Learners" fill="#1E293B" shape={<Bar3DShape />} maxBarSize={36} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -621,16 +612,16 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ initialTab }) => {
               ) : (
                 <div className="h-56 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={programmeDistribution} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+                    <BarChart data={programmeDistribution} layout="vertical" margin={{ top: 10, right: 20, left: 8, bottom: 4 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" strokeOpacity={0.6} />
                       <XAxis type="number" allowDecimals={false} tick={{ fill: '#64748B', fontSize: 11 }} axisLine={{ stroke: '#CBD5E1' }} tickLine={false} />
-                      <YAxis type="category" dataKey="programme" width={130} tick={{ fill: '#475569', fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="programme" width={130} tick={{ fill: '#64748B', fontSize: 11 }} axisLine={false} tickLine={false} />
                       <RechartsTooltip
-                        contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '8px', color: '#F8FAFC', fontSize: '12px' }}
+                        contentStyle={{ backgroundColor: '#111114', border: '1px solid #27272A', borderRadius: '8px', color: '#F8FAFC', fontSize: '12px' }}
                         itemStyle={{ color: '#F8FAFC' }}
                         formatter={(val: any) => [`${val} learners`, 'Assigned']}
                       />
-                      <Bar dataKey="learners" name="Learners" fill="#B91C1C" radius={[0, 4, 4, 0]} maxBarSize={22} />
+                      <Bar dataKey="learners" name="Learners" fill="#B91C1C" shape={<HorizontalBar3DShape />} maxBarSize={22} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

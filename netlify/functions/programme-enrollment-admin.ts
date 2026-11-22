@@ -187,24 +187,54 @@ export const handler: Handler = async (event) => {
       // Idempotent in-app notification using deterministic doc ID
       const notifId = `prog_adm_${enrollmentId}`;
       const recipientUid = String(current.studentUid || "").trim();
+      const recipientDocId = String(current.studentDocId || "").trim();
+      const paymentPath = `/portal/student/payments?enrollmentId=${encodeURIComponent(enrollmentId)}`;
+      const notifPayloadBase = {
+        title: `Admission Approved: ${current.programTitle || "Programme"}`,
+        message: `Your application for ${current.programTitle || "your programme"} has been approved (Tuition Fee: ₦${approvedFee.toLocaleString()}). Click below to open your Billing section and complete payment to activate access.`,
+        type: "billing",
+        subType: "PROGRAMME_ADMISSION_APPROVED",
+        priority: "high",
+        enrollmentId,
+        programId: current.programId || "",
+        link: paymentPath,
+        actionUrl: paymentPath,
+        linkText: "Open Billing & Pay Now",
+        actionText: "Open Billing & Pay Now",
+        senderName: callerName || "Jaystarbliss Admissions",
+        senderRole: "Admissions Office",
+        read: false,
+        readBy: [],
+        timestamp: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+      };
       if (recipientUid) {
         await adminDb
           .collection("notifications")
           .doc(notifId)
           .set(
             {
+              ...notifPayloadBase,
               userId: recipientUid,
               recipientId: recipientUid,
-              title: `Admission Approved: ${current.programTitle || "Programme"}`,
-              message: `Your application for ${current.programTitle || "your programme"} has been approved (Fee: ₦${approvedFee.toLocaleString()}). Continue to Payments & Fees to activate access.`,
-              type: "PROGRAMME_ADMISSION_APPROVED",
-              enrollmentId,
-              programId: current.programId || "",
-              actionUrl: `/portal/student/payments?enrollmentId=${encodeURIComponent(enrollmentId)}`,
-              actionText: "Continue to Payment",
-              read: false,
-              updatedAt: FieldValue.serverTimestamp(),
-              createdAt: FieldValue.serverTimestamp(),
+              targetUid: recipientUid,
+              recipientType: "specific_user",
+            },
+            { merge: true }
+          );
+      }
+      if (recipientDocId && recipientDocId !== recipientUid) {
+        await adminDb
+          .collection("notifications")
+          .doc(`${notifId}_doc`)
+          .set(
+            {
+              ...notifPayloadBase,
+              userId: recipientDocId,
+              recipientId: recipientDocId,
+              targetUid: recipientUid || recipientDocId,
+              recipientType: "specific_user",
             },
             { merge: true }
           );

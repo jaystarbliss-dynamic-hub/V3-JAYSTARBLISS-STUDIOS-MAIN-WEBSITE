@@ -1,6 +1,7 @@
 import type { Handler } from '@netlify/functions';
 import { adminAuth, adminDb } from '../../api/_lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { sendActionableNotificationEmail } from '../../api/_lib/email';
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
   statusCode,
@@ -34,6 +35,8 @@ export const handler: Handler = async event => {
       try {
         const users = await adminDb.collection('users').limit(1000).get();
         const admins = users.docs.filter(d => ['admin','super_admin','superadmin'].includes(String(d.data().role || '').trim().toLowerCase()));
+        const actionPath = '/admin/approvals?tab=enrollments';
+        const message = String(record.parentName || 'A parent') + ' requested course enrollment for ' + String(record.studentName || 'a student') + (record.plan ? ' (' + String(record.plan) + ')' : '') + '.';
         const batch = adminDb.batch();
         for (const admin of admins) {
           const notification = adminDb.collection('notifications').doc('parent-enrollment-' + requestId + '-' + admin.id);
@@ -42,8 +45,12 @@ export const handler: Handler = async event => {
             recipientType: 'specific_user',
             type: 'registration',
             priority: 'high',
-            title: 'New parent enrollment request',
-            message: String(record.parentName || 'A parent') + ' requested enrollment for ' + String(record.studentName || 'a student') + '.',
+            title: 'New parent course enrollment request',
+            message,
+            link: actionPath,
+            actionUrl: actionPath,
+            linkText: 'Review Enrollment',
+            actionText: 'Review Enrollment',
             enrollmentRequestId: requestId,
             studentName: String(record.studentName || ''),
             plan: String(record.plan || ''),
@@ -57,6 +64,22 @@ export const handler: Handler = async event => {
           });
         }
         if (admins.length) await batch.commit();
+
+        await sendActionableNotificationEmail({
+          title: 'New Parent Course Enrollment Request',
+          message,
+          category: 'Parent Course Enrollment',
+          priority: 'high',
+          details: [
+            { label: 'Parent', value: String(record.parentName || record.parentEmail || 'Parent') },
+            { label: 'Student', value: String(record.studentName || '—') },
+            { label: 'Programme / Plan', value: String(record.plan || '—') },
+          ],
+          actionPath,
+          actionText: 'Review Enrollment Request',
+          notifyPlatformAdmins: true,
+          replyTo: String(record.parentEmail || '') || undefined,
+        }).catch((err) => console.warn('Parent enrollment email alert warning:', err));
       } catch (notificationError) {
         console.warn('Admin enrollment notification failed:', notificationError);
       }

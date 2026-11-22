@@ -212,21 +212,21 @@ export const ApplyRestrictionModal: React.FC<ApplyRestrictionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 backdrop-blur-xs p-4">
-      <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col text-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
+      <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col text-xs">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-8 h-8 rounded-xl bg-red-100 dark:bg-red-950/60 text-[#B91C1C] dark:text-red-400 flex items-center justify-center shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#14284B]">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-9 h-9 rounded-lg bg-[#B91C1C] text-white flex items-center justify-center shrink-0">
               <Lock size={16} />
             </span>
             <div className="min-w-0">
-              <h3 className="text-sm font-black text-[#14284B] dark:text-white truncate">
+              <h3 className="text-sm font-bold text-[#14284B] dark:text-white truncate">
                 {targets.length === 1
                   ? `Apply Restriction — ${targets[0].accountName || targets[0].accountId}`
                   : `Bulk Account Restriction (${targets.length} Selected)`}
               </h3>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-500 dark:text-slate-200">
                 {step === 'CONFIGURE'
                   ? 'Step 1 of 2: Specify mandatory reason, user-facing explanation, and optional schedule'
                   : step === 'PREVIEW'
@@ -238,7 +238,8 @@ export const ApplyRestrictionModal: React.FC<ApplyRestrictionModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
+            aria-label="Close modal"
+            className="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-white/10 text-slate-500 dark:text-white cursor-pointer"
           >
             <X size={16} />
           </button>
@@ -246,174 +247,177 @@ export const ApplyRestrictionModal: React.FC<ApplyRestrictionModalProps> = ({
 
         {/* STEP 1: CONFIGURE */}
         {step === 'CONFIGURE' && (
-          <form onSubmit={handleRequestPreview} className="p-5 space-y-4 overflow-y-auto">
-            {/* Selected summary pills */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 p-3">
-              <p className="font-bold text-[#14284B] dark:text-white mb-1.5">
+          <form onSubmit={handleRequestPreview} className="divide-y divide-slate-200 dark:divide-slate-800 overflow-y-auto">
+            {/* Selected targets inline strip */}
+            <div className="px-6 py-3.5 bg-slate-50/70 dark:bg-[#14284B]/40">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-300 mb-2">
                 Selected Targets ({targets.length})
               </p>
               <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                 {targets.map((t, idx) => (
                   <span
                     key={`${t.accountType}-${t.accountId}-${idx}`}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-200"
+                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-white dark:bg-[#14284B] border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-[#14284B] dark:text-white"
                   >
-                    <span className="text-[10px] font-black text-[#B91C1C] uppercase">
+                    <span className="px-1.5 py-0.5 rounded bg-[#14284B] dark:bg-white/15 text-white text-[9px] font-bold uppercase tracking-wide">
                       {t.accountType.replace(/_/g, ' ')}
                     </span>
-                    <span>• {t.accountName || t.accountId}</span>
+                    <span>{t.accountName || t.accountId}</span>
                   </span>
                 ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Restriction Action / Type <span className="text-[#B91C1C]">*</span>
-                </label>
-                <select
-                  value={restrictionType}
-                  onChange={(e) => setRestrictionType(e.target.value as RestrictionType)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                >
-                  {MANUAL_RESTRICTION_TYPES.map((typeKey) => (
-                    <option key={typeKey} value={typeKey}>
-                      {RESTRICTION_TYPE_LABELS[typeKey]}
-                    </option>
-                  ))}
-                </select>
+            {/* Core Restriction Fields */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1.5">
+                    Restriction Action / Type <span className="text-[#B91C1C] dark:text-white">*</span>
+                  </label>
+                  <select
+                    value={restrictionType}
+                    onChange={(e) => setRestrictionType(e.target.value as RestrictionType)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  >
+                    {MANUAL_RESTRICTION_TYPES.map((typeKey) => (
+                      <option key={typeKey} value={typeKey}>
+                        {RESTRICTION_TYPE_LABELS[typeKey]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1.5">
+                    Mandatory Reason Category <span className="text-[#B91C1C] dark:text-white">*</span>
+                  </label>
+                  <select
+                    required
+                    value={reasonCode}
+                    onChange={(e) => handleReasonChange(e.target.value as LockReasonCode)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  >
+                    {LOCK_REASON_LIST.map((r) => (
+                      <option key={r.code} value={r.code}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
+
+              {reasonCode === 'OTHER' && (
+                <div>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1.5">
+                    Custom Reason Explanation <span className="text-[#B91C1C] dark:text-white">*</span>
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    value={customReason}
+                    onChange={(e) => setCustomReason(e.target.value)}
+                    placeholder="Provide a clear reason for this restriction"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  />
+                </div>
+              )}
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Mandatory Reason Category <span className="text-[#B91C1C]">*</span>
-                </label>
-                <select
-                  required
-                  value={reasonCode}
-                  onChange={(e) => handleReasonChange(e.target.value as LockReasonCode)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                >
-                  {LOCK_REASON_LIST.map((r) => (
-                    <option key={r.code} value={r.code}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {reasonCode === 'OTHER' && (
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Custom Reason Explanation <span className="text-[#B91C1C]">*</span>
-                </label>
-                <input
-                  required
-                  type="text"
-                  value={customReason}
-                  onChange={(e) => setCustomReason(e.target.value)}
-                  placeholder="Provide a clear reason for this restriction"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                />
-              </div>
-            )}
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="font-bold text-slate-700 dark:text-slate-300">
-                  User-Facing Explanation <span className="text-[#B91C1C]">*</span>
-                </label>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-sky-700 dark:text-sky-400">
-                  Shown on Portal &amp; Notification
-                </span>
-              </div>
-              <textarea
-                required
-                rows={3}
-                value={userFacingMessage}
-                onChange={(e) => setUserFacingMessage(e.target.value)}
-                placeholder="Clear, professional message displayed to the affected account explaining why access is restricted and what to do next."
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="font-bold text-slate-700 dark:text-slate-300">
-                  Internal Administrative Note (Optional)
-                </label>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                  Private — Never Shown to Users
-                </span>
-              </div>
-              <textarea
-                rows={2}
-                value={internalAdminNote}
-                onChange={(e) => setInternalAdminNote(e.target.value)}
-                placeholder="Private staff context, ticket reference, or investigation detail (visible to authorized platform admins only)."
-                className="w-full px-3 py-2 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 text-slate-900 dark:text-white"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Effective Start Date (Optional — Immediate if blank)
-                </label>
-                <input
-                  type="datetime-local"
-                  value={effectiveAt}
-                  onChange={(e) => setEffectiveAt(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Auto-Expiry / Restoration Date (Optional)
-                </label>
-                <input
-                  type="datetime-local"
-                  value={expiresAt}
-                  onChange={(e) => setExpiresAt(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                />
-              </div>
-            </div>
-
-            {hasCascadableTargets && (
-              <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={cascadesToLinkedLearners}
-                  onChange={(e) => setCascadesToLinkedLearners(e.target.checked)}
-                  className="mt-0.5 accent-[#B91C1C]"
-                />
-                <span>
-                  <strong className="block text-slate-900 dark:text-white">
-                    Cascade Restriction to Linked Dependent Learners
-                  </strong>
-                  <span className="text-slate-500 dark:text-slate-400">
-                    When locking a School or Parent account, linked school-funded or parent-funded student portals inherit this restriction automatically (with role-appropriate guidance and zero exposure of private notes).
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="font-bold text-[#14284B] dark:text-white">
+                    User-Facing Explanation <span className="text-[#B91C1C] dark:text-white">*</span>
+                  </label>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+                    Shown on Portal &amp; Notification
                   </span>
-                </span>
-              </label>
-            )}
+                </div>
+                <textarea
+                  required
+                  rows={3}
+                  value={userFacingMessage}
+                  onChange={(e) => setUserFacingMessage(e.target.value)}
+                  placeholder="Clear, professional message displayed to the affected account explaining why access is restricted and what to do next."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                />
+              </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="font-bold text-[#14284B] dark:text-white">
+                    Internal Administrative Note (Optional)
+                  </label>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+                    Private — Admins Only
+                  </span>
+                </div>
+                <textarea
+                  rows={2}
+                  value={internalAdminNote}
+                  onChange={(e) => setInternalAdminNote(e.target.value)}
+                  placeholder="Private staff context, ticket reference, or investigation detail (visible to authorized platform admins only)."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1.5">
+                    Effective Start Date (Immediate if blank)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={effectiveAt}
+                    onChange={(e) => setEffectiveAt(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1.5">
+                    Auto-Expiry / Restoration Date (Optional)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={expiresAt}
+                    onChange={(e) => setExpiresAt(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {hasCascadableTargets && (
+                <label className="flex items-start gap-2.5 pt-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={cascadesToLinkedLearners}
+                    onChange={(e) => setCascadesToLinkedLearners(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-[#B91C1C]"
+                  />
+                  <span>
+                    <strong className="block text-[#14284B] dark:text-white">
+                      Cascade Restriction to Linked Dependent Learners
+                    </strong>
+                    <span className="text-slate-500 dark:text-slate-300 leading-relaxed">
+                      When locking a School or Parent account, linked school-funded or parent-funded student portals inherit this restriction automatically with role-appropriate guidance.
+                    </span>
+                  </span>
+                </label>
+              )}
+            </div>
+
+            <div className="px-6 py-4 flex justify-end gap-2 bg-slate-50/70 dark:bg-[#0B1120]">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold cursor-pointer"
+                className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-[#14284B] dark:text-white font-bold hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={loadingPreview}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#14284B] hover:bg-slate-800 text-white font-bold cursor-pointer disabled:opacity-60"
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#14284B] hover:bg-slate-800 dark:bg-white dark:text-[#14284B] dark:hover:bg-slate-100 text-white font-bold cursor-pointer disabled:opacity-60"
               >
                 {loadingPreview ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
                 Review Confirmation Preview
@@ -425,13 +429,13 @@ export const ApplyRestrictionModal: React.FC<ApplyRestrictionModalProps> = ({
 
         {/* STEP 2: SERVER-VALIDATED CONFIRMATION PREVIEW */}
         {step === 'PREVIEW' && preview && (
-          <div className="p-5 space-y-4 overflow-y-auto">
+          <div className="divide-y divide-slate-200 dark:divide-slate-800 overflow-y-auto">
             {preview.errors.length > 0 && (
-              <div className="rounded-xl border border-red-300 bg-red-50 dark:bg-red-950/40 p-3 text-red-900 dark:text-red-200 space-y-1">
-                <p className="font-black flex items-center gap-1.5">
+              <div className="px-6 py-3.5 bg-[#B91C1C] text-white space-y-1">
+                <p className="font-bold flex items-center gap-1.5">
                   <AlertTriangle size={14} /> Validation Issues Detected
                 </p>
-                <ul className="list-disc pl-5 space-y-0.5">
+                <ul className="list-disc pl-5 space-y-0.5 text-white/95">
                   {preview.errors.map((err, i) => (
                     <li key={i}>{err}</li>
                   ))}
@@ -439,71 +443,85 @@ export const ApplyRestrictionModal: React.FC<ApplyRestrictionModalProps> = ({
               </div>
             )}
 
-            {/* Preview Metrics */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 p-3">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Selected Accounts</span>
-                <span className="text-lg font-black text-[#14284B] dark:text-white">{preview.selectedCount}</span>
+            {/* Unified 4-Column Horizontally Divided Preview Metrics Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 bg-slate-50/70 dark:bg-[#14284B]/50">
+              <div className="p-4">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+                  Selected Accounts
+                </span>
+                <span className="mt-1 block text-lg font-bold text-[#14284B] dark:text-white tabular-nums">
+                  {preview.selectedCount}
+                </span>
               </div>
-              <div className="rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20 p-3">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-red-700 dark:text-red-300">Linked Students</span>
-                <span className="text-lg font-black text-[#B91C1C] dark:text-red-400">{preview.totalLinkedStudentsAffected}</span>
+              <div className="p-4">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+                  Linked Students
+                </span>
+                <span className="mt-1 block text-lg font-bold text-[#B91C1C] dark:text-white tabular-nums">
+                  {preview.totalLinkedStudentsAffected}
+                </span>
               </div>
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 p-3">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Programmes Affected</span>
-                <span className="text-lg font-black text-[#14284B] dark:text-white">{preview.totalProgrammesAffected}</span>
+              <div className="p-4">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+                  Programmes Affected
+                </span>
+                <span className="mt-1 block text-lg font-bold text-[#14284B] dark:text-white tabular-nums">
+                  {preview.totalProgrammesAffected}
+                </span>
               </div>
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 p-3">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Cascades to Students</span>
-                <span className="text-sm font-black text-[#14284B] dark:text-white mt-1 block">
-                  {preview.cascadesToLinkedLearners ? 'Yes (Linked Learners)' : 'No (Direct Only)'}
+              <div className="p-4">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+                  Cascade Scope
+                </span>
+                <span className="mt-1 block text-xs font-bold text-[#14284B] dark:text-white">
+                  {preview.cascadesToLinkedLearners ? 'Linked Learners' : 'Direct Only'}
                 </span>
               </div>
             </div>
 
             {/* Reason & User Message Preview */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 space-y-2 bg-white dark:bg-slate-950/30">
+            <div className="px-6 py-4 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-extrabold text-[#14284B] dark:text-white">
+                <span className="font-bold text-[#14284B] dark:text-white">
                   Reason: {preview.reasonLabel} ({RESTRICTION_TYPE_LABELS[preview.restrictionType]})
                 </span>
-                <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-300 flex items-center gap-1">
                   <Calendar size={12} />
                   Effective: {preview.effectiveAtFormatted || 'Immediately'}
                   {preview.expiresAtFormatted ? ` • Auto-Expires: ${preview.expiresAtFormatted}` : ' • No Auto-Expiry'}
                 </span>
               </div>
-              <div className="rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-2.5 text-slate-700 dark:text-slate-200">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
+              <p className="text-slate-700 dark:text-slate-200 leading-relaxed bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3.5 py-2.5">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-0.5">
                   Message Affected Users Will See
                 </span>
                 {preview.userFacingMessage}
-              </div>
+              </p>
             </div>
 
-            {/* Per-Account Impact Table */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-              <div className="px-3.5 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <span className="font-extrabold text-[#14284B] dark:text-white flex items-center gap-1.5">
+            {/* Per-Account Impact List */}
+            <div>
+              <div className="px-6 py-2.5 bg-slate-50 dark:bg-[#14284B]/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <span className="font-bold text-[#14284B] dark:text-white flex items-center gap-1.5">
                   <Users size={13} /> Affected Accounts Breakdown ({preview.items.length})
                 </span>
                 {preview.invalidCount > 0 && (
-                  <span className="text-[11px] font-bold text-[#B91C1C]">
+                  <span className="px-2 py-0.5 rounded bg-[#B91C1C] text-white text-[10px] font-bold">
                     {preview.invalidCount} Failed Validation
                   </span>
                 )}
               </div>
-              <div className="max-h-52 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+              <div className="max-h-52 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800">
                 {preview.items.map((item) => (
-                  <div key={item.targetKey} className="px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div key={item.targetKey} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="min-w-0">
                       <p className="font-bold text-[#14284B] dark:text-white truncate">
                         {item.accountName}{' '}
-                        <span className="text-[10px] font-black uppercase text-slate-400 ml-1">
+                        <span className="text-[10px] font-semibold uppercase text-slate-500 dark:text-slate-300 ml-1">
                           {item.accountType.replace(/_/g, ' ')}
                         </span>
                       </p>
-                      <p className="text-[11px] text-slate-500">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-300">
                         {item.linkedStudentCount > 0
                           ? `${item.linkedStudentCount} linked learner(s)${
                               item.linkedStudentSampleNames.length > 0
@@ -518,14 +536,16 @@ export const ApplyRestrictionModal: React.FC<ApplyRestrictionModalProps> = ({
                           : ''}
                       </p>
                       {!item.valid && item.validationError && (
-                        <p className="text-[11px] font-bold text-[#B91C1C] mt-0.5">{item.validationError}</p>
+                        <p className="text-[11px] font-bold text-[#B91C1C] dark:text-white mt-0.5">
+                          {item.validationError}
+                        </p>
                       )}
                     </div>
                     <span
-                      className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                      className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
                         item.valid
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-red-50 text-red-700 border border-red-200'
+                          ? 'bg-slate-100 text-[#14284B] border border-slate-300 dark:bg-white/15 dark:text-white dark:border-white/20'
+                          : 'bg-[#B91C1C] text-white'
                       }`}
                     >
                       {item.valid ? 'Ready' : 'Invalid'}
@@ -535,26 +555,28 @@ export const ApplyRestrictionModal: React.FC<ApplyRestrictionModalProps> = ({
               </div>
             </div>
 
-            {/* Final Explicit Confirmation Checkbox */}
-            <label className="flex items-start gap-2.5 p-3 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/50 dark:bg-red-950/20 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={confirmedCheck}
-                onChange={(e) => setConfirmedCheck(e.target.checked)}
-                className="mt-0.5 accent-[#B91C1C]"
-              />
-              <span className="text-red-950 dark:text-red-200">
-                <strong>I confirm</strong> applying this restriction strictly to the{' '}
-                <strong>{preview.validCount}</strong> validated account(s) listed above (impacting{' '}
-                <strong>{preview.totalLinkedStudentsAffected}</strong> linked learner(s)) and dispatching notifications using the user-facing message shown.
-              </span>
-            </label>
+            {/* Final Explicit Confirmation */}
+            <div className="px-6 py-4 bg-slate-50/70 dark:bg-[#14284B]/50">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={confirmedCheck}
+                  onChange={(e) => setConfirmedCheck(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-[#B91C1C]"
+                />
+                <span className="text-[#14284B] dark:text-white leading-relaxed">
+                  <strong>I confirm</strong> applying this restriction strictly to the{' '}
+                  <strong>{preview.validCount}</strong> validated account(s) listed above (impacting{' '}
+                  <strong>{preview.totalLinkedStudentsAffected}</strong> linked learner(s)) and dispatching notifications using the user-facing message shown.
+                </span>
+              </label>
+            </div>
 
-            <div className="flex justify-between items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="px-6 py-4 flex justify-between items-center gap-2 bg-white dark:bg-[#0B1120]">
               <button
                 type="button"
                 onClick={() => setStep('CONFIGURE')}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-[#14284B] dark:text-white font-bold hover:bg-slate-50 dark:hover:bg-white/10 cursor-pointer"
               >
                 <ArrowLeft size={13} /> Back to Edit
               </button>
@@ -562,7 +584,7 @@ export const ApplyRestrictionModal: React.FC<ApplyRestrictionModalProps> = ({
                 type="button"
                 disabled={submitting || !confirmedCheck || preview.validCount === 0 || preview.errors.length > 0}
                 onClick={() => void handleConfirmApply()}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white font-black uppercase tracking-wider cursor-pointer disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold uppercase tracking-wider cursor-pointer disabled:opacity-40"
               >
                 {submitting ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
                 Confirm &amp; Apply Restriction{preview.validCount > 1 ? 's' : ''}
@@ -573,19 +595,21 @@ export const ApplyRestrictionModal: React.FC<ApplyRestrictionModalProps> = ({
 
         {/* STEP 3: PARTIAL FAILURE REPORT (if any target failed) */}
         {step === 'RESULT' && executionResult && (
-          <div className="p-5 space-y-4 overflow-y-auto">
-            <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3.5 text-amber-950 dark:text-amber-200">
-              <p className="font-black">
+          <div className="p-6 space-y-4 overflow-y-auto">
+            <div className="rounded-lg bg-[#14284B] text-white p-4">
+              <p className="font-bold">
                 Partial Completion: {executionResult.appliedCount} applied, {executionResult.failedCount} failed.
               </p>
             </div>
             {executionResult.failed.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="font-extrabold text-[#B91C1C]">Failed Accounts</p>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-800">
+                <div className="px-4 py-2.5 bg-slate-50 dark:bg-[#14284B]">
+                  <p className="font-bold text-[#B91C1C] dark:text-white">Failed Accounts</p>
+                </div>
                 {executionResult.failed.map((f, idx) => (
-                  <div key={idx} className="rounded-lg border border-red-200 bg-red-50/60 p-2.5">
-                    <p className="font-bold text-red-900">{f.accountName}</p>
-                    <p className="text-red-700">{f.error}</p>
+                  <div key={idx} className="px-4 py-3">
+                    <p className="font-bold text-[#14284B] dark:text-white">{f.accountName}</p>
+                    <p className="text-slate-600 dark:text-slate-200 mt-0.5">{f.error}</p>
                   </div>
                 ))}
               </div>
@@ -594,7 +618,7 @@ export const ApplyRestrictionModal: React.FC<ApplyRestrictionModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2 rounded-xl bg-[#14284B] text-white font-bold cursor-pointer"
+                className="px-5 py-2 rounded-lg bg-[#14284B] dark:bg-white dark:text-[#14284B] text-white font-bold cursor-pointer"
               >
                 Close
               </button>
@@ -732,48 +756,51 @@ export const UnlockRestrictionsModal: React.FC<UnlockRestrictionsModalProps> = (
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 backdrop-blur-xs p-4">
-      <div className="w-full max-w-xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col text-xs">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-2">
-            <Unlock size={17} className="text-emerald-600" />
-            <h3 className="text-sm font-black text-[#14284B] dark:text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
+      <div className="w-full max-w-xl rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col text-xs">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#14284B]">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-8 h-8 rounded-lg bg-[#14284B] dark:bg-white/15 text-white flex items-center justify-center shrink-0">
+              <Unlock size={16} />
+            </span>
+            <h3 className="text-sm font-bold text-[#14284B] dark:text-white truncate">
               Manage &amp; Lift Restrictions — {target.accountName || target.accountId}
             </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
+            aria-label="Close modal"
+            className="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-white/10 text-slate-500 dark:text-white cursor-pointer"
           >
             <X size={16} />
           </button>
         </div>
 
-        <form onSubmit={handleUnlockAccount} className="p-5 space-y-4 overflow-y-auto">
+        <form onSubmit={handleUnlockAccount} className="divide-y divide-slate-200 dark:divide-slate-800 overflow-y-auto">
           {hasUnpaidBalance && (
-            <div className="rounded-xl border border-amber-300 bg-amber-50/70 dark:bg-amber-950/30 p-3 text-amber-950 dark:text-amber-200 leading-relaxed">
+            <div className="px-6 py-3.5 bg-[#14284B]/[0.06] dark:bg-[#14284B] text-[#14284B] dark:text-white leading-relaxed">
               <strong>Financial Integrity Notice:</strong> This account has an outstanding balance of{' '}
-              <strong>₦{Number(target.liveAmountDue || 0).toLocaleString()}</strong>. Lifting a manual restriction does{' '}
+              <strong className="tabular-nums">₦{Number(target.liveAmountDue || 0).toLocaleString()}</strong>. Lifting a manual restriction does{' '}
               <strong>not</strong> mark unpaid invoices as paid or erase payment history.
             </div>
           )}
 
           {/* Mandatory Unlock Reason */}
-          <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              Mandatory Unlock Reason <span className="text-[#B91C1C]">*</span>
+          <div className="px-6 py-4 space-y-2.5">
+            <label className="block font-bold text-[#14284B] dark:text-white">
+              Mandatory Unlock Reason <span className="text-[#B91C1C] dark:text-white">*</span>
             </label>
-            <div className="flex flex-wrap gap-1.5 mb-2">
+            <div className="flex flex-wrap gap-1.5">
               {UNLOCK_REASON_PRESETS.map((preset) => (
                 <button
                   key={preset}
                   type="button"
                   onClick={() => setUnlockReason(preset)}
-                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-colors cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-md border text-[11px] font-semibold transition-colors cursor-pointer ${
                     unlockReason === preset
-                      ? 'bg-[#14284B] text-white border-[#14284B]'
-                      : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                      ? 'bg-[#14284B] text-white border-[#14284B] dark:bg-white dark:text-[#14284B] dark:border-white'
+                      : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10'
                   }`}
                 >
                   {preset}
@@ -786,29 +813,28 @@ export const UnlockRestrictionsModal: React.FC<UnlockRestrictionsModalProps> = (
               value={unlockReason}
               onChange={(e) => setUnlockReason(e.target.value)}
               placeholder="Explain why this restriction is being lifted (logged to immutable audit history)..."
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
             />
           </div>
 
-          {/* Currently Active Restrictions List (with selective per-restriction Lift button) */}
+          {/* Currently Active Restrictions List — single hairline-divided section */}
           {activeRestrictions.length > 0 && (
-            <div className="space-y-2">
-              <p className="font-extrabold text-[#14284B] dark:text-white flex items-center gap-1.5">
-                <ShieldAlert size={13} className="text-[#B91C1C]" />
-                Active Restrictions on This Account ({activeRestrictions.length})
-              </p>
-              <div className="space-y-2 max-h-56 overflow-y-auto">
+            <div>
+              <div className="px-6 py-2.5 bg-slate-50 dark:bg-[#14284B]/60 border-b border-slate-200 dark:border-slate-800 flex items-center gap-1.5">
+                <ShieldAlert size={13} className="text-[#B91C1C] dark:text-white" />
+                <p className="font-bold text-[#14284B] dark:text-white">
+                  Active Restrictions on This Account ({activeRestrictions.length})
+                </p>
+              </div>
+              <div className="max-h-56 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800">
                 {activeRestrictions.map((r) => {
                   const isAutoPay = r.restrictionType === 'AUTOMATED_PAYMENT_LOCKDOWN';
                   return (
-                    <div
-                      key={r.restrictionId}
-                      className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/40 p-3 space-y-1.5"
-                    >
+                    <div key={r.restrictionId} className="px-6 py-3.5 space-y-1.5">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <span className="font-black text-[#14284B] dark:text-white">{r.reasonCode}</span>
-                          <span className="ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-950/60 text-[#B91C1C] dark:text-red-300">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-[#14284B] dark:text-white">{r.reasonCode}</span>
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-[#B91C1C] text-white">
                             {RESTRICTION_TYPE_LABELS[r.restrictionType] || r.restrictionType}
                           </span>
                         </div>
@@ -817,7 +843,7 @@ export const UnlockRestrictionsModal: React.FC<UnlockRestrictionsModalProps> = (
                             type="button"
                             disabled={submittingId !== null || unlockReason.trim().length < 3}
                             onClick={() => void handleLiftSpecific(r.restrictionId)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer disabled:opacity-40"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#14284B] hover:bg-slate-800 dark:bg-white dark:text-[#14284B] text-white text-[11px] font-bold cursor-pointer disabled:opacity-40"
                           >
                             {submittingId === r.restrictionId ? (
                               <Loader2 size={11} className="animate-spin" />
@@ -828,15 +854,15 @@ export const UnlockRestrictionsModal: React.FC<UnlockRestrictionsModalProps> = (
                           </button>
                         )}
                       </div>
-                      <p className="text-slate-600 dark:text-slate-300">
-                        <strong>User Message:</strong> {r.userFacingMessage}
+                      <p className="text-slate-600 dark:text-slate-200">
+                        <strong className="text-[#14284B] dark:text-white">User Message:</strong> {r.userFacingMessage}
                       </p>
                       {r.internalAdminNote && (
-                        <p className="text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 px-2 py-1 rounded-md">
-                          <strong>Internal Admin Note (Private):</strong> {r.internalAdminNote}
+                        <p className="text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 px-2.5 py-1.5 rounded-md">
+                          <strong>Internal Note (Private):</strong> {r.internalAdminNote}
                         </p>
                       )}
-                      <p className="text-[10px] text-slate-400">
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">
                         Applied by {r.appliedByName} on {String(r.appliedAt || '').slice(0, 16).replace('T', ' ')}
                         {r.expiresAt ? ` • Expires ${String(r.expiresAt).slice(0, 16).replace('T', ' ')}` : ''}
                       </p>
@@ -847,56 +873,58 @@ export const UnlockRestrictionsModal: React.FC<UnlockRestrictionsModalProps> = (
             </div>
           )}
 
-          {/* Unlock Mode Choice */}
-          <div className="space-y-2">
-            <label className="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer">
-              <input
-                type="radio"
-                name="unlockMode"
-                checked={mode === 'LIFT_ONLY' || mode === 'AUTO'}
-                onChange={() => setMode('AUTO')}
-                className="mt-0.5 accent-[#14284B]"
-              />
-              <span>
-                <strong className="block text-slate-900 dark:text-white">
-                  Lift Manual Restriction(s) &amp; Keep Automatic Billing Rules (Recommended)
-                </strong>
-                <span className="text-slate-500">
-                  Lifts manual administrative locks while keeping unpaid billing balance enforcement intact.
+          {/* Unlock Mode Choice — single unified bordered radio group */}
+          <div className="px-6 py-4">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-700">
+              <label className="flex items-start gap-2.5 p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5">
+                <input
+                  type="radio"
+                  name="unlockMode"
+                  checked={mode === 'LIFT_ONLY' || mode === 'AUTO'}
+                  onChange={() => setMode('AUTO')}
+                  className="mt-0.5 accent-[#14284B]"
+                />
+                <span>
+                  <strong className="block text-[#14284B] dark:text-white">
+                    Lift Manual Restriction(s) &amp; Keep Automatic Billing Rules (Recommended)
+                  </strong>
+                  <span className="text-slate-500 dark:text-slate-300">
+                    Lifts manual administrative locks while keeping unpaid billing balance enforcement intact.
+                  </span>
                 </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer">
-              <input
-                type="radio"
-                name="unlockMode"
-                checked={mode === 'OPEN'}
-                onChange={() => setMode('OPEN')}
-                className="mt-0.5 accent-emerald-600"
-              />
-              <span>
-                <strong className="block text-slate-900 dark:text-white">
-                  Lift Manual Restriction(s) &amp; Temporarily Open Portal Access
-                </strong>
-                <span className="text-slate-500">
-                  Reopens portal access immediately without clearing any unpaid financial balance (balance remains owed).
+              </label>
+              <label className="flex items-start gap-2.5 p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5">
+                <input
+                  type="radio"
+                  name="unlockMode"
+                  checked={mode === 'OPEN'}
+                  onChange={() => setMode('OPEN')}
+                  className="mt-0.5 accent-[#14284B]"
+                />
+                <span>
+                  <strong className="block text-[#14284B] dark:text-white">
+                    Lift Manual Restriction(s) &amp; Temporarily Open Portal Access
+                  </strong>
+                  <span className="text-slate-500 dark:text-slate-300">
+                    Reopens portal access immediately without clearing any unpaid financial balance (balance remains owed).
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="px-6 py-4 flex justify-end gap-2 bg-slate-50/70 dark:bg-[#0B1120]">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold cursor-pointer"
+              className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-[#14284B] dark:text-white font-bold hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submittingId !== null || unlockReason.trim().length < 3}
-              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#14284B] hover:bg-slate-800 dark:bg-white dark:text-[#14284B] dark:hover:bg-slate-100 text-white font-bold cursor-pointer disabled:opacity-40"
             >
               {submittingId === 'ALL' ? <Loader2 size={14} className="animate-spin" /> : <Unlock size={14} />}
               {manualRestrictions.length > 1

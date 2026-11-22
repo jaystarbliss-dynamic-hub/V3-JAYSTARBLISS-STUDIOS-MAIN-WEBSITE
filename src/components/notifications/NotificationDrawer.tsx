@@ -67,12 +67,21 @@ export const NotificationDrawer: React.FC = () => {
     return notifications.filter(n => {
       const isRead = isNotificationRead(n);
 
-      // Tab filter
+      const normType = String(n.type || '').toLowerCase();
       if (activeFilter === 'unread' && isRead) return false;
       if (activeFilter === 'urgent' && n.priority !== 'urgent' && n.priority !== 'high') return false;
-      if (activeFilter === 'academic' && n.type !== 'academic' && n.type !== 'exam' && n.type !== 'resource') return false;
-      if (activeFilter === 'billing' && n.type !== 'billing') return false;
-      if (activeFilter === 'system' && n.type !== 'system' && n.type !== 'broadcast' && n.type !== 'announcement') return false;
+      if (
+        activeFilter === 'academic' &&
+        !['academic', 'exam', 'resource', 'exam_submitted', 'exam_expired', 'exam_closed', 'exam_available', 'exam_deadline_summary'].includes(normType)
+      ) return false;
+      if (
+        activeFilter === 'billing' &&
+        !['billing', 'programme_admission_approved', 'payment'].includes(normType)
+      ) return false;
+      if (
+        activeFilter === 'system' &&
+        !['system', 'broadcast', 'announcement', 'registration', 'client_inquiry', 'support_ticket', 'new_school_partnership'].includes(normType)
+      ) return false;
 
       // Text search
       if (searchQuery.trim()) {
@@ -122,14 +131,22 @@ export const NotificationDrawer: React.FC = () => {
   };
 
   const getNotificationIcon = (type?: string, priority?: string) => {
+    const norm = String(type || '').toLowerCase();
     if (priority === 'urgent') return <ShieldAlert size={16} className="text-[#B91C1C] dark:text-red-400" />;
-    switch (type) {
+    switch (norm) {
       case 'academic':
       case 'exam':
+      case 'exam_submitted':
+      case 'exam_expired':
+      case 'exam_closed':
+      case 'exam_available':
+      case 'exam_deadline_summary':
       case 'resource':
         return <BookOpen size={16} className="text-[#1E293B] dark:text-slate-200" />;
       case 'billing':
-        return <CreditCard size={16} className="text-[#1E293B] dark:text-slate-200" />;
+      case 'programme_admission_approved':
+      case 'payment':
+        return <CreditCard size={16} className="text-[#B91C1C] dark:text-red-400" />;
       case 'announcement':
       case 'broadcast':
         return <Radio size={16} className="text-[#B91C1C] dark:text-red-400" />;
@@ -192,23 +209,23 @@ export const NotificationDrawer: React.FC = () => {
         ref={drawerRef}
         className="fixed inset-y-0 right-0 max-w-full flex pl-6 sm:pl-10 z-50"
       >
-        <div className="w-screen max-w-md md:max-w-lg bg-white dark:bg-slate-900 border-l border-slate-200/80 dark:border-slate-800 shadow-2xl flex flex-col transition-all transform duration-300 ease-in-out animate-in slide-in-from-right">
+        <div className="w-screen max-w-md md:max-w-lg bg-white dark:bg-[#111114] border-l border-slate-200/80 dark:border-zinc-800 shadow-2xl flex flex-col transition-all transform duration-300 ease-in-out animate-in slide-in-from-right">
           
           {/* Header */}
-          <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-900/90 backdrop-blur-xs shrink-0">
+          <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between bg-slate-50/70 dark:bg-[#18181B] shrink-0">
             <div className="flex items-center gap-3">
               {selectedNotification ? (
                 <button
                   type="button"
                   onClick={() => selectNotification(null)}
-                  className="p-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
+                  className="p-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-300 transition-colors cursor-pointer"
                   aria-label="Back to notifications list"
                   title="Back to Inbox"
                 >
                   <ArrowLeft size={18} />
                 </button>
               ) : (
-                <div className="w-9 h-9 rounded-xl bg-slate-200/70 dark:bg-slate-800 text-[#B91C1C] dark:text-red-400 flex items-center justify-center font-bold shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-slate-200/70 dark:bg-zinc-900 border border-transparent dark:border-zinc-800 text-[#B91C1C] dark:text-red-400 flex items-center justify-center font-bold shrink-0">
                   <Bell size={18} />
                 </div>
               )}
@@ -224,12 +241,11 @@ export const NotificationDrawer: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {selectedNotification 
-                    ? `Received ${formatTimestamp(selectedNotification.timestamp)}`
-                    : 'Personal messages, curriculum alerts & announcements'
-                  }
-                </p>
+                {selectedNotification && (
+                  <p className="text-xs text-slate-500 dark:text-zinc-400">
+                    Received {formatTimestamp(selectedNotification.timestamp)}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -238,7 +254,7 @@ export const NotificationDrawer: React.FC = () => {
                 <button
                   type="button"
                   onClick={markAllAsRead}
-                  className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center gap-1.5"
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center gap-1.5 cursor-pointer"
                   title="Mark all notifications as read"
                 >
                   <CheckCheck size={14} />
@@ -249,7 +265,7 @@ export const NotificationDrawer: React.FC = () => {
               <button
                 type="button"
                 onClick={closeDrawer}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                 aria-label="Close notification panel"
               >
                 <X size={18} />
@@ -260,7 +276,7 @@ export const NotificationDrawer: React.FC = () => {
           {/* MAIN CONTENT AREA */}
           {selectedNotification ? (
             /* DETAIL / READING VIEW */
-            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6 bg-white dark:bg-[#111114]">
               {/* Target & priority info */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
@@ -269,7 +285,7 @@ export const NotificationDrawer: React.FC = () => {
                   </span>
                   {selectedNotification.priority === 'urgent' && (
                     <>
-                      <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+                      <span aria-hidden="true" className="text-slate-300 dark:text-zinc-700">·</span>
                       <span className="text-[#B91C1C] dark:text-red-400 inline-flex items-center gap-1">
                         <ShieldAlert size={12} /> Urgent Priority
                       </span>
@@ -277,7 +293,7 @@ export const NotificationDrawer: React.FC = () => {
                   )}
                   {selectedNotification.priority === 'high' && (
                     <>
-                      <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+                      <span aria-hidden="true" className="text-slate-300 dark:text-zinc-700">·</span>
                       <span className="text-[#B91C1C] dark:text-red-400">
                         High Priority
                       </span>
@@ -290,7 +306,7 @@ export const NotificationDrawer: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleCopyText(`${selectedNotification.title}\n\n${selectedNotification.message}`)}
-                    className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                     title="Copy message"
                   >
                     {copied ? <Check size={15} className="text-[#1E293B] dark:text-white" /> : <Copy size={15} />}
@@ -305,7 +321,7 @@ export const NotificationDrawer: React.FC = () => {
                         markAsRead(selectedNotification.id, e);
                       }
                     }}
-                    className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5"
+                    className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <RotateCcw size={12} />
                     <span>{isNotificationRead(selectedNotification) ? 'Mark as unread' : 'Mark as read'}</span>
@@ -320,13 +336,13 @@ export const NotificationDrawer: React.FC = () => {
                 </h1>
                 
                 {/* Meta details */}
-                <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs text-slate-500 dark:text-slate-400">
+                <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800 text-xs text-slate-500 dark:text-zinc-400">
                   <div className="flex items-center gap-1.5">
-                    <User size={13} className="text-slate-400" />
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    <User size={13} className="text-slate-400 dark:text-zinc-500" />
+                    <span className="font-semibold text-slate-700 dark:text-zinc-300">
                       {selectedNotification.senderName || 'Jaystar Central'}
                     </span>
-                    <span className="text-slate-400">({selectedNotification.senderRole || 'Office'})</span>
+                    <span className="text-slate-400 dark:text-zinc-500">({selectedNotification.senderRole || 'Office'})</span>
                   </div>
                   <span>•</span>
                   <div className="flex items-center gap-1">
@@ -337,7 +353,7 @@ export const NotificationDrawer: React.FC = () => {
               </div>
 
               {/* Message Body */}
-              <div className="p-5 rounded-2xl bg-slate-50/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800/70 text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
+              <div className="p-5 rounded-2xl bg-slate-50/80 dark:bg-[#09090B] border border-slate-200/70 dark:border-zinc-800 text-sm text-slate-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
                 {selectedNotification.message}
               </div>
 
@@ -347,7 +363,7 @@ export const NotificationDrawer: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleNavigateLink(selectedNotification.link)}
-                    className="w-full py-3.5 px-5 bg-brand-red hover:bg-red-700 text-white font-bold text-xs rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 active:scale-98"
+                    className="w-full py-3.5 px-5 bg-[#B91C1C] hover:bg-red-800 text-white font-bold text-xs rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 active:scale-98 cursor-pointer"
                   >
                     <span>{selectedNotification.linkText || 'Open Linked Activity'}</span>
                     <ExternalLink size={14} />
@@ -356,11 +372,11 @@ export const NotificationDrawer: React.FC = () => {
               )}
 
               {/* Back to Inbox */}
-              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <div className="pt-4 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between text-xs text-slate-400 dark:text-zinc-500">
                 <button
                   type="button"
                   onClick={() => selectNotification(null)}
-                  className="font-bold text-brand-red hover:underline flex items-center gap-1"
+                  className="font-bold text-[#B91C1C] dark:text-red-400 hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <ArrowLeft size={13} />
                   <span>Return to all messages</span>
@@ -370,24 +386,24 @@ export const NotificationDrawer: React.FC = () => {
             </div>
           ) : (
             /* LIST / INBOX VIEW */
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-[#111114]">
               
               {/* Search Box */}
-              <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+              <div className="p-3.5 border-b border-slate-100 dark:border-zinc-800 bg-white dark:bg-[#111114] shrink-0">
                 <div className="relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search notifications, announcements..."
-                    className="w-full pl-8 pr-8 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-red transition-all"
+                    className="w-full pl-8 pr-8 py-2 text-xs rounded-xl bg-slate-50 dark:bg-[#09090B] border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-[#B91C1C] transition-all"
                   />
                   {searchQuery && (
                     <button
                       type="button"
                       onClick={() => setSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 cursor-pointer"
                     >
                       <X size={13} />
                     </button>
@@ -408,10 +424,10 @@ export const NotificationDrawer: React.FC = () => {
                       key={tab.id}
                       type="button"
                       onClick={() => setActiveFilter(tab.id as NotificationFilter)}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap tabular-nums ${
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap tabular-nums cursor-pointer ${
                         activeFilter === tab.id
-                          ? 'bg-[#1E293B] dark:bg-white text-white dark:text-[#1E293B] shadow-xs'
-                          : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          ? 'bg-[#14284B] dark:bg-white text-white dark:text-[#09090B] shadow-xs'
+                          : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900'
                       }`}
                     >
                       {tab.label}
@@ -421,26 +437,20 @@ export const NotificationDrawer: React.FC = () => {
               </div>
 
               {/* Notification List Items */}
-              <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/80">
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-zinc-800/80">
                 {loading ? (
-                  <div className="p-8 text-center text-xs text-slate-400 font-mono">
-                    Loading your notifications...
+                  <div className="p-8 text-center text-xs text-slate-400 dark:text-zinc-500 font-mono">
+                    Loading notifications...
                   </div>
                 ) : filteredNotifications.length === 0 ? (
                   <div className="p-10 text-center space-y-3">
-                    <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-[#18181B] text-slate-400 dark:text-zinc-500 mx-auto flex items-center justify-center">
                       <Bell size={20} />
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-zinc-200">
                         No notifications found
                       </h4>
-                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 max-w-xs mx-auto">
-                        {searchQuery 
-                          ? 'No notifications match your current search query.' 
-                          : 'You are all caught up! New updates, grades, schedules, and alerts will appear here.'
-                        }
-                      </p>
                     </div>
                   </div>
                 ) : (
@@ -454,12 +464,12 @@ export const NotificationDrawer: React.FC = () => {
                         onClick={() => selectNotification(item)}
                         className={`p-4 transition-all cursor-pointer group flex items-start gap-3.5 relative ${
                           !isRead 
-                            ? 'bg-slate-50/90 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/70' 
-                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                            ? 'bg-slate-50/90 dark:bg-[#18181B] hover:bg-slate-100 dark:hover:bg-zinc-900' 
+                            : 'hover:bg-slate-50 dark:hover:bg-zinc-900/60'
                         }`}
                       >
                         {/* Icon */}
-                        <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 mt-0.5 border border-slate-200/50 dark:border-slate-700/50">
+                        <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-[#09090B] flex items-center justify-center shrink-0 mt-0.5 border border-slate-200/50 dark:border-zinc-800">
                           {getNotificationIcon(item.type, item.priority)}
                         </div>
 
@@ -472,39 +482,54 @@ export const NotificationDrawer: React.FC = () => {
                               </span>
                               {!isRead && (
                                 <>
-                                  <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+                                  <span aria-hidden="true" className="text-slate-300 dark:text-zinc-700">·</span>
                                   <span className="text-[#B91C1C] dark:text-red-400">New</span>
                                 </>
                               )}
                               {item.priority === 'urgent' && (
                                 <>
-                                  <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+                                  <span aria-hidden="true" className="text-slate-300 dark:text-zinc-700">·</span>
                                   <span className="text-[#B91C1C] dark:text-red-400">URGENT</span>
                                 </>
                               )}
                             </div>
 
-                            <span className="text-[10px] font-medium text-slate-400 shrink-0 tabular-nums">
+                            <span className="text-[10px] font-medium text-slate-400 dark:text-zinc-500 shrink-0 tabular-nums">
                               {formatTimestamp(item.timestamp)}
                             </span>
                           </div>
 
                           <h3 className={`text-xs font-bold leading-snug line-clamp-1 ${
-                            !isRead ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'
+                            !isRead ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-zinc-300'
                           }`}>
                             {item.title}
                           </h3>
 
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                          <p className="text-[11px] text-slate-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
                             {item.message}
                           </p>
 
-                          <div className="flex items-center justify-between pt-1.5 text-[10px] text-slate-400">
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 text-[10px] text-slate-400 dark:text-zinc-500">
                             <span className="truncate max-w-[150px]">
-                              From: <strong className="text-slate-600 dark:text-slate-300">{item.senderName || 'Jaystar Office'}</strong>
+                              From: <strong className="text-slate-600 dark:text-zinc-300">{item.senderName || 'Jaystar Office'}</strong>
                             </span>
 
-                            <div className="flex items-center gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-2.5 opacity-90 group-hover:opacity-100 transition-opacity">
+                              {item.link && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    markAsRead(item.id);
+                                    handleNavigateLink(item.link);
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold text-[10px] inline-flex items-center gap-1 transition-colors cursor-pointer"
+                                >
+                                  <span>{item.linkText || 'Open'}</span>
+                                  <ExternalLink size={10} />
+                                </button>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -515,7 +540,7 @@ export const NotificationDrawer: React.FC = () => {
                                     markAsRead(item.id, e);
                                   }
                                 }}
-                                className="text-slate-400 hover:text-[#B91C1C] font-medium transition-colors"
+                                className="text-slate-400 dark:text-zinc-400 hover:text-[#B91C1C] dark:hover:text-red-400 font-medium transition-colors cursor-pointer"
                                 title={isRead ? 'Mark as unread' : 'Mark as read'}
                               >
                                 {isRead ? 'Mark unread' : 'Mark read'}
@@ -534,11 +559,11 @@ export const NotificationDrawer: React.FC = () => {
               </div>
 
               {/* Footer */}
-              <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/80 flex items-center justify-between text-xs text-slate-500 shrink-0">
+              <div className="p-3 border-t border-slate-100 dark:border-zinc-800 bg-slate-50/80 dark:bg-[#18181B] flex items-center justify-between text-xs text-slate-500 dark:text-zinc-400 shrink-0">
                 <span className="tabular-nums">
                   {notifications.length} total message{notifications.length === 1 ? '' : 's'}
                 </span>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-[11px] text-slate-400 dark:text-zinc-500">
                   Jaystarbliss Institutional Inbox
                 </span>
               </div>

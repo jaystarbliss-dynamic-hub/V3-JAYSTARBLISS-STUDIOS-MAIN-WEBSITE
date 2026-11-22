@@ -247,6 +247,8 @@ export async function createPortalNotification(input: PortalNotification) {
       message: input.message,
       type: input.type || "SYSTEM",
       data: input.data || {},
+      ...(input.actionUrl ? { link: input.actionUrl, actionUrl: input.actionUrl } : {}),
+      ...(input.actionText ? { linkText: input.actionText, actionText: input.actionText } : {}),
       read: false,
       createdAt: now,
       timestamp: now
@@ -325,8 +327,226 @@ export async function sendClientInquiryConfirmation(params: {
   });
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isDeliverableEmail(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || normalized.endsWith(".local") || normalized.endsWith("@student.jaystarbliss.local")) return false;
+  return EMAIL_REGEX.test(normalized);
+}
+
+export function escapeEmailHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+const ALERT_ADMIN_ROLES = new Set([
+  "SUPER_ADMIN",
+  "SUPERADMIN",
+  "ADMIN",
+  "ACADEMIC_ADMIN",
+  "ACADEMIC_SUPPORT_ADMIN",
+  "EDUCATION_ADMIN",
+  "SUPPORT_ADMIN",
+  "FINANCE_ADMIN",
+  "DIRECTOR",
+]);
+
+const ALERT_SCHOOL_ADMIN_ROLES = new Set([
+  "SCHOOL",
+  "SCHOOL_ADMIN",
+  "SCHOOLADMIN",
+  "PARTNER_SCHOOL",
+  "INSTITUTION",
+]);
+
+export async function resolveAdminAlertEmails(): Promise<string[]> {
+  const emails = new Set<string>();
+  if (isDeliverableEmail(RESEND_CONFIG.supportEmail)) {
+    emails.add(RESEND_CONFIG.supportEmail.toLowerCase());
+  }
+  try {
+    const [usersSnap, adminsSnap] = await Promise.all([
+      adminDb.collection("users").limit(1000).get().catch(() => null),
+      adminDb.collection("admins").limit(200).get().catch(() => null),
+    ]);
+    usersSnap?.docs.forEach((d) => {
+      const data = d.data() || {};
+      const role = String(data.role || "").trim().toUpperCase();
+      const status = String(data.accountStatus || data.status || "ACTIVE").trim().toUpperCase();
+      if (["DISABLED", "SUSPENDED", "BANNED"].includes(status)) return;
+      if (ALERT_ADMIN_ROLES.has(role) || data.isAdmin === true || data.admin === true) {
+        const em = String(data.email || "").trim().toLowerCase();
+        if (isDeliverableEmail(em)) emails.add(em);
+      }
+    });
+    adminsSnap?.docs.forEach((d) => {
+      const data = d.data() || {};
+      const em = String(data.email || "").trim().toLowerCase();
+      if (isDeliverableEmail(em)) emails.add(em);
+    });
+  } catch (err) {
+    console.warn("[Email] Could not resolve admin alert emails:", err);
+  }
+  return Array.from(emails);
+}
+
+export async function resolveSchoolAdminAlertEmails(schoolId?: string | null): Promise<string[]> {
+  const cleanSchoolId = String(schoolId || "").trim();
+  if (!cleanSchoolId) return [];
+  const emails = new Set<string>();
+  try {
+    const [schoolDoc, usersBySchool, usersByLegacy] = await Promise.all([
+      adminDb.collection("schools").doc(cleanSchoolId).get().catch(() => null),
+      adminDb.collection("users").where("schoolId", "==", cleanSchoolId).limit(100).get().catch(() => null),
+      adminDb.collection("users").where("schoolDocId", "==", cleanSchoolId).limit(100).get().catch(() => null),
+    ]);
+    if (schoolDoc?.exists) {
+      const sData = schoolDoc.data() || {};
+      for (const candidate of [sData.email, sData.contactEmail, sData.adminEmail]) {
+        if (isDeliverableEmail(candidate)) emails.add(candidate.trim().toLowerCase());
+      }
+      const adminUid = String(sData.adminUid || sData.firebaseUid || sData.userId || "").trim();
+      if (adminUid) {
+        const uSnap = await adminDb.collection("users").doc(adminUid).get().catch(() => null);
+        const uEmail = uSnap?.exists ? uSnap.data()?.email : null;
+        if (isDeliverableEmail(uEmail)) emails.add(uEmail.trim().toLowerCase());
+      }
+    }
+    for (const snap of [usersBySchool, usersByLegacy]) {
+      snap?.docs.forEach((d) => {
+        const data = d.data() || {};
+        const role = String(data.role || "").trim().toUpperCase();
+        if (!ALERT_SCHOOL_ADMIN_ROLES.has(role)) return;
+        const status = String(data.accountStatus || data.status || "ACTIVE").trim().toUpperCase();
+        if (["DISABLED", "SUSPENDED", "BANNED"].includes(status)) return;
+        const em = String(data.email || "").trim().toLowerCase();
+        if (isDeliverableEmail(em)) emails.add(em);
+      });
+    }
+  } catch (err) {
+    console.warn("[Email] Could not resolve school admin alert emails:", err);
+  }
+  return Array.from(emails);
+}
+
+export async function resolveUserEmailsByUids(uids: string[]): Promise<string[]> {
+  const uniqueUids = Array.from(new Set(uids.map((u) => String(u || "").trim()).filter(Boolean))).slice(0, 40);
+  if (!uniqueUids.length) return [];
+  const emails = new Set<string>();
+  await Promise.all(
+    uniqueUids.map(async (uid) => {
+      try {
+        const snap = await adminDb.collection("users").doc(uid).get();
+        if (snap.exists) {
+          const data = snap.data() || {};
+          if (isDeliverableEmail(data.email)) {
+            emails.add(data.email.trim().toLowerCase());
+          }
+        }
+      } catch {
+        // Ignore individual lookup errors
+      }
+    })
+  );
+  return Array.from(emails);
+}
+
 /**
- * Send an email notification to the studio admin when a client submits an inquiry or project request.
+ * Send a branded actionable alert email to platform admins, school admins, and/or specific recipient UIDs.
+ */
+export async function sendActionableNotificationEmail(params: {
+  title: string;
+  message: string;
+  category?: string;
+  priority?: "normal" | "high" | "urgent";
+  details?: Array<{ label: string; value: string }>;
+  actionPath?: string;
+  actionText?: string;
+  notifyPlatformAdmins?: boolean;
+  schoolId?: string | null;
+  recipientUids?: string[];
+  replyTo?: string;
+}): Promise<{ success: boolean; recipients: string[]; error?: string }> {
+  const recipientSet = new Set<string>();
+
+  if (params.notifyPlatformAdmins !== false) {
+    const adminEmails = await resolveAdminAlertEmails();
+    adminEmails.forEach((em) => recipientSet.add(em));
+  }
+  if (params.schoolId) {
+    const schoolEmails = await resolveSchoolAdminAlertEmails(params.schoolId);
+    schoolEmails.forEach((em) => recipientSet.add(em));
+  }
+  if (Array.isArray(params.recipientUids) && params.recipientUids.length > 0) {
+    const directEmails = await resolveUserEmailsByUids(params.recipientUids);
+    directEmails.forEach((em) => recipientSet.add(em));
+  }
+
+  const recipients = Array.from(recipientSet);
+  if (recipients.length === 0) {
+    return { success: false, recipients: [], error: "No deliverable recipient emails resolved." };
+  }
+
+  const baseUrl = (process.env.PUBLIC_APP_URL || RESEND_CONFIG.websiteUrl).replace(/\/+$/, "");
+  const cleanPath = params.actionPath
+    ? params.actionPath.startsWith("http")
+      ? params.actionPath
+      : `${baseUrl}${params.actionPath.startsWith("/") ? params.actionPath : `/${params.actionPath}`}`
+    : `${baseUrl}/portal`;
+
+  const safeTitle = escapeEmailHtml(params.title);
+  const safeMessage = escapeEmailHtml(params.message);
+  const safeDetails = (params.details || [])
+    .filter((item) => item && item.label && item.value)
+    .slice(0, 10)
+    .map((item) => ({
+      label: escapeEmailHtml(item.label),
+      value: escapeEmailHtml(item.value),
+    }));
+
+  const html = buildBrandedEmailHtml({
+    title: safeTitle,
+    previewText: safeMessage.slice(0, 140),
+    greeting: "Hello,",
+    messageLines: [safeMessage],
+    highlightBox: safeDetails.length
+      ? {
+          title: escapeEmailHtml(params.category || "Actionable Notification Details"),
+          items: safeDetails,
+        }
+      : undefined,
+    cta: {
+      text: escapeEmailHtml(params.actionText || "Open in Jaystarbliss Portal"),
+      url: cleanPath,
+    },
+    footerNote:
+      "You are receiving this email alert because an event in your Jaystarbliss Studios portal requires your attention or review.",
+  });
+
+  const prefix = params.priority === "urgent" ? "[Action Required] " : "[Jaystarbliss Alert] ";
+  const result = await sendResendEmail({
+    to: recipients,
+    subject: `${prefix}${params.title}`.slice(0, 180),
+    html,
+    text: `${params.title}\n\n${params.message}\n\nOpen in Portal: ${cleanPath}`,
+    replyTo: isDeliverableEmail(params.replyTo) ? params.replyTo : undefined,
+  });
+
+  return {
+    success: result.success,
+    recipients,
+    error: result.error,
+  };
+}
+
+/**
+ * Send an email notification to studio admins when a client submits an inquiry or project request.
  */
 export async function sendAdminInquiryAlert(params: {
   clientName: string;
@@ -336,35 +556,36 @@ export async function sendAdminInquiryAlert(params: {
   message: string;
   inquiryType?: string;
 }) {
-  const adminEmail = RESEND_CONFIG.supportEmail;
+  const adminEmails = await resolveAdminAlertEmails();
+  const recipients = adminEmails.length ? adminEmails : [RESEND_CONFIG.supportEmail];
 
   const html = buildBrandedEmailHtml({
-    title: `New Client Lead: ${params.inquiryType || "Website Inquiry"}`,
-    previewText: `New message from ${params.clientName} (${params.clientEmail})`,
+    title: `New Client Lead: ${escapeEmailHtml(params.inquiryType || "Website Inquiry")}`,
+    previewText: `New message from ${escapeEmailHtml(params.clientName)} (${escapeEmailHtml(params.clientEmail)})`,
     greeting: "Hello Jaystarbliss Admin Team,",
     messageLines: [
-      `A new inquiry has been submitted on the Jaystarbliss website by <strong>${params.clientName}</strong>.`,
-      `<em>"${params.message}"</em>`
+      `A new inquiry has been submitted on the Jaystarbliss website by <strong>${escapeEmailHtml(params.clientName)}</strong>.`,
+      `<em>"${escapeEmailHtml(params.message)}"</em>`
     ],
     highlightBox: {
       title: "Contact Info & Lead Data",
       items: [
-        { label: "Client Name", value: params.clientName || "—" },
-        { label: "Client Email", value: params.clientEmail || "—" },
-        { label: "Phone / WhatsApp", value: params.clientPhone || "Not provided" },
-        { label: "Inquiry Type", value: params.inquiryType || "General" },
-        { label: "Subject", value: params.subject || "—" }
+        { label: "Client Name", value: escapeEmailHtml(params.clientName || "—") },
+        { label: "Client Email", value: escapeEmailHtml(params.clientEmail || "—") },
+        { label: "Phone / WhatsApp", value: escapeEmailHtml(params.clientPhone || "Not provided") },
+        { label: "Inquiry Type", value: escapeEmailHtml(params.inquiryType || "General") },
+        { label: "Subject", value: escapeEmailHtml(params.subject || "—") }
       ]
     },
     cta: {
       text: "Open Admin Inquiries Dashboard",
-      url: `${RESEND_CONFIG.portalUrl}/admin/inquiries`
+      url: `${RESEND_CONFIG.websiteUrl}/admin/inquiries`
     }
   });
 
   return sendResendEmail({
-    to: adminEmail,
-    subject: `🚨 [New Client Lead] ${params.clientName} - ${params.subject || params.inquiryType}`,
+    to: recipients,
+    subject: `[New Client Lead] ${params.clientName} - ${params.subject || params.inquiryType}`,
     html,
     replyTo: params.clientEmail
   });

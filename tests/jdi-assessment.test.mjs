@@ -5,6 +5,7 @@ import {
   normalizeClassName,
   isCanonicalClass,
   normalizeClassList,
+  expandGradeRange,
   classesMatch,
   canAuthorOrMutateExam,
   canManageExamRecord,
@@ -897,4 +898,107 @@ test("never prematurely expires an active 15-minute test started on or near its 
   assert.equal(retakeEnabledTest.limitOneAttempt, false);
   assert.equal(retakeEnabledTest.maxAttempts, 10);
 });
+
+test("expands canonical grade ranges inclusively in either order and normalizes legacy aliases", () => {
+  assert.deepEqual(expandGradeRange("Grade 3", "Grade 6"), [
+    "Grade 3",
+    "Grade 4",
+    "Grade 5",
+    "Grade 6",
+  ]);
+  // Reversed order still expands cleanly in canonical order
+  assert.deepEqual(expandGradeRange("Grade 6", "Grade 3"), [
+    "Grade 3",
+    "Grade 4",
+    "Grade 5",
+    "Grade 6",
+  ]);
+  // Legacy aliases expand properly
+  assert.deepEqual(expandGradeRange("Primary 5", "JSS 1"), [
+    "Grade 5",
+    "Grade 6",
+    "Grade 7",
+  ]);
+});
+
+test("enforces grade-range + multi-programme intersection and explicit student exclusions", () => {
+  const targetedExam = normalizeRecipientTargets({
+    recipientMode: "SCHOOL_CLASS",
+    schoolId: "sch-alpha",
+    gradeTargetMode: "RANGE",
+    gradeRange: { from: "Grade 5", to: "Grade 8" },
+    targetProgramIds: ["prog-web-dev", "prog-robotics"],
+    targetProgramTitles: ["Web Development", "Robotics"],
+    excludedStudentIds: ["stu-excluded-1"],
+  });
+
+  assert.equal(targetedExam.gradeTargetMode, "RANGE");
+  assert.deepEqual(targetedExam.gradeRange, { from: "Grade 5", to: "Grade 8" });
+  assert.deepEqual(targetedExam.classIds, ["Grade 5", "Grade 6", "Grade 7", "Grade 8"]);
+  assert.deepEqual(targetedExam.targetProgramIds, ["prog-web-dev", "prog-robotics"]);
+  assert.deepEqual(targetedExam.excludedStudentIds, ["stu-excluded-1"]);
+
+  const publishedWork = { ...targetedExam, status: "active" };
+
+  // Matches school + grade inside range + matching programme -> ELIGIBLE
+  assert.equal(
+    isStudentEligibleForWork(
+      {
+        id: "stu-ok",
+        uid: "uid-ok",
+        schoolId: "sch-alpha",
+        class: "Grade 7",
+        selectedProgramIds: ["prog-robotics"],
+      },
+      publishedWork
+    ),
+    true
+  );
+
+  // Matches school + grade inside range, but WRONG programme -> BLOCKED (intersection rule)
+  assert.equal(
+    isStudentEligibleForWork(
+      {
+        id: "stu-wrong-prog",
+        uid: "uid-wrong-prog",
+        schoolId: "sch-alpha",
+        class: "Grade 7",
+        selectedProgramIds: ["prog-typing"],
+      },
+      publishedWork
+    ),
+    false
+  );
+
+  // Matches school + matching programme, but grade OUTSIDE range -> BLOCKED (intersection rule)
+  assert.equal(
+    isStudentEligibleForWork(
+      {
+        id: "stu-out-of-range",
+        uid: "uid-out-of-range",
+        schoolId: "sch-alpha",
+        class: "Grade 9",
+        selectedProgramIds: ["prog-web-dev"],
+      },
+      publishedWork
+    ),
+    false
+  );
+
+  // Explicitly excluded student matches school + grade + programme -> BLOCKED (highest precedence)
+  assert.equal(
+    isStudentEligibleForWork(
+      {
+        id: "stu-excluded-1",
+        uid: "uid-excluded-1",
+        schoolId: "sch-alpha",
+        class: "Grade 6",
+        selectedProgramIds: ["prog-web-dev"],
+      },
+      publishedWork
+    ),
+    false
+  );
+});
+
 

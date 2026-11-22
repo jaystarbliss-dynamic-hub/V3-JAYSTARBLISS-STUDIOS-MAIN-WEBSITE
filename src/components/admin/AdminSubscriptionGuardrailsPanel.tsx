@@ -41,15 +41,25 @@ interface AdminSubscriptionGuardrailsPanelProps {
 type SubTab = 'subscriptions' | 'restrictions' | 'reminders' | 'audit' | 'reset';
 
 const STATUS_BADGE: Record<string, string> = {
-  ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800',
-  DUE_SOON: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800',
-  GRACE_PERIOD: 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800',
-  LOCKED: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800',
-  PARTIALLY_PAID: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800',
-  EXEMPT: 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
-  SUSPENDED: 'bg-rose-50 text-rose-800 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800',
-  CANCELLED: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700',
+  ACTIVE: 'bg-slate-100 text-[#14284B] border-slate-300 dark:bg-white/15 dark:text-white dark:border-white/25',
+  DUE_SOON: 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-white/10 dark:text-slate-100 dark:border-slate-600',
+  GRACE_PERIOD: 'bg-[#14284B]/10 text-[#14284B] border-[#14284B]/25 dark:bg-white/15 dark:text-white dark:border-white/25',
+  LOCKED: 'bg-[#B91C1C] text-white border-[#B91C1C]',
+  PARTIALLY_PAID: 'bg-slate-100 text-[#14284B] border-slate-300 dark:bg-white/10 dark:text-white dark:border-slate-600',
+  EXEMPT: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700',
+  SUSPENDED: 'bg-[#991B1B] text-white border-[#991B1B]',
+  CANCELLED: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
 };
+
+const ACCOUNT_TYPE_SEGMENTS: Array<{ value: string; label: string }> = [
+  { value: 'ALL', label: 'All' },
+  { value: 'SCHOOL', label: 'Schools' },
+  { value: 'SCHOOL_ADMIN', label: 'School Admins' },
+  { value: 'PARENT', label: 'Parents' },
+  { value: 'PARENT_CHILD', label: 'Children' },
+  { value: 'INDIVIDUAL_STUDENT', label: 'Students' },
+  { value: 'STUDENT_SELF_FUNDED_PROGRAMME', label: 'Programmes' },
+];
 
 export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardrailsPanelProps> = ({
   onBack,
@@ -364,6 +374,14 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
     });
   };
 
+  const selectUnlockedFiltered = () => {
+    const next = new Set<string>();
+    filteredSubscriptions
+      .filter((sub) => !sub.isLocked)
+      .forEach((sub) => next.add(sub.id));
+    setSelectedSubIds(next);
+  };
+
   const selectedSubscriptionTargets = useMemo(
     () =>
       subscriptions
@@ -416,27 +434,27 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-5">
+      {/* Header Row — clean flat section bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-start gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="mt-0.5 p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+            className="mt-0.5 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-white/10 text-[#14284B] dark:text-white cursor-pointer"
             aria-label="Back to Billing Hub"
           >
             <ArrowLeft size={16} />
           </button>
           <div>
-            <p className="text-[11px] font-extrabold uppercase tracking-widest text-[#B91C1C]">
-              Subscription Guardrails &amp; Manual Payments
+            <p className="text-[11px] font-bold uppercase tracking-widest text-[#B91C1C] dark:text-slate-300">
+              Portal Restrictions &amp; Subscription Guardrails
             </p>
-            <h2 className="text-xl font-black text-[#14284B] dark:text-white tracking-tight">
-              Seven-Day Grace Policy, Manual Settlements &amp; Overrides
+            <h2 className="text-xl font-bold text-[#14284B] dark:text-white tracking-tight">
+              Account Access Control, Grace Policy &amp; Manual Settlements
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              All due dates and scheduled lockdown boundaries operate in Africa/Lagos (WAT).
+            <p className="text-xs text-slate-500 dark:text-slate-300 mt-0.5">
+              All due dates and lockdown schedules operate in Africa/Lagos (WAT).
             </p>
           </div>
         </div>
@@ -444,449 +462,638 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
           <button
             type="button"
             onClick={() => openManualModalForSub()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#B91C1C] hover:bg-[#991B1B] text-white text-xs font-bold cursor-pointer transition-colors"
           >
             <PlusCircle size={15} /> Record Manual Payment
           </button>
           <button
             type="button"
             onClick={() => void loadData()}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] hover:bg-slate-50 dark:hover:bg-white/10 text-xs font-semibold text-[#14284B] dark:text-white cursor-pointer transition-colors"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
         </div>
       </div>
 
-      {/* KPI Strip */}
+      {/* Unified Horizontal 5-Metric Summary Bar (replaces 5 separate boxes) */}
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Active</span>
-            <p className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">{summary.active}</p>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-[#0F172A] grid grid-cols-2 lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800 overflow-hidden">
+          <div className="px-5 py-4">
+            <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+              Active
+            </span>
+            <p className="mt-1 text-2xl font-bold text-[#14284B] dark:text-white tabular-nums">
+              {summary.active}
+            </p>
           </div>
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Due in 7 Days</span>
-            <p className="mt-1 text-2xl font-black text-sky-600 dark:text-sky-400 tabular-nums">{summary.dueSoon}</p>
+          <div className="px-5 py-4">
+            <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+              Due in 7 Days
+            </span>
+            <p className="mt-1 text-2xl font-bold text-[#14284B] dark:text-white tabular-nums">
+              {summary.dueSoon}
+            </p>
           </div>
-          <div className="rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-950/20 p-4">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">7-Day Grace</span>
-            <p className="mt-1 text-2xl font-black text-amber-700 dark:text-amber-400 tabular-nums">{summary.inGracePeriod}</p>
+          <div className="px-5 py-4">
+            <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+              7-Day Grace
+            </span>
+            <p className="mt-1 text-2xl font-bold text-[#14284B] dark:text-white tabular-nums">
+              {summary.inGracePeriod}
+            </p>
           </div>
-          <div className="rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50/40 dark:bg-red-950/20 p-4">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-red-700 dark:text-red-400">Locked Portals</span>
-            <p className="mt-1 text-2xl font-black text-red-700 dark:text-red-400 tabular-nums">{summary.locked}</p>
+          <div className="px-5 py-4 bg-[#B91C1C]/[0.04] dark:bg-[#14284B]">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#B91C1C] dark:text-white">
+                Locked Portals
+              </span>
+              {Number(summary.locked || 0) > 0 && (
+                <span className="px-1.5 py-0.5 rounded bg-[#B91C1C] text-white text-[10px] font-bold uppercase">
+                  Active
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-2xl font-bold text-[#B91C1C] dark:text-white tabular-nums">
+              {summary.locked}
+            </p>
           </div>
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 col-span-2 md:col-span-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Overdue Balance</span>
-            <p className="mt-1 text-lg font-black text-[#14284B] dark:text-white tabular-nums">
+          <div className="px-5 py-4 col-span-2 lg:col-span-1">
+            <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+              Overdue Balance
+            </span>
+            <p className="mt-1 text-xl font-bold text-[#14284B] dark:text-white tabular-nums">
               {formatNaira(summary.totalOverdueBalance || 0)}
             </p>
           </div>
         </div>
       )}
 
-      {/* Sub-navigation Tabs */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
-        {[
-          { id: 'subscriptions' as SubTab, label: 'Accounts & Access Control', icon: ShieldCheck },
-          { id: 'restrictions' as SubTab, label: `Restrictions & History (${restrictions.length})`, icon: Lock },
-          { id: 'reminders' as SubTab, label: `Reminder History (${reminders.length})`, icon: Bell },
-          { id: 'audit' as SubTab, label: `Admin Audit Trail (${auditLogs.length})`, icon: History },
-          ...(isSuperAdmin
-            ? [{ id: 'reset' as SubTab, label: 'Test Financial Data Reset', icon: Database }]
-            : []),
-        ].map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setSubTab(id)}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-              subTab === id
-                ? 'bg-[#14284B] text-white dark:bg-white dark:text-[#14284B]'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Icon size={14} /> {label}
-          </button>
-        ))}
-      </div>
+      {/* Single-Surface Workspace Container (Tabs + Grouped Filters + Bulk Bar + Table) */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-[#0F172A] overflow-hidden">
+        {/* Top Navigation Tab Bar */}
+        <div className="flex flex-wrap items-center gap-1 px-4 pt-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#14284B]/50">
+          {[
+            { id: 'subscriptions' as SubTab, label: 'Accounts & Access Control', icon: ShieldCheck },
+            { id: 'restrictions' as SubTab, label: `Restrictions & History (${restrictions.length})`, icon: Lock },
+            { id: 'reminders' as SubTab, label: `Reminders (${reminders.length})`, icon: Bell },
+            { id: 'audit' as SubTab, label: `Audit Trail (${auditLogs.length})`, icon: History },
+            ...(isSuperAdmin
+              ? [{ id: 'reset' as SubTab, label: 'Test Data Reset', icon: Database }]
+              : []),
+          ].map(({ id, label, icon: Icon }) => {
+            const active = subTab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setSubTab(id)}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold border-b-2 -mb-px transition-colors cursor-pointer ${
+                  active
+                    ? 'border-[#B91C1C] text-[#14284B] dark:text-white dark:border-white'
+                    : 'border-transparent text-slate-500 dark:text-slate-300 hover:text-[#14284B] dark:hover:text-white'
+                }`}
+              >
+                <Icon size={14} /> {label}
+              </button>
+            );
+          })}
+        </div>
 
-      {/* TAB 1: SUBSCRIPTIONS */}
-      {subTab === 'subscriptions' && (
-        <div className="space-y-4">
-          <div className="flex flex-col md:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search school, parent, student, programme, or email..."
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white"
-              />
-            </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-800 dark:text-slate-200"
-            >
-              <option value="ALL">All Statuses</option>
-              <option value="LOCKED">Locked</option>
-              <option value="GRACE_PERIOD">7-Day Grace Period</option>
-              <option value="DUE_SOON">Due Within 7 Days</option>
-              <option value="PARTIALLY_PAID">Partially Paid</option>
-              <option value="ACTIVE">Active</option>
-              <option value="EXEMPT">Exempt</option>
-              <option value="SUSPENDED">Suspended</option>
-            </select>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-800 dark:text-slate-200"
-            >
-              <option value="ALL">All Account Types</option>
-              <option value="SCHOOL">School</option>
-              <option value="SCHOOL_ADMIN">School Administrator</option>
-              <option value="PARENT">Parent Account</option>
-              <option value="PARENT_CHILD">Parent-Enrolled Child</option>
-              <option value="INDIVIDUAL_STUDENT">Individual Student</option>
-              <option value="STUDENT_SELF_FUNDED_PROGRAMME">Self-Funded Additional Programme</option>
-            </select>
-          </div>
-
-          {/* Bulk Action Bar */}
-          {selectedSubIds.size > 0 && (
-            <div className="rounded-2xl border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/30 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-xs text-red-950 dark:text-red-200">
-                <Lock size={15} className="text-[#B91C1C] shrink-0" />
-                <span>
-                  <strong>{selectedSubIds.size}</strong> account{selectedSubIds.size > 1 ? 's' : ''} selected for bulk action.
-                  Review affected learners &amp; confirm before applying.
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setApplyRestrictionTargets(selectedSubscriptionTargets)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold cursor-pointer"
-                >
-                  <Lock size={13} /> Apply Bulk Restriction ({selectedSubIds.size})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedSubIds(new Set())}
-                  className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
-                >
-                  Clear Selection
-                </button>
-              </div>
-            </div>
-          )}
-
-          {loading ? (
-            <div className="py-12 flex items-center justify-center gap-2 text-xs text-slate-500">
-              <Loader2 className="animate-spin" size={18} /> Loading subscriptions…
-            </div>
-          ) : filteredSubscriptions.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-10 text-center text-xs text-slate-500">
-              No subscriptions match your current filters.
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/70 text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  <tr>
-                    <th className="px-3 py-3 w-9">
-                      <input
-                        type="checkbox"
-                        checked={allFilteredSelected}
-                        onChange={toggleSelectAllFiltered}
-                        aria-label="Select all filtered accounts"
-                        className="accent-[#B91C1C] cursor-pointer"
-                      />
-                    </th>
-                    <th className="px-4 py-3">Account &amp; Plan</th>
-                    <th className="px-4 py-3">Payer</th>
-                    <th className="px-4 py-3">Live Status &amp; Active Locks</th>
-                    <th className="px-4 py-3">Due / Grace (WAT)</th>
-                    <th className="px-4 py-3">Balance</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {filteredSubscriptions.map((sub) => {
-                    const activeCount = Array.isArray(sub.activeRestrictions) ? sub.activeRestrictions.length : 0;
-                    const isSelected = selectedSubIds.has(sub.id);
+        {/* TAB 1: ACCOUNTS & ACCESS CONTROL */}
+        {subTab === 'subscriptions' && (
+          <div>
+            {/* Grouped Filter & Fast-Selection Toolbar */}
+            <div className="px-4 sm:px-5 py-4 border-b border-slate-200 dark:border-slate-800 space-y-3">
+              {/* Row 1: Segmented Account Type Selector + Quick Selection Helpers */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-[#14284B] border border-slate-200 dark:border-slate-700">
+                  {ACCOUNT_TYPE_SEGMENTS.map((seg) => {
+                    const active = typeFilter === seg.value;
                     return (
-                    <tr
-                      key={sub.id}
-                      className={`hover:bg-slate-50/70 dark:hover:bg-slate-800/40 ${
-                        isSelected ? 'bg-red-50/30 dark:bg-red-950/15' : ''
-                      }`}
-                    >
-                      <td className="px-3 py-3 align-top">
+                      <button
+                        key={seg.value}
+                        type="button"
+                        onClick={() => setTypeFilter(seg.value)}
+                        className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                          active
+                            ? 'bg-[#14284B] text-white dark:bg-white dark:text-[#14284B] shadow-2xs'
+                            : 'text-slate-600 dark:text-slate-200 hover:text-[#14284B] dark:hover:text-white'
+                        }`}
+                      >
+                        {seg.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                  <span className="text-slate-500 dark:text-slate-300 font-medium mr-1">
+                    Showing <strong className="text-[#14284B] dark:text-white tabular-nums">{filteredSubscriptions.length}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllFiltered}
+                    disabled={filteredSubscriptions.length === 0}
+                    className="px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 text-[#14284B] dark:text-white font-semibold hover:bg-slate-50 dark:hover:bg-white/10 disabled:opacity-40 cursor-pointer"
+                  >
+                    {allFilteredSelected ? 'Deselect Shown' : 'Select All Shown'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={selectUnlockedFiltered}
+                    disabled={filteredSubscriptions.length === 0}
+                    className="px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 text-[#14284B] dark:text-white font-semibold hover:bg-slate-50 dark:hover:bg-white/10 disabled:opacity-40 cursor-pointer"
+                  >
+                    Select Active Only
+                  </button>
+                </div>
+              </div>
+
+              {/* Row 2: Search + Status Filter */}
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <div className="relative flex-1">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-300" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search school, parent, student, programme, or email..."
+                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white placeholder:text-slate-400"
+                  />
+                </div>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-[#14284B] dark:text-white sm:w-52"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="LOCKED">Locked</option>
+                  <option value="GRACE_PERIOD">7-Day Grace Period</option>
+                  <option value="DUE_SOON">Due Within 7 Days</option>
+                  <option value="PARTIALLY_PAID">Partially Paid</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="EXEMPT">Exempt</option>
+                  <option value="SUSPENDED">Suspended</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Docked Bulk Selection Action Bar (clean solid navy strip with crisp white text) */}
+            {selectedSubIds.size > 0 && (
+              <div className="bg-[#14284B] text-white px-5 py-3 border-b border-slate-700 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 text-xs">
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-[#B91C1C] text-white font-bold tabular-nums">
+                    {selectedSubIds.size}
+                  </span>
+                  <span className="text-white">
+                    <strong>{selectedSubIds.size}</strong> account{selectedSubIds.size > 1 ? 's' : ''} selected. Review linked learners and confirm before applying.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setApplyRestrictionTargets(selectedSubscriptionTargets)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#B91C1C] hover:bg-[#991B1B] text-white text-xs font-bold cursor-pointer transition-colors"
+                  >
+                    <Lock size={13} /> Restrict Selected ({selectedSubIds.size})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSubIds(new Set())}
+                    className="px-3 py-2 rounded-lg border border-white/30 hover:bg-white/10 text-white text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    Clear Selection
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Accounts Table */}
+            {loading ? (
+              <div className="py-12 flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-300">
+                <Loader2 className="animate-spin" size={18} /> Loading accounts…
+              </div>
+            ) : filteredSubscriptions.length === 0 ? (
+              <div className="p-10 text-center text-xs text-slate-500 dark:text-slate-300">
+                No accounts match your current search or filter criteria.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-[#14284B]/70 border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-200">
+                    <tr>
+                      <th className="px-4 py-3 w-10">
                         <input
                           type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelectSub(sub.id)}
-                          aria-label={`Select ${sub.accountName || sub.id}`}
-                          className="mt-1 accent-[#B91C1C] cursor-pointer"
+                          checked={allFilteredSelected}
+                          onChange={toggleSelectAllFiltered}
+                          aria-label="Select all filtered accounts"
+                          className="w-4 h-4 accent-[#B91C1C] cursor-pointer"
                         />
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-bold text-[#14284B] dark:text-white">
-                          {sub.accountName || sub.studentName || sub.id}
-                        </p>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                          {sub.programmeName || sub.planName || 'Subscription'} • {sub.durationWeeks || 4}w
-                        </p>
-                        {sub.hasActiveOverride && (
-                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 text-[10px] font-bold">
-                            <Unlock size={10} /> Override active until {sub.overrideExpiresAt?.slice(0, 10)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300">
-                          {sub.billingResponsibility}
-                        </span>
-                        <span className="block text-[10px] text-slate-400">{sub.accountType}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-extrabold uppercase tracking-wider ${
-                            STATUS_BADGE[sub.liveStatus] || STATUS_BADGE.ACTIVE
+                      </th>
+                      <th className="px-4 py-3">Account &amp; Plan</th>
+                      <th className="px-4 py-3">Scope / Payer</th>
+                      <th className="px-4 py-3">Status &amp; Active Locks</th>
+                      <th className="px-4 py-3">Due / Grace (WAT)</th>
+                      <th className="px-4 py-3">Balance</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                    {filteredSubscriptions.map((sub) => {
+                      const activeCount = Array.isArray(sub.activeRestrictions) ? sub.activeRestrictions.length : 0;
+                      const isSelected = selectedSubIds.has(sub.id);
+                      return (
+                        <tr
+                          key={sub.id}
+                          className={`transition-colors hover:bg-slate-50/90 dark:hover:bg-white/[0.04] ${
+                            isSelected ? 'bg-[#14284B]/[0.05] dark:bg-white/[0.08]' : ''
                           }`}
                         >
-                          {sub.liveStatus === 'LOCKED' && <Lock size={10} />}
-                          {sub.liveStatus === 'GRACE_PERIOD' && <Clock size={10} />}
-                          {sub.isManuallyLocked
-                            ? 'RESTRICTED'
-                            : String(sub.liveStatus || 'ACTIVE').replace(/_/g, ' ')}
-                        </span>
-                        {sub.lockReasonLabel && sub.isLocked && (
-                          <span className="block text-[10px] font-bold text-red-700 dark:text-red-400 mt-1 max-w-[220px] truncate" title={sub.lockReasonLabel}>
-                            {sub.lockReasonLabel}
-                          </span>
-                        )}
-                        {activeCount > 1 && (
-                          <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-950/60 text-[#B91C1C] dark:text-red-300 text-[10px] font-black">
-                            {activeCount} Active Restrictions
-                          </span>
-                        )}
-                        {!sub.isManuallyLocked && sub.isManuallyUnlocked && (
-                          <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-semibold">
-                            Opened manually by admin
-                          </span>
-                        )}
-                        {sub.billingConfigIncomplete && !sub.isManuallyLocked && sub.accountType !== 'SCHOOL_ADMIN' && (
-                          <span className="block text-[10px] text-amber-600 mt-0.5">
-                            No due date configured (not auto-locked)
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-slate-800 dark:text-slate-200">
-                          {sub.dueDateFormatted || 'Not scheduled'}
-                        </p>
-                        {sub.graceEndsAtFormatted && (
-                          <p className="text-[11px] text-slate-500">
-                            Grace ends: {sub.graceEndsAtFormatted}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 tabular-nums">
-                        <p className="font-black text-[#14284B] dark:text-white">
-                          {formatNaira(sub.liveAmountDue ?? sub.remainingBalance ?? 0)}
-                        </p>
-                        <p className="text-[10px] text-slate-400">
-                          Plan: {formatNaira(sub.amount || 0)}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setApplyRestrictionTargets([toRestrictionTarget(sub)])}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-[11px] font-bold cursor-pointer"
+                          <td
+                            className="px-4 py-3.5 align-top cursor-pointer"
+                            onClick={() => toggleSelectSub(sub.id)}
                           >
-                            <Lock size={12} /> {sub.isLocked ? 'Add Lock' : 'Lock / Restrict'}
-                          </button>
-                          {(sub.isLocked || activeCount > 0 || sub.isManuallyUnlocked) && (
-                            <button
-                              type="button"
-                              onClick={() => setUnlockRestrictionTarget(toRestrictionTarget(sub))}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer"
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectSub(sub.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Select ${sub.accountName || sub.id}`}
+                              className="mt-0.5 w-4 h-4 accent-[#B91C1C] cursor-pointer"
+                            />
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <p className="font-bold text-[#14284B] dark:text-white">
+                              {sub.accountName || sub.studentName || sub.id}
+                            </p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-300">
+                              {sub.programmeName || sub.planName || 'Subscription'} • {sub.durationWeeks || 4}w
+                            </p>
+                            {sub.hasActiveOverride && (
+                              <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded bg-[#14284B]/10 dark:bg-white/15 text-[#14284B] dark:text-white text-[10px] font-bold">
+                                <Unlock size={10} /> Override until {sub.overrideExpiresAt?.slice(0, 10)}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span className="font-semibold text-slate-700 dark:text-slate-100">
+                              {sub.billingResponsibility}
+                            </span>
+                            <span className="block text-[10px] text-slate-500 dark:text-slate-300">
+                              {String(sub.accountType || '').replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${
+                                STATUS_BADGE[sub.liveStatus] || STATUS_BADGE.ACTIVE
+                              }`}
                             >
-                              <Unlock size={12} /> {activeCount > 0 || sub.isLocked ? 'Manage / Lift' : 'Lock Settings'}
-                            </button>
-                          )}
-                          {sub.accountType !== 'SCHOOL_ADMIN' && (
-                            <>
+                              {sub.liveStatus === 'LOCKED' && <Lock size={10} />}
+                              {sub.liveStatus === 'GRACE_PERIOD' && <Clock size={10} />}
+                              {sub.isManuallyLocked
+                                ? 'RESTRICTED'
+                                : String(sub.liveStatus || 'ACTIVE').replace(/_/g, ' ')}
+                            </span>
+                            {sub.lockReasonLabel && sub.isLocked && (
+                              <span
+                                className="block text-[11px] font-semibold text-[#14284B] dark:text-white mt-1 max-w-[220px] truncate"
+                                title={sub.lockReasonLabel}
+                              >
+                                {sub.lockReasonLabel}
+                              </span>
+                            )}
+                            {activeCount > 1 && (
+                              <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-[#B91C1C] text-white text-[10px] font-bold">
+                                {activeCount} Active Restrictions
+                              </span>
+                            )}
+                            {!sub.isManuallyLocked && sub.isManuallyUnlocked && (
+                              <span className="block text-[10px] text-slate-600 dark:text-slate-200 mt-0.5 font-semibold">
+                                Opened manually by admin
+                              </span>
+                            )}
+                            {sub.billingConfigIncomplete && !sub.isManuallyLocked && sub.accountType !== 'SCHOOL_ADMIN' && (
+                              <span className="block text-[10px] text-slate-500 dark:text-slate-300 mt-0.5">
+                                No due date configured
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 tabular-nums">
+                            <p className="font-semibold text-slate-800 dark:text-white">
+                              {sub.dueDateFormatted || 'Not scheduled'}
+                            </p>
+                            {sub.graceEndsAtFormatted && (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-300">
+                                Grace ends: {sub.graceEndsAtFormatted}
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 tabular-nums">
+                            <p className="font-bold text-[#14284B] dark:text-white">
+                              {formatNaira(sub.liveAmountDue ?? sub.remainingBalance ?? 0)}
+                            </p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-300">
+                              Plan: {formatNaira(sub.amount || 0)}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3.5 text-right">
+                            <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
                               <button
                                 type="button"
-                                onClick={() => openManualModalForSub(sub)}
-                                className="px-2.5 py-1.5 rounded-lg bg-[#14284B] hover:bg-slate-800 text-white text-[11px] font-bold cursor-pointer"
+                                onClick={() => setApplyRestrictionTargets([toRestrictionTarget(sub)])}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#B91C1C] hover:bg-[#991B1B] text-white text-[11px] font-bold cursor-pointer transition-colors"
                               >
-                                Record Payment
+                                <Lock size={12} /> {sub.isLocked ? 'Add Lock' : 'Lock'}
                               </button>
-                              {sub.hasActiveOverride ? (
+                              {(sub.isLocked || activeCount > 0 || sub.isManuallyUnlocked) && (
                                 <button
                                   type="button"
-                                  onClick={() => void handleRevokeOverride(sub)}
-                                  className="px-2.5 py-1.5 rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-50 text-[11px] font-bold cursor-pointer"
+                                  onClick={() => setUnlockRestrictionTarget(toRestrictionTarget(sub))}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#14284B] hover:bg-slate-800 dark:bg-white dark:text-[#14284B] dark:hover:bg-slate-100 text-white text-[11px] font-bold cursor-pointer transition-colors"
                                 >
-                                  Revoke Override
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOverrideTarget(sub);
-                                    setOverrideReason('');
-                                  }}
-                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold cursor-pointer"
-                                >
-                                  Temp Override
+                                  <Unlock size={12} /> {activeCount > 0 || sub.isLocked ? 'Manage / Lift' : 'Settings'}
                                 </button>
                               )}
+                              {sub.accountType !== 'SCHOOL_ADMIN' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => openManualModalForSub(sub)}
+                                    className="px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-white/10 text-[#14284B] dark:text-white text-[11px] font-semibold cursor-pointer transition-colors"
+                                  >
+                                    Record Pay
+                                  </button>
+                                  {sub.hasActiveOverride ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleRevokeOverride(sub)}
+                                      className="px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-600 text-[#14284B] dark:text-white hover:bg-slate-100 dark:hover:bg-white/10 text-[11px] font-semibold cursor-pointer"
+                                    >
+                                      Revoke Override
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setOverrideTarget(sub);
+                                        setOverrideReason('');
+                                      }}
+                                      className="px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200 text-[11px] font-semibold cursor-pointer"
+                                    >
+                                      Override
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setExemptTarget(sub);
+                                      setExemptReason('');
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200 text-[11px] font-semibold cursor-pointer"
+                                  >
+                                    {sub.isExempt ? 'Unexempt' : 'Exempt'}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 1B: RESTRICTIONS & IMMUTABLE AUDIT HISTORY */}
+        {subTab === 'restrictions' && (
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+            <div className="overflow-x-auto">
+              <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#14284B] dark:text-white">
+                    Account &amp; Programme Restrictions Ledger ({restrictions.length})
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-300">
+                    Every automated payment lockdown and manual administrative restriction is preserved as an independent record.
+                  </p>
+                </div>
+              </div>
+              {restrictions.length === 0 ? (
+                <div className="p-10 text-center text-xs text-slate-500 dark:text-slate-300">
+                  No account restriction records have been created yet.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-[#14284B]/70 border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-200">
+                    <tr>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Target Account</th>
+                      <th className="px-4 py-3">Type &amp; Reason</th>
+                      <th className="px-4 py-3">User Message &amp; Internal Note</th>
+                      <th className="px-4 py-3">Audit Trail</th>
+                      <th className="px-4 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                    {restrictions.map((r) => (
+                      <tr key={r.restrictionId} className="align-top">
+                        <td className="px-4 py-3.5">
+                          <span
+                            className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
+                              r.status === 'ACTIVE'
+                                ? 'bg-[#B91C1C] text-white'
+                                : r.status === 'SCHEDULED'
+                                ? 'bg-[#14284B] text-white dark:bg-white/20 dark:text-white'
+                                : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                            }`}
+                          >
+                            {String(r.status).replace(/_/g, ' ')}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <p className="font-bold text-[#14284B] dark:text-white">{r.accountName || r.targetAccountId}</p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-300">
+                            {String(r.targetAccountType).replace(/_/g, ' ')}
+                            {r.cascadesToLinkedLearners ? ` • Cascades (${r.affectedStudentIds?.length || 0} learners)` : ''}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <p className="font-bold text-slate-800 dark:text-white">{r.reasonCode}</p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-300">
+                            {RESTRICTION_TYPE_LABELS[r.restrictionType] || r.restrictionType}
+                          </p>
+                          {r.expiresAt && (
+                            <p className="text-[10px] text-slate-600 dark:text-slate-200 mt-0.5 tabular-nums">
+                              Expires: {String(r.expiresAt).slice(0, 16).replace('T', ' ')}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 max-w-sm space-y-1.5">
+                          <p className="text-slate-700 dark:text-slate-200">{r.userFacingMessage}</p>
+                          {r.internalAdminNote && (
+                            <p className="text-[11px] text-[#14284B] dark:text-slate-100 bg-slate-100 dark:bg-white/10 rounded-md px-2.5 py-1">
+                              <strong>Internal Note (Private):</strong> {r.internalAdminNote}
+                            </p>
+                          )}
+                          {r.unlockReason && (
+                            <p className="text-[11px] text-slate-600 dark:text-slate-200">
+                              <strong className="text-[#14284B] dark:text-white">Unlock Reason:</strong> {r.unlockReason}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 text-[11px] text-slate-500 dark:text-slate-300 space-y-0.5 tabular-nums">
+                          <p>
+                            <strong className="text-[#14284B] dark:text-white">Applied:</strong> {r.appliedByName} ({String(r.appliedAt || '').slice(0, 16).replace('T', ' ')})
+                          </p>
+                          {r.liftedByName && (
+                            <p>
+                              <strong className="text-[#14284B] dark:text-white">Lifted:</strong> {r.liftedByName} ({String(r.liftedAt || '').slice(0, 16).replace('T', ' ')})
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 text-right">
+                          {(r.status === 'ACTIVE' || r.status === 'SCHEDULED') &&
+                            r.restrictionType !== 'AUTOMATED_PAYMENT_LOCKDOWN' && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setExemptTarget(sub);
-                                  setExemptReason('');
-                                }}
-                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold cursor-pointer"
+                                onClick={() =>
+                                  setUnlockRestrictionTarget({
+                                    subscriptionId: r.relatedSubscriptionId || null,
+                                    accountType: r.targetAccountType,
+                                    accountId: r.targetAccountId,
+                                    accountName: r.accountName || r.targetAccountId,
+                                    schoolId: r.schoolId,
+                                    parentId: r.parentId,
+                                    studentId: r.studentId,
+                                    programmeEnrollmentId: r.programmeEnrollmentId,
+                                    activeRestrictions: [r],
+                                  })
+                                }
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#14284B] hover:bg-slate-800 dark:bg-white dark:text-[#14284B] text-white text-[11px] font-bold cursor-pointer"
                               >
-                                {sub.isExempt ? 'Remove Exempt' : 'Exempt'}
+                                <Unlock size={12} /> Lift
                               </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                  })}
-                </tbody>
-              </table>
+                            )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
-          )}
-        </div>
-      )}
 
-      {/* TAB 1B: RESTRICTIONS & IMMUTABLE AUDIT HISTORY */}
-      {subTab === 'restrictions' && (
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
-            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <div>
-                <h3 className="text-xs font-black uppercase tracking-wider text-[#14284B] dark:text-white">
-                  Account &amp; Programme Restrictions Ledger ({restrictions.length})
+            {/* Immutable Restriction Audit Log */}
+            <div className="overflow-x-auto">
+              <div className="px-5 py-3.5 bg-slate-50/70 dark:bg-[#14284B]/40 border-b border-slate-200 dark:border-slate-800">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#14284B] dark:text-white">
+                  Immutable Restriction Audit Log ({restrictionAuditLogs.length})
                 </h3>
-                <p className="text-[11px] text-slate-500">
-                  Every automated payment lockdown and manual administrative restriction is preserved as an independent record.
-                </p>
               </div>
+              {restrictionAuditLogs.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-500 dark:text-slate-300">
+                  No restriction lifecycle events logged yet.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-[#14284B]/70 border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-200">
+                    <tr>
+                      <th className="px-4 py-2.5">Event</th>
+                      <th className="px-4 py-2.5">Account</th>
+                      <th className="px-4 py-2.5">Actor</th>
+                      <th className="px-4 py-2.5">Reason / Details</th>
+                      <th className="px-4 py-2.5">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                    {restrictionAuditLogs.map((log) => (
+                      <tr key={log.id}>
+                        <td className="px-4 py-2.5 font-bold text-[#14284B] dark:text-white">
+                          {log.action}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <span className="font-semibold text-slate-800 dark:text-white">
+                            {log.targetAccountName || log.targetAccountId}
+                          </span>
+                          <span className="block text-[10px] text-slate-500 dark:text-slate-300">
+                            {log.targetAccountType}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-white">{log.actorName || log.actorEmail}</p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-300">{log.actorEmail}</p>
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-600 dark:text-slate-200">
+                          {log.unlockReason || log.userFacingMessage || log.reasonCode || '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-500 dark:text-slate-300 tabular-nums">
+                          {String(log.createdAt || '').slice(0, 19).replace('T', ' ')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
-            {restrictions.length === 0 ? (
-              <div className="p-10 text-center text-xs text-slate-500">
-                No account restriction records have been created yet.
+          </div>
+        )}
+
+        {/* TAB 2: REMINDER HISTORY */}
+        {subTab === 'reminders' && (
+          <div className="overflow-x-auto">
+            {reminders.length === 0 ? (
+              <div className="p-10 text-center text-xs text-slate-500 dark:text-slate-300">
+                No scheduled renewal reminders have been logged yet.
               </div>
             ) : (
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/70 text-[11px] uppercase tracking-wider text-slate-500">
+                <thead className="bg-slate-50 dark:bg-[#14284B]/70 border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-200">
                   <tr>
+                    <th className="px-4 py-3">Account</th>
+                    <th className="px-4 py-3">Stage</th>
+                    <th className="px-4 py-3">Recipient</th>
+                    <th className="px-4 py-3">Due Date (WAT)</th>
                     <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Target Account</th>
-                    <th className="px-4 py-3">Type &amp; Reason</th>
-                    <th className="px-4 py-3">User Message &amp; Internal Note</th>
-                    <th className="px-4 py-3">Audit Trail</th>
-                    <th className="px-4 py-3 text-right">Action</th>
+                    <th className="px-4 py-3">Last Attempt</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {restrictions.map((r) => (
-                    <tr key={r.restrictionId} className="align-top">
+                <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                  {reminders.map((r) => (
+                    <tr key={r.id}>
+                      <td className="px-4 py-3 font-bold text-[#14284B] dark:text-white">
+                        {r.accountName || r.subscriptionId}
+                        {r.childName && (
+                          <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-300">
+                            Child: {r.childName}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-800 dark:text-white">{r.reminderType}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-200">{r.recipientEmail || '—'}</td>
+                      <td className="px-4 py-3 text-slate-700 dark:text-slate-200 tabular-nums">
+                        {r.dueDateFormatted || r.dueDateIso?.slice(0, 10) || '—'}
+                      </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
-                            r.status === 'ACTIVE'
-                              ? 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300'
-                              : r.status === 'SCHEDULED'
-                              ? 'bg-sky-100 text-sky-700'
-                              : r.status === 'RESOLVED_BY_PAYMENT'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                          className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                            r.status === 'SENT'
+                              ? 'bg-slate-100 text-[#14284B] dark:bg-white/15 dark:text-white'
+                              : 'bg-[#B91C1C] text-white'
                           }`}
                         >
-                          {String(r.status).replace(/_/g, ' ')}
+                          {r.status} {r.retryCount ? `(retries: ${r.retryCount})` : ''}
                         </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-bold text-[#14284B] dark:text-white">{r.accountName || r.targetAccountId}</p>
-                        <p className="text-[10px] text-slate-400">
-                          {r.targetAccountType}
-                          {r.cascadesToLinkedLearners ? ` • Cascades (${r.affectedStudentIds?.length || 0} learners)` : ''}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-bold text-slate-800 dark:text-slate-200">{r.reasonCode}</p>
-                        <p className="text-[10px] text-slate-500">
-                          {RESTRICTION_TYPE_LABELS[r.restrictionType] || r.restrictionType}
-                        </p>
-                        {r.expiresAt && (
-                          <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5">
-                            Expires: {String(r.expiresAt).slice(0, 16).replace('T', ' ')}
-                          </p>
+                        {r.lastError && (
+                          <p className="text-[10px] text-[#B91C1C] dark:text-slate-200 mt-0.5">{r.lastError}</p>
                         )}
                       </td>
-                      <td className="px-4 py-3 max-w-sm space-y-1">
-                        <p className="text-slate-700 dark:text-slate-300">{r.userFacingMessage}</p>
-                        {r.internalAdminNote && (
-                          <p className="text-[11px] text-amber-900 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/50 rounded-md px-2 py-1">
-                            <strong>Internal Note (Private):</strong> {r.internalAdminNote}
-                          </p>
-                        )}
-                        {r.unlockReason && (
-                          <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
-                            <strong>Unlock Reason:</strong> {r.unlockReason}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-[11px] text-slate-500 space-y-0.5">
-                        <p>
-                          <strong>Applied:</strong> {r.appliedByName} ({String(r.appliedAt || '').slice(0, 16).replace('T', ' ')})
-                        </p>
-                        {r.liftedByName && (
-                          <p>
-                            <strong>Lifted:</strong> {r.liftedByName} ({String(r.liftedAt || '').slice(0, 16).replace('T', ' ')})
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {(r.status === 'ACTIVE' || r.status === 'SCHEDULED') &&
-                          r.restrictionType !== 'AUTOMATED_PAYMENT_LOCKDOWN' && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setUnlockRestrictionTarget({
-                                  subscriptionId: r.relatedSubscriptionId || null,
-                                  accountType: r.targetAccountType,
-                                  accountId: r.targetAccountId,
-                                  accountName: r.accountName || r.targetAccountId,
-                                  schoolId: r.schoolId,
-                                  parentId: r.parentId,
-                                  studentId: r.studentId,
-                                  programmeEnrollmentId: r.programmeEnrollmentId,
-                                  activeRestrictions: [r],
-                                })
-                              }
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer"
-                            >
-                              <Unlock size={12} /> Lift
-                            </button>
-                          )}
+                      <td className="px-4 py-3 text-slate-500 dark:text-slate-300 tabular-nums">
+                        {String(r.sentAt || r.lastAttemptAt || '').slice(0, 19).replace('T', ' ')}
                       </td>
                     </tr>
                   ))}
@@ -894,47 +1101,41 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
               </table>
             )}
           </div>
+        )}
 
-          {/* Immutable Restriction Audit Log */}
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
-            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800">
-              <h3 className="text-xs font-black uppercase tracking-wider text-[#14284B] dark:text-white">
-                Immutable Restriction Audit Log ({restrictionAuditLogs.length})
-              </h3>
-            </div>
-            {restrictionAuditLogs.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-500">
-                No restriction lifecycle events logged yet.
+        {/* TAB 3: AUDIT TRAIL */}
+        {subTab === 'audit' && (
+          <div className="overflow-x-auto">
+            {auditLogs.length === 0 ? (
+              <div className="p-10 text-center text-xs text-slate-500 dark:text-slate-300">
+                No administrative billing or guardrail actions have been logged yet.
               </div>
             ) : (
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/70 text-[11px] uppercase tracking-wider text-slate-500">
+                <thead className="bg-slate-50 dark:bg-[#14284B]/70 border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-200">
                   <tr>
-                    <th className="px-4 py-2.5">Event</th>
-                    <th className="px-4 py-2.5">Account</th>
-                    <th className="px-4 py-2.5">Actor</th>
-                    <th className="px-4 py-2.5">Reason / Details</th>
-                    <th className="px-4 py-2.5">Timestamp</th>
+                    <th className="px-4 py-3">Action</th>
+                    <th className="px-4 py-3">Administrator</th>
+                    <th className="px-4 py-3">Target</th>
+                    <th className="px-4 py-3">Details / Reason</th>
+                    <th className="px-4 py-3">Timestamp</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {restrictionAuditLogs.map((log) => (
+                <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                  {auditLogs.map((log) => (
                     <tr key={log.id}>
-                      <td className="px-4 py-2.5 font-extrabold text-[#14284B] dark:text-white">
-                        {log.action}
+                      <td className="px-4 py-3 font-bold text-[#14284B] dark:text-white">{log.action}</td>
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-800 dark:text-white">{log.actorName || log.actorEmail}</p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-300">{log.actorEmail}</p>
                       </td>
-                      <td className="px-4 py-2.5">
-                        <span className="font-semibold">{log.targetAccountName || log.targetAccountId}</span>
-                        <span className="block text-[10px] text-slate-400">{log.targetAccountType}</span>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-200">
+                        {log.targetType}: {log.targetId}
                       </td>
-                      <td className="px-4 py-2.5">
-                        <p className="font-semibold">{log.actorName || log.actorEmail}</p>
-                        <p className="text-[10px] text-slate-400">{log.actorEmail}</p>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-200">
+                        {log.reason || log.notes || (log.amount ? `${formatNaira(log.amount)} (${log.reference || ''})` : '—')}
                       </td>
-                      <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
-                        {log.unlockReason || log.userFacingMessage || log.reasonCode || '—'}
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-500">
+                      <td className="px-4 py-3 text-slate-500 dark:text-slate-300 tabular-nums">
                         {String(log.createdAt || '').slice(0, 19).replace('T', ' ')}
                       </td>
                     </tr>
@@ -943,285 +1144,215 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
               </table>
             )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* TAB 2: REMINDER HISTORY */}
-      {subTab === 'reminders' && (
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
-          {reminders.length === 0 ? (
-            <div className="p-10 text-center text-xs text-slate-500">
-              No scheduled renewal reminders have been logged yet.
-            </div>
-          ) : (
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/70 text-[11px] uppercase tracking-wider text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">Account</th>
-                  <th className="px-4 py-3">Stage</th>
-                  <th className="px-4 py-3">Recipient</th>
-                  <th className="px-4 py-3">Due Date (WAT)</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Last Attempt</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {reminders.map((r) => (
-                  <tr key={r.id}>
-                    <td className="px-4 py-3 font-bold text-[#14284B] dark:text-white">
-                      {r.accountName || r.subscriptionId}
-                      {r.childName && <span className="block text-[11px] font-normal text-slate-500">Child: {r.childName}</span>}
-                    </td>
-                    <td className="px-4 py-3 font-semibold">{r.reminderType}</td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{r.recipientEmail || '—'}</td>
-                    <td className="px-4 py-3">{r.dueDateFormatted || r.dueDateIso?.slice(0, 10) || '—'}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                          r.status === 'SENT'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-red-50 text-red-700'
-                        }`}
-                      >
-                        {r.status} {r.retryCount ? `(retries: ${r.retryCount})` : ''}
-                      </span>
-                      {r.lastError && <p className="text-[10px] text-red-500 mt-0.5">{r.lastError}</p>}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500">{String(r.sentAt || r.lastAttemptAt || '').slice(0, 19).replace('T', ' ')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {/* TAB 3: AUDIT TRAIL */}
-      {subTab === 'audit' && (
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
-          {auditLogs.length === 0 ? (
-            <div className="p-10 text-center text-xs text-slate-500">
-              No administrative billing or guardrail actions have been logged yet.
-            </div>
-          ) : (
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/70 text-[11px] uppercase tracking-wider text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">Action</th>
-                  <th className="px-4 py-3">Administrator</th>
-                  <th className="px-4 py-3">Target</th>
-                  <th className="px-4 py-3">Details / Reason</th>
-                  <th className="px-4 py-3">Timestamp</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {auditLogs.map((log) => (
-                  <tr key={log.id}>
-                    <td className="px-4 py-3 font-extrabold text-[#14284B] dark:text-white">{log.action}</td>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold">{log.actorName || log.actorEmail}</p>
-                      <p className="text-[10px] text-slate-400">{log.actorEmail}</p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                      {log.targetType}: {log.targetId}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                      {log.reason || log.notes || (log.amount ? `${formatNaira(log.amount)} (${log.reference || ''})` : '—')}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500">{String(log.createdAt || '').slice(0, 19).replace('T', ' ')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {/* TAB 4: CONTROLLED TEST FINANCIAL DATA RESET (SUPERADMIN ONLY) */}
-      {subTab === 'reset' && isSuperAdmin && (
-        <div className="space-y-5">
-          <div className="rounded-2xl border border-red-200 dark:border-red-900/60 bg-red-50/50 dark:bg-red-950/20 p-5 space-y-3">
-            <div className="flex items-start gap-3">
-              <ShieldAlert size={22} className="text-[#B91C1C] shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <h3 className="text-sm font-black text-[#991B1B] dark:text-red-300">
-                  Controlled Test Financial Data Reset (Superadmin Two-Stage Safeguard)
-                </h3>
-                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                  Stage A inspects your active Firebase project and lists every financial transaction, derived wallet balance, and embedded payment history field without modifying Firestore. Stage B is strictly blocked unless the server verifies <code className="font-mono font-bold">EXPECTED_TEST_FIREBASE_PROJECT_ID</code> + <code className="font-mono font-bold">ALLOW_TEST_FINANCIAL_RESET=true</code>, saves a recoverable backup snapshot, and receives the exact confirmation phrase. Users, schools, students, programmes, schedules, assessments, and <code className="font-mono">payment_config/settings</code> are NEVER deleted.
-                </p>
-              </div>
-            </div>
-            <div>
-              <button
-                type="button"
-                onClick={() => void handleRunDryRun()}
-                disabled={resetLoading}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#14284B] hover:bg-slate-800 text-white text-xs font-bold cursor-pointer disabled:opacity-60"
-              >
-                {resetLoading ? <Loader2 size={14} className="animate-spin" /> : <FileCheck2 size={14} />}
-                Run Stage A Dry Run (Read-Only Inventory)
-              </button>
-            </div>
-          </div>
-
-          {dryRunInventory && (
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
-                <div>
-                  <p className="text-xs font-black text-[#14284B] dark:text-white">
-                    Active Firebase Project: <span className="font-mono text-[#B91C1C]">{dryRunInventory.activeProjectId}</span>
-                  </p>
-                  <p className="text-[11px] text-slate-500">
-                    Environment: {dryRunInventory.environmentLabel} • Preview Signature: <code className="font-mono font-bold">{dryRunInventory.previewSignature}</code>
-                  </p>
-                </div>
-                <span
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold ${
-                    dryRunInventory.guard?.allowed
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      : 'bg-red-50 text-red-700 border border-red-200'
-                  }`}
-                >
-                  {dryRunInventory.guard?.allowed ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
-                  {dryRunInventory.guard?.allowed ? 'Test Environment Verified' : 'Stage B Guard Locked (Fail-Closed)'}
+        {/* TAB 4: CONTROLLED TEST FINANCIAL DATA RESET (SUPERADMIN ONLY) */}
+        {subTab === 'reset' && isSuperAdmin && (
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+            <div className="p-6 space-y-3 bg-slate-50/60 dark:bg-[#14284B]/40">
+              <div className="flex items-start gap-3">
+                <span className="w-9 h-9 rounded-lg bg-[#B91C1C] text-white flex items-center justify-center shrink-0">
+                  <ShieldAlert size={18} />
                 </span>
-              </div>
-
-              {!dryRunInventory.guard?.allowed && Array.isArray(dryRunInventory.guard?.reasons) && (
-                <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3.5 text-xs text-amber-900 dark:text-amber-200 space-y-1">
-                  <p className="font-bold">Safety Guard Reasons:</p>
-                  {dryRunInventory.guard.reasons.map((reason: string, idx: number) => (
-                    <p key={idx}>• {reason}</p>
-                  ))}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">
-                  <span className="text-slate-500">Docs to Delete</span>
-                  <p className="text-lg font-black text-[#B91C1C]">{dryRunInventory.totalFinancialDocumentsToDelete}</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">
-                  <span className="text-slate-500">Wallets to Zero</span>
-                  <p className="text-lg font-black text-[#14284B] dark:text-white">{dryRunInventory.totalDerivedWalletDocsToZero}</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">
-                  <span className="text-slate-500">Embedded Fields Cleaned</span>
-                  <p className="text-lg font-black text-[#14284B] dark:text-white">{dryRunInventory.totalEmbeddedRecordsToClean}</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">
-                  <span className="text-slate-500">Aggregate Test Volume</span>
-                  <p className="text-lg font-black text-[#14284B] dark:text-white">{formatNaira(dryRunInventory.totalAggregateAmountNaira || 0)}</p>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-[#14284B] dark:text-white">
+                    Controlled Test Financial Data Reset (Superadmin Two-Stage Safeguard)
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-200 leading-relaxed">
+                    Stage A inspects your active Firebase project and lists every financial transaction, derived wallet balance, and embedded payment history field without modifying Firestore. Stage B is strictly blocked unless the server verifies <code className="font-mono font-bold">EXPECTED_TEST_FIREBASE_PROJECT_ID</code> + <code className="font-mono font-bold">ALLOW_TEST_FINANCIAL_RESET=true</code>, saves a recoverable backup snapshot, and receives the exact confirmation phrase. Users, schools, students, programmes, schedules, assessments, and <code className="font-mono">payment_config/settings</code> are NEVER deleted.
+                  </p>
                 </div>
               </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800 text-[11px] uppercase text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2">Collection</th>
-                      <th className="px-3 py-2">Action</th>
-                      <th className="px-3 py-2">Count</th>
-                      <th className="px-3 py-2">Aggregate Amount</th>
-                      <th className="px-3 py-2">Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {(dryRunInventory.collections || []).map((col: any) => (
-                      <tr key={`${col.collection}-${col.action}`}>
-                        <td className="px-3 py-2 font-mono font-bold text-[#14284B] dark:text-white">{col.collection}</td>
-                        <td className="px-3 py-2 text-[11px] font-semibold">{col.action}</td>
-                        <td className="px-3 py-2 font-bold tabular-nums">{col.documentCount}</td>
-                        <td className="px-3 py-2 tabular-nums">{formatNaira(col.aggregateAmountNaira || 0)}</td>
-                        <td className="px-3 py-2 text-slate-500">{col.notes}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => void handleRunDryRun()}
+                  disabled={resetLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#14284B] hover:bg-slate-800 dark:bg-white dark:text-[#14284B] text-white text-xs font-bold cursor-pointer disabled:opacity-60"
+                >
+                  {resetLoading ? <Loader2 size={14} className="animate-spin" /> : <FileCheck2 size={14} />}
+                  Run Stage A Dry Run (Read-Only Inventory)
+                </button>
               </div>
-
-              {/* Stage B Execution Box */}
-              <div className="rounded-xl border border-red-200 dark:border-red-900/60 p-4 space-y-3 bg-red-50/30 dark:bg-red-950/10">
-                <p className="text-xs font-extrabold text-[#991B1B] dark:text-red-300">
-                  Stage B: Execute Controlled Test Financial Reset (Backup Created Automatically Before Deletion)
-                </p>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <input
-                    type="text"
-                    value={confirmationPhrase}
-                    onChange={(e) => setConfirmationPhrase(e.target.value)}
-                    placeholder={`Type "${RESET_CONFIRMATION_PHRASE}" exactly`}
-                    disabled={!dryRunInventory.guard?.allowed}
-                    className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono disabled:opacity-50"
-                  />
-                  <button
-                    type="button"
-                    disabled={
-                      executingReset ||
-                      !dryRunInventory.guard?.allowed ||
-                      confirmationPhrase.trim() !== RESET_CONFIRMATION_PHRASE
-                    }
-                    onClick={() => void handleExecuteReset()}
-                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-black uppercase tracking-wider disabled:opacity-40 cursor-pointer"
-                  >
-                    {executingReset ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                    Execute Reset
-                  </button>
-                </div>
-              </div>
-
-              {resetResult && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-xs text-emerald-900">
-                  <p className="font-bold">Reset Executed Successfully — Operation ID: {resetResult.operationId}</p>
-                  <p className="mt-1">Backup Snapshot Document: {resetResult.backupDocId} • Zeroed Wallets: {resetResult.zeroedWallets}</p>
-                </div>
-              )}
-
-              {resetLogs.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                  <p className="text-xs font-bold text-[#14284B] dark:text-white">Permanent Financial Reset Audit Logs</p>
-                  {resetLogs.map((log) => (
-                    <div key={log.id} className="rounded-lg bg-slate-50 dark:bg-slate-800/50 px-3 py-2 text-[11px] flex flex-wrap justify-between gap-2">
-                      <span className="font-mono font-bold">{log.operationId}</span>
-                      <span>By {log.executedByEmail} • Project: {log.activeProjectId} • Backup: {log.backupDocId}</span>
-                      <span className="text-slate-500">{String(log.executedAt || '').slice(0, 19).replace('T', ' ')}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
-          )}
-        </div>
-      )}
+
+            {dryRunInventory && (
+              <div className="divide-y divide-slate-200 dark:divide-slate-800">
+                <div className="px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold text-[#14284B] dark:text-white">
+                      Active Firebase Project:{' '}
+                      <span className="font-mono text-[#B91C1C] dark:text-white underline decoration-[#B91C1C] dark:decoration-white/50">
+                        {dryRunInventory.activeProjectId}
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-300">
+                      Environment: {dryRunInventory.environmentLabel} • Preview Signature:{' '}
+                      <code className="font-mono font-bold">{dryRunInventory.previewSignature}</code>
+                    </p>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold ${
+                      dryRunInventory.guard?.allowed
+                        ? 'bg-[#14284B] text-white dark:bg-white dark:text-[#14284B]'
+                        : 'bg-[#B91C1C] text-white'
+                    }`}
+                  >
+                    {dryRunInventory.guard?.allowed ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                    {dryRunInventory.guard?.allowed ? 'Test Environment Verified' : 'Stage B Guard Locked (Fail-Closed)'}
+                  </span>
+                </div>
+
+                {!dryRunInventory.guard?.allowed && Array.isArray(dryRunInventory.guard?.reasons) && (
+                  <div className="px-6 py-3.5 bg-slate-50 dark:bg-[#14284B]/60 text-xs text-[#14284B] dark:text-white space-y-1">
+                    <p className="font-bold">Safety Guard Reasons:</p>
+                    {dryRunInventory.guard.reasons.map((reason: string, idx: number) => (
+                      <p key={idx} className="text-slate-600 dark:text-slate-200">• {reason}</p>
+                    ))}
+                  </div>
+                )}
+
+                {/* Unified 4-Column Divided Inventory Bar */}
+                <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800 text-xs">
+                  <div className="p-4">
+                    <span className="text-slate-500 dark:text-slate-300">Docs to Delete</span>
+                    <p className="mt-1 text-lg font-bold text-[#B91C1C] dark:text-white tabular-nums">
+                      {dryRunInventory.totalFinancialDocumentsToDelete}
+                    </p>
+                  </div>
+                  <div className="p-4">
+                    <span className="text-slate-500 dark:text-slate-300">Wallets to Zero</span>
+                    <p className="mt-1 text-lg font-bold text-[#14284B] dark:text-white tabular-nums">
+                      {dryRunInventory.totalDerivedWalletDocsToZero}
+                    </p>
+                  </div>
+                  <div className="p-4">
+                    <span className="text-slate-500 dark:text-slate-300">Embedded Fields Cleaned</span>
+                    <p className="mt-1 text-lg font-bold text-[#14284B] dark:text-white tabular-nums">
+                      {dryRunInventory.totalEmbeddedRecordsToClean}
+                    </p>
+                  </div>
+                  <div className="p-4">
+                    <span className="text-slate-500 dark:text-slate-300">Aggregate Test Volume</span>
+                    <p className="mt-1 text-lg font-bold text-[#14284B] dark:text-white tabular-nums">
+                      {formatNaira(dryRunInventory.totalAggregateAmountNaira || 0)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 dark:bg-[#14284B]/70 border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase text-slate-500 dark:text-slate-200">
+                      <tr>
+                        <th className="px-4 py-2.5">Collection</th>
+                        <th className="px-4 py-2.5">Action</th>
+                        <th className="px-4 py-2.5">Count</th>
+                        <th className="px-4 py-2.5">Aggregate Amount</th>
+                        <th className="px-4 py-2.5">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                      {(dryRunInventory.collections || []).map((col: any) => (
+                        <tr key={`${col.collection}-${col.action}`}>
+                          <td className="px-4 py-2.5 font-mono font-bold text-[#14284B] dark:text-white">{col.collection}</td>
+                          <td className="px-4 py-2.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200">{col.action}</td>
+                          <td className="px-4 py-2.5 font-bold tabular-nums text-[#14284B] dark:text-white">{col.documentCount}</td>
+                          <td className="px-4 py-2.5 tabular-nums text-slate-700 dark:text-slate-200">{formatNaira(col.aggregateAmountNaira || 0)}</td>
+                          <td className="px-4 py-2.5 text-slate-500 dark:text-slate-300">{col.notes}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Stage B Execution Section */}
+                <div className="p-6 space-y-3 bg-slate-50/60 dark:bg-[#14284B]/40">
+                  <p className="text-xs font-bold text-[#14284B] dark:text-white">
+                    Stage B: Execute Controlled Test Financial Reset (Backup Created Automatically Before Deletion)
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={confirmationPhrase}
+                      onChange={(e) => setConfirmationPhrase(e.target.value)}
+                      placeholder={`Type "${RESET_CONFIRMATION_PHRASE}" exactly`}
+                      disabled={!dryRunInventory.guard?.allowed}
+                      className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono text-slate-900 dark:text-white disabled:opacity-50"
+                    />
+                    <button
+                      type="button"
+                      disabled={
+                        executingReset ||
+                        !dryRunInventory.guard?.allowed ||
+                        confirmationPhrase.trim() !== RESET_CONFIRMATION_PHRASE
+                      }
+                      onClick={() => void handleExecuteReset()}
+                      className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-[#B91C1C] hover:bg-[#991B1B] text-white text-xs font-bold uppercase tracking-wider disabled:opacity-40 cursor-pointer"
+                    >
+                      {executingReset ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      Execute Reset
+                    </button>
+                  </div>
+                </div>
+
+                {resetResult && (
+                  <div className="px-6 py-4 bg-[#14284B] text-white text-xs">
+                    <p className="font-bold">Reset Executed Successfully — Operation ID: {resetResult.operationId}</p>
+                    <p className="mt-1 text-slate-200">
+                      Backup Snapshot Document: {resetResult.backupDocId} • Zeroed Wallets: {resetResult.zeroedWallets}
+                    </p>
+                  </div>
+                )}
+
+                {resetLogs.length > 0 && (
+                  <div className="p-6 space-y-2">
+                    <p className="text-xs font-bold text-[#14284B] dark:text-white">Permanent Financial Reset Audit Logs</p>
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-200 dark:divide-slate-800">
+                      {resetLogs.map((log) => (
+                        <div key={log.id} className="px-3.5 py-2.5 text-[11px] flex flex-wrap justify-between gap-2 text-slate-700 dark:text-slate-200">
+                          <span className="font-mono font-bold text-[#14284B] dark:text-white">{log.operationId}</span>
+                          <span>By {log.executedByEmail} • Project: {log.activeProjectId} • Backup: {log.backupDocId}</span>
+                          <span className="text-slate-500 dark:text-slate-400 tabular-nums">{String(log.executedAt || '').slice(0, 19).replace('T', ' ')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* MODAL: RECORD MANUAL PAYMENT */}
       {manualModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <CreditCard size={18} className="text-[#B91C1C]" />
-                <h3 className="text-sm font-black text-[#14284B] dark:text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#14284B]">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-lg bg-[#B91C1C] text-white flex items-center justify-center shrink-0">
+                  <CreditCard size={16} />
+                </span>
+                <h3 className="text-sm font-bold text-[#14284B] dark:text-white">
                   Record Admin-Verified Manual Payment
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setManualModalOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
+                className="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-white/10 text-slate-500 dark:text-white cursor-pointer"
               >
                 <X size={16} />
               </button>
             </div>
-            <form onSubmit={handleManualSubmit} className="p-5 space-y-4 overflow-y-auto text-xs">
+            <form onSubmit={handleManualSubmit} className="p-6 space-y-4 overflow-y-auto text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Account Type</label>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1">Account Type</label>
                   <select
                     value={manualForm.targetType}
                     onChange={(e) => setManualForm((f) => ({ ...f, targetType: e.target.value as any }))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                   >
                     <option value="SCHOOL">School Institutional Account</option>
                     <option value="PARENT">Parent / Child Programme</option>
@@ -1230,7 +1361,7 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
                   </select>
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1">
                     {manualForm.targetType === 'SCHOOL'
                       ? 'School ID'
                       : manualForm.targetType === 'PARENT'
@@ -1243,7 +1374,7 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
                     required
                     value={manualForm.targetId}
                     onChange={(e) => setManualForm((f) => ({ ...f, targetId: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                   />
                 </div>
               </div>
@@ -1251,20 +1382,20 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
               {manualForm.targetType === 'PARENT' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Child Student ID (Optional)</label>
+                    <label className="block font-bold text-[#14284B] dark:text-white mb-1">Child Student ID (Optional)</label>
                     <input
                       value={manualForm.childId}
                       onChange={(e) => setManualForm((f) => ({ ...f, childId: e.target.value }))}
                       placeholder="Leave empty for parent-level plan"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Child Name</label>
+                    <label className="block font-bold text-[#14284B] dark:text-white mb-1">Child Name</label>
                     <input
                       value={manualForm.childName}
                       onChange={(e) => setManualForm((f) => ({ ...f, childName: e.target.value }))}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                     />
                   </div>
                 </div>
@@ -1272,7 +1403,7 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Amount Received (₦)</label>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1">Amount Received (₦)</label>
                   <input
                     required
                     type="number"
@@ -1280,11 +1411,11 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
                     step="0.01"
                     value={manualForm.amount}
                     onChange={(e) => setManualForm((f) => ({ ...f, amount: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Full Plan Fee (₦)</label>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1">Full Plan Fee (₦)</label>
                   <input
                     type="number"
                     min="0"
@@ -1292,28 +1423,28 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
                     value={manualForm.contractAmount}
                     onChange={(e) => setManualForm((f) => ({ ...f, contractAmount: e.target.value }))}
                     placeholder="For partial tracking"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Duration (Weeks)</label>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1">Duration (Weeks)</label>
                   <input
                     type="number"
                     min="1"
                     value={manualForm.durationWeeks}
                     onChange={(e) => setManualForm((f) => ({ ...f, durationWeeks: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Method</label>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1">Method</label>
                   <select
                     value={manualForm.paymentMethod}
                     onChange={(e) => setManualForm((f) => ({ ...f, paymentMethod: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                   >
                     <option value="bank_transfer">Bank Transfer</option>
                     <option value="cash">Cash</option>
@@ -1323,64 +1454,64 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
                   </select>
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Payment Date</label>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1">Payment Date</label>
                   <input
                     required
                     type="date"
                     value={manualForm.paymentDate}
                     onChange={(e) => setManualForm((f) => ({ ...f, paymentDate: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Unique Reference</label>
+                  <label className="block font-bold text-[#14284B] dark:text-white mb-1">Unique Reference</label>
                   <input
                     required
                     value={manualForm.reference}
                     onChange={(e) => setManualForm((f) => ({ ...f, reference: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Receipt / Transfer Proof URL (Optional)</label>
+                <label className="block font-bold text-[#14284B] dark:text-white mb-1">Receipt / Transfer Proof URL (Optional)</label>
                 <input
                   type="url"
                   value={manualForm.proofUrl}
                   onChange={(e) => setManualForm((f) => ({ ...f, proofUrl: e.target.value }))}
                   placeholder="https://..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Verification Notes</label>
+                <label className="block font-bold text-[#14284B] dark:text-white mb-1">Verification Notes</label>
                 <textarea
                   rows={2}
                   value={manualForm.notes}
                   onChange={(e) => setManualForm((f) => ({ ...f, notes: e.target.value }))}
                   placeholder="Bank narration, depositor name, or finance verification note"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                 />
               </div>
 
-              <p className="text-[11px] text-slate-500 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl">
+              <p className="text-[11px] text-slate-600 dark:text-slate-200 bg-slate-50 dark:bg-[#14284B]/60 p-3 rounded-lg">
                 Recorded with <code className="font-mono font-bold">paymentSource: MANUAL_ADMIN</code> and <code className="font-mono font-bold">verificationStatus: ADMIN_VERIFIED</code>. Duplicate references are blocked automatically.
               </p>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setManualModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold cursor-pointer"
+                  className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-[#14284B] dark:text-white font-bold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submittingManual}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white font-bold cursor-pointer disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold cursor-pointer disabled:opacity-60"
                 >
                   {submittingManual && <Loader2 size={14} className="animate-spin" />}
                   Confirm &amp; Record Payment
@@ -1393,43 +1524,47 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
 
       {/* MODAL: TEMPORARY ACCESS OVERRIDE */}
       {overrideTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
           <form
             onSubmit={handleSaveOverride}
-            className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl p-5 space-y-4 text-xs"
+            className="w-full max-w-md rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 shadow-2xl p-6 space-y-4 text-xs"
           >
-            <h3 className="text-sm font-black text-[#14284B] dark:text-white">
+            <h3 className="text-sm font-bold text-[#14284B] dark:text-white">
               Temporary Access Override — {overrideTarget.accountName || overrideTarget.id}
             </h3>
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Override Expires At</label>
+              <label className="block font-bold text-[#14284B] dark:text-white mb-1">Override Expires At</label>
               <input
                 required
                 type="datetime-local"
                 value={overrideExpiresAt}
                 onChange={(e) => setOverrideExpiresAt(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
               />
             </div>
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Logged Reason (Required)</label>
+              <label className="block font-bold text-[#14284B] dark:text-white mb-1">Logged Reason (Required)</label>
               <textarea
                 required
                 rows={3}
                 value={overrideReason}
                 onChange={(e) => setOverrideReason(e.target.value)}
                 placeholder="e.g., Bank transfer awaiting interbank settlement clearing"
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
               />
             </div>
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setOverrideTarget(null)} className="px-4 py-2 rounded-xl border border-slate-200 font-bold cursor-pointer">
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setOverrideTarget(null)}
+                className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-[#14284B] dark:text-white font-bold cursor-pointer"
+              >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submittingOverride}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#14284B] text-white font-bold cursor-pointer disabled:opacity-60"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#14284B] dark:bg-white dark:text-[#14284B] text-white font-bold cursor-pointer disabled:opacity-60"
               >
                 {submittingOverride && <Loader2 size={13} className="animate-spin" />}
                 Apply Override
@@ -1441,34 +1576,38 @@ export const AdminSubscriptionGuardrailsPanel: React.FC<AdminSubscriptionGuardra
 
       {/* MODAL: EXEMPTION */}
       {exemptTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
           <form
             onSubmit={handleSaveExemption}
-            className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl p-5 space-y-4 text-xs"
+            className="w-full max-w-md rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 shadow-2xl p-6 space-y-4 text-xs"
           >
-            <h3 className="text-sm font-black text-[#14284B] dark:text-white">
+            <h3 className="text-sm font-bold text-[#14284B] dark:text-white">
               {exemptTarget.isExempt ? 'Remove Subscription Exemption' : 'Approve Subscription Exemption'} —{' '}
               {exemptTarget.accountName || exemptTarget.id}
             </h3>
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Audit Reason</label>
+              <label className="block font-bold text-[#14284B] dark:text-white mb-1">Audit Reason</label>
               <textarea
                 required={!exemptTarget.isExempt}
                 rows={3}
                 value={exemptReason}
                 onChange={(e) => setExemptReason(e.target.value)}
                 placeholder="e.g., Approved scholarship / complimentary partner trial"
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
               />
             </div>
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setExemptTarget(null)} className="px-4 py-2 rounded-xl border border-slate-200 font-bold cursor-pointer">
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setExemptTarget(null)}
+                className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-[#14284B] dark:text-white font-bold cursor-pointer"
+              >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submittingExempt}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#14284B] text-white font-bold cursor-pointer disabled:opacity-60"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#14284B] dark:bg-white dark:text-[#14284B] text-white font-bold cursor-pointer disabled:opacity-60"
               >
                 {submittingExempt && <Loader2 size={13} className="animate-spin" />}
                 {exemptTarget.isExempt ? 'Remove Exemption' : 'Mark Exempt'}

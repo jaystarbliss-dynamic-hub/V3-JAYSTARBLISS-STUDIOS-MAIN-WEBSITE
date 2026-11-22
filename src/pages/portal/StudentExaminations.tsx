@@ -114,6 +114,8 @@ export default function StudentExaminations() {
     schoolName: string;
     class: string;
     name: string;
+    programIds?: string[];
+    programTitles?: string[];
   }>({
     id: "",
     uid: "",
@@ -122,6 +124,8 @@ export default function StudentExaminations() {
     schoolName: "",
     class: "",
     name: "",
+    programIds: [],
+    programTitles: [],
   });
 
   // 1. Resolve Current Student Identity & School Aliases (across users, individualStudents, students, and schools)
@@ -154,9 +158,42 @@ export default function StudentExaminations() {
     let resolvedClass = cachedClass;
     let resolvedName = cachedName;
     const aliasSet = new Set<string>();
+    const programIdSet = new Set<string>();
+    const programTitleSet = new Set<string>();
     const addAlias = (val: unknown) => {
       const s = String(val ?? "").trim();
       if (s && s !== "private" && s !== "none") aliasSet.add(s);
+    };
+    const collectPrograms = (rec: any) => {
+      if (!rec) return;
+      [
+        rec.selectedProgramIds,
+        rec.assignedProgramIds,
+        rec.assignedTrackIds,
+        rec.enrolledProgramIds,
+        rec.programIds,
+      ].forEach((arr) => {
+        if (Array.isArray(arr)) {
+          arr.forEach((id) => {
+            const s = String(id || "").trim();
+            if (s) programIdSet.add(s);
+          });
+        }
+      });
+      if (rec.programId) programIdSet.add(String(rec.programId).trim());
+      [rec.programName, rec.programTitle, rec.track, rec.plan, rec.chosenProgram].forEach((val) => {
+        const s = String(val || "").trim();
+        if (s) programTitleSet.add(s);
+      });
+      if (Array.isArray(rec.enrolledPrograms)) {
+        rec.enrolledPrograms.forEach((ep: any) => {
+          if (typeof ep === "string" && ep.trim()) programTitleSet.add(ep.trim());
+          else if (ep && typeof ep === "object") {
+            if (ep.programId) programIdSet.add(String(ep.programId).trim());
+            if (ep.title) programTitleSet.add(String(ep.title).trim());
+          }
+        });
+      }
     };
     addAlias(cachedSchId);
 
@@ -165,6 +202,7 @@ export default function StudentExaminations() {
         const userDocSnap = await getDoc(doc(db, "users", resolvedUid)).catch(() => null);
         if (userDocSnap?.exists()) {
           const udata = userDocSnap.data();
+          collectPrograms(udata);
           if (udata.studentDocId) resolvedDocId = udata.studentDocId;
           if (udata.schoolId) {
             resolvedSchId = udata.schoolId;
@@ -181,6 +219,7 @@ export default function StudentExaminations() {
 
       const populateFromStudentDoc = (sData: any, docId: string) => {
         if (!resolvedDocId) resolvedDocId = docId;
+        collectPrograms(sData);
         if (sData.class || sData.grade || sData.className || sData.classLevel) {
           resolvedClass = sData.class || sData.grade || sData.className || sData.classLevel;
         }
@@ -295,6 +334,8 @@ export default function StudentExaminations() {
       schoolName: cleanSchoolName,
       class: canonicalClass,
       name: resolvedName,
+      programIds: Array.from(programIdSet),
+      programTitles: Array.from(programTitleSet),
     };
     setStudentInfo(ctx);
     return ctx;
@@ -389,6 +430,8 @@ export default function StudentExaminations() {
             schoolAliases: ctx.schoolAliases,
             schoolName: ctx.schoolName,
             class: studentClass,
+            programIds: ctx.programIds,
+            programTitles: ctx.programTitles,
           },
           exam
         )

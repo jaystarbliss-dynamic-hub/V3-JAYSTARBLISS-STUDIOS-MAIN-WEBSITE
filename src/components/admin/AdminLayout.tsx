@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { Suspense, useState, useEffect, useMemo } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -10,13 +10,15 @@ import {
   Bell, Activity, Search, ChevronsUpDown,
   ExternalLink, CalendarDays, Library, ShieldCheck,
   SlidersHorizontal, Trophy, Radio, GraduationCap, Award,
-  HelpCircle, Headphones, PanelLeftClose, Megaphone
+  HelpCircle, Headphones, PanelLeftClose, Megaphone, Pin, PinOff, Loader2
 } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useNotifications } from '../../contexts/NotificationContext';
+import { checkAndNotifyExpiredAssessments } from '../../lib/assessmentNotificationHelpers';
 import { Tooltip } from '../ui/Tooltip';
 import SearchModal from '../ui/SearchModal';
 import ImpersonateUserModal from './ImpersonateUserModal';
@@ -32,6 +34,7 @@ import {
 } from '../../utils/adminRbac';
 import { getActiveImpersonation } from '../../utils/impersonation';
 import { getExternalMainWebsiteUrl, useStandalonePWA } from '../../utils/pwa';
+import '../portal/portal-polish.css';
 
 interface NavItem {
   name: string;
@@ -87,8 +90,31 @@ const AdminLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [impersonateModalOpen, setImpersonateModalOpen] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
+  const [sidebarPinned, setSidebarPinned] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('admin_sidebar_pinned') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isHoverExpanded, setIsHoverExpanded] = useState(false);
+  const isSidebarExpanded = sidebarPinned || isHoverExpanded;
   const isStandalone = useStandalonePWA();
+
+  const toggleSidebarPin = () => {
+    setSidebarPinned((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('admin_sidebar_pinned', String(next));
+      } catch {
+        // Ignore storage write failure
+      }
+      if (!next) {
+        setIsHoverExpanded(false);
+      }
+      return next;
+    });
+  };
 
   useEdgeSwipeDrawer(sidebarOpen, setSidebarOpen, 1024);
 
@@ -115,8 +141,121 @@ const AdminLayout: React.FC = () => {
 
   const { toast } = useToast();
   const { theme, toggleTheme } = useTheme();
+  const { unreadCount: unreadNotificationCount } = useNotifications();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Live numeric counters for actionable admin sidebar sections
+  const [pendingCounts, setPendingCounts] = useState<{
+    tutorApps: number;
+    studentReqs: number;
+    enrollReqs: number;
+    progApps: number;
+    inquiries: number;
+    tutorSubjects: number;
+    supportTickets: number;
+  }>({
+    tutorApps: 0,
+    studentReqs: 0,
+    enrollReqs: 0,
+    progApps: 0,
+    inquiries: 0,
+    tutorSubjects: 0,
+    supportTickets: 0,
+  });
+
+  useEffect(() => {
+    const unsubs: Array<() => void> = [];
+
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, 'tutor_applications'), where('status', '==', 'pending')),
+        (snap) => setPendingCounts((prev) => ({ ...prev, tutorApps: snap.size })),
+        () => undefined
+      )
+    );
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, 'student_requests'), where('status', '==', 'pending')),
+        (snap) => setPendingCounts((prev) => ({ ...prev, studentReqs: snap.size })),
+        () => undefined
+      )
+    );
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, 'enrollment_requests'), where('status', '==', 'pending')),
+        (snap) => setPendingCounts((prev) => ({ ...prev, enrollReqs: snap.size })),
+        () => undefined
+      )
+    );
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, 'programme_enrollments'), where('enrollmentStatus', '==', 'PENDING_ADMIN_REVIEW')),
+        (snap) => setPendingCounts((prev) => ({ ...prev, progApps: snap.size })),
+        () => undefined
+      )
+    );
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, 'tutor_subject_applications'), where('status', '==', 'pending')),
+        (snap) => setPendingCounts((prev) => ({ ...prev, tutorSubjects: snap.size })),
+        () => undefined
+      )
+    );
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'inquiries'),
+        (snap) => {
+          const count = snap.docs.filter((d) => {
+            const st = String(d.data()?.status || 'NEW').toUpperCase();
+            return st === 'NEW' || st === 'PENDING' || st === 'UNREAD';
+          }).length;
+          setPendingCounts((prev) => ({ ...prev, inquiries: count }));
+        },
+        () => undefined
+      )
+    );
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'supportTickets'),
+        (snap) => {
+          const count = snap.docs.filter((d) => {
+            const data = d.data() || {};
+            const st = String(data.status || 'OPEN').toUpperCase();
+            return data.unreadByAdmin === true || st === 'OPEN';
+          }).length;
+          setPendingCounts((prev) => ({ ...prev, supportTickets: count }));
+        },
+        () => undefined
+      )
+    );
+
+    if (auth.currentUser?.uid) {
+      void checkAndNotifyExpiredAssessments({
+        role: 'admin',
+        uid: auth.currentUser.uid,
+      });
+    }
+
+    return () => {
+      unsubs.forEach((fn) => fn());
+    };
+  }, []);
+
+  const badgeCountByHref = useMemo<Record<string, number>>(() => {
+    const approvalsTotal =
+      pendingCounts.tutorApps +
+      pendingCounts.studentReqs +
+      pendingCounts.enrollReqs +
+      pendingCounts.progApps;
+    return {
+      '/admin/approvals': approvalsTotal,
+      '/admin/inquiries': pendingCounts.inquiries,
+      '/admin/tutor-subjects': pendingCounts.tutorSubjects,
+      '/admin/support': pendingCounts.supportTickets,
+      '/admin/notifications': unreadNotificationCount,
+    };
+  }, [pendingCounts, unreadNotificationCount]);
 
   const handleLogout = async () => {
     try {
@@ -189,7 +328,7 @@ const AdminLayout: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [location.pathname]);
+  }, []);
 
   const isMasquerading = Boolean(getActiveImpersonation()?.isMasquerading);
   const currentScope = useMemo(() => {
@@ -381,7 +520,7 @@ const AdminLayout: React.FC = () => {
   const currentPageTitle = resolveAdminPageTitle(location.pathname, flatNavList);
 
   return (
-    <div className="admin-shell h-screen w-full bg-[#f8fafc] dark:bg-[#070b14] text-slate-900 dark:text-slate-100 flex overflow-hidden font-sans select-none">
+    <div className="admin-shell h-screen w-full bg-[#f8fafc] dark:bg-[#09090B] text-slate-900 dark:text-zinc-100 flex overflow-hidden font-sans select-none">
       <SEO 
         title={`${currentPageTitle} | Admin Console | Jaystarbliss Studios`} 
         description="Command center for Jaystarbliss Studios administrative operations, portals, billing and educational ecosystem." 
@@ -399,7 +538,7 @@ const AdminLayout: React.FC = () => {
               exit={{ opacity: 0 }} 
               transition={{ duration: 0.2 }}
               onClick={() => setSidebarOpen(false)}
-              className="fixed inset-0 bg-black/65 backdrop-blur-xs"
+              className="fixed inset-0 bg-black/75 backdrop-blur-xs"
             />
 
             {/* Side Drawer from Left */}
@@ -408,7 +547,7 @@ const AdminLayout: React.FC = () => {
               animate={{ x: 0 }} 
               exit={{ x: '-100%' }} 
               transition={{ type: 'spring', damping: 26, stiffness: 260 }}
-              className="fixed inset-y-0 left-0 w-[72vw] max-w-[290px] bg-white dark:bg-[#0c1220] text-slate-900 dark:text-white p-4 shadow-2xl border-r border-slate-200 dark:border-white/10 flex flex-col justify-between overflow-y-auto custom-scrollbar"
+              className="fixed inset-y-0 left-0 w-[72vw] max-w-[290px] bg-white dark:bg-[#111114] text-slate-900 dark:text-white p-4 shadow-2xl border-r border-slate-200 dark:border-zinc-800 flex flex-col justify-between overflow-y-auto custom-scrollbar"
             >
               <div>
                 {/* Header */}
@@ -455,19 +594,33 @@ const AdminLayout: React.FC = () => {
                         {group.items.map(item => {
                           const isActive = location.pathname === item.href || (location.pathname.startsWith(item.href) && item.href !== '/admin');
                           const Icon = item.icon;
+                          const count = badgeCountByHref[item.href] || 0;
                           return (
                             <Link
                               key={item.name}
                               to={item.href}
                               onClick={() => setSidebarOpen(false)}
-                              className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
                                 isActive
                                   ? 'bg-[#1E293B] text-white dark:bg-white/10 border border-slate-700/60'
                                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'
                               }`}
                             >
-                              <Icon size={15} className={`shrink-0 ${isActive ? 'text-white' : ''}`} />
-                              <span className="truncate">{item.name}</span>
+                              <span className="flex items-center gap-2.5 min-w-0">
+                                <Icon size={15} className={`shrink-0 ${isActive ? 'text-white' : ''}`} />
+                                <span className="truncate">{item.name}</span>
+                              </span>
+                              {count > 0 && (
+                                <span
+                                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-black tabular-nums leading-none shrink-0 ${
+                                    isActive
+                                      ? 'bg-[#B91C1C] text-white'
+                                      : 'bg-[#B91C1C] text-white'
+                                  }`}
+                                >
+                                  {count > 99 ? '99+' : count}
+                                </span>
+                              )}
                             </Link>
                           );
                         })}
@@ -493,70 +646,87 @@ const AdminLayout: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Desktop Sidebar */}
+      {/* Desktop Sidebar (Default collapsed rail, expands smoothly on hover, stays open when pinned) */}
       <motion.aside 
         initial={false}
-        animate={{ width: isHovered ? 280 : 80 }}
-        transition={{ type: 'spring', stiffness: 350, damping: 32, mass: 0.8 }}
-        className="hidden lg:flex bg-white/95 dark:bg-[#0c1220]/95 backdrop-blur-2xl text-slate-900 dark:text-white flex-col h-full max-h-screen border-r border-slate-200/80 dark:border-white/10 shrink-0 select-none overflow-hidden relative z-30 shadow-lg"
+        animate={{ width: isSidebarExpanded ? 276 : 78 }}
+        transition={{ type: 'spring', stiffness: 360, damping: 32, mass: 0.8 }}
+        onMouseEnter={() => {
+          if (!sidebarPinned) setIsHoverExpanded(true);
+        }}
+        onMouseLeave={() => {
+          if (!sidebarPinned) setIsHoverExpanded(false);
+        }}
+        className="hidden lg:flex bg-white dark:bg-[#111114] text-slate-900 dark:text-zinc-100 flex-col h-full max-h-screen border-r border-slate-200 dark:border-zinc-800 shrink-0 select-none overflow-hidden relative z-30 shadow-xs"
       >
-        {/* Header with Logo Toggle */}
-        <div className="flex items-center justify-between gap-2 h-16 px-4 border-b border-slate-200/60 dark:border-white/10 shrink-0 overflow-hidden">
-          <Tooltip content={isHovered ? "Sidebar Open" : "Click logo to open sidebar"} placement="right">
+        {/* Header with Logo & Pin Toggle */}
+        <div className="flex items-center justify-between gap-2 h-16 px-3.5 border-b border-slate-200 dark:border-zinc-800 shrink-0 overflow-hidden bg-white dark:bg-[#111114]">
+          <Tooltip
+            content={sidebarPinned ? "Unpin sidebar (auto-collapse)" : "Pin sidebar open"}
+            placement="right"
+            className="flex-1 min-w-0"
+            fullWidth
+          >
             <button
               type="button"
-              onClick={() => setIsHovered(prev => !prev)}
-              className="flex items-center gap-3 group flex-1 min-w-0 text-left cursor-pointer"
-              aria-label={isHovered ? "Toggle sidebar" : "Open sidebar"}
+              onClick={toggleSidebarPin}
+              className="flex items-center gap-3 group w-full min-w-0 text-left cursor-pointer"
+              aria-label={sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"}
             >
               <div className="w-10 h-10 flex items-center justify-center shrink-0">
-                <JaystarblissIcon className="w-8 h-8 group-hover:scale-105 transition-transform shrink-0 drop-shadow-sm" />
+                <JaystarblissIcon className="w-8 h-8 group-hover:scale-105 transition-transform shrink-0 drop-shadow-xs" />
               </div>
-              {isHovered && (
+              {isSidebarExpanded && (
                 <motion.div 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ duration: 0.2 }}
+                  transition={{ duration: 0.16 }}
                   className="flex flex-col min-w-0 whitespace-nowrap"
                 >
-                  <span className="font-bold text-xs sm:text-sm tracking-tight text-gray-900 dark:text-white truncate">
+                  <span className="font-bold text-xs sm:text-sm tracking-tight text-slate-900 dark:text-white truncate">
                     JAYSTARBLISS
                   </span>
-                  <span className="text-[10px] text-[#B91C1C] dark:text-red-400 font-mono font-semibold truncate">Admin Console</span>
+                  <span className="text-[10px] text-[#B91C1C] dark:text-red-400 font-mono font-semibold truncate">
+                    Admin Console
+                  </span>
                 </motion.div>
               )}
             </button>
           </Tooltip>
-          {isHovered && (
-            <Tooltip content="Close sidebar" placement="right">
+          {isSidebarExpanded && (
+            <Tooltip content={sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"} placement="right">
               <button
                 type="button"
-                onClick={() => setIsHovered(false)}
-                aria-label="Close sidebar"
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors shrink-0 cursor-pointer"
+                onClick={toggleSidebarPin}
+                aria-label={sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"}
+                className={`p-1.5 rounded-lg transition-colors shrink-0 cursor-pointer ${
+                  sidebarPinned
+                    ? 'bg-[#1E293B] text-white dark:bg-[#B91C1C] dark:text-white'
+                    : 'text-slate-400 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800'
+                }`}
               >
-                <PanelLeftClose size={18} />
+                {sidebarPinned ? <PinOff size={15} /> : <Pin size={15} />}
               </button>
             </Tooltip>
           )}
         </div>
 
         {/* Sidebar Nav Items */}
-        <div className="flex-1 overflow-y-auto overscroll-contain py-3 px-2 space-y-3 custom-scrollbar overflow-x-hidden">
-          {isHovered && (
+        <div className="flex-1 overflow-y-auto overscroll-contain py-3 px-2.5 space-y-3 custom-scrollbar overflow-x-hidden bg-white dark:bg-[#111114]">
+          {isSidebarExpanded && (
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ duration: 0.2 }}
+              transition={{ duration: 0.16 }}
               className="flex items-center justify-between px-2 pb-1"
             >
-              <span className="text-[10px] font-mono font-medium text-slate-400 dark:text-slate-500">
+              <span className="text-[10px] font-mono font-medium text-slate-400 dark:text-zinc-500">
                 Navigation
               </span>
               <button
                 type="button"
                 onClick={toggleAllSections}
-                className="text-[10px] font-mono text-[#1E293B] dark:text-slate-300 hover:text-[#B91C1C] dark:hover:text-red-400 font-semibold transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-white/5"
+                className="text-[10px] font-mono text-[#1E293B] dark:text-zinc-300 hover:text-[#B91C1C] dark:hover:text-red-400 font-semibold transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
               >
                 <ChevronsUpDown size={11} />
                 <span>{areAllSectionsExpanded ? 'Collapse All' : 'Expand All'}</span>
@@ -572,69 +742,82 @@ const AdminLayout: React.FC = () => {
 
             return (
               <div key={gIdx} className="space-y-1">
-                {isHovered ? (
+                {isSidebarExpanded ? (
                   <button
                     type="button"
                     onClick={() => toggleSection(group.sectionTitle)}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-[10px] font-mono font-bold tracking-widest text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white uppercase transition-colors rounded-lg hover:bg-slate-900/5 dark:hover:bg-white/5 cursor-pointer select-none group"
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 text-[10px] font-mono font-bold tracking-widest text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white uppercase transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800/70 cursor-pointer select-none group"
                     aria-expanded={isExpanded}
                   >
                     <span className="flex items-center gap-1.5 truncate">
-                      <span className={`w-1.5 h-1.5 shrink-0 transition-colors ${hasActiveItem ? 'bg-[#B91C1C]' : 'bg-slate-300 dark:bg-slate-600 group-hover:bg-slate-400'}`} />
+                      <span className={`w-1.5 h-1.5 shrink-0 transition-colors ${hasActiveItem ? 'bg-[#B91C1C]' : 'bg-slate-300 dark:bg-zinc-600 group-hover:bg-slate-400'}`} />
                       <span className="truncate">{group.sectionTitle}</span>
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0 ml-1.5">
-                      <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-semibold">
+                      <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono font-semibold tabular-nums">
                         {group.items.length}
                       </span>
                       <ChevronDown 
                         size={13} 
-                        className={`text-gray-400 dark:text-slate-400 group-hover:text-gray-900 dark:group-hover:text-white transition-transform duration-200 shrink-0 ${
+                        className={`text-slate-400 dark:text-zinc-400 group-hover:text-slate-900 dark:group-hover:text-white transition-transform duration-200 shrink-0 ${
                           isExpanded ? 'rotate-0' : '-rotate-90'
                         }`} 
                       />
                     </div>
                   </button>
                 ) : (
-                  <div className="h-px bg-gray-200 dark:bg-white/10 mx-2 my-2" />
+                  <div className="h-px bg-slate-200 dark:bg-zinc-800 mx-2 my-2" />
                 )}
                 
                 {/* Nav Items List */}
-                <nav className={`space-y-0.5 ${isHovered && !isExpanded ? 'hidden' : 'block'}`}>
+                <nav className={`space-y-0.5 ${isSidebarExpanded && !isExpanded ? 'hidden' : 'block'}`}>
                   {group.items.map((item) => {
                     const isActive = location.pathname === item.href || (location.pathname.startsWith(item.href) && item.href !== '/admin');
                     const Icon = item.icon;
+                    const count = badgeCountByHref[item.href] || 0;
                     return (
                       <Tooltip 
                         key={item.name} 
-                        content={!isHovered ? `${item.name} • ${item.desc}` : item.desc} 
+                        content={!isSidebarExpanded ? `${item.name}${count > 0 ? ` (${count})` : ''} • ${item.desc}` : item.desc} 
                         placement="right" 
-                        delay={200}
+                        delay={220}
+                        fullWidth
                       >
                         <Link
                           to={item.href}
-                          className={`group flex items-center h-10 px-2 rounded-xl transition-colors ${
+                          className={`relative group flex items-center w-full h-10 px-2.5 rounded-xl transition-colors ${
                             isActive 
-                              ? 'bg-[#1E293B] text-white dark:bg-white/10 border border-slate-700/60 shadow-xs' 
-                              : 'text-gray-600 dark:text-slate-300 hover:bg-slate-900/5 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white'
+                              ? 'bg-[#1E293B] text-white dark:bg-zinc-800 dark:text-white font-semibold shadow-2xs' 
+                              : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/70 hover:text-slate-900 dark:hover:text-white font-medium'
                           }`}
                         >
-                          <div className="w-8 h-8 flex items-center justify-center shrink-0">
+                          {isActive && (
+                            <span className="absolute left-1 w-1 h-5 rounded-sm bg-[#B91C1C]" />
+                          )}
+                          <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
                             <Icon 
                               className={`h-4 w-4 transition-colors ${
-                                isActive ? 'text-white' : 'text-gray-400 dark:text-slate-400 group-hover:text-gray-900 dark:group-hover:text-white'
+                                isActive ? 'text-white' : 'text-slate-400 dark:text-zinc-400 group-hover:text-slate-900 dark:group-hover:text-white'
                               }`} 
                             />
+                            {!isSidebarExpanded && count > 0 && (
+                              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-[#B91C1C] text-white text-[9px] font-black tabular-nums flex items-center justify-center leading-none shadow-xs">
+                                {count > 99 ? '99+' : count}
+                              </span>
+                            )}
                           </div>
-                          <motion.span 
-                            animate={{ opacity: isHovered ? 1 : 0 }}
-                            transition={{ duration: 0.15 }}
-                            className={`text-xs font-bold truncate pl-2 whitespace-nowrap ${
-                              isHovered ? 'pointer-events-auto' : 'pointer-events-none'
-                            }`}
-                          >
-                            {item.name}
-                          </motion.span>
+                          {isSidebarExpanded && (
+                            <>
+                              <span className="text-xs font-semibold truncate pl-2 whitespace-nowrap flex-1">
+                                {item.name}
+                              </span>
+                              {count > 0 && (
+                                <span className="ml-2 px-1.5 py-0.5 rounded-md bg-[#B91C1C] text-white text-[10px] font-black tabular-nums leading-none shrink-0">
+                                  {count > 99 ? '99+' : count}
+                                </span>
+                              )}
+                            </>
+                          )}
                         </Link>
                       </Tooltip>
                     );
@@ -646,35 +829,31 @@ const AdminLayout: React.FC = () => {
         </div>
 
         {/* Desktop Sidebar Footer */}
-        <div className="p-3 border-t border-slate-200/60 dark:border-white/10 shrink-0 overflow-hidden">
-          <Tooltip content="End administrative session" placement={!isHovered ? "right" : "top"}>
+        <div className="p-2.5 border-t border-slate-200 dark:border-zinc-800 shrink-0 overflow-hidden bg-slate-50/70 dark:bg-[#0C0C0E]">
+          <Tooltip content="End administrative session" placement={!isSidebarExpanded ? "right" : "top"} fullWidth>
             <button 
               id="btn-admin-sidebar-logout"
               type="button"
               onClick={handleLogout}
-              className="flex items-center h-10 w-full px-2 text-xs font-bold text-gray-500 dark:text-slate-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+              className="flex items-center h-10 w-full px-2.5 text-xs font-bold text-slate-500 dark:text-zinc-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-[#B91C1C] dark:hover:text-red-400 transition-colors cursor-pointer"
             >
               <div className="w-8 h-8 flex items-center justify-center shrink-0">
-                <LogOut className="h-4 w-4 text-gray-400 dark:text-slate-500" />
+                <LogOut className="h-4 w-4" />
               </div>
-              <motion.span 
-                animate={{ opacity: isHovered ? 1 : 0 }}
-                transition={{ duration: 0.15 }}
-                className={`truncate pl-2 whitespace-nowrap ${
-                  isHovered ? 'pointer-events-auto' : 'pointer-events-none'
-                }`}
-              >
-                Exit Session
-              </motion.span>
+              {isSidebarExpanded && (
+                <span className="truncate pl-2 whitespace-nowrap">
+                  Exit Session
+                </span>
+              )}
             </button>
           </Tooltip>
         </div>
       </motion.aside>
 
       {/* Main content Area on Neutral SaaS Canvas */}
-      <div className="flex-1 h-full max-h-screen flex flex-col min-w-0 overflow-hidden relative bg-[#F8FAFC] dark:bg-[#0B1120]">
+      <div className="flex-1 h-full max-h-screen flex flex-col min-w-0 overflow-hidden relative bg-[#F8FAFC] dark:bg-[#09090B]">
         {/* Standardised Compact Route-Aware Topbar (48-56px height, only current page title visible as text) */}
-        <header className="relative z-20 flex-shrink-0 flex items-center justify-between h-13 sm:h-14 bg-white dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 lg:px-8 transition-colors shadow-2xs">
+        <header className="relative z-20 flex-shrink-0 flex items-center justify-between h-13 sm:h-14 bg-white dark:bg-[#111114] border-b border-slate-200 dark:border-zinc-800 px-4 sm:px-6 lg:px-8 transition-colors shadow-2xs">
           <div className="flex items-center gap-2.5 min-w-0">
             <Tooltip content="Toggle navigation menu" placement="right">
               <button 
@@ -694,34 +873,10 @@ const AdminLayout: React.FC = () => {
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {currentScope !== 'SUPER_ADMIN' && (
-              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold">
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-700 text-[11px] font-semibold">
                 <ShieldCheck size={13} className="text-[#B91C1C] dark:text-red-400" />
                 <span>{capabilities.roleLabel}</span>
               </span>
-            )}
-
-            {currentScope === 'SUPER_ADMIN' && (
-              isStandalone ? (
-                <a
-                  href={getExternalMainWebsiteUrl('/wireframes')}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-bold transition-colors"
-                >
-                  <Layers size={14} />
-                  <span className="hidden sm:inline">Redesign Wireframes (5 Boards)</span>
-                  <span className="sm:hidden">Wireframes</span>
-                </a>
-              ) : (
-                <Link
-                  to="/wireframes"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[#1E293B] dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-bold transition-colors"
-                >
-                  <Layers size={14} />
-                  <span className="hidden sm:inline">Redesign Wireframes (5 Boards)</span>
-                  <span className="sm:hidden">Wireframes</span>
-                </Link>
-              )
             )}
 
             {/* Impersonate Icon Button */}
@@ -806,21 +961,20 @@ const AdminLayout: React.FC = () => {
           </div>
         </header>
 
-        {/* Main Content Area */}
+        {/* Main Content Area (localized Suspense keeps sidebar & topbar mounted across tab switches) */}
         <main className="admin-main-content flex-1 relative z-10 overflow-y-auto overscroll-contain focus:outline-none custom-scrollbar">
           <div className="py-5 sm:py-6">
             <div className="max-w-7xl mx-auto px-3 sm:px-6 md:px-8">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={location.pathname}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.15 }}
-                >
-                  <Outlet />
-                </motion.div>
-              </AnimatePresence>
+              <Suspense
+                fallback={
+                  <div className="min-h-[280px] flex items-center justify-center gap-2.5 text-xs font-semibold text-slate-500 dark:text-zinc-400">
+                    <Loader2 className="animate-spin text-[#B91C1C]" size={18} />
+                    <span>Loading section…</span>
+                  </div>
+                }
+              >
+                <Outlet />
+              </Suspense>
             </div>
           </div>
         </main>
