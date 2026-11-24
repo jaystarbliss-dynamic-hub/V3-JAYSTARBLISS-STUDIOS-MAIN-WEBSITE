@@ -22,7 +22,6 @@ import {
   Check,
   Copy,
   Upload,
-  Sparkles,
   CheckCircle2,
   AlertCircle,
   Users,
@@ -888,7 +887,7 @@ const SchoolStudentOnboardingV2: React.FC = () => {
                     onClick={handleInsertSampleBulkText}
                     className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
                   >
-                    <Sparkles size={13} /> Insert Format Example
+                    <FileText size={13} /> Insert Format Example
                   </button>
                 </div>
 

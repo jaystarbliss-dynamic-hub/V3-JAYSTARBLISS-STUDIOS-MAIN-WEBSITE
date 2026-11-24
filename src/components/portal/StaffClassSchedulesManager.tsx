@@ -15,7 +15,6 @@ import {
   Repeat,
   Save,
   School,
-  Sparkles,
   Umbrella,
   User,
   Users,

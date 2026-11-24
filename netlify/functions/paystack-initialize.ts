@@ -20,6 +20,42 @@ import {
 
 const token = (event: any) => { const header = event.headers?.authorization || event.headers?.Authorization || ""; return header.startsWith("Bearer ") ? header.slice(7) : ""; };
 const json = (statusCode: number, body: Record<string, unknown>) => ({ statusCode, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify(body) });
+const resolveSafeCallbackOrigin = (event: any): string => {
+  const fallbackRoot = (process.env.PUBLIC_APP_URL || "https://jaystarblissstudios.com").replace(/\/$/, "");
+  const rawOrigin = String(event.headers?.origin || event.headers?.Origin || "").trim();
+  const rawReferer = String(event.headers?.referer || event.headers?.Referer || "").trim();
+  const candidates = [rawOrigin];
+  if (rawReferer) {
+    try {
+      candidates.push(new URL(rawReferer).origin);
+    } catch {
+      // ignore invalid referer
+    }
+  }
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      const parsed = new URL(candidate);
+      const host = parsed.hostname.toLowerCase();
+      const isAllowedProd =
+        parsed.protocol === "https:" &&
+        (host === "jaystarblissstudios.com" ||
+          host === "www.jaystarblissstudios.com" ||
+          host.endsWith(".jaystarblissstudios.com") ||
+          host.endsWith(".netlify.app") ||
+          host.endsWith(".run.app"));
+      const isAllowedLocal =
+        (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+        (host === "localhost" || host === "127.0.0.1");
+      if (isAllowedProd || isAllowedLocal) {
+        return parsed.origin.replace(/\/$/, "");
+      }
+    } catch {
+      // ignore invalid origin
+    }
+  }
+  return fallbackRoot;
+};
 const findStudent = async (studentId: string, ownerId: string, ownerType: "parent" | "school", userEmail?: string) => {
   if (!studentId) return null;
   const parentEmailNorm = String(userEmail || "").toLowerCase().trim();
@@ -227,10 +263,10 @@ export const handler: Handler = async (event) => {
       if (!process.env.PAYSTACK_SECRET_KEY) {
         return json(503, { error: "Payment gateway is not configured." });
       }
-      const callbackRoot = process.env.PUBLIC_APP_URL || "https://jaystarblissstudios.com";
-      const callbackUrl = `${callbackRoot.replace(/\/$/, "")}/portal/student/payments?enrollmentId=${encodeURIComponent(
+      const callbackRoot = resolveSafeCallbackOrigin(event);
+      const callbackUrl = `${callbackRoot}/portal/student/payments?enrollmentId=${encodeURIComponent(
         programmeEnrollmentId
-      )}`;
+      )}&paymentProvider=paystack`;
 
       const durationWeeks = Math.max(1, Number(progEnroll.durationWeeks || 8));
       const planLabel = String(progEnroll.programTitle || "Programme Tuition");
@@ -498,13 +534,15 @@ export const handler: Handler = async (event) => {
 
     const chargePreview = calculateCustomerCharge(plan.baseAmount, getFeePolicy(config, feeRole));
     if (!process.env.PAYSTACK_SECRET_KEY) return json(503, { error: "Payment gateway is not configured." });
-    const callbackRoot = process.env.PUBLIC_APP_URL || "https://jaystarblissstudios.com";
+    const callbackRoot = resolveSafeCallbackOrigin(event);
     const callbackPath = actualRole === "school" ? "/portal/school/payments" : actualRole === "parent" ? "/portal/parent/payments" : "/portal/student/payments";
+    const callbackParams = new URLSearchParams({ paymentProvider: "paystack" });
+    if (enrollmentRequestId) callbackParams.set("enrollmentId", enrollmentRequestId);
 
     const paystackPayload = buildPaystackInitializePayload({
       email: decoded.email,
       amountMinor: Math.round(plan.baseAmount * 100),
-      callbackUrl: `${callbackRoot.replace(/\/$/, "")}${callbackPath}`,
+      callbackUrl: `${callbackRoot}${callbackPath}?${callbackParams.toString()}`,
       metadata: {
         userId: decoded.uid,
         role: actualRole,

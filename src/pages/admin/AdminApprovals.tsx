@@ -5,7 +5,7 @@ import { collection, doc, setDoc, addDoc, updateDoc, getDocs, limit, serverTimes
 import { 
   CheckCircle2, XCircle, Clock, ExternalLink, Award, 
   Calendar, Phone, Mail, Eye, ChevronDown, Search, Loader2, X,
-  Sparkles, UserCheck, AlertTriangle, ImageOff
+  UserCheck, AlertTriangle, ImageOff
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import SEO from '../../components/ui/SEO';

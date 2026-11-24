@@ -4,7 +4,6 @@ import {
   User,
   Target,
   Clock,
-  Sparkles,
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
@@ -53,7 +52,7 @@ const STEPS = [
   { number: 1, title: 'Learner Profile', subtitle: 'Age & Stage', icon: User },
   { number: 2, title: 'Focus & Goals', subtitle: 'Disciplines', icon: Target },
   { number: 3, title: 'Study Cadence', subtitle: 'Schedule', icon: Clock },
-  { number: 4, title: 'Custom Blueprint', subtitle: 'Your Roadmap', icon: Sparkles },
+  { number: 4, title: 'Custom Blueprint', subtitle: 'Your Roadmap', icon: Layers },
 ];
 
 export default function LearningPathBuilder() {
@@ -470,7 +469,7 @@ export default function LearningPathBuilder() {
                     onClick={() => setStep(4)}
                     className="inline-flex items-center gap-2 bg-brand-red hover:bg-rose-600 text-white font-bold px-8 py-4 rounded-xl transition-all shadow-lg shadow-brand-red/25 cursor-pointer text-sm"
                   >
-                    Generate Custom Blueprint <Sparkles className="w-4 h-4" />
+                    Generate Custom Blueprint <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
               </motion.div>

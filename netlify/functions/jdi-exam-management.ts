@@ -350,7 +350,7 @@ export const handler: Handler = async event => {
     const c = await authUser(event);
     if (schoolRoles.includes(c.role)) {
       const lockCheck = await enforceEntitlementOrLock(event);
-      if (!lockCheck.ok) return lockCheck.response;
+      if ("response" in lockCheck) return lockCheck.response;
     }
     const method = event.httpMethod || "GET";
     const body = event.body ? JSON.parse(event.body || "{}") : {};
@@ -1371,35 +1371,102 @@ export const handler: Handler = async event => {
           });
         }
         const unchanged = currentStatus === status;
+        const nowIso = new Date().toISOString();
+        const actorName = String(c.user?.name || c.user?.fullName || c.email || "Tutor");
+        const isManualClose = status === "completed" && currentStatus !== "completed";
+        const isManualReopen = status === "active" && currentStatus === "completed";
+        const isManualOpen = status === "active" && (currentStatus === "draft" || currentStatus === "scheduled");
+        const allowInProgressFinish = body.allowInProgressFinish !== false;
+
         if (!unchanged) {
           const statusEvent = ref.collection("events").doc();
           const statusBatch = adminDb.batch();
-          statusBatch.update(ref, {
+          const historyEntry = {
+            fromStatus: currentStatus,
+            toStatus: status,
+            actorUid: c.uid,
+            actorName,
+            timestamp: nowIso,
+            note:
+              typeof body.note === "string" && body.note.trim()
+                ? body.note.trim().slice(0, 300)
+                : isManualClose
+                  ? "Manually closed by tutor (in-progress students permitted to finish)"
+                  : isManualReopen
+                    ? "Manually reopened by tutor"
+                    : isManualOpen
+                      ? "Manually opened now by tutor"
+                      : `Status updated to ${status}`,
+          };
+
+          const updatePayload: Record<string, any> = {
             status,
+            allowInProgressFinish,
             updatedAt: FieldValue.serverTimestamp(),
             updatedBy: c.uid,
-          });
+            statusHistory: FieldValue.arrayUnion(historyEntry),
+            ...(isManualOpen ? { manuallyOpenedAt: nowIso, manuallyOpenedBy: c.uid } : {}),
+            ...(isManualClose ? { manuallyClosedAt: nowIso, manuallyClosedBy: c.uid } : {}),
+            ...(isManualReopen ? { manuallyReopenedAt: nowIso, manuallyReopenedBy: c.uid } : {}),
+          };
+
+          statusBatch.update(ref, updatePayload);
           statusBatch.set(statusEvent, {
-            type: "exam_status_changed",
+            type: isManualClose
+              ? "exam_manually_closed"
+              : isManualReopen
+                ? "exam_manually_reopened"
+                : isManualOpen
+                  ? "exam_manually_opened"
+                  : "exam_status_changed",
             status,
             actorUid: c.uid,
+            actorName,
             previousStatus: currentStatus,
+            allowInProgressFinish,
             createdAt: FieldValue.serverTimestamp(),
           });
           await statusBatch.commit();
+
+          // Mirror status update safely to schoolExams if a mirror exists
+          const schoolExamRef = adminDb.collection("schoolExams").doc(examId);
+          const schoolExamSnap = await schoolExamRef.get().catch(() => null);
+          if (schoolExamSnap?.exists) {
+            await schoolExamRef.set(updatePayload, { merge: true }).catch(() => undefined);
+          }
         }
-        const recipients = await collectEligibleExamRecipients(exam);
-        await notify(
-          recipients,
-          {
-            type: "exam_status_changed",
-            title: "Assessment updated",
-            message: String(exam.title || "An assessment") + " is now " + status + ".",
-            examId,
-          },
-          `exam-status:${examId}:${status}`
-        );
-        return json(200, { ok: true, status, unchanged });
+
+        if (!unchanged && (status === "active" || status === "completed")) {
+          const recipients = await collectEligibleExamRecipients(exam);
+          const notifTitle = isManualClose
+            ? "Assessment Closed"
+            : isManualReopen
+              ? "Assessment Reopened"
+              : "Assessment Now Open";
+          const notifMessage = isManualClose
+            ? `${String(exam.title || "An assessment")} is now closed for new starts. If you already started, you can still finish and submit before your timer ends.`
+            : isManualReopen
+              ? `${String(exam.title || "An assessment")} has been reopened by your tutor.`
+              : `${String(exam.title || "An assessment")} is now open and available in your portal.`;
+          await notify(
+            recipients,
+            {
+              type: "exam_status_changed",
+              title: notifTitle,
+              message: notifMessage,
+              examId,
+            },
+            `exam-status:${examId}:${status}:${nowIso.slice(0, 16)}`
+          );
+        }
+        return json(200, {
+          ok: true,
+          status,
+          unchanged,
+          allowInProgressFinish,
+          manuallyClosedAt: isManualClose ? nowIso : exam.manuallyClosedAt || null,
+          manuallyReopenedAt: isManualReopen ? nowIso : exam.manuallyReopenedAt || null,
+        });
       }
 
       return json(404, { error: "Unknown assessment management action." });

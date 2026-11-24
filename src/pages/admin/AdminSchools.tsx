@@ -7,7 +7,8 @@ import {
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
-import { startImpersonation } from '../../utils/impersonation';
+import { type ImpersonationTarget } from '../../utils/impersonation';
+import { SchoolSupportAccessModal } from '../../components/admin/SchoolSupportAccessModal';
 import { 
   School, BookOpen, Plus, Trash2, ExternalLink, 
   FileText, RefreshCw, Loader2, 
@@ -225,6 +226,14 @@ const AdminSchools: React.FC = () => {
     validUntil: ''
   });
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
+  const [supportAccessTarget, setSupportAccessTarget] = useState<ImpersonationTarget | null>(null);
+  const [issuingTempPassword, setIssuingTempPassword] = useState(false);
+  const [issuedTempCredential, setIssuedTempCredential] = useState<{
+    schoolName: string;
+    email: string;
+    temporaryPassword: string;
+    expiresAt: string;
+  } | null>(null);
 
   // New Resource Form
   const [resourceForm, setResourceForm] = useState({
@@ -347,12 +356,13 @@ const AdminSchools: React.FC = () => {
     // Fetch related records: passcodes, resources, cadets, payments
     const fetchSchoolDetails = async () => {
       try {
+        const emptySnap = { docs: [] as any[] };
         const [passSnap, resSnap, studSnap, indivSnap, paySnap] = await Promise.all([
-          getDocs(query(collection(db, 'schoolPasscodes'), where('schoolId', '==', selectedSchool.id))),
-          getDocs(query(collection(db, 'schoolLinks'), where('schoolId', '==', selectedSchool.id))),
-          getDocs(query(collection(db, 'students'), where('schoolId', '==', selectedSchool.id))),
-          getDocs(query(collection(db, 'individualStudents'), where('schoolId', '==', selectedSchool.id))),
-          getDocs(query(collection(db, 'payments'), where('schoolId', '==', selectedSchool.id)))
+          getDocs(query(collection(db, 'schoolPasscodes'), where('schoolId', '==', selectedSchool.id))).catch(() => emptySnap),
+          getDocs(query(collection(db, 'schoolLinks'), where('schoolId', '==', selectedSchool.id))).catch(() => emptySnap),
+          getDocs(query(collection(db, 'students'), where('schoolId', '==', selectedSchool.id))).catch(() => emptySnap),
+          getDocs(query(collection(db, 'individualStudents'), where('schoolId', '==', selectedSchool.id))).catch(() => emptySnap),
+          getDocs(query(collection(db, 'payments'), where('schoolId', '==', selectedSchool.id))).catch(() => emptySnap)
         ]);
 
         setPasscodes(passSnap.docs.map(d => ({ id: d.id, ...d.data() } as ExamPasscode)));
@@ -795,6 +805,169 @@ const AdminSchools: React.FC = () => {
     }
   };
 
+  // Issue a unique expiring 72h single-use temporary password for a school admin
+  const handleIssueTempPassword = async (school: SchoolData) => {
+    const candidateEmail = (
+      school.contactEmail ||
+      school.email ||
+      (selectedSchool?.id === school.id ? profileForm.contactEmail : '') ||
+      `${school.id.toLowerCase().replace(/[^a-z0-9]/g, '')}@jaystarblissstudios.com`
+    )
+      .trim()
+      .toLowerCase();
+
+    setIssuingTempPassword(true);
+    try {
+      const token = await auth.currentUser?.getIdToken().catch(() => '');
+      let issuedPassword = '';
+      let issuedExpiresAt = '';
+
+      if (token) {
+        try {
+          const res = await fetch('/.netlify/functions/admin-school-temp-password', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              schoolId: school.id,
+              schoolName: school.name,
+              adminEmail: candidateEmail,
+              email: candidateEmail,
+              contactName: school.contactName || 'School Administrator',
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data?.temporaryPassword && !data?.fallback) {
+            issuedPassword = String(data.temporaryPassword);
+            issuedExpiresAt = String(
+              data.expiresAt ||
+                data.tempPasswordExpiresAt ||
+                new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString()
+            );
+          }
+        } catch {
+          // Proceed to client-side cryptographic fallback below
+        }
+      }
+
+      if (!issuedPassword) {
+        // Generate cryptographically unique temporary password & store only its SHA-256 hash in Firestore
+        const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+        const randomBytes = new Uint8Array(10);
+        if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+          window.crypto.getRandomValues(randomBytes);
+        } else {
+          for (let i = 0; i < randomBytes.length; i++) {
+            randomBytes[i] = Math.floor(Math.random() * 256);
+          }
+        }
+        let tokenPart = '';
+        for (let i = 0; i < randomBytes.length; i++) {
+          tokenPart += alphabet[randomBytes[i] % alphabet.length];
+        }
+        issuedPassword = `JdH-${tokenPart}-26!`;
+        const expiresDate = new Date(Date.now() + 72 * 60 * 60 * 1000);
+        issuedExpiresAt = expiresDate.toISOString();
+        const issuedAtIso = new Date().toISOString();
+
+        // Compute SHA-256 hash
+        let tempPasswordHash = '';
+        if (typeof window !== 'undefined' && window.crypto?.subtle) {
+          const encoded = new TextEncoder().encode(issuedPassword);
+          const digest = await window.crypto.subtle.digest('SHA-256', encoded);
+          tempPasswordHash = Array.from(new Uint8Array(digest))
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('');
+        }
+
+        const credentialMeta = {
+          contactEmail: candidateEmail,
+          tempPasswordHash,
+          forcePasswordReset: true,
+          tempPasswordSingleUse: true,
+          tempPasswordIssuedAt: issuedAtIso,
+          tempPasswordExpiresAt: issuedExpiresAt,
+          tempPasswordIssuedBy: auth.currentUser?.uid || 'super_admin',
+          updatedAt: serverTimestamp(),
+        };
+
+        await setDoc(doc(db, 'schools', school.id), credentialMeta, { merge: true });
+        await setDoc(
+          doc(db, 'invites', candidateEmail),
+          {
+            email: candidateEmail,
+            name: school.contactName || `${school.name} Administrator`,
+            role: 'SCHOOL',
+            schoolId: school.id,
+            schoolName: school.name,
+            schoolCode: school.schoolCode || school.id.toUpperCase(),
+            status: 'ACTIVE',
+            ...credentialMeta,
+          },
+          { merge: true }
+        ).catch(() => undefined);
+
+        // Also update any existing users document linked to this school or email
+        const existingUsersSnap = await getDocs(
+          query(collection(db, 'users'), where('email', '==', candidateEmail))
+        ).catch(() => null);
+        if (existingUsersSnap && !existingUsersSnap.empty) {
+          await Promise.all(
+            existingUsersSnap.docs.map((uDoc) =>
+              setDoc(
+                doc(db, 'users', uDoc.id),
+                {
+                  role: 'SCHOOL',
+                  schoolId: school.id,
+                  schoolName: school.name,
+                  accountStatus: 'ACTIVE',
+                  ...credentialMeta,
+                },
+                { merge: true }
+              ).catch(() => undefined)
+            )
+          );
+        }
+
+        await addDoc(collection(db, 'adminAuditLogs'), {
+          action: 'SCHOOL_ADMIN_TEMP_PASSWORD_ISSUED',
+          actorUid: auth.currentUser?.uid || 'super_admin',
+          actorEmail: auth.currentUser?.email || '',
+          actorRole: 'SUPER_ADMIN',
+          targetEmail: candidateEmail,
+          schoolId: school.id,
+          schoolName: school.name,
+          reason: 'Administrator-initiated credential issuance',
+          expiresAt: issuedExpiresAt,
+          timestamp: serverTimestamp(),
+        }).catch(() => undefined);
+      }
+
+      if (!school.contactEmail && candidateEmail) {
+        setSchools((prev) =>
+          prev.map((s) => (s.id === school.id ? { ...s, contactEmail: candidateEmail } : s))
+        );
+        if (selectedSchool?.id === school.id) {
+          setProfileForm((p) => ({ ...p, contactEmail: p.contactEmail || candidateEmail }));
+        }
+      }
+
+      setIssuedTempCredential({
+        schoolName: school.name,
+        email: candidateEmail,
+        temporaryPassword: issuedPassword,
+        expiresAt: issuedExpiresAt,
+      });
+      toast.success(`Unique temporary password issued for ${school.name}.`);
+    } catch (err: any) {
+      toast.error(err?.message || 'Unable to issue temporary password.');
+    } finally {
+      setIssuingTempPassword(false);
+    }
+  };
+
   // Onboard New School
   const handleOnboardSchool = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1011,21 +1184,30 @@ const AdminSchools: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  toast.info(`Directly logging into school admin portal for ${selectedSchool.name}...`);
-                  startImpersonation({
+                  setSupportAccessTarget({
                     id: selectedSchool.id,
-                    uid: selectedSchool.id,
+                    uid: (selectedSchool as any).adminUid || selectedSchool.id,
                     name: selectedSchool.name,
                     email: selectedSchool.contactEmail || selectedSchool.email,
                     role: 'SCHOOL',
                     schoolId: selectedSchool.id,
                     schoolName: selectedSchool.name,
-                    phone: selectedSchool.phone
-                  }, navigate);
+                    phone: selectedSchool.phone,
+                  });
                 }}
                 className="min-h-10 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
               >
-                <UserCheck size={14} /> Log In As School Admin
+                <UserCheck size={14} /> Support Access
+              </button>
+
+              <button
+                type="button"
+                disabled={issuingTempPassword}
+                onClick={() => handleIssueTempPassword(selectedSchool)}
+                className="min-h-10 px-3.5 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/30 text-xs font-bold text-[#991B1B] dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/50 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-60"
+              >
+                {issuingTempPassword ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
+                Issue Temp Password
               </button>
 
               <button
@@ -3218,31 +3400,46 @@ const AdminSchools: React.FC = () => {
                         </strong>
                       </div>
 
-                      <div className="pt-2 flex items-center justify-between text-xs">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toast.info(`Directly logging into school admin portal for ${school.name}...`);
-                            startImpersonation({
-                              id: school.id,
-                              uid: school.id,
-                              name: school.name,
-                              email: school.contactEmail || school.email,
-                              role: 'SCHOOL',
-                              schoolId: school.id,
-                              schoolName: school.name,
-                              phone: school.phone
-                            }, navigate);
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-2xs transition-all active:scale-95 cursor-pointer"
-                        >
-                          <UserCheck size={13} />
-                          <span>Log In As</span>
-                        </button>
+                      <div className="pt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSupportAccessTarget({
+                                id: school.id,
+                                uid: (school as any).adminUid || school.id,
+                                name: school.name,
+                                email: school.contactEmail || school.email,
+                                role: 'SCHOOL',
+                                schoolId: school.id,
+                                schoolName: school.name,
+                                phone: school.phone,
+                              });
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-2xs transition-all active:scale-95 cursor-pointer"
+                          >
+                            <UserCheck size={13} />
+                            <span>Support Access</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={issuingTempPassword}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleIssueTempPassword(school);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/80 dark:bg-red-950/30 text-[#991B1B] dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/50 font-bold text-xs transition-all active:scale-95 cursor-pointer disabled:opacity-60"
+                            title="Issue one-time 72-hour temporary password for school admin"
+                          >
+                            <Key size={13} />
+                            <span>Temp Pass</span>
+                          </button>
+                        </div>
 
                         <div className="flex items-center font-black text-brand-red group-hover:translate-x-1 transition-transform">
-                          Manage Workspace <ChevronRight size={16} />
+                          Manage <ChevronRight size={16} />
                         </div>
                       </div>
                     </div>
@@ -3467,6 +3664,74 @@ const AdminSchools: React.FC = () => {
             }}
           />
         </>
+      )}
+
+      <SchoolSupportAccessModal
+        isOpen={Boolean(supportAccessTarget)}
+        target={supportAccessTarget}
+        onClose={() => setSupportAccessTarget(null)}
+      />
+
+      {issuedTempCredential && (
+        <div
+          className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 shadow-2xl p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  One-Time Temporary Password Issued
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+                  {issuedTempCredential.schoolName} ({issuedTempCredential.email})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIssuedTempCredential(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 flex items-center justify-between gap-3">
+              <code className="text-sm font-mono font-bold text-[#991B1B] dark:text-red-400 select-all">
+                {issuedTempCredential.temporaryPassword}
+              </code>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(issuedTempCredential.temporaryPassword);
+                  toast.success('Temporary password copied to clipboard.');
+                }}
+                className="px-3 py-1.5 rounded-lg bg-[#991B1B] hover:bg-[#7F1D1D] text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0"
+              >
+                <Copy size={13} />
+                Copy
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
+              This password is unique to this school, is never stored in plain text, expires in{' '}
+              <strong>72 hours</strong> (
+              {new Date(issuedTempCredential.expiresAt).toLocaleString()}), and forces a password
+              change immediately on first sign-in. Share it securely—it will not be shown again.
+            </p>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIssuedTempCredential(null)}
+                className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-slate-900 text-xs font-bold"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

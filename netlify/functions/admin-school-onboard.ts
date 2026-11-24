@@ -31,12 +31,13 @@ export const handler: Handler = async (event) => {
     catch (error: any) { if (error?.code === 'auth/email-already-exists') return json(409, { error: 'That administrator email already belongs to a Firebase account.' }); throw error; }
 
     const schoolRef = adminDb.collection('schools').doc(); const code = requestedCode || schoolCode(name); const now = new Date();
+    const tempPasswordExpiresAt = new Date(now.getTime() + 72 * 60 * 60 * 1000);
     try {
       await adminDb.runTransaction(async transaction => {
-        transaction.set(schoolRef, { name, schoolCode: code, contactName, contactEmail: email, phone: phone || null, address: address || null, state: state || null, notes: notes || null, status: 'ACTIVE', onboardingStatus: 'APPROVED', createdBy: decoded.uid, createdAt: now, updatedAt: now });
-        transaction.set(adminDb.collection('users').doc(authUser.uid), { uid: authUser.uid, name: contactName, fullName: contactName, email, role: 'SCHOOL', schoolId: schoolRef.id, schoolCode: code, accountStatus: 'ACTIVE', forcePasswordReset: true, onboardingStatus: 'APPROVED', onboardingTourEligible: true, createdBy: decoded.uid, createdAt: now, updatedAt: now });
-        transaction.set(adminDb.collection('schoolOnboarding').doc(schoolRef.id), { schoolId: schoolRef.id, schoolName: name, administratorId: authUser.uid, administratorEmail: email, status: 'APPROVED', approvedBy: decoded.uid, createdBy: decoded.uid, createdAt: now, updatedAt: now });
-        transaction.set(adminDb.collection('activityLogs').doc(), { type: 'school_onboarded', action: 'SCHOOL_ONBOARDED', message: `School ${name} was onboarded by an administrator.`, actorId: decoded.uid, userId: authUser.uid, userEmail: email, userType: 'SCHOOL', schoolId: schoolRef.id, schoolName: name, timestamp: now, details: { schoolCode: code, contactName, phone, address, state, status: 'ACTIVE' } });
+        transaction.set(schoolRef, { name, schoolCode: code, contactName, contactEmail: email, adminUid: authUser.uid, phone: phone || null, address: address || null, state: state || null, notes: notes || null, status: 'ACTIVE', onboardingStatus: 'APPROVED', createdBy: decoded.uid, createdAt: now, updatedAt: now });
+        transaction.set(adminDb.collection('users').doc(authUser.uid), { uid: authUser.uid, name: contactName, fullName: contactName, email, role: 'SCHOOL', schoolId: schoolRef.id, schoolName: name, schoolCode: code, accountStatus: 'ACTIVE', forcePasswordReset: true, tempPasswordSingleUse: true, tempPasswordIssuedAt: now, tempPasswordExpiresAt, onboardingStatus: 'APPROVED', onboardingTourEligible: true, createdBy: decoded.uid, createdAt: now, updatedAt: now });
+        transaction.set(adminDb.collection('schoolOnboarding').doc(schoolRef.id), { schoolId: schoolRef.id, schoolName: name, administratorId: authUser.uid, administratorEmail: email, status: 'APPROVED', tempPasswordIssuedAt: now, tempPasswordExpiresAt, approvedBy: decoded.uid, createdBy: decoded.uid, createdAt: now, updatedAt: now });
+        transaction.set(adminDb.collection('activityLogs').doc(), { type: 'school_onboarded', action: 'SCHOOL_ONBOARDED', message: `School ${name} was onboarded by an administrator.`, actorId: decoded.uid, userId: authUser.uid, userEmail: email, userType: 'SCHOOL', schoolId: schoolRef.id, schoolName: name, timestamp: now, details: { schoolCode: code, contactName, phone, address, state, status: 'ACTIVE', tempPasswordExpiresAt: tempPasswordExpiresAt.toISOString() } });
       });
     } catch (error) { await adminAuth.deleteUser(authUser.uid).catch(() => undefined); throw error; }
     await createPortalNotification({
@@ -44,9 +45,9 @@ export const handler: Handler = async (event) => {
       email,
       type: 'SCHOOL_ONBOARDING_APPROVED',
       title: 'Your Jaystarbliss Studios school portal is ready',
-      message: `Your school account for ${name} has been created. Sign in at ${process.env.PUBLIC_APP_URL || process.env.URL || 'https://jaystarblissstudios.com'}/portal using your administrator email (${email}) and temporary password: ${password}. Please change your password immediately after signing in. Your school code ${code} is for institutional exam/operations purposes and is not your login password.`,
-      data: { schoolId: schoolRef.id, schoolCode: code }
+      message: `Your school account for ${name} has been created. Sign in at ${process.env.PUBLIC_APP_URL || process.env.URL || 'https://jaystarblissstudios.com'}/portal using your administrator email (${email}) and your unique one-time temporary password: ${password}. This temporary password expires in 72 hours and you will be required to set a personal password immediately upon signing in. Your institutional school code ${code} is for exam and institutional operations only and is not your login password.`,
+      data: { schoolId: schoolRef.id, schoolCode: code, tempPasswordExpiresAt: tempPasswordExpiresAt.toISOString() }
     });
-    return json(200, { success: true, school: { id: schoolRef.id, name, schoolCode: code, status: 'ACTIVE' }, administrator: { uid: authUser.uid, name: contactName, email }, temporaryPassword: password });
+    return json(200, { success: true, school: { id: schoolRef.id, name, schoolCode: code, status: 'ACTIVE' }, administrator: { uid: authUser.uid, name: contactName, email }, temporaryPassword: password, tempPasswordExpiresAt: tempPasswordExpiresAt.toISOString() });
   } catch (error) { console.error('School onboarding error:', error); return json(500, { error: 'Unable to onboard this school right now.' }); }
 };

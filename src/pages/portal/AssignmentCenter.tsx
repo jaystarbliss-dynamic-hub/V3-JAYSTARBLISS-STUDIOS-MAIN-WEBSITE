@@ -20,7 +20,6 @@ import {
   School,
   Send,
   ShieldAlert,
-  Sparkles,
   UserRound,
   Users,
   X,

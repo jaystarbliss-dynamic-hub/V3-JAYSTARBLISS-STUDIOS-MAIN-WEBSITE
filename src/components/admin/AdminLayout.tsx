@@ -1,4 +1,4 @@
-import React, { Suspense, useState, useEffect, useMemo } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -282,8 +282,40 @@ const AdminLayout: React.FC = () => {
     ).toUpperCase();
   });
 
+  const [adminDisplayName, setAdminDisplayName] = useState<string>(() => {
+    return (
+      auth.currentUser?.displayName ||
+      sessionStorage.getItem('userName') ||
+      localStorage.getItem('jaystar_cached_user_name') ||
+      'Super Admin'
+    );
+  });
+  const [adminEmail, setAdminEmail] = useState<string>(() => {
+    return auth.currentUser?.email || sessionStorage.getItem('userEmail') || '';
+  });
+  const [adminPhotoURL, setAdminPhotoURL] = useState<string | null>(() => {
+    return auth.currentUser?.photoURL || null;
+  });
+  const [showAdminProfileMenu, setShowAdminProfileMenu] = useState(false);
+  const adminProfileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (adminProfileRef.current && !adminProfileRef.current.contains(event.target as Node)) {
+        setShowAdminProfileMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   useEffect(() => {
     const syncRoleFromStorageAndAuth = async (uid?: string, email?: string | null) => {
+      const currentUser = auth.currentUser;
+      if (currentUser?.email) setAdminEmail(currentUser.email);
+      if (currentUser?.photoURL) setAdminPhotoURL(currentUser.photoURL);
+      if (currentUser?.displayName) setAdminDisplayName(currentUser.displayName);
+
       const imp = getActiveImpersonation();
       if (imp?.isMasquerading && imp.targetRole) {
         setActiveRole(String(imp.targetRole).toUpperCase());
@@ -304,7 +336,15 @@ const AdminLayout: React.FC = () => {
         try {
           const snap = await getDoc(doc(db, 'users', uid));
           if (snap.exists()) {
-            const dbRole = String(snap.data()?.role || '').trim().toUpperCase();
+            const data = snap.data() || {};
+            const realName = String(data.fullName || data.name || currentUser?.displayName || '').trim();
+            if (realName) {
+              setAdminDisplayName(realName);
+            }
+            if (data.photoURL || data.avatarUrl) {
+              setAdminPhotoURL(String(data.photoURL || data.avatarUrl));
+            }
+            const dbRole = String(data.role || '').trim().toUpperCase();
             if (resolveCanonicalAdminScope(dbRole)) {
               setActiveRole(dbRole);
               sessionStorage.setItem('userRole', dbRole.toLowerCase());
@@ -371,7 +411,7 @@ const AdminLayout: React.FC = () => {
         { name: "Approvals & Requests", href: "/admin/approvals", icon: UserCheck, desc: "Student, tutor & enrollment approvals" },
         { name: "Scholars & Students", href: "/admin/students", icon: GraduationCap, desc: "Student credentials & individual dispatches" },
         { name: "Billings / Fees", href: "/admin/billing", icon: CreditCard, desc: "Tuition transactions, treasury & ledger" },
-        { name: "Agreements Centre", href: "/admin/agreements", icon: FileText, desc: "Proposals, communications & institutional contracts" },
+        { name: "Agreements Centre", href: "/admin/agreements", icon: FileText, desc: "Proposals, communiqués & institutional contracts" },
         { name: "Faculty & Staff", href: "/admin/staff", icon: Users, desc: "Staff invitations & faculty curriculum" },
         { name: "Tutor Subjects", href: "/admin/tutor-subjects", icon: Award, desc: "Approve subjects & find matching tutors" },
         { name: "Affiliated Schools", href: "/admin/schools", icon: School, desc: "Partner school portals & exams" },
@@ -417,7 +457,7 @@ const AdminLayout: React.FC = () => {
             { name: "Programs & Courses", href: "/admin/programs", icon: BookOpen, desc: "Curriculum tracks, stages & syllabi" },
             { name: "Approvals & Requests", href: "/admin/approvals", icon: UserCheck, desc: "Student, tutor & enrollment approvals" },
             { name: "Scholars & Students", href: "/admin/students", icon: GraduationCap, desc: "Student credentials & individual dispatches" },
-            { name: "Agreements Centre", href: "/admin/agreements", icon: FileText, desc: "Proposals, communications & institutional contracts" },
+            { name: "Agreements Centre", href: "/admin/agreements", icon: FileText, desc: "Proposals, communiqués & institutional contracts" },
             { name: "Faculty & Staff", href: "/admin/staff", icon: Users, desc: "Staff invitations & faculty curriculum" },
             { name: "Tutor Subjects", href: "/admin/tutor-subjects", icon: Award, desc: "Approve subjects & find matching tutors" },
             { name: "Affiliated Schools", href: "/admin/schools", icon: School, desc: "Partner school portals & exams" },
@@ -449,7 +489,7 @@ const AdminLayout: React.FC = () => {
           items: [
             { name: "Billings / Fees", href: "/admin/billing", icon: CreditCard, desc: "Tuition transactions, treasury & ledger" },
             { name: "Approvals & Requests", href: "/admin/approvals", icon: UserCheck, desc: "Enrollment & fee approvals" },
-            { name: "Agreements Centre", href: "/admin/agreements", icon: FileText, desc: "Proposals, communications & institutional contracts" },
+            { name: "Agreements Centre", href: "/admin/agreements", icon: FileText, desc: "Proposals, communiqués & institutional contracts" },
           ]
         },
         {
@@ -552,14 +592,24 @@ const AdminLayout: React.FC = () => {
               <div>
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-white/10">
-                  <button type="button" onClick={() => setSidebarOpen(false)} className="flex items-center gap-2 text-left cursor-pointer">
-                    <JaystarblissIcon className="w-7 h-7 shrink-0" />
-                    <span className="font-bold text-xs tracking-tight uppercase">JAYSTARBLISS ADMIN</span>
+                  <button type="button" onClick={() => setSidebarOpen(false)} className="flex items-center gap-2.5 min-w-0 text-left cursor-pointer">
+                    <JaystarblissIcon className="w-8 h-8 shrink-0 drop-shadow-xs" />
+                    <div className="min-w-0">
+                      <span className="block font-extrabold text-xs tracking-tight text-slate-900 dark:text-white leading-tight truncate">
+                        Jaystarbliss Studios
+                      </span>
+                      <span className="block text-[11px] font-semibold text-[#1E293B] dark:text-zinc-200 leading-tight truncate mt-0.5">
+                        {adminDisplayName}
+                      </span>
+                      <span className="block text-[10px] text-[#B91C1C] dark:text-red-400 font-medium leading-tight truncate">
+                        {capabilities.roleLabel || 'Super Administrator'}
+                      </span>
+                    </div>
                   </button>
                   <button 
                     type="button" 
                     onClick={() => setSidebarOpen(false)}
-                    className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:text-white cursor-pointer"
+                    className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:text-white cursor-pointer shrink-0"
                     aria-label="Close sidebar"
                   >
                     <PanelLeftClose size={18} />
@@ -659,10 +709,10 @@ const AdminLayout: React.FC = () => {
         }}
         className="hidden lg:flex bg-white dark:bg-[#111114] text-slate-900 dark:text-zinc-100 flex-col h-full max-h-screen border-r border-slate-200 dark:border-zinc-800 shrink-0 select-none overflow-hidden relative z-30 shadow-xs"
       >
-        {/* Header with Logo & Pin Toggle */}
-        <div className="flex items-center justify-between gap-2 h-16 px-3.5 border-b border-slate-200 dark:border-zinc-800 shrink-0 overflow-hidden bg-white dark:bg-[#111114]">
+        {/* Header with Organization Logo, Jaystarbliss Studios, Admin Name & Role, & Pin Toggle */}
+        <div className="flex items-center justify-between gap-2 min-h-16 px-3.5 py-2 border-b border-slate-200 dark:border-zinc-800 shrink-0 overflow-hidden bg-white dark:bg-[#111114]">
           <Tooltip
-            content={sidebarPinned ? "Unpin sidebar (auto-collapse)" : "Pin sidebar open"}
+            content={`Jaystarbliss Studios • ${adminDisplayName} (${capabilities.roleLabel || 'Super Administrator'})${sidebarPinned ? ' — Click to unpin sidebar' : ' — Click to pin sidebar open'}`}
             placement="right"
             className="flex-1 min-w-0"
             fullWidth
@@ -670,7 +720,7 @@ const AdminLayout: React.FC = () => {
             <button
               type="button"
               onClick={toggleSidebarPin}
-              className="flex items-center gap-3 group w-full min-w-0 text-left cursor-pointer"
+              className="flex items-center gap-2.5 group w-full min-w-0 text-left cursor-pointer"
               aria-label={sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"}
             >
               <div className="w-10 h-10 flex items-center justify-center shrink-0">
@@ -681,13 +731,16 @@ const AdminLayout: React.FC = () => {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.16 }}
-                  className="flex flex-col min-w-0 whitespace-nowrap"
+                  className="flex flex-col min-w-0 overflow-hidden"
                 >
-                  <span className="font-bold text-xs sm:text-sm tracking-tight text-slate-900 dark:text-white truncate">
-                    JAYSTARBLISS
+                  <span className="font-extrabold text-xs sm:text-[13px] tracking-tight text-slate-900 dark:text-white leading-tight truncate">
+                    Jaystarbliss Studios
                   </span>
-                  <span className="text-[10px] text-[#B91C1C] dark:text-red-400 font-mono font-semibold truncate">
-                    Admin Console
+                  <span className="text-[11px] font-semibold text-[#1E293B] dark:text-zinc-200 leading-tight truncate mt-0.5">
+                    {adminDisplayName}
+                  </span>
+                  <span className="text-[10px] text-[#B91C1C] dark:text-red-400 font-medium leading-tight truncate">
+                    {capabilities.roleLabel || 'Super Administrator'}
                   </span>
                 </motion.div>
               )}
@@ -933,31 +986,75 @@ const AdminLayout: React.FC = () => {
             {/* Notification Bell */}
             <NotificationBell role="admin" />
 
-            {/* Profile Settings Avatar Link (only links to Global Settings for Super Admin) */}
-            {capabilities.canAccessGlobalSettings ? (
-              <Tooltip content="Global Settings" placement="bottom">
-                <Link
-                  to="/admin/settings"
-                  aria-label="Global Settings"
-                  className="p-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center justify-center"
+            {/* User Account Profile Avatar & Dropdown Menu (Top Right) */}
+            <div className="relative" ref={adminProfileRef}>
+              <Tooltip content={`${adminDisplayName} (${capabilities.roleLabel || 'Super Administrator'})`} placement="bottom">
+                <button
+                  type="button"
+                  onClick={() => setShowAdminProfileMenu((prev) => !prev)}
+                  aria-label="Admin profile menu"
+                  className="p-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center justify-center cursor-pointer"
                 >
-                  <div className="w-7 h-7 rounded-lg bg-[#1E293B] dark:bg-[#B91C1C] text-white flex items-center justify-center shadow-xs">
-                    <ShieldCheck size={15} />
-                  </div>
-                </Link>
+                  {adminPhotoURL ? (
+                    <img
+                      src={adminPhotoURL}
+                      alt={adminDisplayName}
+                      className="w-8 h-8 rounded-lg object-cover border border-slate-300 dark:border-zinc-700"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-lg bg-[#1E293B] dark:bg-[#B91C1C] text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                      {adminDisplayName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </button>
               </Tooltip>
-            ) : (
-              <Tooltip content={capabilities.roleLabel} placement="bottom">
-                <div
-                  aria-label={capabilities.roleLabel}
-                  className="p-1 rounded-xl flex items-center justify-center"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-[#1E293B] dark:bg-[#B91C1C] text-white flex items-center justify-center shadow-xs">
-                    <ShieldCheck size={15} />
-                  </div>
-                </div>
-              </Tooltip>
-            )}
+
+              <AnimatePresence>
+                {showAdminProfileMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    className="absolute right-0 mt-2 w-56 bg-white dark:bg-[#111114] rounded-2xl shadow-xl border border-slate-200 dark:border-zinc-800 py-2 z-50 text-xs font-semibold"
+                  >
+                    <div className="px-4 py-2 border-b border-slate-100 dark:border-zinc-800">
+                      <p className="font-bold text-slate-900 dark:text-white truncate">{adminDisplayName}</p>
+                      <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">
+                        {adminEmail || capabilities.roleLabel || 'Super Administrator'}
+                      </p>
+                    </div>
+                    {capabilities.canAccessGlobalSettings && (
+                      <Link
+                        to="/admin/settings"
+                        onClick={() => setShowAdminProfileMenu(false)}
+                        className="flex items-center gap-2.5 px-4 py-2 text-slate-800 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800"
+                      >
+                        <SlidersHorizontal size={14} /> Global Settings
+                      </Link>
+                    )}
+                    <Link
+                      to="/admin/activity"
+                      onClick={() => setShowAdminProfileMenu(false)}
+                      className="flex items-center gap-2.5 px-4 py-2 text-slate-800 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800"
+                    >
+                      <Activity size={14} /> Activity & Audit Logs
+                    </Link>
+                    <div className="my-1 border-t border-slate-100 dark:border-zinc-800" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAdminProfileMenu(false);
+                        void handleLogout();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2 hover:bg-red-50 dark:hover:bg-white/10 text-[#B91C1C] dark:text-red-400 text-left font-bold cursor-pointer"
+                    >
+                      <LogOut size={14} /> Sign Out
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </header>
 

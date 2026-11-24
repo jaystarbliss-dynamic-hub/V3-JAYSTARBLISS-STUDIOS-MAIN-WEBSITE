@@ -203,24 +203,30 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
   useEffect(() => {
     const user = auth.currentUser;
     const activeImp = getActiveImpersonation();
+    const isMasquerading = Boolean(activeImp?.isMasquerading);
     setImpersonation(activeImp);
-    setUserEmail(activeImp?.email || user?.email || '');
-    setPhotoURL(user?.photoURL || null);
+    setUserEmail(
+      isMasquerading
+        ? activeImp?.targetUser?.email || ''
+        : user?.email || sessionStorage.getItem('userEmail') || ''
+    );
+    setPhotoURL(isMasquerading || role === 'student' ? null : user?.photoURL || null);
     setRoleSubtitle(resolveRoleSubtitle(role));
 
     const cachedSchoolName = resolvePartnerSchoolName(
-      sessionStorage.getItem('schoolName'),
-      sessionStorage.getItem('institutionName')
+      activeImp?.targetUser?.schoolName,
+      !isMasquerading ? sessionStorage.getItem('schoolName') : '',
+      !isMasquerading ? sessionStorage.getItem('institutionName') : ''
     );
-    const cachedUserName =
-      activeImp?.name ||
-      sessionStorage.getItem('userName') ||
-      sessionStorage.getItem('studentName') ||
-      user?.displayName ||
-      '';
+    const cachedUserName = isMasquerading
+      ? activeImp?.targetUser?.name || activeImp?.targetUser?.fullName || ''
+      : sessionStorage.getItem('userName') ||
+        sessionStorage.getItem('studentName') ||
+        user?.displayName ||
+        '';
 
-    if (role === 'school' && cachedSchoolName) {
-      setDisplayName(cachedSchoolName);
+    if (role === 'school' && (cachedSchoolName || cachedUserName)) {
+      setDisplayName(cachedSchoolName || cachedUserName);
     } else if (cachedUserName) {
       setDisplayName(cachedUserName);
     } else {
@@ -235,9 +241,13 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
       );
     }
 
-    // Resolve authoritative name from Firestore profile or school document
-    const targetUid = activeImp?.uid || sessionStorage.getItem('userId') || user?.uid || '';
-    const schoolId = sessionStorage.getItem('schoolId') || '';
+    // Resolve authoritative name and profile avatar from Firestore profile or role document
+    const targetUid = isMasquerading
+      ? activeImp?.targetUser?.uid || activeImp?.targetUser?.id || ''
+      : sessionStorage.getItem('userId') || user?.uid || '';
+    const schoolId = isMasquerading
+      ? activeImp?.targetUser?.schoolId || (role === 'school' ? targetUid : '')
+      : sessionStorage.getItem('schoolId') || '';
 
     if (role === 'school') {
       const lookupSchoolId = schoolId || targetUid;
@@ -256,7 +266,10 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
                 setDisplayName(resolvedSchool);
                 sessionStorage.setItem('schoolName', resolvedSchool);
               }
-            } else if (targetUid) {
+              if (sData.logoUrl || sData.photoURL || sData.avatarUrl) {
+                setPhotoURL(String(sData.logoUrl || sData.photoURL || sData.avatarUrl));
+              }
+            } else if (targetUid && (!isMasquerading || targetUid !== user?.uid)) {
               return getDoc(doc(db, 'users', targetUid)).then(uSnap => {
                 if (!uSnap.exists()) return;
                 const uData = uSnap.data() as any;
@@ -271,28 +284,49 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
                   setDisplayName(resolvedSchool);
                   sessionStorage.setItem('schoolName', resolvedSchool);
                 }
+                if (uData.photoURL || uData.avatarUrl) {
+                  setPhotoURL(String(uData.photoURL || uData.avatarUrl));
+                }
               });
             }
           })
           .catch(() => undefined);
       }
     } else if (targetUid) {
-      void getDoc(doc(db, 'users', targetUid))
-        .then(snap => {
-          if (!snap.exists()) return;
-          const data = snap.data() as any;
-          const realName = String(data.fullName || data.name || data.displayName || '').trim();
-          if (realName) {
-            setDisplayName(realName);
-            sessionStorage.setItem('userName', realName);
-          }
-          if (data.photoURL || data.avatarUrl) {
-            setPhotoURL(data.photoURL || data.avatarUrl);
-          }
-        })
-        .catch(() => undefined);
+      if (!isMasquerading || targetUid !== user?.uid) {
+        void getDoc(doc(db, 'users', targetUid))
+          .then(snap => {
+            if (!snap.exists()) return;
+            const data = snap.data() as any;
+            const realName = String(data.fullName || data.name || data.displayName || '').trim();
+            if (realName) {
+              setDisplayName(realName);
+              sessionStorage.setItem('userName', realName);
+            }
+            if (role !== 'student' && (data.photoURL || data.avatarUrl)) {
+              setPhotoURL(data.photoURL || data.avatarUrl);
+            }
+          })
+          .catch(() => undefined);
+      }
+      if (role === 'staff') {
+        void getDoc(doc(db, 'tutors', targetUid))
+          .then(tSnap => {
+            if (!tSnap.exists()) return;
+            const tData = tSnap.data() as any;
+            const realName = String(tData.fullName || tData.name || '').trim();
+            if (realName) {
+              setDisplayName(realName);
+              sessionStorage.setItem('userName', realName);
+            }
+            if (tData.photoURL || tData.avatarUrl) {
+              setPhotoURL(String(tData.photoURL || tData.avatarUrl));
+            }
+          })
+          .catch(() => undefined);
+      }
     }
-  }, [role]);
+  }, [role, location.pathname]);
 
   useEffect(() => {
     const close = (event: MouseEvent) => {
@@ -317,21 +351,37 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
   useEffect(() => {
     if (role !== 'student') return;
     let active = true;
-    const uid = getActiveImpersonation()?.uid || sessionStorage.getItem('userId') || auth.currentUser?.uid || '';
-    const studentDocId = sessionStorage.getItem('studentDocId') || '';
+    const activeImpStudent = getActiveImpersonation();
+    const isMasqueradingStudent = Boolean(activeImpStudent?.isMasquerading);
+    const uid =
+      activeImpStudent?.targetUser?.uid ||
+      activeImpStudent?.targetUser?.id ||
+      sessionStorage.getItem('userId') ||
+      auth.currentUser?.uid ||
+      '';
+    const studentDocId = isMasqueradingStudent
+      ? activeImpStudent?.targetUser?.studentDocId || activeImpStudent?.targetUser?.id || uid
+      : sessionStorage.getItem('studentDocId') || uid;
     let resolvedEligibility: ReturnType<typeof resolveStudentPortalEligibility> | null = null;
 
     const hydrateStudentState = async () => {
       try {
-        const [studentSnap, userSnap, enrollments] = await Promise.all([
+        const [studentSnap, indStudentSnap, userSnap, enrollments] = await Promise.all([
           studentDocId ? getDoc(doc(db, 'students', studentDocId)).catch(() => null) : Promise.resolve(null),
-          uid ? getDoc(doc(db, 'users', uid)).catch(() => null) : Promise.resolve(null),
+          studentDocId ? getDoc(doc(db, 'individualStudents', studentDocId)).catch(() => null) : Promise.resolve(null),
+          uid && (!isMasqueradingStudent || uid !== auth.currentUser?.uid)
+            ? getDoc(doc(db, 'users', uid)).catch(() => null)
+            : Promise.resolve(null),
           uid ? fetchStudentProgrammeEnrollments(uid).catch(() => []) : Promise.resolve([]),
         ]);
 
         if (!active) return;
 
-        const studentData = studentSnap?.exists() ? (studentSnap.data() as any) : null;
+        const studentData = studentSnap?.exists()
+          ? (studentSnap.data() as any)
+          : indStudentSnap?.exists()
+          ? (indStudentSnap.data() as any)
+          : null;
         const userData = userSnap?.exists() ? (userSnap.data() as any) : null;
 
         if (studentData) {
@@ -355,30 +405,69 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
           sessionStorage.setItem('studentRegistrationSource', registrationSource);
         }
 
+        const resolvedStudentSchoolId = String(
+          studentData?.schoolId ||
+            userData?.schoolId ||
+            activeImpStudent?.targetUser?.schoolId ||
+            (!isMasqueradingStudent ? sessionStorage.getItem('schoolId') : '') ||
+            ''
+        ).trim();
+
         const eligibility = resolveStudentPortalEligibility({
           registrationType:
             userData?.studentRegistrationType ||
             studentData?.registrationType ||
-            sessionStorage.getItem('studentRegistrationType'),
+            (!isMasqueradingStudent ? sessionStorage.getItem('studentRegistrationType') : undefined),
           registrationSource:
             studentData?.registrationSource ||
             userData?.registrationSource ||
-            sessionStorage.getItem('studentRegistrationSource'),
+            (!isMasqueradingStudent ? sessionStorage.getItem('studentRegistrationSource') : undefined),
           parentId:
             studentData?.parentId ||
             userData?.parentId ||
-            sessionStorage.getItem('parentId') ||
-            sessionStorage.getItem('studentParentId'),
+            (!isMasqueradingStudent
+              ? sessionStorage.getItem('parentId') || sessionStorage.getItem('studentParentId')
+              : undefined),
           parentUid: studentData?.parentUid || userData?.parentUid,
-          schoolId:
-            studentData?.schoolId ||
-            userData?.schoolId ||
-            sessionStorage.getItem('schoolId'),
+          schoolId: resolvedStudentSchoolId,
           isIndependent: userData?.isIndependent ?? studentData?.isIndependent,
         });
 
         resolvedEligibility = eligibility;
         setStudentOriginType(eligibility.registrationType);
+
+        const isSchoolStudent =
+          eligibility.registrationType === 'school' ||
+          (Boolean(resolvedStudentSchoolId) &&
+            resolvedStudentSchoolId.toLowerCase() !== 'private');
+
+        if (isSchoolStudent) {
+          // School-onboarded students inherit their school's profile image if set, else default to name initial (photoURL = null)
+          if (resolvedStudentSchoolId && resolvedStudentSchoolId.toLowerCase() !== 'private') {
+            const schoolSnap = await getDoc(doc(db, 'schools', resolvedStudentSchoolId)).catch(() => null);
+            if (!active) return;
+            if (schoolSnap?.exists()) {
+              const sData = schoolSnap.data() as any;
+              const schoolImg = String(sData.logoUrl || sData.photoURL || sData.avatarUrl || '').trim();
+              setPhotoURL(schoolImg || null);
+            } else {
+              setPhotoURL(null);
+            }
+          } else {
+            setPhotoURL(null);
+          }
+        } else {
+          // Individual / Parent-onboarded student can use their own photo if set, else name initial
+          const personalImg = String(
+            studentData?.photoURL ||
+              studentData?.avatarUrl ||
+              userData?.photoURL ||
+              userData?.avatarUrl ||
+              (!isMasqueradingStudent ? auth.currentUser?.photoURL || '' : '') ||
+              ''
+          ).trim();
+          setPhotoURL(personalImg || null);
+        }
 
         setStudentBillingUnlocked(
           shouldUnlockStudentBillingTab({
@@ -451,7 +540,13 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
 
   // Live actionable sidebar counters & expired-assessment summary check for Tutor, School Admin, and Parent portals
   useEffect(() => {
-    const uid = getActiveImpersonation()?.uid || sessionStorage.getItem('userId') || auth.currentUser?.uid || '';
+    const activeImpSidebar = getActiveImpersonation();
+    const uid =
+      activeImpSidebar?.targetUser?.uid ||
+      activeImpSidebar?.targetUser?.id ||
+      sessionStorage.getItem('userId') ||
+      auth.currentUser?.uid ||
+      '';
     if (!uid) return;
     const activeSchoolId =
       sessionStorage.getItem('schoolId') ||
@@ -606,7 +701,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
           label: 'Finance & Agreements',
           items: [
             { name: 'Fees & Payments', path: '/portal/school/payments', icon: <Wallet size={19} />, desc: 'Institutional fees & payments', tourId: 'nav-payments' },
-            { name: 'Agreements', path: '/portal/school/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communications & school contracts' }
+            { name: 'Agreements', path: '/portal/school/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communiqués & school contracts' }
           ]
         },
         {
@@ -720,7 +815,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
           label: 'Finance & Agreements',
           items: [
             { name: 'Billing / Fees', path: '/portal/staff/payments', icon: <WalletCards size={19} />, desc: 'Tutor ledger & payouts', tourId: 'nav-payments' },
-            { name: 'Agreements', path: '/portal/staff/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communications & tutor contracts' }
+            { name: 'Agreements', path: '/portal/staff/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communiqués & tutor contracts' }
           ]
         },
         {
@@ -759,7 +854,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
           label: 'Finance & Agreements',
           items: [
             { name: 'Payments & Fees', path: '/portal/parent/payments', icon: <CreditCard size={19} />, desc: 'Invoices & statements', tourId: 'nav-payments' },
-            { name: 'Agreements', path: '/portal/parent/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communications & family agreements' }
+            { name: 'Agreements', path: '/portal/parent/agreements', icon: <FileCheck2 size={19} />, desc: 'Proposals, communiqués & family agreements' }
           ]
         },
         {
@@ -953,18 +1048,15 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-2.5 min-w-0 text-left cursor-pointer"
                 >
-                  {photoURL ? (
-                    <img src={photoURL} alt="" className="w-8 h-8 rounded-lg object-cover border border-slate-300 dark:border-slate-700 shrink-0" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-lg bg-[#1E293B] dark:bg-[#B91C1C] text-white flex items-center justify-center text-xs font-bold shrink-0">
-                      {displayName.charAt(0)}
-                    </div>
-                  )}
+                  <JaystarblissIcon className="w-8 h-8 shrink-0 drop-shadow-xs" />
                   <div className="min-w-0">
-                    <span className="block text-xs font-bold tracking-tight text-[#14284B] dark:text-white leading-snug line-clamp-2">
+                    <span className="block text-xs font-extrabold tracking-tight text-[#14284B] dark:text-white leading-tight truncate">
+                      Jaystarbliss Studios
+                    </span>
+                    <span className="block text-[11px] font-semibold text-[#1E293B] dark:text-zinc-200 leading-tight truncate mt-0.5">
                       {displayName}
                     </span>
-                    <span className="block text-[11px] text-[#64748B] dark:text-slate-400 font-medium truncate">
+                    <span className="block text-[10px] text-[#64748B] dark:text-slate-400 font-medium leading-tight truncate">
                       {impersonation ? `Viewing as ${roleSubtitle}` : roleSubtitle}
                     </span>
                   </div>
@@ -1024,10 +1116,10 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
         onMouseLeave={() => setIsHoverExpanded(false)}
         className="hidden md:flex bg-white dark:bg-[#111114] text-[#14284B] dark:text-white flex-col h-full border-r border-[#E2E8F0] dark:border-zinc-800 shrink-0 select-none overflow-hidden shadow-xs"
       >
-        {/* Top Header: Profile Identity + Pin Toggle */}
-        <div className="min-h-16 px-4 py-2.5 border-b border-[#E2E8F0] dark:border-zinc-800 flex items-center justify-between gap-2 shrink-0 overflow-hidden">
+        {/* Top Header: Organization Logo + Jaystarbliss Studios + User Identity & Role + Pin Toggle */}
+        <div className="min-h-16 px-4 py-2 border-b border-[#E2E8F0] dark:border-zinc-800 flex items-center justify-between gap-2 shrink-0 overflow-hidden">
           <Tooltip
-            content={`${displayName} • ${roleSubtitle}${sidebarPinned ? ' (Click to unpin sidebar)' : ' (Click to pin sidebar open)'}`}
+            content={`Jaystarbliss Studios • ${displayName} (${roleSubtitle})${sidebarPinned ? ' — Click to unpin sidebar' : ' — Click to pin sidebar open'}`}
             placement="right"
             fullWidth
           >
@@ -1038,18 +1130,7 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
               aria-label={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar open'}
             >
               <span className="w-10 h-10 flex items-center justify-center shrink-0">
-                {photoURL ? (
-                  <img
-                    src={photoURL}
-                    alt={displayName}
-                    className="w-9 h-9 rounded-lg object-cover border border-slate-300 dark:border-zinc-700"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <span className="w-9 h-9 rounded-lg bg-[#1E293B] dark:bg-[#B91C1C] text-white flex items-center justify-center text-xs font-bold shadow-xs group-hover:scale-105 transition-transform">
-                    {displayName.charAt(0).toUpperCase()}
-                  </span>
-                )}
+                <JaystarblissIcon className="w-8 h-8 shrink-0 group-hover:scale-105 transition-transform drop-shadow-xs" />
               </span>
               {sidebarExpanded && (
                 <motion.span
@@ -1058,10 +1139,13 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
                   transition={{ duration: 0.15 }}
                   className="min-w-0 pl-2.5 overflow-hidden"
                 >
-                  <span className="block text-xs font-bold tracking-tight text-[#14284B] dark:text-white leading-snug line-clamp-2">
+                  <span className="block text-xs sm:text-[13px] font-extrabold tracking-tight text-[#14284B] dark:text-white leading-tight truncate">
+                    Jaystarbliss Studios
+                  </span>
+                  <span className="block text-[11px] font-semibold text-[#1E293B] dark:text-zinc-200 leading-tight truncate mt-0.5">
                     {displayName}
                   </span>
-                  <span className="block text-[11px] text-[#64748B] dark:text-zinc-400 font-medium truncate">
+                  <span className="block text-[10px] text-[#64748B] dark:text-zinc-400 font-medium leading-tight truncate">
                     {impersonation ? `Viewing as ${roleSubtitle}` : roleSubtitle}
                   </span>
                 </motion.span>

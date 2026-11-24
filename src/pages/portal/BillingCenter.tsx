@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { 
   Banknote, CheckCircle2, CreditCard, Download, 
   Loader2, RefreshCw, ShieldCheck, Wallet, X, 
   Building2, BookOpen, 
   School, Check, Bell, UserCheck,
   ChevronDown, ChevronRight, ChevronUp,
-  CheckSquare, Square, MinusSquare, User, Users, Sparkles,
+  CheckSquare, Square, MinusSquare, User, Users,
   Filter, Layers, ArrowRight, Clock, AlertCircle
 } from 'lucide-react';
 import {
@@ -16,7 +16,8 @@ import {
   formatNaira,
   isSuccessfulPaymentRecord,
   isPartiallyPaidStatus,
-  extractPaymentAmountNaira
+  extractPaymentAmountNaira,
+  waitForAuthenticatedUser
 } from '../../lib/billing';
 import { useToast } from '../../contexts/ToastContext';
 import { triggerEntitlementRefresh } from '../../contexts/SubscriptionEntitlementContext';
@@ -103,6 +104,25 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
   const [progPaymentOption, setProgPaymentOption] = useState<'full' | 'deposit' | 'balance' | 'renewal'>('full');
   const [studentPayerEmail, setStudentPayerEmail] = useState<string>('');
   const [expandedProgHistoryIds, setExpandedProgHistoryIds] = useState<Record<string, boolean>>({});
+
+  // Resilient Paystack return verification state machine
+  const [paystackVerification, setPaystackVerification] = useState<{
+    status: 'idle' | 'awaiting_auth' | 'verifying' | 'verified' | 'pending' | 'cancelled' | 'failed';
+    reference: string;
+    message?: string;
+    alreadyRecorded?: boolean;
+    payment?: {
+      baseAmount?: number;
+      transactionFee?: number;
+      customerTotal?: number;
+      paymentMethod?: string;
+      paidAt?: string;
+      planName?: string;
+      studentName?: string | null;
+    } | null;
+  }>({ status: 'idle', reference: '' });
+  const verifiedRefsSet = useRef<Set<string>>(new Set());
+  const verifyingRefInFlight = useRef<string | null>(null);
 
   // Staff wallet & Fintech modals
   const [withdrawalAmount, setWithdrawalAmount] = useState(''); 
@@ -361,21 +381,201 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
     }
   }, [role]);
 
-  useEffect(() => { 
-    const params = new URLSearchParams(window.location.search);
-    const reference = params.get('reference') || params.get('trxref'); 
-    if (!reference) return; 
-    billingPost<any>('paystack-verify', { reference }).then(() => { 
-      toast.success('Payment verified successfully. Portal access has been refreshed.'); 
+  const verifyPaystackReference = useCallback(async (reference: string, isRetry = false) => {
+    const cleanRef = String(reference || '').trim();
+    if (!cleanRef) return;
+    if (!isRetry && (verifiedRefsSet.current.has(cleanRef) || verifyingRefInFlight.current === cleanRef)) {
+      return;
+    }
+
+    verifyingRefInFlight.current = cleanRef;
+    setPaystackVerification({
+      status: 'awaiting_auth',
+      reference: cleanRef,
+      message: 'Restoring your authenticated portal session…',
+    });
+
+    try {
+      const authedUser = await waitForAuthenticatedUser(6000);
+      if (!authedUser) {
+        setPaystackVerification({
+          status: 'failed',
+          reference: cleanRef,
+          message: 'Your session needs to be restored before we can confirm this transaction. Sign in again or retry below without paying again.',
+        });
+        return;
+      }
+
+      setPaystackVerification({
+        status: 'verifying',
+        reference: cleanRef,
+        message: 'Confirming your payment directly with Paystack…',
+      });
+
+      const result = await billingPost<any>('paystack-verify', { reference: cleanRef });
+
+      if (result?.status === 'pending') {
+        setPaystackVerification({
+          status: 'pending',
+          reference: cleanRef,
+          message: result?.message || 'Paystack is still finalizing this transaction. Click Retry Verification shortly — you will not be charged again.',
+        });
+        return;
+      }
+
+      if (!result?.verified) {
+        setPaystackVerification({
+          status: result?.status === 'cancelled' ? 'cancelled' : 'failed',
+          reference: cleanRef,
+          message: result?.error || 'We could not confirm this transaction yet. You can retry verification safely without paying again.',
+        });
+        return;
+      }
+
+      verifiedRefsSet.current.add(cleanRef);
+      setPaystackVerification({
+        status: 'verified',
+        reference: cleanRef,
+        alreadyRecorded: Boolean(result.alreadyRecorded),
+        payment: result.payment || null,
+        message: result.alreadyRecorded
+          ? 'Payment already verified and reconciled on your account.'
+          : 'Payment confirmed with Paystack and recorded on your account.',
+      });
+      toast.success('Payment verified successfully. Portal access and balances have been refreshed.');
       triggerEntitlementRefresh();
+
+      const params = new URLSearchParams(window.location.search);
       const keepEnrollment = params.get('enrollmentId');
       const cleanUrl = keepEnrollment
         ? `${window.location.pathname}?enrollmentId=${encodeURIComponent(keepEnrollment)}`
         : window.location.pathname;
-      window.history.replaceState({}, document.title, cleanUrl); 
-      void load(); 
-    }).catch(error => toast.error(error instanceof Error ? error.message : 'Payment verification failed.')); 
-  }, []);
+      window.history.replaceState({}, document.title, cleanUrl);
+      await load();
+    } catch (error: any) {
+      const errMsg = error instanceof Error ? error.message : 'Unable to verify payment right now.';
+      const lower = errMsg.toLowerCase();
+      const isCancelled = lower.includes('cancel') || lower.includes('abandoned');
+      setPaystackVerification({
+        status: isCancelled ? 'cancelled' : 'failed',
+        reference: cleanRef,
+        message: errMsg,
+      });
+      toast.error(errMsg);
+    } finally {
+      if (verifyingRefInFlight.current === cleanRef) {
+        verifyingRefInFlight.current = null;
+      }
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get('reference') || params.get('trxref');
+    const cancelled = params.get('cancelled') === '1' || params.get('status') === 'cancelled';
+    if (reference) {
+      void verifyPaystackReference(reference, false);
+    } else if (cancelled) {
+      setPaystackVerification({
+        status: 'cancelled',
+        reference: '',
+        message: 'Paystack checkout was cancelled. No charge was completed.',
+      });
+    }
+  }, [verifyPaystackReference]);
+
+  const paystackVerificationBanner = paystackVerification.status !== 'idle' ? (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`rounded-xl border px-4 py-3.5 text-sm ${
+        paystackVerification.status === 'verified'
+          ? 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/90 dark:bg-emerald-950/30 text-emerald-950 dark:text-emerald-100'
+          : paystackVerification.status === 'awaiting_auth' || paystackVerification.status === 'verifying'
+          ? 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-900 dark:text-zinc-100'
+          : paystackVerification.status === 'pending' || paystackVerification.status === 'cancelled'
+          ? 'border-amber-200 dark:border-amber-900/60 bg-amber-50/90 dark:bg-amber-950/30 text-amber-950 dark:text-amber-100'
+          : 'border-red-200 dark:border-red-900/60 bg-red-50/90 dark:bg-red-950/30 text-red-950 dark:text-red-100'
+      }`}
+    >
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          {paystackVerification.status === 'verified' ? (
+            <CheckCircle2 size={18} className="shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+          ) : paystackVerification.status === 'awaiting_auth' || paystackVerification.status === 'verifying' ? (
+            <Loader2 size={18} className="shrink-0 mt-0.5 animate-spin text-brand-red" />
+          ) : paystackVerification.status === 'pending' ? (
+            <Clock size={18} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+          ) : (
+            <AlertCircle size={18} className="shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+          )}
+          <div className="min-w-0">
+            <p className="font-bold">
+              {paystackVerification.status === 'verified'
+                ? 'Payment Verified & Recorded'
+                : paystackVerification.status === 'awaiting_auth'
+                ? 'Restoring Portal Session…'
+                : paystackVerification.status === 'verifying'
+                ? 'Verifying Paystack Transaction…'
+                : paystackVerification.status === 'pending'
+                ? 'Transaction Pending Confirmation'
+                : paystackVerification.status === 'cancelled'
+                ? 'Checkout Cancelled'
+                : 'Transaction Verification Needs Retry'}
+            </p>
+            {paystackVerification.message && (
+              <p className="text-xs opacity-90 mt-0.5 leading-relaxed">{paystackVerification.message}</p>
+            )}
+            {paystackVerification.status === 'verified' && (
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium tabular-nums">
+                {paystackVerification.reference && (
+                  <span>
+                    Ref: <span className="font-mono font-bold">{paystackVerification.reference}</span>
+                  </span>
+                )}
+                {paystackVerification.payment?.customerTotal != null && (
+                  <span>
+                    Amount Paid: <strong>{formatNaira(paystackVerification.payment.customerTotal)}</strong>
+                  </span>
+                )}
+                {paystackVerification.payment?.paymentMethod && (
+                  <span>Channel: {String(paystackVerification.payment.paymentMethod)}</span>
+                )}
+                {paystackVerification.payment?.paidAt && (
+                  <span>Date: {dateLabel(paystackVerification.payment.paidAt)}</span>
+                )}
+              </div>
+            )}
+            {paystackVerification.status !== 'verified' && paystackVerification.reference && (
+              <p className="mt-1 text-[11px] font-mono opacity-80">Reference: {paystackVerification.reference}</p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {(paystackVerification.status === 'failed' || paystackVerification.status === 'pending') &&
+            paystackVerification.reference && (
+              <button
+                type="button"
+                onClick={() => void verifyPaystackReference(paystackVerification.reference, true)}
+                className="px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold hover:opacity-90 transition cursor-pointer whitespace-nowrap"
+              >
+                Retry Verification
+              </button>
+            )}
+          {paystackVerification.status !== 'verifying' && paystackVerification.status !== 'awaiting_auth' && (
+            <button
+              type="button"
+              onClick={() => setPaystackVerification({ status: 'idle', reference: '' })}
+              className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition cursor-pointer"
+              aria-label="Dismiss payment status notice"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   // Filter plans dynamically based on database programs and configured fee policies
   const standardPlans = useMemo(() => {
@@ -1069,7 +1269,12 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
               setBillingSubTab('structure');
             }
           }}
-          banners={schoolBanners}
+          banners={
+            <>
+              {paystackVerificationBanner}
+              {schoolBanners}
+            </>
+          }
           paymentHistorySlot={
             <FintechTransactionHistory
               transactions={allTransactions.map(p => ({ ...p, amount: extractPaymentAmountNaira(p) }))}
@@ -2365,7 +2570,12 @@ const BillingCenter: React.FC<{ role: BillingCenterRole }> = ({ role }) => {
         onMakePayment={handleEditorialMakePayment}
         paymentDisabled={isMasqueradingActive()}
         feeSummaryItems={roleFeeSummaryItems}
-        banners={impersonationBanner}
+        banners={
+          <>
+            {paystackVerificationBanner}
+            {impersonationBanner}
+          </>
+        }
         feeStructureSlot={feeStructureNode}
         paymentHistorySlot={
           <div id="fintech-tx-history">

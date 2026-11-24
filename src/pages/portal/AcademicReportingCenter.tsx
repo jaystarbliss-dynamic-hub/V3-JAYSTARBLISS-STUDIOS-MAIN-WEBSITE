@@ -4,7 +4,6 @@ import {
   Search,
   Sliders,
   Calendar,
-  Sparkles,
   CheckCircle2,
   History,
   Download,
@@ -56,6 +55,7 @@ import {
   validateGradeBoundaries,
 } from '../../lib/academic-reporting';
 import { ReferenceLookupPanel } from '../../components/academic-reporting/ReferenceLookupPanel';
+import { TutorProgressReportsWorkspace } from '../../components/documents/TutorProgressReportsWorkspace';
 
 type ReportingTabKey =
   | 'OVERVIEW'
@@ -64,7 +64,8 @@ type ReportingTabKey =
   | 'PERIODS'
   | 'GENERATE'
   | 'ISSUED'
-  | 'HISTORY';
+  | 'HISTORY'
+  | 'TUTOR_UPDATES';
 
 const ALL_WORK_TYPES: AcademicWorkSourceType[] = [
   'ASSIGNMENT',
@@ -92,6 +93,8 @@ export const AcademicReportingCenter: React.FC = () => {
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+  const [isEditingManualReport, setIsEditingManualReport] = useState(false);
+  const [manualReportCreateTrigger, setManualReportCreateTrigger] = useState(0);
 
   // ============================================================================
   // GRADING PROFILE BUILDER STATE
@@ -661,78 +664,91 @@ export const AcademicReportingCenter: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Top Institutional Header */}
-      <div className="bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-slate-800 rounded-xl p-6 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-widest text-[#B91C1C]">
-              JAYSTARBLISS DYNAMIC INSTITUTE • ACADEMIC GOVERNANCE
+      {/* Top Institutional Header (Hidden while in full-page Document Studio mode) */}
+      {!(activeTab === 'TUTOR_UPDATES' && isEditingManualReport) && (
+        <div className="bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-slate-800 rounded-xl p-6 shadow-xs">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-widest text-[#B91C1C]">
+                JAYSTARBLISS DYNAMIC INSTITUTE • ACADEMIC GOVERNANCE
+              </div>
+              <h1 className="text-2xl font-bold text-[#0F172A] dark:text-white tracking-tight mt-1">
+                Academic Performance, Grading &amp; Official Reporting Centre
+              </h1>
+              <p className="text-xs text-[#475569] dark:text-slate-400 mt-1 max-w-3xl">
+                Configure customizable weighted grading profiles, manage school three-term and private
+                programme academic calendars, look up any assessment or official report by{' '}
+                <span className="font-mono text-[#0F172A] dark:text-slate-200">JDI-*</span> reference
+                number, and create calculated or manually typed official A4 performance reports.
+              </p>
             </div>
-            <h1 className="text-2xl font-bold text-[#0F172A] dark:text-white tracking-tight mt-1">
-              Academic Performance, Grading & Official Reporting Centre
-            </h1>
-            <p className="text-xs text-[#475569] dark:text-slate-400 mt-1 max-w-3xl">
-              Configure customizable weighted grading profiles, manage school three-term and private
-              programme academic calendars, look up any assessment or official report by{' '}
-              <span className="font-mono text-[#0F172A] dark:text-slate-200">JDI-*</span> reference
-              number, and issue watermarked End-of-Term, End-of-Session, End-of-Programme, and
-              Annual PDF reports.
-            </p>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setActiveTab('LOOKUP')}
-              className="px-3.5 py-2 text-xs font-semibold text-[#0F172A] dark:text-white bg-[#F8FAFC] dark:bg-slate-800 hover:bg-[#E2E8F0] dark:hover:bg-slate-700 border border-[#CBD5E1] dark:border-slate-700 rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <Search className="w-3.5 h-3.5 text-[#B91C1C]" />
-              Reference Lookup
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('GENERATE')}
-              className="px-4 py-2 text-xs font-semibold text-white bg-[#B91C1C] hover:bg-[#991B1B] rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Generate Official Reports
-            </button>
-          </div>
-        </div>
-
-        {/* 7-Section Navigation Tabs */}
-        <div className="mt-6 pt-4 border-t border-[#E2E8F0] dark:border-slate-800 flex flex-wrap gap-1.5">
-          {(
-            [
-              { key: 'OVERVIEW', label: '1. Report Overview', icon: FileText },
-              { key: 'LOOKUP', label: '2. Reference Lookup', icon: Search },
-              { key: 'PROFILES', label: '3. Grading Profiles', icon: Sliders },
-              { key: 'PERIODS', label: '4. Academic Periods', icon: Calendar },
-              { key: 'GENERATE', label: '5. Generate Reports', icon: Sparkles },
-              { key: 'ISSUED', label: '6. Issued Reports', icon: CheckCircle2 },
-              { key: 'HISTORY', label: '7. Report History & Audit', icon: History },
-            ] as Array<{ key: ReportingTabKey; label: string; icon: React.ComponentType<any> }>
-          ).map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.key;
-            return (
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
-                key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-3.5 py-2 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
-                  isActive
-                    ? 'bg-[#1E293B] text-white'
-                    : 'text-[#475569] dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-slate-800/60 hover:text-[#0F172A] dark:hover:text-white'
-                }`}
+                onClick={() => setActiveTab('LOOKUP')}
+                className="px-3.5 py-2 text-xs font-semibold text-[#0F172A] dark:text-white bg-[#F8FAFC] dark:bg-slate-800 hover:bg-[#E2E8F0] dark:hover:bg-slate-700 border border-[#CBD5E1] dark:border-slate-700 rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
               >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-[#64748B]'}`} />
-                {tab.label}
+                <Search className="w-3.5 h-3.5 text-[#B91C1C]" />
+                Reference Lookup
               </button>
-            );
-          })}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('TUTOR_UPDATES');
+                  setManualReportCreateTrigger((n) => n + 1);
+                }}
+                className="px-3.5 py-2 text-xs font-semibold text-white bg-[#1E293B] hover:bg-[#0F172A] rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Create Manual Performance Report
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('GENERATE')}
+                className="px-4 py-2 text-xs font-semibold text-white bg-[#B91C1C] hover:bg-[#991B1B] rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                Generate Official Reports
+              </button>
+            </div>
+          </div>
+
+          {/* 8-Section Navigation Tabs */}
+          <div className="mt-6 pt-4 border-t border-[#E2E8F0] dark:border-slate-800 flex flex-wrap gap-1.5">
+            {(
+              [
+                { key: 'OVERVIEW', label: '1. Report Overview', icon: FileText },
+                { key: 'LOOKUP', label: '2. Reference Lookup', icon: Search },
+                { key: 'PROFILES', label: '3. Grading Profiles', icon: Sliders },
+                { key: 'PERIODS', label: '4. Academic Periods', icon: Calendar },
+                { key: 'GENERATE', label: '5. Generate Reports', icon: FileText },
+                { key: 'ISSUED', label: '6. Issued Reports', icon: CheckCircle2 },
+                { key: 'HISTORY', label: '7. Report History & Audit', icon: History },
+                { key: 'TUTOR_UPDATES', label: '8. Manual Performance Reports', icon: Plus },
+              ] as Array<{ key: ReportingTabKey; label: string; icon: React.ComponentType<any> }>
+            ).map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    isActive
+                      ? 'bg-[#1E293B] text-white'
+                      : 'text-[#475569] dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-slate-800/60 hover:text-[#0F172A] dark:hover:text-white'
+                  }`}
+                >
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-[#64748B]'}`} />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Feedback Banner */}
       {bannerMessage && (
@@ -832,8 +848,8 @@ export const AcademicReportingCenter: React.FC = () => {
             </div>
           </div>
 
-          {/* 4 Official Report Identities Summary Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* 5 Official Report Identities Summary Grid (Including Manually Typed Performance Report Document Studio) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             {(
               [
                 {
@@ -902,10 +918,40 @@ export const AcademicReportingCenter: React.FC = () => {
                   }}
                   className="mt-4 w-full py-2 text-xs font-semibold text-white bg-[#1E293B] hover:bg-[#0F172A] rounded-lg transition-colors cursor-pointer"
                 >
-                  Configure & Generate
+                  Configure &amp; Generate
                 </button>
               </div>
             ))}
+
+            {/* 5th Card: Manually Typed Performance Report Document Studio */}
+            <div className="bg-white dark:bg-[#0F172A] border-2 border-[#B91C1C]/30 dark:border-red-900/50 rounded-xl p-5 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-mono font-bold text-[#B91C1C]">JDI-PRF-*</span>
+                  <span className="text-[11px] text-[#64748B] font-medium">Document Studio</span>
+                </div>
+                <h3 className="text-sm font-bold text-[#0F172A] dark:text-white mt-2">
+                  Manually Typed Performance Report
+                </h3>
+                <div className="text-[11px] font-semibold text-[#1E293B] dark:text-slate-300 mt-1">
+                  Official A4 Document Editor
+                </div>
+                <p className="text-xs text-[#64748B] dark:text-slate-400 mt-2 leading-relaxed">
+                  Compose custom, manually typed performance and progress reports with rich tables,
+                  skill rubrics, and tutor remarks in the full-page A4 Document Studio.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('TUTOR_UPDATES');
+                  setManualReportCreateTrigger((n) => n + 1);
+                }}
+                className="mt-4 w-full py-2 text-xs font-semibold text-white bg-[#B91C1C] hover:bg-[#991B1B] rounded-lg transition-colors cursor-pointer"
+              >
+                Create Report Document
+              </button>
+            </div>
           </div>
 
           {/* Embedded Quick Reference Lookup */}
@@ -1986,7 +2032,7 @@ export const AcademicReportingCenter: React.FC = () => {
                 disabled={calculatingPreviews || targetGenerationLearners.length === 0}
                 className="px-5 py-2.5 text-xs font-semibold text-white bg-[#B91C1C] hover:bg-[#991B1B] rounded-lg inline-flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                <Sparkles className="w-4 h-4" />
+                <FileText className="w-4 h-4" />
                 {calculatingPreviews
                   ? 'Consolidating Records & Calculating Grades...'
                   : `7. Calculate & Preview Official Reports (${targetGenerationLearners.length})`}
@@ -2630,6 +2676,36 @@ export const AcademicReportingCenter: React.FC = () => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+      {/* ====================================================================
+          TAB 8: MANUAL TUTOR PROGRESS REPORTS (OFFICIAL A4 DOCUMENT STUDIO)
+      ==================================================================== */}
+      {activeTab === 'TUTOR_UPDATES' && (
+        <div
+          className={
+            isEditingManualReport
+              ? 'space-y-4'
+              : 'bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-slate-800 rounded-xl p-5 sm:p-6 shadow-xs'
+          }
+        >
+          <TutorProgressReportsWorkspace
+            isAdmin={authority?.isPlatformAdmin}
+            defaultTutorName={authority?.name}
+            autoCreateTrigger={manualReportCreateTrigger}
+            onEditingChange={setIsEditingManualReport}
+            learners={learners.map((l) => ({
+              id: l.id,
+              name: l.fullName,
+              className: l.className,
+              programmeName: l.programName,
+              schoolId: l.schoolId,
+              schoolName: l.schoolName,
+              parentId: l.parentId,
+              parentUid: l.parentId,
+              parentName: l.parentName,
+            }))}
+          />
         </div>
       )}
     </div>

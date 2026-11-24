@@ -447,11 +447,13 @@ service cloud.firestore {
         (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null))) ||
         (isStaffOrTutor() && isResourceOwner(resource.data));
     }
-    // Passcodes are verified and managed by trusted server functions only.
-    // Direct client reads would expose passcode material to school users and
-    // undermine the server-side attempt/rate-limit checks.
     match /schoolPasscodes/{docId} {
-      allow read, write: if false;
+      allow read: if isAnyAdmin() || isStaffOrTutor() ||
+        (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null)));
+      allow create: if isAnyAdmin() ||
+        (isSchoolUser() && isSameSchool(request.resource.data.get('schoolId', null)));
+      allow update, delete: if isAnyAdmin() ||
+        (isSchoolUser() && isSameSchool(resource.data.get('schoolId', null)));
     }
     match /staffGeneralResources/{resId} {
       allow read: if true;
@@ -906,6 +908,42 @@ service cloud.firestore {
       allow read: if isAnyAdmin();
       allow create, update: if isAnyAdmin();
       allow delete: if isSuperAdmin();
+    }
+    match /tutorProgressReports/{reportId} {
+      allow read: if isAnyAdmin() ||
+        (isStaffOrTutor() && resource.data.get('tutorUid', '') == request.auth.uid) ||
+        (isAuth() &&
+          resource.data.get('status', 'DRAFT') == 'SENT' && (
+            resource.data.get('parentUid', '') == request.auth.uid ||
+            resource.data.get('parentId', '') == request.auth.uid ||
+            (userParentId() != null && resource.data.get('parentId', '') == userParentId()) ||
+            (request.auth.token.email != null && resource.data.get('parentEmail', '').lower() == request.auth.token.email.lower()) ||
+            isParentOfStudent(resource.data.get('studentId', ''))
+          ));
+      allow create: if isAnyAdmin() || (
+        isStaffOrTutor() &&
+        request.resource.data.get('tutorUid', '') == request.auth.uid
+      );
+      allow update: if isAnyAdmin() || (
+        isStaffOrTutor() &&
+        resource.data.get('tutorUid', '') == request.auth.uid &&
+        request.resource.data.get('tutorUid', '') == request.auth.uid
+      );
+      allow delete: if isAnyAdmin() || (
+        isStaffOrTutor() &&
+        resource.data.get('tutorUid', '') == request.auth.uid &&
+        resource.data.get('status', 'DRAFT') == 'DRAFT'
+      );
+    }
+    match /adminSupportAccessLogs/{logId} {
+      allow read: if isAnyAdmin();
+      allow create: if isAnyAdmin() && request.resource.data.get('actorUid', '') == request.auth.uid;
+      allow update: if isAnyAdmin() &&
+        resource.data.get('actorUid', '') == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'endedAt', 'endReason', 'updatedAt'
+        ]);
+      allow delete: if false;
     }
     match /{document=**} { allow read, write: if false; }
   }

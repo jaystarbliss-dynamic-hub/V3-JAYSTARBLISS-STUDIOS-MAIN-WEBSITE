@@ -1,4 +1,5 @@
 import { auth, db } from './firebase';
+import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 import { 
   collection, doc, getDoc, getDocs, setDoc, updateDoc, 
   addDoc, query, where, limit, serverTimestamp 
@@ -72,8 +73,37 @@ export const getClientPaymentConfig = async (): Promise<PaymentConfig> => {
   return DEFAULT_PAYMENT_CONFIG;
 };
 
+export const waitForAuthenticatedUser = async (timeoutMs = 5000): Promise<FirebaseUser | null> => {
+  if (auth.currentUser) return auth.currentUser;
+  try {
+    if (typeof (auth as any).authStateReady === 'function') {
+      await Promise.race([
+        (auth as any).authStateReady(),
+        new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+      ]);
+      if (auth.currentUser) return auth.currentUser;
+    }
+  } catch {
+    // Fall back to onAuthStateChanged listener below
+  }
+  return await new Promise<FirebaseUser | null>((resolve) => {
+    let settled = false;
+    const finish = (u: FirebaseUser | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(u);
+    };
+    const timer = setTimeout(() => finish(auth.currentUser), timeoutMs);
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      if (u) finish(u);
+    });
+  });
+};
+
 export const billingGet = async <T>(path: string): Promise<T> => {
-  const user = auth.currentUser;
+  const user = await waitForAuthenticatedUser();
   if (!user) throw new Error('Please sign in again.');
 
   // Check if API endpoint is active and returns valid data (not dev mock)
@@ -559,7 +589,7 @@ export const billingGet = async <T>(path: string): Promise<T> => {
 };
 
 export const billingPost = async <T>(path: string, body: Record<string, unknown>): Promise<T> => {
-  const user = auth.currentUser;
+  const user = await waitForAuthenticatedUser();
   if (!user) throw new Error('Please sign in again.');
 
   const action = String(body.action || '').toLowerCase();

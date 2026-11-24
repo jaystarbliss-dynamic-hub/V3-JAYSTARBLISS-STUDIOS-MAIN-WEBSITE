@@ -341,6 +341,50 @@
         "createdAt": { "type": "string" }
       },
       "required": ["restrictionId", "targetAccountId", "status"]
+    },
+    "TutorProgressReport": {
+      "title": "TutorProgressReport",
+      "description": "Manual rich-text performance progress report authored by a tutor for a linked learner and sent to the learner's parent in official Jaystarbliss A4 format.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "documentType": { "type": "string", "enum": ["PERFORMANCE_REPORT"] },
+        "status": { "type": "string", "enum": ["DRAFT", "SENT"] },
+        "studentId": { "type": "string" },
+        "studentUid": { "type": "string" },
+        "studentName": { "type": "string" },
+        "parentId": { "type": "string" },
+        "parentUid": { "type": "string" },
+        "parentEmail": { "type": "string" },
+        "tutorUid": { "type": "string" },
+        "tutorName": { "type": "string" },
+        "reportingPeriod": { "type": "string" },
+        "contentHtml": { "type": "string" },
+        "versionNumber": { "type": "number" },
+        "sentAt": { "type": "string" }
+      },
+      "required": ["title", "documentType", "status", "studentId", "studentName", "tutorUid", "contentHtml"]
+    },
+    "AdminSupportAccessLog": {
+      "title": "AdminSupportAccessLog",
+      "description": "Immutable audited log of time-limited Super Admin support access sessions into school or user portals.",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "actorUid": { "type": "string" },
+        "actorEmail": { "type": "string" },
+        "targetRole": { "type": "string" },
+        "targetUid": { "type": "string" },
+        "targetSchoolId": { "type": "string" },
+        "reason": { "type": "string" },
+        "reauthVerifiedAt": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "startedAt": { "type": "string" },
+        "expiresAt": { "type": "string" },
+        "endedAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["ACTIVE", "ENDED", "EXPIRED"] }
+      },
+      "required": ["action", "actorUid", "targetRole", "targetUid", "reason", "startedAt", "expiresAt", "status"]
     }
   },
   "firestore": {
@@ -495,6 +539,14 @@
     "restrictionNotificationLogs/{logId}": {
       "schema": { "$ref": "#/entities/RestrictionNotificationLog" },
       "description": "Idempotent notification dispatch ledger for portal restrictions."
+    },
+    "tutorProgressReports/{reportId}": {
+      "schema": { "$ref": "#/entities/TutorProgressReport" },
+      "description": "Manual rich-text student performance reports authored by tutors and delivered to parents."
+    },
+    "adminSupportAccessLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AdminSupportAccessLog" },
+      "description": "Audited time-limited Super Admin support access logs."
     }
   }
 }

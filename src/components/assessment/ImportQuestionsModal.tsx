@@ -3,7 +3,6 @@ import {
   X,
   Upload,
   FileText,
-  Sparkles,
   BookOpen,
   Copy,
   Check,
@@ -477,7 +476,7 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                   onClick={handleParseScript}
                   className="px-4 py-2 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5"
                 >
-                  <Sparkles size={14} /> Parse Questions
+                  <CheckCircle2 size={14} /> Parse Questions
                 </button>
                 {parsedTextQuestions.length > 0 && (
                   <span className="text-xs font-bold text-[#1E293B] dark:text-white flex items-center gap-1 tabular-nums">

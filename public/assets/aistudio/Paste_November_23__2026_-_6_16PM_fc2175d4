@@ -1,0 +1,714 @@
+# V3 JAYSTARBLISS DYNAMIC INSTITUTE — PORTAL IMPROVEMENTS, BUG FIXES & HUB-MIND DOCUMENT EDITOR INTEGRATION
+
+## PROJECT REPOSITORIES
+
+**Main application — V3 Jaystarbliss Dynamic Institute**
+
+https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE
+
+**Reference application — Hub-Mind**
+
+https://github.com/jaystarbliss-dynamic-hub/HUB-MIND
+
+The V3 repository is the primary project to be modified. Hub-Mind is the reference project from which we want to adapt the existing document editor.
+
+I want you to inspect both repositories, understand their existing architectures, and implement the improvements below within the existing V3 application.
+
+This is a targeted improvement exercise, not an instruction to rewrite the application or introduce unnecessary architectural changes.
+
+**IMPORTANT:** Do not simply make superficial UI adjustments. Trace the affected components, routes, authentication logic, backend functions, database operations, access permissions and existing workflows before making changes.
+
+---
+
+# PART 1 — SCHOOL PARTNERSHIP APPLICATION: CORRECT THE CORE PROGRAMMES
+
+This is an important content and business-identity issue.
+
+When prospective schools apply for institutional partnerships, the programme selection section currently displays an incorrect and expanded list of programmes.
+
+We have FOUR CORE PROGRAMMES:
+
+1. School of Technology & Programming
+2. School of Digital Literacy
+3. School of Creative Design
+4. School of Music & Performing Arts
+
+These are the four programmes that must appear in the school partnership application.
+
+### Implementation requirements
+
+1. Inspect `SchoolPartnershipV2.tsx`, which currently powers the `/school-partnership` route.
+2. Inspect the older `SchoolPartnership.tsx` implementation as well, so the same problem does not remain in an alternative form or future route.
+3. Use the existing `LEARNING_SCHOOLS` catalogue in `src/data/learningEcosystem.ts` as the authoritative source for programme names and identifiers.
+4. Do not maintain separate, hardcoded programme lists that can become inconsistent with the actual programme catalogue.
+5. Allow schools to select one or more of the four programmes.
+6. Correct the default programme selections, form validation, review screen and submitted programme data.
+7. Ensure that the programme identifiers and labels remain consistent throughout the application and backend.
+
+Do not confuse the four core programmes with individual courses, learning tracks, school delivery models or additional institutional services.
+
+The partnership form should represent the actual four-programme structure of Jaystarbliss Dynamic Institute.
+
+**Acceptance criterion:** A school applying for partnership sees exactly these four core programmes and cannot accidentally select unrelated programme categories.
+
+---
+
+# PART 2 — PARENT DASHBOARD: FIX THE BILLING NAVIGATION
+
+There is a confirmed routing error in the Parent Dashboard.
+
+When a parent clicks the child's payment or billing button, the application currently sends them to:
+
+`/portal/parent/billing`
+
+This is incorrect.
+
+The actual parent billing centre is:
+
+`/portal/parent/payments`
+
+The application already defines this correct route in its routing configuration and sidebar navigation.
+
+### Required changes
+
+Inspect `ParentDashboard.tsx` and locate every billing-related navigation action.
+
+Correct both:
+
+- The child's Pay / payment button.
+- The Settle Tuition / Open Billing Center button.
+
+Change their destinations to:
+
+`/portal/parent/payments`
+
+Also search the entire V3 repository for other references to the incorrect `/portal/parent/billing` route.
+
+Check buttons, cards, dropdown actions, links and any programmatic navigation.
+
+Do not create an unnecessary alternative billing route simply to accommodate the incorrect links.
+
+Where appropriate, introduce a shared route constant so that parent billing navigation cannot easily become inconsistent again.
+
+**Acceptance criterion:** Every parent billing action opens the existing parent Payments & Fees page without displaying a 404, redirecting to another portal or requiring the parent to navigate manually.
+
+---
+
+# PART 3 — CRITICAL: FIX THE PAYSTACK RETURN AND SESSION-PERSISTENCE EXPERIENCE
+
+We have experienced a serious problem with the payment experience.
+
+A parent initiates a payment from their billing centre, is redirected to Paystack, and completes the payment successfully.
+
+After Paystack confirms the transaction, the user should return to the same portal billing centre and see confirmation that the transaction succeeded.
+
+Instead, the user has experienced being redirected out of the portal and being required to log in again.
+
+This must be investigated and corrected properly.
+
+### First, understand the existing implementation
+
+Inspect:
+
+- `netlify/functions/paystack-initialize.ts`
+- `netlify/functions/paystack-verify.ts`
+- `netlify/functions/paystack-webhook.ts`
+- `src/pages/portal/BillingCenter.tsx`
+- `src/lib/billing.ts`
+- Firebase authentication initialization and persistence.
+- The application's domain and production redirect configuration.
+
+The current payment initialization function already contains role-specific callback routes, including `/portal/parent/payments`.
+
+The billing centre also contains a Paystack reference verification flow.
+
+Therefore, do not simply change the callback path without investigating the actual failure.
+
+### Required behaviour
+
+**A. Correct portal return**
+
+After a successful payment, users must return to the correct billing centre for their account:
+
+- Parent: `/portal/parent/payments`
+- School administrator: `/portal/school/payments`
+- Self-funded student: `/portal/student/payments`
+
+Preserve relevant payment reference and enrolment query parameters.
+
+Use the correct production application origin and ensure that `PUBLIC_APP_URL` does not introduce an unintended domain or host change.
+
+**B. Preserve authentication**
+
+A completed Paystack checkout must not unnecessarily destroy the user's Firebase session.
+
+Investigate whether the problem results from:
+
+- A mismatch between the domain used before and after checkout.
+- Firebase authentication not having restored its persisted session when the billing page attempts verification.
+- Session or local storage being cleared or overwritten.
+- The billing page attempting an authenticated request too early.
+- A redirect occurring before payment verification is completed.
+
+In particular, inspect the existing `billingPost` implementation, which requires `auth.currentUser`.
+
+Ensure the billing page waits for Firebase authentication restoration before attempting authenticated payment verification.
+
+If authentication genuinely cannot be restored, provide a safe recovery route that preserves the intended billing destination and returns the user to it after signing in.
+
+Do not introduce an unnecessary logout or clear authentication data during payment processing.
+
+**C. Transaction verification**
+
+After returning from Paystack:
+
+1. Read the transaction reference.
+2. Wait for the authenticated application session to be available.
+3. Verify the reference through the existing secure backend endpoint.
+4. Confirm the transaction using Paystack's server-side verification response.
+5. Reconcile the payment with the existing payment records.
+6. Refresh the billing information.
+7. Display a clear, visible payment-success confirmation.
+8. Display the transaction reference, amount, date and relevant payment information where available.
+
+Do not display a successful payment notification based solely on the URL query parameter or a browser redirect.
+
+**D. Handle other payment outcomes**
+
+Implement proper handling for:
+
+- Successful payments.
+- Pending or unverified transactions.
+- Failed payments.
+- Cancelled checkout.
+- Network interruptions.
+- Duplicate verification attempts.
+- Users refreshing the billing page after returning from Paystack.
+
+Allow failed verification attempts to be retried without initiating a duplicate charge.
+
+Maintain idempotent payment reconciliation and the existing Paystack webhook signature validation.
+
+**Acceptance criterion:** A parent can complete a payment and return directly to their authenticated billing centre, see the verified successful transaction and continue using the portal without logging in again.
+
+Test this end-to-end using Paystack test transactions or reliable mocked callback scenarios.
+
+---
+
+# PART 4 — AGREEMENTS TAB: CHANGE COMMUNICATIONS TO COMMUNIQUÉS
+
+The terminology in the Agreements section is incorrect.
+
+It should be:
+
+**Communiqués**
+
+Not:
+
+**Communications**
+
+Inspect `src/pages/portal/AgreementsCenter.tsx` and all relevant agreement navigation descriptions in `PortalLayout.tsx`.
+
+Update the terminology consistently across:
+
+- Category tabs.
+- Description text.
+- Empty-state messages.
+- Document creation headings.
+- Category selection labels.
+- Content field labels.
+- Relevant parent, tutor and school agreement descriptions.
+
+Use the correct spelling:
+
+- Singular: Communiqué
+- Plural: Communiqués
+
+Important: The existing Firestore category identifier is `COMMUNICATION`.
+
+Do not blindly rename the underlying enum or existing stored values. Preserve backward compatibility with existing agreement records while changing the user-facing terminology.
+
+---
+
+# PART 5 — SCHOOL ADMINISTRATOR ACCOUNT ACCESS AND PASSWORD MANAGEMENT
+
+We need a reliable account-activation and password-management system for partner-school administrators.
+
+### A. Individual school administrator credentials
+
+Every approved school administrator must have their own account and unique credentials.
+
+Inspect the existing implementation in:
+
+- `netlify/functions/admin-school-onboard.ts`
+- `netlify/functions/admin-school-access-code.ts`
+- `src/pages/SecurePortalLogin.tsx`
+- `src/components/admin/ProtectedRoute.tsx`
+- The existing password-change modal and related authentication functions.
+
+There is already a mechanism that generates a random temporary password and marks an account with `forcePasswordReset: true`.
+
+Audit and improve this existing implementation rather than creating a competing credential system.
+
+Required behaviour:
+
+1. When a school administrator is onboarded, generate a unique, cryptographically secure temporary credential or secure account-activation invitation.
+2. The credential must belong to that particular administrator.
+3. It must not be reused for another school.
+4. Require the administrator to establish a new personal password before gaining normal access to the school portal.
+5. The temporary credential should expire or be invalidated after its intended use.
+6. Provide a secure password-reset and account-recovery process.
+7. Ensure that passwords are never stored as plaintext in Firestore or exposed in application logs.
+8. Do not confuse a school's institutional access code with the administrator's login password.
+
+### B. Platform administrator access
+
+I also need authorised platform administrators to be able to assist school administrators with account-access issues.
+
+However, do not implement one universal password that grants access to every school administrator portal.
+
+That would create a dangerous shared backdoor.
+
+Instead, provide a secure administrator-support mechanism using the existing SUPER_ADMIN permissions.
+
+Where necessary, implement controlled, time-limited administrative access to a selected school's portal, with:
+
+- Explicit platform administrator authentication.
+- Appropriate re-authentication or MFA.
+- A selected school and authorised scope.
+- A recorded reason for access.
+- A clear administrator-support/impersonation indicator.
+- Time-limited access.
+- Complete audit logs recording who accessed which school and when.
+- No ability to bypass role-based access restrictions.
+
+The objective is to allow the platform administrator to assist every partner school without introducing a universal password or weakening the security of school accounts.
+
+---
+
+# PART 6 — TUTOR ASSESSMENT MANAGEMENT: MANUAL OPEN AND CLOSE CONTROLS
+
+Tutors should have the ability to manually control when an assessment becomes accessible to students.
+
+At present, the assessment system has existing lifecycle states, scheduling functionality and server-side status-management logic.
+
+We need a more direct operational control in the tutor assessment workspace.
+
+Inspect:
+
+- `src/pages/portal/TutorExaminations.tsx`
+- `netlify/functions/jdi-exam-management.ts`
+- Relevant student assessment access and submission components.
+
+### Required feature
+
+Add proper manual controls to the tutor's existing assessment management interface.
+
+For an assessment, the tutor should be able to:
+
+**Open Assessment Now**
+
+Immediately make the assessment accessible to its eligible students.
+
+**Close Assessment Now**
+
+Stop new assessment attempts and prevent additional students from starting the assessment.
+
+Where appropriate, provide a Reopen action for an assessment that has been manually closed.
+
+### Implementation rules
+
+1. Use the existing assessment lifecycle and server-side management endpoint wherever possible.
+2. The management API already supports status transitions through its `activate` action.
+3. Use `active` for opening an assessment and the appropriate existing completion state for closing it, unless a distinct paused/closed status is genuinely required.
+4. Do not create a new status without checking all existing consumers of assessment statuses.
+5. Only tutors or administrators authorised to manage a particular assessment may control it.
+6. Enforce permissions on the server, not merely by hiding buttons in the frontend.
+7. Record the administrator or tutor responsible for every manual status change.
+8. Record timestamps and status-change history.
+9. Synchronise the status across the relevant assessment records and database instances.
+10. Notify eligible students when an assessment is opened or its availability changes.
+11. Preserve existing student submissions, scores and assessment history.
+12. Do not delete an attempt or unexpectedly destroy a student's in-progress work when an assessment is closed.
+
+The interface should clearly display whether an assessment is Draft, Scheduled, Active or Completed.
+
+Use clear confirmation prompts for important status changes.
+
+**Acceptance criterion:** A tutor can independently open and close an assessment without having to edit its schedule or recreate the assessment.
+
+---
+
+# PART 7 — MAJOR FEATURE: MANUAL TUTOR PERFORMANCE REPORTS TO PARENTS
+
+This is one of the most important additions.
+
+Currently, academic performance reporting is largely structured around formal reporting periods, including:
+
+- End-of-Term Reports.
+- End-of-Session Reports.
+- End-of-Programme Reports.
+- Other official academic reporting cycles.
+
+These official reporting workflows are valuable and must remain intact.
+
+However, they are not sufficient for day-to-day tutoring operations.
+
+A tutor might want to send a parent an update about a child's performance today, after a particular class, after completing a project or after observing an improvement.
+
+The tutor should not have to wait until the end of the term or programme to communicate that information.
+
+I want a new capability that allows tutors to manually compose and send professional performance reports to parents.
+
+The feature should be integrated into the existing Academic Reporting section rather than creating another disconnected reporting system.
+
+## A. Introduce Tutor Progress Updates
+
+Add a dedicated option such as:
+
+**Create Tutor Progress Report**
+
+or
+
+**New Tutor Progress Update**
+
+The tutor should be able to select an eligible learner and manually prepare a report for that learner's parent or guardian.
+
+The reporting period should be optional.
+
+The tutor should not be forced to select an academic term, session or programme-completion period before preparing an individual report.
+
+Allow the tutor to create reports for:
+
+- A specific lesson or class.
+- A particular week.
+- A completed project.
+- A particular learning milestone.
+- A general progress update.
+- Any other relevant observation.
+
+## B. Integrate the Hub-Mind document editor
+
+This is where I want you to use the existing Hub-Mind implementation.
+
+Inspect these Hub-Mind components and utilities:
+
+- `src/pages/DocumentEditor.tsx`
+- `src/components/documents/DocumentRibbon.tsx`
+- `src/components/documents/DocumentToolbar.tsx`
+- `src/components/documents/PaginatedPageContainer.tsx`
+- `src/components/documents/TemplateSelector.tsx`
+- `src/components/documents/ImportExportMenu.tsx`
+- `src/components/documents/FullPagePreviewModal.tsx`
+- `src/components/documents/VersionHistoryModal.tsx`
+- `src/lib/documentExporter.ts`
+- `src/lib/paginationEngine.ts`
+- Relevant formatting, clipboard and sanitisation utilities.
+
+Do not build another basic rich-text editor when we already have a sophisticated document editor in Hub-Mind.
+
+The objective is to reuse and adapt its existing functionality.
+
+### Editor capabilities to preserve
+
+Where applicable, bring over:
+
+- TipTap rich-text editing.
+- Professional document ribbon and formatting toolbar.
+- Font selection and text formatting.
+- Headings, paragraphs, lists and alignment.
+- Tables and images.
+- A4 document page layout.
+- Page breaks and pagination.
+- Document preview.
+- Save status and autosave behaviour.
+- PDF export.
+- DOCX export.
+- HTML and TXT export.
+- Existing sanitisation and clipboard handling.
+
+The editor should feel like an actual document workspace rather than a small text-entry modal.
+
+### Critical integration constraint
+
+Hub-Mind's existing `DocumentEditor.tsx` is tightly integrated with Hub-Mind's own authentication, Firestore collection, document-saving services, offline-sync system, sharing functionality and Jess assistant bridge.
+
+Do not simply copy the entire page into V3 or connect the Institute's reports to Hub-Mind's production document database.
+
+Instead:
+
+1. Extract or refactor the reusable document editor interface and editing engine.
+2. Adapt the components to V3's existing React and Firebase architecture.
+3. Use V3's authenticated user context.
+4. Use V3's Firestore/database configuration and security rules.
+5. Create a dedicated report persistence workflow for the Institute.
+6. Preserve the editor's important formatting and pagination capabilities.
+7. Add only the required compatible TipTap packages and extensions to V3's dependencies.
+8. Avoid importing unnecessary Hub-Mind authentication, offline-sync, sharing or AI-specific dependencies.
+
+The final implementation should use Hub-Mind's editor capabilities while remaining a native part of the V3 portal.
+
+## C. Create a professional tutor-report template
+
+We need a dedicated template for this purpose.
+
+Use the Institute's branding and a clean professional document layout.
+
+Suggested report structure:
+
+**JAYSTARBLISS DYNAMIC INSTITUTE**
+
+**STUDENT PERFORMANCE & PROGRESS REPORT**
+
+Student Information:
+- Student's full name.
+- Programme.
+- Learning track or subject.
+- Class or age group where available.
+- Reporting date.
+- Tutor's name.
+- Reporting period, if applicable.
+
+Report Sections:
+
+1. General Performance Overview.
+2. Areas of Strength.
+3. Skills Acquired and Learning Achievements.
+4. Projects and Activities Completed.
+5. Participation and Engagement.
+6. Challenges or Areas Requiring Improvement.
+7. Tutor's Observations and Remarks.
+8. Recommendations and Next Steps.
+9. Suggested Activities or Practice for the Learner.
+10. Tutor's Name and Professional Sign-off.
+
+These should be editable sections, not mandatory rigid fields.
+
+Allow tutors to remove irrelevant sections, add their own headings, insert tables, include images where necessary and write naturally.
+
+The template should work for different learning areas, including Technology & Programming, Digital Literacy, Creative Design, Music & Performing Arts and academic tutoring.
+
+Where verified learner information is available, allow it to be prefilled.
+
+Do not fabricate assessment scores, attendance figures or achievements. Any automatically populated performance information must come from genuine records.
+
+## D. Report saving and delivery
+
+The tutor must have at least two clear actions:
+
+- Save as Draft.
+- Send to Parent.
+
+When the tutor sends a report:
+
+1. Save the completed report.
+2. Record the author, learner, school or programme association and recipient.
+3. Record the sent date and time.
+4. Change the report status from Draft to Sent.
+5. Notify the parent through the appropriate portal notification system.
+6. Where appropriate, send an email notification directing the parent to the secure portal.
+7. Make the report available in the parent's dashboard or child-specific reporting section.
+8. Allow the parent to open and download the report as a PDF.
+
+A parent must only be able to access reports belonging to their linked children.
+
+A tutor must only be able to prepare reports for learners they are authorised to teach or manage.
+
+Draft reports must never become visible to parents.
+
+Preserve historical versions or provide an auditable correction mechanism if an already-sent report needs to be amended.
+
+## E. Report data architecture
+
+Inspect the existing academic reporting data structures before deciding how to persist these reports.
+
+Do not damage or overload the existing official academic reporting schema.
+
+A separate collection such as `tutorProgressReports` may be appropriate if that is the cleanest solution.
+
+The record should support fields such as:
+
+- Report ID.
+- Student ID and name.
+- Parent/guardian ID.
+- Tutor ID and name.
+- School ID where applicable.
+- Programme and subject.
+- Report title.
+- Report content in HTML.
+- TipTap JSON content, where required.
+- Optional reporting period.
+- Report status.
+- Creation date.
+- Last updated date.
+- Sent date.
+- Version information.
+- Audit metadata.
+
+Ensure that the necessary Firestore security rules, queries and indexes are implemented.
+
+Integrate these manual reports into the existing parent-facing reporting experience without confusing them with formal End-of-Term or End-of-Session reports.
+
+**Acceptance criterion:** A tutor can create a professional report in the document editor, save it as a draft, send it to a parent, and the parent can open and download it from the correct child's portal.
+
+This process must work independently of the academic term or session reporting calendar.
+
+---
+
+# PART 8 — REDESIGN THE PORTAL SETTINGS SECTION
+
+I want the Settings section redesigned to look more modern, professional and organised.
+
+Inspect:
+
+`src/pages/portal/PortalSettings.tsx`
+
+The existing settings functionality should remain intact.
+
+The current areas include:
+
+- Profile.
+- Appearance and Theme.
+- Security and Password.
+- Notifications.
+
+Do not remove these capabilities.
+
+### Redesign objectives
+
+Create a cleaner settings experience with:
+
+1. Better information hierarchy.
+2. More organised settings categories.
+3. Improved spacing and typography.
+4. Clearer section descriptions.
+5. Better visual separation between settings groups.
+6. More intuitive forms and action buttons.
+7. Responsive mobile and desktop layouts.
+8. Consistent light and dark themes.
+9. Clear saving, success and error states.
+
+Where appropriate, introduce a settings navigation layout that makes it easy for users to find a particular setting without scrolling through an excessively long page.
+
+Make the settings experience suitable for all relevant portal roles.
+
+Preserve existing functionality, permissions, user preferences and Firebase data operations.
+
+Use the Institute's existing visual identity, including its slate, red and white palette, rather than introducing an unrelated design language.
+
+Avoid excessive cards, decorative icons, unnecessary explanations and wasted whitespace.
+
+The outcome should feel like a polished application settings workspace.
+
+---
+
+# PART 9 — TESTING, QUALITY ASSURANCE AND REGRESSION PREVENTION
+
+Do not finish after making the visible changes.
+
+Verify the actual workflows.
+
+### Partnership application
+- Exactly four core programmes are displayed.
+- Programme selections are saved correctly.
+- The application review and submission still work.
+
+### Parent billing
+- Both payment buttons navigate to `/portal/parent/payments`.
+- No invalid `/portal/parent/billing` references remain.
+- Billing and payment history load correctly.
+
+### Paystack
+- Parent payment initiation.
+- Successful payment return.
+- Session preservation.
+- Authenticated verification.
+- Failed and cancelled payment handling.
+- Refresh and retry behaviour.
+- Duplicate callback and webhook handling.
+- Correct transaction reconciliation.
+
+### School administrator credentials
+- Each administrator has a unique account.
+- Temporary credentials work.
+- Forced password change works.
+- Expired or already-used activation credentials cannot be reused.
+- School administrators cannot access another school's information.
+- No universal password or hidden authentication bypass exists.
+
+### Assessments
+- Tutors can open assessments manually.
+- Tutors can close assessments manually.
+- Only authorised tutors can control their assessments.
+- Student access reflects the correct status.
+- Existing attempts and results remain intact.
+- Notifications and audit events are generated correctly.
+
+### Manual tutor reports
+- Tutors can select authorised learners.
+- Tutors can compose and save a report.
+- Reports can be edited before sending.
+- Sent reports appear in the correct parent portal.
+- Parents cannot see other learners' reports.
+- Draft reports remain private.
+- PDF export works.
+- Official academic reporting remains functional.
+
+### Settings
+- Every existing setting still works.
+- Profile updates save correctly.
+- Password changes work.
+- Appearance preferences persist.
+- Notification preferences still work.
+- Layout works on desktop and mobile.
+- Light and dark modes remain consistent.
+
+Run the available TypeScript checks, production build and relevant existing tests. Add new tests for the functionality being changed.
+
+Do not weaken Firestore security rules to make a feature work. Any new collection or schema change must have corresponding access-control rules and appropriate indexes.
+
+---
+
+# PART 10 — IMPLEMENTATION DISCIPLINE
+
+Please observe the following throughout the work:
+
+1. Inspect the relevant existing implementation before editing.
+2. Reuse existing services and components wherever sensible.
+3. Avoid duplicate routes, duplicate authentication systems and unnecessary collections.
+4. Preserve existing records and backward compatibility.
+5. Do not remove working functionality while redesigning interfaces.
+6. Keep role-based access controls consistent across the frontend and backend.
+7. Do not expose credentials, API secrets or sensitive student information.
+8. Do not introduce a universal school-admin password.
+9. Avoid unrelated redesigns outside the requested scope.
+10. Use the existing project conventions and maintainable component structures.
+11. Report any database migration, environment variable or deployment configuration that requires manual attention.
+12. Do not push, deploy or publish changes without explicit approval.
+
+## FINAL EXPECTATION
+
+I expect these improvements to feel like a coherent upgrade to Jaystarbliss Dynamic Institute, not a collection of disconnected patches.
+
+The most important objectives are:
+
+- Correct school partnership programme selection.
+- Correct parent billing navigation.
+- Reliable Paystack return with authentication preserved.
+- Proper school administrator access management.
+- Manual tutor control of assessments.
+- Professional tutor-authored progress reports using the Hub-Mind document editor.
+- Correct Communiqués terminology.
+- A substantially improved Settings interface.
+
+Prioritise correctness, security, usability and consistency with the existing system.
+
+After implementation, provide a clear summary of:
+- What was changed.
+- Which files were modified.
+- Any new components or services introduced.
+- Any database or security-rule changes.
+- Tests performed and their results.
+- Any outstanding issues or deployment requirements.
+
+Do not mark a feature as completed merely because its interface has been added. Verify that the underlying functionality works.

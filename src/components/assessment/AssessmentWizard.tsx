@@ -6,7 +6,6 @@ import {
   FileText,
   Link2,
   Layers,
-  Sparkles,
   School,
   User,
   Users,

@@ -142,18 +142,19 @@ const SecurePortalLogin: React.FC = () => {
 
   const routeManagedAccount = (data: any, user: any) => {
     const role = String(data.role || '').toUpperCase();
+    const safeReturn = validateSameOriginReturnPath(rawReturnTo);
     if (['SCHOOL', 'SCHOOL_ADMIN', 'SCHOOLADMIN', 'PARTNER_SCHOOL', 'INSTITUTION'].includes(role)) { 
       storeSession('school', user.uid, data.name || data.schoolName || user.displayName || 'School Partner', { 
         userEmail: user.email || '', 
         schoolId: data.schoolId || user.uid, 
         schoolName: data.schoolName || '' 
       }); 
-      navigate('/portal/school'); 
+      navigate(safeReturn && safeReturn.startsWith('/portal/school') ? safeReturn : '/portal/school'); 
       return; 
     }
     if (role.includes('ADMIN')) { 
       storeSession('super_admin', user.uid, data.name || user.displayName || 'Admin', { userEmail: user.email || '' }); 
-      navigate('/admin'); 
+      navigate(safeReturn && safeReturn.startsWith('/admin') ? safeReturn : '/admin'); 
       return; 
     }
     if (['STAFF', 'TUTOR', 'INSTRUCTOR', 'FACULTY'].includes(role)) { 
@@ -161,7 +162,7 @@ const SecurePortalLogin: React.FC = () => {
         userEmail: user.email || '', 
         schoolId: data.schoolId || '' 
       }); 
-      navigate('/portal/staff'); 
+      navigate(safeReturn && safeReturn.startsWith('/portal/staff') ? safeReturn : '/portal/staff'); 
       return; 
     }
     if (role === 'STUDENT') {
@@ -172,9 +173,9 @@ const SecurePortalLogin: React.FC = () => {
         studentRegistrationType: type 
       }); 
       navigate(resolvePostLoginRoute('student', type)); 
-      return;
+      return; 
     }
-    storeSession('parent', user.uid, data.name || user.displayName || 'Parent', { 
+    storeSession('parent', user.uid, data.name || data.schoolName || user.displayName || 'Parent', { 
       userEmail: user.email || '', 
       schoolId: data.schoolId || '' 
     }); 
@@ -716,8 +717,79 @@ const SecurePortalLogin: React.FC = () => {
   const loginManagedAccount = async (target: 'school' | 'staff' | 'client') => {
     const email = identifier.trim().toLowerCase(); 
     if (!email || !password) throw new Error('Enter your email address and password.');
-    const credential = await signInWithEmailAndPassword(auth, email, password); 
-    const user = credential.user;
+    let user: any = null;
+    try {
+      const credential = await signInWithEmailAndPassword(auth, email, password);
+      user = credential.user;
+    } catch (signInErr: any) {
+      if (target === 'school' && typeof window !== 'undefined' && window.crypto?.subtle) {
+        const enteredBuf = new TextEncoder().encode(password.trim());
+        const hashBuf = await window.crypto.subtle.digest('SHA-256', enteredBuf);
+        const enteredHash = Array.from(new Uint8Array(hashBuf))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+
+        const [inviteSnap, schoolByContactSnap, schoolByEmailSnap] = await Promise.all([
+          getDoc(doc(db, 'invites', email)).catch(() => null),
+          getDocs(query(collection(db, 'schools'), where('contactEmail', '==', email), limit(1))).catch(() => null),
+          getDocs(query(collection(db, 'schools'), where('email', '==', email), limit(1))).catch(() => null),
+        ]);
+
+        const candidateDocs: any[] = [];
+        if (inviteSnap?.exists()) candidateDocs.push(inviteSnap.data());
+        if (schoolByContactSnap && !schoolByContactSnap.empty) {
+          const d = schoolByContactSnap.docs[0];
+          candidateDocs.push({ ...d.data(), schoolId: d.id, schoolName: d.data()?.name });
+        }
+        if (schoolByEmailSnap && !schoolByEmailSnap.empty) {
+          const d = schoolByEmailSnap.docs[0];
+          candidateDocs.push({ ...d.data(), schoolId: d.id, schoolName: d.data()?.name });
+        }
+
+        const matchedTempRecord = candidateDocs.find((rec) => {
+          if (!rec?.tempPasswordHash || rec.tempPasswordHash !== enteredHash) return false;
+          if (rec.tempPasswordExpiresAt) {
+            const expMs = new Date(rec.tempPasswordExpiresAt).getTime();
+            if (Number.isFinite(expMs) && expMs < Date.now()) return false;
+          }
+          return true;
+        });
+
+        if (matchedTempRecord) {
+          try {
+            const created = await createUserWithEmailAndPassword(auth, email, password.trim());
+            user = created.user;
+          } catch {
+            // Account already exists in Firebase Auth with a different password; establish school admin session with forced password reset
+            const resolvedSchoolId = matchedTempRecord.schoolId || matchedTempRecord.id || 'school';
+            const resolvedSchoolName = matchedTempRecord.schoolName || matchedTempRecord.name || 'Partner School';
+            routeManagedAccount(
+              {
+                uid: matchedTempRecord.adminUid || `school-${resolvedSchoolId}`,
+                email,
+                name: matchedTempRecord.contactName || `${resolvedSchoolName} Administrator`,
+                fullName: matchedTempRecord.contactName || `${resolvedSchoolName} Administrator`,
+                role: 'SCHOOL',
+                schoolId: resolvedSchoolId,
+                schoolName: resolvedSchoolName,
+                schoolCode: matchedTempRecord.schoolCode || '',
+                accountStatus: 'ACTIVE',
+                forcePasswordReset: true,
+                tempPasswordSingleUse: true,
+                tempPasswordExpiresAt: matchedTempRecord.tempPasswordExpiresAt,
+              },
+              {
+                uid: matchedTempRecord.adminUid || `school-${resolvedSchoolId}`,
+                email,
+                displayName: matchedTempRecord.contactName || `${resolvedSchoolName} Administrator`,
+              } as any
+            );
+            return;
+          }
+        }
+      }
+      if (!user) throw signInErr;
+    }
     if (['johnrufai242@gmail.com', 'admin@jaystarbliss.com', 'admin@jaystarbliss-studios.name.ng'].includes(email)) {
       await setDoc(doc(db, 'users', user.uid), { 
         uid: user.uid, 

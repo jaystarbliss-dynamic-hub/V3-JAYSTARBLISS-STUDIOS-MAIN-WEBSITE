@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteField, serverTimestamp, collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import BrandLoader from '../ui/BrandLoader';
 import ChangePasswordModal from '../portal/ChangePasswordModal';
 import { reconcileParentAndChildrenAccount } from '../../lib/usernameRegistry';
+import { clearRoleSpecificSessionKeys, getActiveImpersonation } from '../../utils/impersonation';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -29,37 +30,161 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
 
   useEffect(() => {
     let mounted = true;
-    const unsubscribe = onAuthStateChanged(auth, async currentUser => {
-      if (!mounted) return;
-      setLoading(true);
-      setBlockedMessage(null);
-      setIsAuthorized(false);
+    let unsubscribe: (() => void) | null = null;
+
+    const init = async () => {
       try {
-        if (!currentUser) return;
-        let userSnap = await getDoc(doc(db, 'users', currentUser.uid));
+        if (typeof (auth as any).authStateReady === 'function') {
+          await (auth as any).authStateReady();
+        }
+      } catch {
+        // Proceed with onAuthStateChanged
+      }
+      if (!mounted) return;
+      unsubscribe = onAuthStateChanged(auth, async currentUser => {
+        if (!mounted) return;
+        setLoading(true);
+        setBlockedMessage(null);
+        setIsAuthorized(false);
+        try {
+          if (!currentUser) return;
+          let userSnap = await getDoc(doc(db, 'users', currentUser.uid));
         
-        // Direct self-heal for known super admins / admin emails if user record is missing or not admin
-        const isSuperAdminEmail = currentUser.email === 'johnrufai242@gmail.com' || currentUser.email === 'admin@jaystarbliss.com' || currentUser.email === 'admin@jaystarbliss-studios.name.ng';
-        if (isSuperAdminEmail && (!userSnap.exists() || !adminRoles.includes(String(userSnap.data()?.role || '').toUpperCase()))) {
+        // Direct self-heal & contamination scrubber for known super admins / admin accounts
+        const isSuperAdminEmail =
+          currentUser.email === 'johnrufai242@gmail.com' ||
+          currentUser.email === 'admin@jaystarbliss.com' ||
+          currentUser.email === 'admin@jaystarbliss-studios.name.ng';
+        const currentDocData = userSnap.exists() ? userSnap.data() || {} : {};
+        const isDocAdminRole = adminRoles.includes(String(currentDocData.role || '').toUpperCase());
+        const hasContaminatedAdminFields = Boolean(
+          currentDocData.studentDocId ||
+            currentDocData.class ||
+            currentDocData.classLevel ||
+            currentDocData.username ||
+            currentDocData.schoolId ||
+            currentDocData.schoolName
+        );
+
+        if (
+          isSuperAdminEmail &&
+          (!userSnap.exists() || !isDocAdminRole || hasContaminatedAdminFields)
+        ) {
           try {
-            await setDoc(doc(db, 'users', currentUser.uid), {
-              uid: currentUser.uid,
-              name: currentUser.displayName || 'Super Admin',
-              fullName: currentUser.displayName || 'Super Admin',
-              email: currentUser.email,
-              role: 'SUPER_ADMIN',
-              accountStatus: 'ACTIVE',
-              status: 'ACTIVE',
-              updatedAt: serverTimestamp()
-            }, { merge: true });
+            const pollutedStudentId = String(currentDocData.studentDocId || '').trim();
+            await setDoc(
+              doc(db, 'users', currentUser.uid),
+              {
+                uid: currentUser.uid,
+                name: currentUser.displayName || 'Super Admin',
+                fullName: currentUser.displayName || 'Super Admin',
+                email: currentUser.email,
+                role: 'SUPER_ADMIN',
+                accountStatus: 'ACTIVE',
+                status: 'ACTIVE',
+                studentDocId: deleteField(),
+                class: deleteField(),
+                classLevel: deleteField(),
+                username: deleteField(),
+                schoolId: deleteField(),
+                schoolName: deleteField(),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+            localStorage.removeItem('jaystar_cached_student_doc_id');
+
+            // If a student document was accidentally linked to the Super Admin's UID during an earlier session, unlink it
+            if (pollutedStudentId) {
+              for (const colName of ['individualStudents', 'students'] as const) {
+                const sRef = doc(db, colName, pollutedStudentId);
+                const sSnap = await getDoc(sRef).catch(() => null);
+                if (sSnap?.exists() && sSnap.data()?.firebaseUid === currentUser.uid) {
+                  await setDoc(
+                    sRef,
+                    {
+                      firebaseUid: deleteField(),
+                      userId: deleteField(),
+                    },
+                    { merge: true }
+                  ).catch(() => undefined);
+                }
+              }
+            }
+
             userSnap = await getDoc(doc(db, 'users', currentUser.uid));
           } catch (createErr) {
             console.warn('Super admin direct init error:', createErr);
           }
         }
 
-        // Direct self-heal for school administrators if schoolId is missing
-        if ((location.pathname.startsWith('/portal/school') || userSnap.data()?.role === 'SCHOOL') && (!userSnap.exists() || !userSnap.data()?.schoolId)) {
+        // CRITICAL: Check active Admin Support / Impersonation Session BEFORE any self-heal logic!
+        // Never allow student/school/tutor self-heal to run against the Super Admin's Firebase UID while impersonating.
+        const activeMasquerade = getActiveImpersonation();
+        const isAuthenticatedAdmin =
+          isSuperAdminEmail ||
+          adminRoles.includes(String(userSnap.data()?.role || '').toUpperCase());
+
+        if (isAuthenticatedAdmin && activeMasquerade && activeMasquerade.isMasquerading) {
+          const targetRole = String(activeMasquerade.targetRole || 'STUDENT').toUpperCase();
+          const targetUser = activeMasquerade.targetUser || ({} as any);
+          const isAllowedForTarget = allowedRoles?.length
+            ? allowedRoles.some(candidate => candidate.toUpperCase() === targetRole)
+            : location.pathname.startsWith('/admin')
+              ? (adminRoles.includes(targetRole) && isSubAdminAllowedForPath(targetRole, location.pathname))
+              : true;
+
+          if (!isAllowedForTarget && location.pathname.startsWith('/admin') && adminRoles.includes(targetRole)) {
+            if (mounted) {
+              setUnauthorizedRedirect('/admin');
+              setIsAuthorized(false);
+              setLoading(false);
+            }
+            return;
+          }
+
+          if (isAllowedForTarget) {
+            clearRoleSpecificSessionKeys();
+            sessionStorage.setItem('userRole', targetRole.toLowerCase());
+            sessionStorage.setItem('userId', String(targetUser.uid || targetUser.id || ''));
+            sessionStorage.setItem('userEmail', String(targetUser.email || ''));
+            if (targetUser.name || targetUser.fullName) {
+              sessionStorage.setItem('userName', String(targetUser.name || targetUser.fullName));
+            }
+            if (targetRole === 'SCHOOL') {
+              const sId = String(targetUser.schoolId || targetUser.id || targetUser.uid || '');
+              if (sId) {
+                sessionStorage.setItem('schoolId', sId);
+                sessionStorage.setItem('schoolDocId', sId);
+              }
+              if (targetUser.schoolName || targetUser.name) {
+                sessionStorage.setItem('schoolName', String(targetUser.schoolName || targetUser.name));
+              }
+            } else if (targetRole === 'STUDENT') {
+              if (targetUser.schoolId) {
+                sessionStorage.setItem('schoolId', String(targetUser.schoolId));
+              }
+              if (targetUser.schoolName) {
+                sessionStorage.setItem('studentSchoolName', String(targetUser.schoolName));
+              }
+              if (targetUser.studentDocId || targetUser.id) {
+                sessionStorage.setItem('studentDocId', String(targetUser.studentDocId || targetUser.id));
+              }
+              if (targetUser.class || targetUser.classLevel) {
+                sessionStorage.setItem('studentClass', String(targetUser.class || targetUser.classLevel));
+              }
+            }
+            if (mounted) {
+              setMustResetPassword(false);
+              setIsAuthorized(true);
+              setLoading(false);
+            }
+            return;
+          }
+        }
+
+        // Direct self-heal for school administrators if schoolId is missing (ONLY for non-admin accounts)
+        if (!isAuthenticatedAdmin && (location.pathname.startsWith('/portal/school') || userSnap.data()?.role === 'SCHOOL') && (!userSnap.exists() || !userSnap.data()?.schoolId)) {
           try {
             const email = (currentUser.email || '').toLowerCase();
             const schoolQuery = query(collection(db, 'schools'), where('contactEmail', '==', email), limit(1));
@@ -204,15 +329,16 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
           }
         }
 
-        // Direct self-heal for student accounts if user profile is missing or incomplete
+        // Direct self-heal for student accounts if user profile is missing or incomplete (NEVER for admin accounts)
         const isStudentContext =
-          location.pathname.startsWith('/portal/student') ||
-          cachedRole === 'student' ||
-          (currentUser.email || '').toLowerCase().startsWith('student_') ||
-          String(userSnap.data()?.role || '').toUpperCase() === 'STUDENT' ||
-          String(userSnap.data()?.role || '').toUpperCase() === 'INDIVIDUAL_STUDENT';
+          !isAuthenticatedAdmin &&
+          (location.pathname.startsWith('/portal/student') ||
+            cachedRole === 'student' ||
+            (currentUser.email || '').toLowerCase().startsWith('student_') ||
+            String(userSnap.data()?.role || '').toUpperCase() === 'STUDENT' ||
+            String(userSnap.data()?.role || '').toUpperCase() === 'INDIVIDUAL_STUDENT');
 
-        if (!userSnap.exists() || !userSnap.data()?.role || (isStudentContext && !userSnap.data()?.studentDocId)) {
+        if (!isAuthenticatedAdmin && (!userSnap.exists() || !userSnap.data()?.role || (isStudentContext && !userSnap.data()?.studentDocId))) {
           try {
             let matchedStudentDoc: { id: string; collectionName: 'individualStudents' | 'students'; data: Record<string, any> } | null = null;
             const candidateDocId = String(
@@ -382,62 +508,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
           role = 'SCHOOL';
         }
 
-        // Check if active user is an Admin impersonating another role
-        const isUserAdmin = adminRoles.includes(role) || currentUser.email === 'johnrufai242@gmail.com';
-        const masqueradeRaw = sessionStorage.getItem('admin_masquerade');
-        let masquerade: any = null;
-        if (masqueradeRaw) {
-          try {
-            masquerade = JSON.parse(masqueradeRaw);
-          } catch {
-            masquerade = null;
-          }
-        }
-
-        if (isUserAdmin && masquerade && masquerade.isMasquerading) {
-          const targetRole = String(masquerade.targetRole || 'STUDENT').toUpperCase();
-          const targetUser = masquerade.targetUser || {};
-          const isAllowedForTarget = allowedRoles?.length
-            ? allowedRoles.some(candidate => candidate.toUpperCase() === targetRole)
-            : location.pathname.startsWith('/admin')
-              ? (adminRoles.includes(targetRole) && isSubAdminAllowedForPath(targetRole, location.pathname))
-              : true;
-
-          if (!isAllowedForTarget && location.pathname.startsWith('/admin') && adminRoles.includes(targetRole)) {
-            if (mounted) {
-              setUnauthorizedRedirect('/admin');
-              setIsAuthorized(false);
-              setLoading(false);
-            }
-            return;
-          }
-
-          if (isAllowedForTarget) {
-            sessionStorage.setItem('userRole', targetRole.toLowerCase());
-            sessionStorage.setItem('userId', targetUser.uid || targetUser.id || currentUser.uid);
-            sessionStorage.setItem('userEmail', targetUser.email || '');
-            if (targetUser.name || targetUser.fullName) {
-              sessionStorage.setItem('userName', String(targetUser.name || targetUser.fullName));
-            }
-            if (targetUser.schoolId) {
-              sessionStorage.setItem('schoolId', String(targetUser.schoolId));
-            }
-            if (targetUser.studentDocId || targetUser.id) {
-              sessionStorage.setItem('studentDocId', String(targetUser.studentDocId || targetUser.id));
-            }
-            if (targetUser.class || targetUser.classLevel) {
-              sessionStorage.setItem('studentClass', String(targetUser.class || targetUser.classLevel));
-            }
-            if (mounted) {
-              setIsAuthorized(true);
-              setLoading(false);
-            }
-            return;
-          }
-        }
-
         // Direct fallback check if schoolId is still not populated
-        if ((role === 'SCHOOL' || location.pathname.startsWith('/portal/school')) && !String(data.schoolId || '').trim()) {
+        if (!isAuthenticatedAdmin && (role === 'SCHOOL' || location.pathname.startsWith('/portal/school')) && !String(data.schoolId || '').trim()) {
           try {
             const email = (currentUser.email || data.email || '').toLowerCase();
             const schoolQuery = query(collection(db, 'schools'), where('contactEmail', '==', email), limit(1));
@@ -485,16 +557,46 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
         sessionStorage.setItem('userId', currentUser.uid);
         sessionStorage.setItem('userEmail', currentUser.email || String(data.email || ''));
         if (data.name) sessionStorage.setItem('userName', String(data.name));
-        if (data.schoolId) sessionStorage.setItem('schoolId', String(data.schoolId));
-        if (data.studentDocId) {
-          sessionStorage.setItem('studentDocId', String(data.studentDocId));
-          localStorage.setItem('jaystar_cached_student_doc_id', String(data.studentDocId));
+        if ((role === 'SCHOOL' || role === 'STUDENT') && data.schoolId) {
+          sessionStorage.setItem('schoolId', String(data.schoolId));
+        } else {
+          sessionStorage.removeItem('schoolId');
+          sessionStorage.removeItem('schoolDocId');
+          sessionStorage.removeItem('schoolName');
         }
-        if (data.class) sessionStorage.setItem('studentClass', String(data.class));
-        if (data.username) sessionStorage.setItem('studentUsername', String(data.username));
+        if (role === 'STUDENT') {
+          if (data.studentDocId) {
+            sessionStorage.setItem('studentDocId', String(data.studentDocId));
+            localStorage.setItem('jaystar_cached_student_doc_id', String(data.studentDocId));
+          }
+          if (data.class) sessionStorage.setItem('studentClass', String(data.class));
+          if (data.username) sessionStorage.setItem('studentUsername', String(data.username));
+        } else {
+          sessionStorage.removeItem('studentDocId');
+          sessionStorage.removeItem('studentClass');
+          sessionStorage.removeItem('studentUsername');
+          localStorage.removeItem('jaystar_cached_student_doc_id');
+        }
         localStorage.setItem('jaystar_cached_user_role', role.toLowerCase());
         localStorage.setItem('jaystar_cached_user_id', currentUser.uid);
         if (data.name) localStorage.setItem('jaystar_cached_user_name', String(data.name));
+
+        // Check temporary password expiration for school administrators before allowing normal portal access
+        if (data.forcePasswordReset === true && data.tempPasswordExpiresAt) {
+          const expiresDate =
+            typeof data.tempPasswordExpiresAt?.toDate === 'function'
+              ? data.tempPasswordExpiresAt.toDate()
+              : new Date(data.tempPasswordExpiresAt);
+          if (!Number.isNaN(expiresDate.getTime()) && Date.now() > expiresDate.getTime()) {
+            if (mounted) {
+              setBlockedMessage(
+                'Your temporary activation password has expired. Please contact Jaystarbliss Studios administration to issue a fresh temporary password or use Forgot Password on the login page.'
+              );
+            }
+            await signOut(auth).catch(() => undefined);
+            return;
+          }
+        }
 
         if (data.forcePasswordReset === true && mounted) setMustResetPassword(true);
         if (mounted) setIsAuthorized(true);
@@ -505,14 +607,24 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
         if (mounted) setLoading(false);
       }
     });
-    return () => { mounted = false; unsubscribe(); };
+    };
+    void init();
+    return () => { mounted = false; if (unsubscribe) unsubscribe(); };
   }, [rolesKey, location.pathname, redirectPath]);
 
   if (loading) return <BrandLoader fullScreen />;
 
   if (!isAuthorized) {
     if (blockedMessage) return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-950 p-6"><div className="max-w-md w-full rounded-2xl border border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-900 p-7 text-center shadow-xl"><div className="mx-auto mb-4 w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/50 text-red-600 flex items-center justify-center font-black text-lg">!</div><h1 className="text-xl font-black text-gray-900 dark:text-white">Account access restricted</h1><p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{blockedMessage}</p></div></div>;
-    return <Navigate to={unauthorizedRedirect} replace />;
+    const requestedFull = `${location.pathname}${location.search || ''}`;
+    const shouldPreserveReturn =
+      unauthorizedRedirect === '/portal' &&
+      location.pathname.startsWith('/portal/') &&
+      location.pathname !== '/portal';
+    const targetRedirect = shouldPreserveReturn
+      ? `/portal?returnTo=${encodeURIComponent(requestedFull)}`
+      : unauthorizedRedirect;
+    return <Navigate to={targetRedirect} replace />;
   }
 
   return <>{mustResetPassword && <ChangePasswordModal isOpen={true} isForced={true} onSuccess={() => setMustResetPassword(false)} />}{children}</>;

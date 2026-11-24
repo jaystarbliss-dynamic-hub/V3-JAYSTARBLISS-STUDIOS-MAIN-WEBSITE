@@ -16,7 +16,6 @@ import {
   RefreshCw,
   Save,
   School,
-  Sparkles,
   UserRound,
   X,
 } from 'lucide-react';

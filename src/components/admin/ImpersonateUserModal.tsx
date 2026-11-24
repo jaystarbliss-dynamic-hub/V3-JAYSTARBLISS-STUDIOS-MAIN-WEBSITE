@@ -9,6 +9,7 @@ import {
   AlertCircle, RefreshCw
 } from 'lucide-react';
 import { startImpersonation, type ImpersonationTarget } from '../../utils/impersonation';
+import { SchoolSupportAccessModal } from './SchoolSupportAccessModal';
 
 interface ImpersonateUserModalProps {
   isOpen: boolean;
@@ -28,6 +29,7 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>(defaultRole);
   const [allUsers, setAllUsers] = useState<ImpersonationTarget[]>([]);
+  const [pendingSchoolTarget, setPendingSchoolTarget] = useState<ImpersonationTarget | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -234,6 +236,11 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
   }, [allUsers, searchQuery, roleFilter]);
 
   const handleSelectUser = (target: ImpersonationTarget) => {
+    const uRole = String(target.role || '').toUpperCase();
+    if (uRole === 'SCHOOL' || uRole === 'SCHOOL_ADMIN') {
+      setPendingSchoolTarget(target);
+      return;
+    }
     toast.info(`Logging in directly as ${target.name} (${target.role})...`);
     onClose();
     startImpersonation(target, navigate);
@@ -408,6 +415,15 @@ export const ImpersonateUserModal: React.FC<ImpersonateUserModalProps> = ({
         </div>
 
       </div>
+
+      <SchoolSupportAccessModal
+        isOpen={Boolean(pendingSchoolTarget)}
+        target={pendingSchoolTarget}
+        onClose={() => {
+          setPendingSchoolTarget(null);
+          onClose();
+        }}
+      />
     </div>
   );
 };

@@ -18,6 +18,7 @@ import {
   validateExamCreationPayload,
   isStudentEligibleForWork,
   isAttemptResultReleased,
+  normalizeWorkType,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -876,14 +877,6 @@ export const handler: Handler = async event => {
           currentExam.status === "scheduled" && currentFrom > 0 && Date.now() >= currentFrom
             ? "active"
             : currentExam.status;
-        if (
-          !existingExam.exists ||
-          effectiveStatus !== "active" ||
-          (Number.isFinite(currentFrom) && Date.now() < currentFrom) ||
-          (Number.isFinite(currentUntil) && Date.now() >= currentUntil)
-        ) {
-          throw new Error("INACTIVE_EXAM");
-        }
         const lock = lockSnap.data() || {};
         const allowRetakes =
           currentExam.limitOneAttempt === false ||
@@ -896,12 +889,14 @@ export const handler: Handler = async event => {
           const activeRef = adminDb.collection("jdiExamAttempts").doc(String(lock.activeAttemptId));
           const activeSnap = await tx.get(activeRef);
           const activeData = activeSnap.data() || {};
+          const allowFinishAfterManualClose = currentExam.allowInProgressFinish !== false;
           if (
             !isRetakeRequest &&
             activeSnap.exists &&
             activeData.status === "in_progress" &&
             activeData.studentUid === c.uid &&
-            (!activeData.deadlineAt || new Date(activeData.deadlineAt).getTime() > Date.now())
+            (!activeData.deadlineAt || new Date(activeData.deadlineAt).getTime() > Date.now()) &&
+            (effectiveStatus === "active" || (effectiveStatus === "completed" && allowFinishAfterManualClose))
           ) {
             resumed = true;
             finalAttemptId = activeRef.id;
@@ -914,6 +909,14 @@ export const handler: Handler = async event => {
           ) {
             previousActiveWasEmptyExpired = true;
           }
+        }
+        if (
+          !existingExam.exists ||
+          effectiveStatus !== "active" ||
+          (Number.isFinite(currentFrom) && Date.now() < currentFrom) ||
+          (Number.isFinite(currentUntil) && Date.now() >= currentUntil)
+        ) {
+          throw new Error("INACTIVE_EXAM");
         }
         const usedAttempts = previousActiveWasEmptyExpired
           ? 0

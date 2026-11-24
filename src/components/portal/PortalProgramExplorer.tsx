@@ -13,7 +13,6 @@ import {
   Loader2,
   ShieldCheck,
   UserCheck,
-  Sparkles,
   BookOpen,
 } from 'lucide-react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
@@ -526,7 +525,7 @@ export const PortalProgramExplorer: React.FC<PortalProgramExplorerProps> = ({
                 onClick={() => setSelectedProgram(activeParent)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#B91C1C] hover:bg-red-700 text-white text-[11px] font-bold cursor-pointer"
               >
-                <Sparkles size={12} />
+                <CheckCircle2 size={12} />
                 <span>Apply for Full {activeParent.title}</span>
               </button>
             )}

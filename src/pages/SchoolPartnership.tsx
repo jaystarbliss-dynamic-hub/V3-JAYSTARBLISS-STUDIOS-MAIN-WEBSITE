@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import Button from '../components/ui/Button';
 import ProgressStepper from '../components/ui/ProgressStepper';
-import { SCHOOL_DELIVERY_TIERS } from '../data/learningEcosystem';
+import { CORE_PARTNERSHIP_PROGRAMMES, SCHOOL_DELIVERY_TIERS } from '../data/learningEcosystem';
 import { useToast } from '../contexts/ToastContext';
 
 const steps = [
@@ -41,23 +41,14 @@ const SchoolPartnership: React.FC = () => {
     addressCity: '',
     estimatedStudents: '50-100',
     preferredDays: '2 Days / Week (Development)',
-    programsOfInterest: ['School of Technology & Programming', 'School of Digital Literacy'] as string[],
+    programsOfInterest: CORE_PARTNERSHIP_PROGRAMMES.slice(0, 2).map((p) => p.name),
     message: ''
   });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const programs = [
-    'School of Technology & Programming (Coding, Web, Python, Scratch)',
-    'School of Digital Literacy (Junior Explorers & Senior Masters, Typing, Office, AI)',
-    'School of Creative Design (Graphic Design, Canva, Branding, Digital Art)',
-    'School of Music & Performing Arts (Keyboard, Recorder, Violin, Music Theory)',
-    'School of Academic Excellence (Maths, Sciences, WAEC/JAMB/Checkpoint Prep)',
-    'School of Strategy & Games (Chess & Scrabble Clubs)',
-    'School of Young Creators (Multi-disciplinary early years rotation)',
-    'School ICT Lab Transformation & Teacher Professional Development'
-  ];
+  const programs = CORE_PARTNERSHIP_PROGRAMMES;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -133,8 +124,13 @@ const SchoolPartnership: React.FC = () => {
     setError(null);
     
     try {
+      const selectedCore = CORE_PARTNERSHIP_PROGRAMMES.filter((p) =>
+        formData.programsOfInterest.includes(p.name)
+      );
       await addDoc(collection(db, 'inquiries'), {
         ...formData,
+        programIds: selectedCore.map((p) => p.id),
+        programsOfInterest: selectedCore.map((p) => p.name),
         deliveryTier: selectedTier,
         type: 'SCHOOL_PARTNERSHIP_PROPOSAL',
         status: 'PENDING',
@@ -518,20 +514,23 @@ const SchoolPartnership: React.FC = () => {
 
                       <div className="space-y-2.5">
                         {programs.map((prog) => {
-                          const isChecked = formData.programsOfInterest.includes(prog);
+                          const isChecked = formData.programsOfInterest.includes(prog.name);
 
                           return (
                             <button
-                              key={prog}
+                              key={prog.id}
                               type="button"
-                              onClick={() => handleCheckboxChange(prog)}
-                              className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
+                              onClick={() => handleCheckboxChange(prog.name)}
+                              className={`w-full p-3.5 rounded-xl border text-left flex items-center justify-between transition-all ${
                                 isChecked
                                   ? 'border-brand-red bg-brand-red/5 dark:bg-brand-red/10 text-slate-900 dark:text-white'
                                   : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
                               }`}
                             >
-                              <span className="text-xs font-bold">{prog}</span>
+                              <div className="min-w-0 pr-3">
+                                <span className="block text-xs font-bold">{prog.name}</span>
+                                <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{prog.shortDescription}</span>
+                              </div>
                               <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ml-2 ${
                                 isChecked ? 'bg-brand-red border-brand-red text-white' : 'border-slate-300 dark:border-slate-700'
                               }`}>

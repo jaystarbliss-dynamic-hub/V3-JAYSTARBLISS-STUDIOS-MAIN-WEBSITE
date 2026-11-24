@@ -5,16 +5,50 @@ import { sendActionableNotificationEmail } from '../../api/_lib/email';
 const json = (statusCode: number, body: Record<string, unknown>) => ({ statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(body) });
 const clean = (value: unknown, max = 1000) => String(value ?? '').trim().slice(0, max);
 
+const CORE_PARTNERSHIP_PROGRAMMES = [
+  { id: 'tech-programming', name: 'School of Technology & Programming' },
+  { id: 'digital-literacy', name: 'School of Digital Literacy' },
+  { id: 'creative-design', name: 'School of Creative Design' },
+  { id: 'music-performing-arts', name: 'School of Music & Performing Arts' },
+] as const;
+
+function normalizeCoreProgrammes(rawIds: unknown, rawNames: unknown): { programIds: string[]; programsOfInterest: string[] } {
+  const byId = new Map(CORE_PARTNERSHIP_PROGRAMMES.map((p) => [p.id.toLowerCase(), p]));
+  const byName = new Map(CORE_PARTNERSHIP_PROGRAMMES.map((p) => [p.name.toLowerCase(), p]));
+  const selected = new Map<string, (typeof CORE_PARTNERSHIP_PROGRAMMES)[number]>();
+
+  const ingest = (entry: unknown) => {
+    const text = clean(entry, 180);
+    if (!text) return;
+    const lower = text.toLowerCase();
+    const matched =
+      byId.get(lower) ||
+      byName.get(lower) ||
+      CORE_PARTNERSHIP_PROGRAMMES.find((p) => lower.startsWith(p.name.toLowerCase()));
+    if (matched) selected.set(matched.id, matched);
+  };
+
+  if (Array.isArray(rawIds)) rawIds.forEach(ingest);
+  if (Array.isArray(rawNames)) rawNames.forEach(ingest);
+
+  const items = Array.from(selected.values());
+  return {
+    programIds: items.map((p) => p.id),
+    programsOfInterest: items.map((p) => p.name),
+  };
+}
+
 export const handler: Handler = async event => {
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method Not Allowed' });
   try {
     const body = JSON.parse(event.body || '{}');
-    const name = clean(body.name, 120); const schoolName = clean(body.schoolName, 160); const role = clean(body.role, 100); const email = clean(body.email, 160).toLowerCase(); const phone = clean(body.phone, 40); const addressCity = clean(body.addressCity, 160); const estimatedStudents = clean(body.estimatedStudents, 80); const preferredDays = clean(body.preferredDays, 120); const message = clean(body.message, 1500); const deliveryTier = clean(body.deliveryTier, 80); const programsOfInterest = Array.isArray(body.programsOfInterest) ? body.programsOfInterest.map((x: unknown) => clean(x, 180)).filter(Boolean).slice(0, 20) : [];
-    if (!name || !schoolName || !role || !email || !deliveryTier || !programsOfInterest.length) return json(400, { error: 'Please complete all required partnership fields.' });
+    const name = clean(body.name, 120); const schoolName = clean(body.schoolName, 160); const role = clean(body.role, 100); const email = clean(body.email, 160).toLowerCase(); const phone = clean(body.phone, 40); const addressCity = clean(body.addressCity, 160); const estimatedStudents = clean(body.estimatedStudents, 80); const preferredDays = clean(body.preferredDays, 120); const message = clean(body.message, 1500); const deliveryTier = clean(body.deliveryTier, 80);
+    const { programIds, programsOfInterest } = normalizeCoreProgrammes(body.programIds, body.programsOfInterest);
+    if (!name || !schoolName || !role || !email || !deliveryTier || !programsOfInterest.length) return json(400, { error: 'Please complete all required partnership fields and select at least one core programme.' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { error: 'Please enter a valid email address.' });
     const now = new Date();
-    const ref = await adminDb.collection('inquiries').add({ name, schoolName, role, email, phone: phone || null, addressCity: addressCity || null, estimatedStudents: estimatedStudents || null, preferredDays: preferredDays || null, programsOfInterest, message: message || null, deliveryTier, type: 'SCHOOL_PARTNERSHIP_PROPOSAL', status: 'NEW', source: 'PUBLIC_SCHOOL_PARTNERSHIP', createdAt: now, updatedAt: now });
-    await adminDb.collection('activityLogs').add({ type: 'school_partnership_submitted', action: 'SCHOOL_PARTNERSHIP_SUBMITTED', inquiryId: ref.id, userEmail: email, userType: 'PUBLIC', message: `School partnership proposal received from ${schoolName}.`, timestamp: now, details: { schoolName, role, deliveryTier, estimatedStudents, programsOfInterest } });
+    const ref = await adminDb.collection('inquiries').add({ name, schoolName, role, email, phone: phone || null, addressCity: addressCity || null, estimatedStudents: estimatedStudents || null, preferredDays: preferredDays || null, programIds, programsOfInterest, message: message || null, deliveryTier, type: 'SCHOOL_PARTNERSHIP_PROPOSAL', status: 'NEW', source: 'PUBLIC_SCHOOL_PARTNERSHIP', createdAt: now, updatedAt: now });
+    await adminDb.collection('activityLogs').add({ type: 'school_partnership_submitted', action: 'SCHOOL_PARTNERSHIP_SUBMITTED', inquiryId: ref.id, userEmail: email, userType: 'PUBLIC', message: `School partnership proposal received from ${schoolName}.`, timestamp: now, details: { schoolName, role, deliveryTier, estimatedStudents, programIds, programsOfInterest } });
     await adminDb.collection('notifications').add({
       recipientId: 'all',
       recipientType: 'all',

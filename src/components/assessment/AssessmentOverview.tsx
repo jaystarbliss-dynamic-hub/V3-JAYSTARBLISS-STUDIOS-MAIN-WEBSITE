@@ -14,6 +14,10 @@ import {
   RefreshCw,
   BookOpen,
   Tag,
+  Lock,
+  Play,
+  RotateCcw,
+  X,
 } from 'lucide-react';
 import type { AcademicWorkType } from '../../lib/classes';
 import {
@@ -64,6 +68,7 @@ interface AssessmentOverviewProps {
   onPreviewAssessment: (assessment: AssessmentListItem) => void;
   onDuplicateAssessment: (assessment: AssessmentListItem) => void;
   onDeleteAssessment: (assessmentId: string) => void;
+  onChangeAssessmentStatus?: (assessment: AssessmentListItem, nextStatus: 'active' | 'completed') => Promise<void>;
   isTutor?: boolean;
 }
 
@@ -77,6 +82,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
   onPreviewAssessment,
   onDuplicateAssessment,
   onDeleteAssessment,
+  onChangeAssessmentStatus,
   isTutor = false,
 }) => {
   // 1. Primary Filter Tab: All | School | Private
@@ -88,11 +94,50 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
   const [workTypeFilter, setWorkTypeFilter] = useState<string>('ALL');
   const [deliveryFilter, setDeliveryFilter] = useState<string>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [pendingStatusAction, setPendingStatusAction] = useState<{
+    assessment: AssessmentListItem;
+    nextStatus: 'active' | 'completed';
+    mode: 'open' | 'close' | 'reopen';
+  } | null>(null);
+  const [statusSubmitting, setStatusSubmitting] = useState(false);
 
   // Shared floating menu state for both three-dot button clicks and right-click context menu
   const rowContextMenu = useRowActionMenu<AssessmentListItem>();
 
   const buildRowActions = (exam: AssessmentListItem): RowActionItem[] => {
+    const st = String(exam.status || 'draft').toLowerCase();
+    const statusActions: RowActionItem[] = [];
+    if (onChangeAssessmentStatus) {
+      if (st === 'draft' || st === 'scheduled') {
+        statusActions.push({
+          id: 'open-now',
+          label: 'Open Assessment Now',
+          icon: <Play size={14} />,
+          onClick: () =>
+            setPendingStatusAction({ assessment: exam, nextStatus: 'active', mode: 'open' }),
+          dividerBefore: true,
+        });
+      } else if (st === 'active') {
+        statusActions.push({
+          id: 'close-now',
+          label: 'Close Assessment Now',
+          icon: <Lock size={14} />,
+          onClick: () =>
+            setPendingStatusAction({ assessment: exam, nextStatus: 'completed', mode: 'close' }),
+          dividerBefore: true,
+        });
+      } else if (st === 'completed') {
+        statusActions.push({
+          id: 'reopen-now',
+          label: 'Reopen Assessment',
+          icon: <RotateCcw size={14} />,
+          onClick: () =>
+            setPendingStatusAction({ assessment: exam, nextStatus: 'active', mode: 'reopen' }),
+          dividerBefore: true,
+        });
+      }
+    }
+
     return [
       {
         id: 'edit',
@@ -112,6 +157,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
         icon: <Eye size={14} />,
         onClick: () => onPreviewAssessment(exam),
       },
+      ...statusActions,
       {
         id: 'duplicate',
         label: 'Duplicate Assessment',
@@ -543,13 +589,23 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                           <span
                             className={`text-[11px] font-black uppercase tracking-wider ${
                               statusLower === 'active'
-                                ? 'text-[#B91C1C] dark:text-red-400'
+                                ? 'text-emerald-700 dark:text-emerald-400'
                                 : statusLower === 'scheduled'
                                 ? 'text-[#1E293B] dark:text-zinc-200'
+                                : statusLower === 'completed'
+                                ? 'text-[#B91C1C] dark:text-red-400'
                                 : 'text-slate-500 dark:text-zinc-400'
                             }`}
                           >
-                            {statusLower === 'active' ? 'Active' : statusLower === 'scheduled' ? 'Scheduled' : 'Draft'}
+                            {statusLower === 'active'
+                              ? 'Open (Active)'
+                              : statusLower === 'scheduled'
+                              ? 'Scheduled'
+                              : statusLower === 'completed'
+                              ? 'Closed'
+                              : statusLower === 'archived'
+                              ? 'Archived'
+                              : 'Draft'}
                           </span>
                           {exam.passcode && (
                             <p className="text-[10px] font-mono text-slate-400 dark:text-zinc-500 tabular-nums">
@@ -590,6 +646,87 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
           onClose={rowContextMenu.close}
           title={rowContextMenu.state.data.title || 'Assessment Actions'}
         />
+      )}
+
+      {pendingStatusAction && onChangeAssessmentStatus && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 shadow-2xl p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {pendingStatusAction.mode === 'close'
+                    ? 'Close Assessment Now?'
+                    : pendingStatusAction.mode === 'reopen'
+                    ? 'Reopen Closed Assessment?'
+                    : 'Open Assessment Now?'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
+                  {pendingStatusAction.assessment.title}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={statusSubmitting}
+                onClick={() => setPendingStatusAction(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-zinc-300 leading-relaxed">
+              {pendingStatusAction.mode === 'close'
+                ? 'New students will be blocked from starting this assessment. Students who already started will be allowed to finish and submit before their timer ends. All existing submissions and scores are preserved.'
+                : pendingStatusAction.mode === 'reopen'
+                ? 'This assessment will immediately return to Open (Active) status so eligible students can start it again.'
+                : 'This assessment will immediately become Open (Active) and eligible students will be notified.'}
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={statusSubmitting}
+                onClick={() => setPendingStatusAction(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={statusSubmitting}
+                onClick={async () => {
+                  setStatusSubmitting(true);
+                  try {
+                    await onChangeAssessmentStatus(
+                      pendingStatusAction.assessment,
+                      pendingStatusAction.nextStatus
+                    );
+                    setPendingStatusAction(null);
+                  } finally {
+                    setStatusSubmitting(false);
+                  }
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold text-white transition-colors disabled:opacity-60 ${
+                  pendingStatusAction.mode === 'close'
+                    ? 'bg-[#991B1B] hover:bg-[#7F1D1D]'
+                    : 'bg-emerald-700 hover:bg-emerald-800'
+                }`}
+              >
+                {statusSubmitting
+                  ? 'Updating...'
+                  : pendingStatusAction.mode === 'close'
+                  ? 'Close Assessment'
+                  : pendingStatusAction.mode === 'reopen'
+                  ? 'Reopen Assessment'
+                  : 'Open Now'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -275,7 +275,13 @@ export function canAccessAgreement(
 ): boolean;
 
 export function isAttemptResultReleased(
-  attempt?: Record<string, any> | null
+  attempt?: Record<string, any> | null,
+  exam?: Record<string, any> | null
+): boolean;
+
+export function shouldAutoReleaseAttemptResult(
+  exam?: Record<string, any> | null,
+  gradeInfo?: Record<string, any> | null
 ): boolean;
 
 export function canViewOrPrintAttemptResult(

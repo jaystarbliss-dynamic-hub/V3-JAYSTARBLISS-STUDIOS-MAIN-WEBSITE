@@ -123,48 +123,43 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       {isOpen && (
         <div 
           id="notification-popover-dropdown"
-          className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150"
+          className="fixed left-3 right-3 top-15 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96 max-w-[calc(100vw-1.5rem)] rounded-2xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150"
         >
           {/* Header */}
-          <div className="px-4 py-3.5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between bg-slate-50/80 dark:bg-[#18181B]">
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-[#111114]">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-slate-200/70 dark:bg-zinc-900 border border-transparent dark:border-zinc-800 text-[#B91C1C] dark:text-red-400 flex items-center justify-center font-bold">
-                <Bell size={14} />
-              </div>
-              <div>
-                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                  Notifications &amp; Alerts
-                </h3>
-                <p className="text-[10px] text-slate-500 dark:text-zinc-400 tabular-nums">
-                  {unreadCount === 0 ? 'All caught up' : `${unreadCount} unread update${unreadCount > 1 ? 's' : ''}`}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
+                Notifications
+              </h3>
               {unreadCount > 0 && (
-                <button
-                  type="button"
-                  onClick={markAllAsRead}
-                  className="text-[11px] font-bold text-[#B91C1C] dark:text-red-400 hover:text-red-800 flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer"
-                  title="Mark all notifications as read"
-                >
-                  <CheckCheck size={13} />
-                  <span>Mark read</span>
-                </button>
+                <span className="px-1.5 py-0.5 rounded-md bg-red-50 dark:bg-red-950/40 text-[#B91C1C] dark:text-red-400 text-[10px] font-bold tabular-nums">
+                  {unreadCount} new
+                </span>
               )}
             </div>
+
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                onClick={markAllAsRead}
+                className="text-[11px] font-semibold text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
+                title="Mark all notifications as read"
+              >
+                <CheckCheck size={13} />
+                <span>Mark all read</span>
+              </button>
+            )}
           </div>
 
           {/* Quick List */}
-          <div className="max-h-[340px] overflow-y-auto divide-y divide-slate-100 dark:divide-zinc-800/80 bg-white dark:bg-[#111114]">
+          <div className="max-h-[340px] overflow-y-auto divide-y divide-slate-100 dark:divide-zinc-800/70 bg-white dark:bg-[#111114]">
             {notifications.length === 0 ? (
-              <div className="p-8 text-center space-y-2">
-                <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-[#18181B] text-slate-400 dark:text-zinc-500 mx-auto flex items-center justify-center">
-                  <Bell size={18} />
+              <div className="py-10 px-6 text-center space-y-2">
+                <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-[#18181B] text-slate-400 dark:text-zinc-500 mx-auto flex items-center justify-center">
+                  <Bell size={16} />
                 </div>
-                <p className="text-xs font-bold text-slate-700 dark:text-zinc-300">
-                  No notifications yet
+                <p className="text-xs font-medium text-slate-500 dark:text-zinc-400">
+                  You&apos;re all caught up
                 </p>
               </div>
             ) : (
@@ -174,67 +169,56 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                   <div
                     key={item.id}
                     onClick={() => handleOpenItem(item)}
-                    className={`p-3.5 flex items-start gap-3 transition-colors cursor-pointer group ${
+                    className={`px-4 py-3 flex items-start gap-3 transition-colors cursor-pointer group ${
                       !isRead 
-                        ? 'bg-slate-50/90 dark:bg-[#18181B] hover:bg-slate-100 dark:hover:bg-zinc-900' 
-                        : 'hover:bg-slate-50 dark:hover:bg-zinc-900/60'
+                        ? 'bg-slate-50/70 dark:bg-[#18181B]/70 hover:bg-slate-100/80 dark:hover:bg-zinc-900' 
+                        : 'hover:bg-slate-50 dark:hover:bg-zinc-900/50'
                     }`}
                   >
-                    {/* Icon */}
-                    <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-[#09090B] flex items-center justify-center shrink-0 mt-0.5 border border-slate-200/50 dark:border-zinc-800">
+                    {/* Unread Indicator / Icon */}
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-[#09090B] flex items-center justify-center shrink-0 mt-0.5 border border-slate-200/60 dark:border-zinc-800">
                       {getNotificationIcon(item.type, item.priority)}
                     </div>
 
                     {/* Content */}
-                    <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex-1 min-w-0 space-y-0.5">
                       <div className="flex items-center justify-between gap-2">
-                        <h4 className={`text-xs font-bold truncate ${
+                        <h4 className={`text-xs font-semibold truncate ${
                           !isRead ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-zinc-300'
                         }`}>
                           {item.title}
                         </h4>
-                        {!isRead && (
-                          <span className="text-[9px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400 shrink-0">
-                            New
-                          </span>
-                        )}
+                        <span className="text-[10px] text-slate-400 dark:text-zinc-500 shrink-0 tabular-nums">
+                          {formatRelativeTime(item.timestamp)}
+                        </span>
                       </div>
 
                       <p className="text-[11px] text-slate-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
                         {item.message}
                       </p>
-
-                      <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400 dark:text-zinc-500">
-                        <span className="flex items-center gap-1 tabular-nums">
-                          <Clock size={10} />
-                          {formatRelativeTime(item.timestamp)}
-                        </span>
-
-                        <div className="flex items-center gap-1.5 opacity-90 group-hover:opacity-100">
-                          <span className="text-[#B91C1C] dark:text-red-400 font-bold flex items-center gap-0.5">
-                            Read <ChevronRight size={10} />
-                          </span>
-                        </div>
-                      </div>
                     </div>
+
+                    {!isRead && (
+                      <span className="w-2 h-2 rounded-full bg-[#B91C1C] shrink-0 mt-2" />
+                    )}
                   </div>
                 );
               })
             )}
           </div>
 
-          {/* Footer - Open Full Inbox Drawer */}
-          <div className="px-4 py-3 border-t border-slate-100 dark:border-zinc-800 bg-slate-50/90 dark:bg-[#18181B] flex items-center justify-between text-xs">
-            <span className="text-slate-500 dark:text-zinc-400 text-[11px] tabular-nums">
-              {notifications.length} message{notifications.length === 1 ? '' : 's'} total
+          {/* Footer - Open Full Inbox */}
+          <div className="px-4 py-2.5 border-t border-slate-100 dark:border-zinc-800 bg-slate-50/60 dark:bg-[#18181B]/60 flex items-center justify-between text-xs">
+            <span className="text-slate-400 dark:text-zinc-500 text-[11px] tabular-nums">
+              {notifications.length} total
             </span>
             <button
               type="button"
               onClick={handleOpenFullInbox}
-              className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:text-red-800 flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="text-xs font-semibold text-[#B91C1C] dark:text-red-400 hover:text-red-800 flex items-center gap-1 transition-colors cursor-pointer"
             >
-              <Inbox size={13} />
-              <span>Open Full Inbox Drawer</span>
+              <span>Open Full Inbox</span>
+              <ChevronRight size={13} />
             </button>
           </div>
         </div>

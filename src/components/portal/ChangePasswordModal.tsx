@@ -5,6 +5,7 @@ import { collection, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, wher
 import { auth, db, getClientDatabases } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { checkUsernameAvailability, claimGlobalUsername, normalizeUsername } from '../../lib/usernameRegistry';
+import { getEffectiveAuth } from '../../utils/impersonation';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -41,25 +42,56 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
+  const effectiveAuth = getEffectiveAuth();
+  const activeRole = (effectiveAuth.effectiveRole || 'student').toLowerCase();
+  const isStudentRole = activeRole === 'student';
+
   useEffect(() => {
     if (!isOpen) return;
+    setUsername('');
+    setError('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setCurrentPassword('');
+    setSuccess(false);
+
+    // Only student accounts use a Unique Portal Username
+    if (!isStudentRole) {
+      return;
+    }
+
     const user = auth.currentUser;
-    const cachedUsername = sessionStorage.getItem('studentUsername') || '';
-    if (cachedUsername) setUsername(normalizeUsername(cachedUsername));
-    if (!user) return;
+    const isMasquerading = effectiveAuth.isMasquerading;
+
+    if (!isMasquerading) {
+      const cachedUsername = sessionStorage.getItem('studentUsername') || '';
+      if (cachedUsername) setUsername(normalizeUsername(cachedUsername));
+    }
 
     const loadCurrentUsername = async () => {
       try {
-        const uSnap = await getDoc(doc(db, 'users', user.uid)).catch(() => null);
-        if (uSnap?.exists() && uSnap.data()?.username) {
-          setUsername(normalizeUsername(String(uSnap.data().username)));
-          return;
-        }
-        const studentDocId = sessionStorage.getItem('studentDocId') || localStorage.getItem('jaystar_cached_student_doc_id') || '';
+        const studentDocId = isMasquerading
+          ? effectiveAuth.effectiveStudentDocId
+          : effectiveAuth.effectiveStudentDocId ||
+            sessionStorage.getItem('studentDocId') ||
+            localStorage.getItem('jaystar_cached_student_doc_id') ||
+            '';
+
         if (studentDocId) {
-          const sSnap = await getDoc(doc(db, 'individualStudents', studentDocId)).catch(() => null);
-          if (sSnap?.exists() && sSnap.data()?.username) {
-            setUsername(normalizeUsername(String(sSnap.data().username)));
+          for (const colName of ['individualStudents', 'students'] as const) {
+            const sSnap = await getDoc(doc(db, colName, studentDocId)).catch(() => null);
+            if (sSnap?.exists() && sSnap.data()?.username) {
+              setUsername(normalizeUsername(String(sSnap.data().username)));
+              return;
+            }
+          }
+        }
+
+        const lookupUid = isMasquerading ? effectiveAuth.effectiveUid : user?.uid || '';
+        if (lookupUid && (!isMasquerading || lookupUid !== user?.uid)) {
+          const uSnap = await getDoc(doc(db, 'users', lookupUid)).catch(() => null);
+          if (uSnap?.exists() && uSnap.data()?.username && String(uSnap.data()?.role || '').toUpperCase().includes('STUDENT')) {
+            setUsername(normalizeUsername(String(uSnap.data().username)));
           }
         }
       } catch {
@@ -67,7 +99,13 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       }
     };
     void loadCurrentUsername();
-  }, [isOpen]);
+  }, [
+    isOpen,
+    isStudentRole,
+    effectiveAuth.isMasquerading,
+    effectiveAuth.effectiveStudentDocId,
+    effectiveAuth.effectiveUid,
+  ]);
 
   if (!isOpen) return null;
 
@@ -88,8 +126,8 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     e.preventDefault();
     setError('');
 
-    const cleanUsername = normalizeUsername(username);
-    if (cleanUsername && (cleanUsername.length < 3 || cleanUsername.length > 30)) {
+    const cleanUsername = isStudentRole ? normalizeUsername(username) : '';
+    if (isStudentRole && cleanUsername && (cleanUsername.length < 3 || cleanUsername.length > 30)) {
       setError('Username must be between 3 and 30 characters.');
       return;
     }
@@ -112,11 +150,112 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         throw new Error('No active user session. Please sign in again.');
       }
 
-      const cachedStudentDocId = sessionStorage.getItem('studentDocId') || localStorage.getItem('jaystar_cached_student_doc_id') || '';
-      const cachedSchoolId = sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || '';
+      const [sha256Hash, upperSha256Hash] = await Promise.all([
+        computeSha256(cleanPassword),
+        computeSha256(cleanPassword.toUpperCase())
+      ]);
+      const nowIso = new Date().toISOString();
 
-      // Enforce global username uniqueness across the entire portal
-      if (cleanUsername) {
+      // CRITICAL ISOLATION: If an admin is in a support/impersonation session, NEVER overwrite auth.currentUser's password or users/{auth.currentUser.uid}!
+      if (effectiveAuth.isMasquerading) {
+        const targetUid = effectiveAuth.effectiveUid;
+        const targetSchoolId = effectiveAuth.effectiveSchoolId;
+        const targetStudentDocId = effectiveAuth.effectiveStudentDocId;
+
+        if (isStudentRole && cleanUsername) {
+          const check = await checkUsernameAvailability(cleanUsername, [targetUid, targetStudentDocId].filter(Boolean));
+          if (!check.available) {
+            setError(check.reason || `The username "${cleanUsername}" is already taken. Please pick another username.`);
+            toast.error(`Username "${cleanUsername}" is already taken. Please pick another username.`);
+            setLoading(false);
+            return;
+          }
+        }
+
+        const hashPatch: Record<string, any> = {
+          ...(isStudentRole && cleanUsername ? { username: cleanUsername } : {}),
+          passwordHash: sha256Hash,
+          customPasswordHash: sha256Hash,
+          accessCodeHash: upperSha256Hash,
+          forcePasswordReset: false,
+          mustResetPassword: false,
+          tempPasswordSingleUse: false,
+          tempPasswordExpiresAt: null,
+          tempPasswordConsumedAt: nowIso,
+          passwordUpdatedAt: nowIso,
+          updatedAt: nowIso,
+        };
+
+        if (activeRole === 'school' && targetSchoolId) {
+          for (const dbInstance of getClientDatabases()) {
+            await setDoc(doc(dbInstance, 'schools', targetSchoolId), hashPatch, { merge: true }).catch(() => undefined);
+            await setDoc(
+              doc(dbInstance, 'schoolPasscodes', targetSchoolId),
+              {
+                schoolId: targetSchoolId,
+                schoolName: effectiveAuth.effectiveName,
+                contactEmail: effectiveAuth.effectiveEmail,
+                passwordHash: sha256Hash,
+                customPasswordHash: sha256Hash,
+                accessCodeHash: upperSha256Hash,
+                forcePasswordReset: false,
+                tempPasswordSingleUse: false,
+                updatedAt: nowIso,
+              },
+              { merge: true }
+            ).catch(() => undefined);
+          }
+        } else if (isStudentRole && targetStudentDocId) {
+          for (const dbInstance of getClientDatabases()) {
+            for (const coll of ['individualStudents', 'students'] as const) {
+              const sRef = doc(dbInstance, coll, targetStudentDocId);
+              const sSnap = await getDoc(sRef).catch(() => null);
+              if (sSnap?.exists()) {
+                await setDoc(sRef, hashPatch, { merge: true }).catch(() => undefined);
+              }
+            }
+          }
+          if (cleanUsername) {
+            await claimGlobalUsername(cleanUsername, {
+              uid: targetUid || targetStudentDocId,
+              docId: targetStudentDocId,
+              role: 'STUDENT',
+              email: effectiveAuth.effectiveEmail || '',
+              name: effectiveAuth.effectiveName || '',
+            }).catch(() => undefined);
+          }
+        }
+
+        // Only update users/{targetUid} if targetUid is distinct from the Super Admin's UID
+        if (targetUid && targetUid !== user.uid) {
+          for (const dbInstance of getClientDatabases()) {
+            const uRef = doc(dbInstance, 'users', targetUid);
+            const uSnap = await getDoc(uRef).catch(() => null);
+            if (uSnap?.exists()) {
+              await setDoc(uRef, hashPatch, { merge: true }).catch(() => undefined);
+            }
+          }
+        }
+
+        setSuccess(true);
+        toast.success(`Password updated for ${effectiveAuth.effectiveName}.`);
+        setTimeout(() => {
+          if (onSuccess) onSuccess();
+          if (onClose) onClose();
+        }, 1200);
+        return;
+      }
+
+      const cachedStudentDocId = isStudentRole
+        ? sessionStorage.getItem('studentDocId') || localStorage.getItem('jaystar_cached_student_doc_id') || ''
+        : '';
+      const cachedSchoolId =
+        activeRole === 'school'
+          ? sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || ''
+          : '';
+
+      // Enforce global username uniqueness across the entire portal (students only)
+      if (isStudentRole && cleanUsername) {
         const check = await checkUsernameAvailability(cleanUsername, [user.uid, cachedStudentDocId, cachedSchoolId]);
         if (!check.available) {
           setError(check.reason || `The username "${cleanUsername}" is already taken. Please pick another username.`);
@@ -125,12 +264,6 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           return;
         }
       }
-
-      const [sha256Hash, upperSha256Hash] = await Promise.all([
-        computeSha256(cleanPassword),
-        computeSha256(cleanPassword.toUpperCase())
-      ]);
-      const nowIso = new Date().toISOString();
 
       // 1. Direct Firebase Auth password update
       let authUpdated = false;
@@ -159,7 +292,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
           },
-          body: JSON.stringify({ newPassword: cleanPassword, ...(cleanUsername ? { username: cleanUsername } : {}) })
+          body: JSON.stringify({ newPassword: cleanPassword, ...(isStudentRole && cleanUsername ? { username: cleanUsername } : {}) })
         });
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.success && !data.fallback) {
@@ -177,27 +310,26 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       }
 
       // 3. Direct client-side Firestore sync across primary and fallback databases
+      // Never persist plaintext passwords on user records; clear single-use temp password flags on completion.
       const userPatch: Record<string, any> = {
-        ...(cleanUsername ? { username: cleanUsername } : {}),
+        ...(isStudentRole && cleanUsername ? { username: cleanUsername } : {}),
         passwordHash: sha256Hash,
         customPasswordHash: sha256Hash,
         accessCodeHash: upperSha256Hash,
-        customPassword: cleanPassword,
         forcePasswordReset: false,
         mustResetPassword: false,
+        tempPasswordSingleUse: false,
+        tempPasswordExpiresAt: null,
+        tempPasswordConsumedAt: nowIso,
         passwordUpdatedAt: nowIso,
         updatedAt: nowIso
       };
 
       const studentPatch: Record<string, any> = {
-        ...(cleanUsername ? { username: cleanUsername } : {}),
+        ...(isStudentRole && cleanUsername ? { username: cleanUsername } : {}),
         passwordHash: sha256Hash,
         customPasswordHash: sha256Hash,
         accessCodeHash: upperSha256Hash,
-        customPassword: cleanPassword,
-        accessCode: cleanPassword,
-        passcode: cleanPassword,
-        code: cleanPassword,
         forcePasswordReset: false,
         mustResetPassword: false,
         passwordUpdatedAt: nowIso,
@@ -213,7 +345,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           const uSnap = await getDoc(uRef).catch(() => null);
           if (uSnap?.exists()) {
             const uData = uSnap.data() || {};
-            if (uData.studentDocId) resolvedStudentDocId = String(uData.studentDocId);
+            if (isStudentRole && uData.studentDocId) resolvedStudentDocId = String(uData.studentDocId);
             await updateDoc(uRef, userPatch).catch(async () => {
               await setDoc(uRef, userPatch, { merge: true }).catch(() => undefined);
             });
@@ -229,53 +361,74 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           console.warn('Could not update user doc flag (non-fatal):', uErr);
         }
 
-        let updatedStudent = false;
-        if (resolvedStudentDocId) {
-          for (const coll of ['individualStudents', 'students']) {
-            try {
-              const sRef = doc(dbInstance, coll, resolvedStudentDocId);
-              const sSnap = await getDoc(sRef);
-              if (sSnap.exists()) {
-                await updateDoc(sRef, studentPatch).catch(async () => {
-                  await setDoc(sRef, studentPatch, { merge: true }).catch(() => undefined);
-                });
-                updatedStudent = true;
-              }
-            } catch {
-              // Ignore if not found or not student
-            }
-          }
+        if (activeRole === 'school' && cachedSchoolId) {
+          await setDoc(doc(dbInstance, 'schools', cachedSchoolId), userPatch, { merge: true }).catch(() => undefined);
+          await setDoc(
+            doc(dbInstance, 'schoolPasscodes', cachedSchoolId),
+            {
+              schoolId: cachedSchoolId,
+              passwordHash: sha256Hash,
+              customPasswordHash: sha256Hash,
+              accessCodeHash: upperSha256Hash,
+              forcePasswordReset: false,
+              tempPasswordSingleUse: false,
+              tempPasswordExpiresAt: null,
+              tempPasswordConsumedAt: nowIso,
+              updatedAt: nowIso,
+            },
+            { merge: true }
+          ).catch(() => undefined);
         }
 
-        if (!updatedStudent) {
-          for (const coll of ['individualStudents', 'students']) {
-            try {
-              let qSnap = await getDocs(query(collection(dbInstance, coll), where('firebaseUid', '==', user.uid), limit(1)));
-              if (qSnap.empty) {
-                qSnap = await getDocs(query(collection(dbInstance, coll), where('userId', '==', user.uid), limit(1)));
+        if (isStudentRole) {
+          let updatedStudent = false;
+          if (resolvedStudentDocId) {
+            for (const coll of ['individualStudents', 'students']) {
+              try {
+                const sRef = doc(dbInstance, coll, resolvedStudentDocId);
+                const sSnap = await getDoc(sRef);
+                if (sSnap.exists()) {
+                  await updateDoc(sRef, studentPatch).catch(async () => {
+                    await setDoc(sRef, studentPatch, { merge: true }).catch(() => undefined);
+                  });
+                  updatedStudent = true;
+                }
+              } catch {
+                // Ignore if not found or not student
               }
-              if (qSnap.empty && userEmail) {
-                qSnap = await getDocs(query(collection(dbInstance, coll), where('email', '==', userEmail), limit(1)));
+            }
+          }
+
+          if (!updatedStudent) {
+            for (const coll of ['individualStudents', 'students']) {
+              try {
+                let qSnap = await getDocs(query(collection(dbInstance, coll), where('firebaseUid', '==', user.uid), limit(1)));
+                if (qSnap.empty) {
+                  qSnap = await getDocs(query(collection(dbInstance, coll), where('userId', '==', user.uid), limit(1)));
+                }
+                if (qSnap.empty && userEmail) {
+                  qSnap = await getDocs(query(collection(dbInstance, coll), where('email', '==', userEmail), limit(1)));
+                }
+                if (!qSnap.empty) {
+                  const targetRef = doc(dbInstance, coll, qSnap.docs[0].id);
+                  await updateDoc(targetRef, studentPatch).catch(async () => {
+                    await setDoc(targetRef, studentPatch, { merge: true }).catch(() => undefined);
+                  });
+                }
+              } catch {
+                // Non-fatal
               }
-              if (!qSnap.empty) {
-                const targetRef = doc(dbInstance, coll, qSnap.docs[0].id);
-                await updateDoc(targetRef, studentPatch).catch(async () => {
-                  await setDoc(targetRef, studentPatch, { merge: true }).catch(() => undefined);
-                });
-              }
-            } catch {
-              // Non-fatal
             }
           }
         }
       }
 
-      if (cleanUsername) {
+      if (isStudentRole && cleanUsername) {
         sessionStorage.setItem('studentUsername', cleanUsername);
         await claimGlobalUsername(cleanUsername, {
           uid: user.uid,
           docId: cachedStudentDocId || user.uid,
-          role: (sessionStorage.getItem('userRole') || 'student').toUpperCase(),
+          role: 'STUDENT',
           email: user.email || '',
           name: user.displayName || sessionStorage.getItem('userName') || '',
         });
@@ -284,7 +437,11 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       sessionStorage.setItem('forcePasswordReset', 'false');
       sessionStorage.setItem('mustResetPassword', 'false');
       setSuccess(true);
-      toast.success('Your password and unique username have been updated! You can now log in with your credentials.');
+      toast.success(
+        isStudentRole
+          ? 'Your password and unique username have been updated! You can now log in with your credentials.'
+          : 'Your account password has been updated!'
+      );
 
       setTimeout(() => {
         if (onSuccess) onSuccess();
@@ -331,8 +488,10 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
             </h2>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               {isForced 
-                ? 'Your account was initialized with temporary credentials. Please verify your unique username and choose a new secure password to proceed.' 
-                : 'Confirm your unique username and enter a strong, memorable password to secure your account.'}
+                ? 'Your account was initialized with temporary credentials. Please choose a new secure password to proceed.' 
+                : isStudentRole
+                ? 'Confirm your unique username and enter a strong, memorable password to secure your account.'
+                : `Enter a strong, memorable password to secure ${effectiveAuth.isMasquerading ? `${effectiveAuth.effectiveName}'s` : 'your'} account.`}
             </p>
           </div>
         </div>
@@ -352,26 +511,42 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                Unique Portal Username
-              </label>
-              <div className="relative">
-                <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  minLength={3}
-                  maxLength={30}
-                  value={username}
-                  onChange={(e) => setUsername(normalizeUsername(e.target.value))}
-                  placeholder="your_unique_username"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-red"
-                />
+            {isStudentRole ? (
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
+                  Unique Portal Username
+                </label>
+                <div className="relative">
+                  <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    minLength={3}
+                    maxLength={30}
+                    value={username}
+                    onChange={(e) => setUsername(normalizeUsername(e.target.value))}
+                    placeholder="your_unique_username"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-red"
+                  />
+                </div>
+                <p className="mt-1 text-[10px] text-gray-500">
+                  No two accounts can share the same username. If your username is taken, pick another.
+                </p>
               </div>
-              <p className="mt-1 text-[10px] text-gray-500">
-                No two accounts can share the same username. If your username is taken, pick another.
-              </p>
-            </div>
+            ) : (
+              <div className="rounded-xl border border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/60 px-3.5 py-2.5">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-400">
+                  Target Account
+                </p>
+                <p className="text-xs font-bold text-gray-900 dark:text-white truncate mt-0.5">
+                  {effectiveAuth.effectiveName || 'Portal Account'}
+                </p>
+                {effectiveAuth.effectiveEmail && (
+                  <p className="text-[11px] font-mono text-gray-500 dark:text-slate-400 truncate">
+                    {effectiveAuth.effectiveEmail}
+                  </p>
+                )}
+              </div>
+            )}
 
             {needsReauth && (
               <div>

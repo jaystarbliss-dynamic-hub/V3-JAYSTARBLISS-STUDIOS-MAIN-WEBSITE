@@ -60,7 +60,6 @@ import {
   AlertCircle,
   Lock,
   MessageSquare,
-  Sparkles,
   X,
   Eye,
   Link2,
@@ -483,6 +482,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
 
   // Detailed Archived Assessment Modal state
   const [archivedDetailExam, setArchivedDetailExam] = useState<Exam | null>(null);
+  const deepLinkHandledRef = useRef<string>("");
 
   const isSchoolUser =
     isSchoolPortal || ["SCHOOL", "SCHOOL_ADMIN"].includes(userRole.toUpperCase());
@@ -1104,6 +1104,59 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     }
     setReviewModalAttempt(attempt);
   };
+
+  // Auto-select & auto-open specific student assessment attempt when navigated via URL query params (?examId=...&attemptId=...&studentId=...&studentName=...)
+  useEffect(() => {
+    if (loading || !scopeReady || (exams.length === 0 && attempts.length === 0)) return;
+    const params = new URLSearchParams(location.search);
+    const qExamId = (params.get("examId") || "").trim();
+    const qAttemptId = (params.get("attemptId") || "").trim();
+    const qStudentId = (params.get("studentId") || "").trim();
+    const qStudentName = (params.get("studentName") || "").trim().toLowerCase();
+
+    if (!qExamId && !qAttemptId && !qStudentId) return;
+    const querySignature = `${qExamId}|${qAttemptId}|${qStudentId}|${qStudentName}|${attempts.length}|${exams.length}`;
+    if (deepLinkHandledRef.current === querySignature) return;
+    deepLinkHandledRef.current = querySignature;
+
+    setWorkTypeTab("ALL");
+    setRecipientCategory("all");
+    setAttemptStateFilter("all");
+    setSelectedClass("");
+
+    if (qExamId) {
+      setSelected(qExamId);
+    }
+
+    // Find the exact matching attempt for this student and assessment
+    const matchedAttempt =
+      (qAttemptId ? attempts.find((a) => a.id === qAttemptId) : undefined) ||
+      attempts.find((a) => {
+        if (qExamId && a.examId !== qExamId) return false;
+        if (qStudentId && (a.studentId === qStudentId || a.studentUid === qStudentId)) {
+          return true;
+        }
+        if (qStudentName && String(a.studentName || "").trim().toLowerCase() === qStudentName) {
+          return true;
+        }
+        return false;
+      });
+
+    if (matchedAttempt) {
+      setSelected(matchedAttempt.examId);
+      if (qStudentId) {
+        setSelectedStudentId(matchedAttempt.studentId || qStudentId);
+      }
+      if (!isSchoolUser) {
+        openReviewSubmissionModal(matchedAttempt);
+      }
+    } else if (qExamId) {
+      const matchedExam = exams.find((e) => e.id === qExamId);
+      if (matchedExam) {
+        setArchivedDetailExam(matchedExam);
+      }
+    }
+  }, [loading, scopeReady, exams, attempts, location.search, isSchoolUser]);
 
   // Save Marks & Feedback from Review Modal (with or without releasing result)
   const handleSaveReviewAndMarks = async (releaseNow: boolean) => {
@@ -1738,11 +1791,16 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       }
 
       if (selectedStudentId) {
+        const qStudentName = (new URLSearchParams(location.search).get("studentName") || "")
+          .trim()
+          .toLowerCase();
         const matchesStd =
           a.studentId === selectedStudentId ||
           a.studentUid === selectedStudentId ||
           privateLearnerById.get(selectedStudentId)?.uid === a.studentUid ||
-          privateLearnerById.get(selectedStudentId)?.uid === a.studentId;
+          privateLearnerById.get(selectedStudentId)?.uid === a.studentId ||
+          (Boolean(qStudentName) &&
+            String(a.studentName || "").trim().toLowerCase() === qStudentName);
         if (!matchesStd) return false;
       }
 
@@ -3993,7 +4051,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                         }
                         className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-[#1E293B] dark:text-slate-200 hover:bg-slate-100 cursor-pointer tabular-nums"
                       >
-                        <Sparkles size={12} className="text-[#B91C1C] dark:text-red-400" />
+                        <MessageSquare size={12} className="text-[#B91C1C] dark:text-red-400" />
                         Suggest Remark for {currentPct}%
                       </button>
                     </div>
@@ -4098,7 +4156,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                   }}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 text-[11px] font-bold hover:bg-slate-100 cursor-pointer"
                 >
-                  <Sparkles size={12} className="text-[#B91C1C] dark:text-red-400" />
+                  <MessageSquare size={12} className="text-[#B91C1C] dark:text-red-400" />
                   Suggest Remark for Score
                 </button>
               </div>

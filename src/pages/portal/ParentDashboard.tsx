@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db, auth } from '../../lib/firebase';
+import { PORTAL_BILLING_ROUTES } from '../../lib/portalRoutes';
+import { ParentProgressReportsSection } from '../../components/documents/ParentProgressReportsSection';
 import {
   collection,
   getDocs,
@@ -950,7 +952,7 @@ const ParentDashboard: React.FC = () => {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            navigate('/portal/parent/billing');
+                            navigate(PORTAL_BILLING_ROUTES.parent);
                           }}
                           className="text-xs font-bold text-brand-red hover:underline inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
                         >
@@ -1070,7 +1072,7 @@ const ParentDashboard: React.FC = () => {
                           <div className="flex flex-wrap items-center gap-3 pt-2">
                             <button
                               type="button"
-                              onClick={() => navigate('/portal/parent/billing')}
+                              onClick={() => navigate(PORTAL_BILLING_ROUTES.parent)}
                               className="px-3 py-1.5 rounded-lg bg-brand-red hover:bg-red-800 text-white font-bold inline-flex items-center gap-1.5 cursor-pointer"
                             >
                               <CreditCard size={12} aria-hidden="true" />
@@ -1381,6 +1383,15 @@ const ParentDashboard: React.FC = () => {
         <section className="bg-white dark:bg-[#111827] rounded-xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800">
           <ParentLearningTracks students={children} />
         </section>
+      )}
+
+      {/* Sent Tutor Progress Reports (Individualized Official A4 Updates) */}
+      {children.length > 0 && (
+        <ParentProgressReportsSection
+          parentUid={auth.currentUser?.uid || sessionStorage.getItem('userId') || ''}
+          parentEmail={auth.currentUser?.email || sessionStorage.getItem('userEmail') || ''}
+          linkedStudentIds={children.map((c) => c.id)}
+        />
       )}
 
       {/* Enrollment Requests List */}

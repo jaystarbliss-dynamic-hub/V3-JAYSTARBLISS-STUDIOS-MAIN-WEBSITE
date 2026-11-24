@@ -762,6 +762,15 @@ const StaffStudentWorkspace: React.FC = () => {
             {filteredAssessments.map((item) => {
               const isCompleted = item.lifecycleState === 'completed';
               const hasScore = item.score !== undefined && item.maxScore !== undefined && item.maxScore > 0;
+              const specificAssessmentUrl = `/portal/staff/exam-history?examId=${encodeURIComponent(
+                item.examId
+              )}${
+                item.id && item.id !== item.examId
+                  ? `&attemptId=${encodeURIComponent(item.id)}`
+                  : ''
+              }&studentId=${encodeURIComponent(student.id)}&studentName=${encodeURIComponent(
+                student.fullName || ''
+              )}`;
               return (
                 <div
                   key={`${item.examId}-${item.id}`}
@@ -790,9 +799,12 @@ const StaffStudentWorkspace: React.FC = () => {
                           ? 'Completed'
                           : 'Active · Assigned'}
                       </span>
-                      <h3 className="text-sm font-black text-slate-900 dark:text-white truncate">
+                      <Link
+                        to={specificAssessmentUrl}
+                        className="text-sm font-black text-slate-900 dark:text-white hover:text-[#B91C1C] dark:hover:text-red-400 transition-colors truncate"
+                      >
                         {item.title}
-                      </h3>
+                      </Link>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
@@ -833,10 +845,10 @@ const StaffStudentWorkspace: React.FC = () => {
                     )}
 
                     <Link
-                      to="/portal/staff/assessments"
+                      to={specificAssessmentUrl}
                       className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-[#1E293B] hover:text-[#1E293B] dark:hover:text-white transition-colors"
                     >
-                      <span>Open</span>
+                      <span>Open Submission</span>
                       <ArrowRight size={13} />
                     </Link>
                   </div>

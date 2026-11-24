@@ -197,119 +197,225 @@ export const NotificationDrawer: React.FC = () => {
   if (!isDrawerOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden">
-      {/* Backdrop */}
-      <div 
-        onClick={closeDrawer}
-        className="fixed inset-0 bg-slate-950/50 dark:bg-black/70 backdrop-blur-xs transition-opacity duration-300 animate-in fade-in"
-      />
+    <div
+      ref={drawerRef}
+      className="fixed inset-0 z-50 bg-[#F8FAFC] dark:bg-[#09090B] flex flex-col overflow-hidden animate-in fade-in duration-150"
+    >
+      {/* Top Page Bar */}
+      <header className="h-14 sm:h-16 px-4 sm:px-8 border-b border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#111114] flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedNotification && window.innerWidth < 1024) {
+                selectNotification(null);
+              } else {
+                closeDrawer();
+              }
+            }}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+          >
+            <ArrowLeft size={16} />
+            <span>{selectedNotification && window.innerWidth < 1024 ? 'Back to List' : 'Back'}</span>
+          </button>
 
-      {/* Slide-over Panel */}
-      <div 
-        ref={drawerRef}
-        className="fixed inset-y-0 right-0 max-w-full flex pl-6 sm:pl-10 z-50"
-      >
-        <div className="w-screen max-w-md md:max-w-lg bg-white dark:bg-[#111114] border-l border-slate-200/80 dark:border-zinc-800 shadow-2xl flex flex-col transition-all transform duration-300 ease-in-out animate-in slide-in-from-right">
-          
-          {/* Header */}
-          <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between bg-slate-50/70 dark:bg-[#18181B] shrink-0">
-            <div className="flex items-center gap-3">
-              {selectedNotification ? (
+          <div className="h-4 w-px bg-slate-200 dark:bg-zinc-800" />
+
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight">
+              Notifications
+            </h1>
+            {unreadCount > 0 && (
+              <span className="px-2 py-0.5 rounded-md bg-red-50 dark:bg-red-950/40 text-[#B91C1C] dark:text-red-400 text-[11px] font-bold tabular-nums">
+                {unreadCount} unread
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              onClick={markAllAsRead}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <CheckCheck size={14} />
+              <span>Mark all read</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={closeDrawer}
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+            aria-label="Close notifications page"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      </header>
+
+      {/* Main Workspace */}
+      <div className="flex-1 max-w-6xl w-full mx-auto flex flex-col lg:grid lg:grid-cols-12 overflow-hidden">
+        {/* Left Column: Search, Filters & Message List */}
+        <div
+          className={`lg:col-span-5 border-r border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#111114] flex flex-col overflow-hidden ${
+            selectedNotification ? 'hidden lg:flex' : 'flex flex-1'
+          }`}
+        >
+          {/* Search & Minimalist Filter Bar */}
+          <div className="p-4 border-b border-slate-100 dark:border-zinc-800/80 space-y-3 shrink-0">
+            <div className="relative">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search notifications..."
+                className="w-full pl-9 pr-8 py-2 text-xs rounded-xl bg-slate-50 dark:bg-[#09090B] border border-slate-200/80 dark:border-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-600 transition-all"
+              />
+              {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => selectNotification(null)}
-                  className="p-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-300 transition-colors cursor-pointer"
-                  aria-label="Back to notifications list"
-                  title="Back to Inbox"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 cursor-pointer"
                 >
-                  <ArrowLeft size={18} />
+                  <X size={13} />
                 </button>
-              ) : (
-                <div className="w-9 h-9 rounded-xl bg-slate-200/70 dark:bg-zinc-900 border border-transparent dark:border-zinc-800 text-[#B91C1C] dark:text-red-400 flex items-center justify-center font-bold shrink-0">
-                  <Bell size={18} />
-                </div>
               )}
-
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                    {selectedNotification ? 'Notification Details' : 'Notification Inbox'}
-                  </h2>
-                  {!selectedNotification && unreadCount > 0 && (
-                    <span className="text-xs font-black text-[#B91C1C] dark:text-red-400 tabular-nums">
-                      · {unreadCount} Unread
-                    </span>
-                  )}
-                </div>
-                {selectedNotification && (
-                  <p className="text-xs text-slate-500 dark:text-zinc-400">
-                    Received {formatTimestamp(selectedNotification.timestamp)}
-                  </p>
-                )}
-              </div>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              {!selectedNotification && unreadCount > 0 && (
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+              {[
+                { id: 'all', label: 'All', count: notifications.length },
+                { id: 'unread', label: 'Unread', count: unreadCount },
+                { id: 'urgent', label: 'Urgent' },
+                { id: 'academic', label: 'Academic' },
+                { id: 'billing', label: 'Billing' },
+                { id: 'system', label: 'Broadcasts' }
+              ].map(tab => (
                 <button
+                  key={tab.id}
                   type="button"
-                  onClick={markAllAsRead}
-                  className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center gap-1.5 cursor-pointer"
-                  title="Mark all notifications as read"
+                  onClick={() => setActiveFilter(tab.id as NotificationFilter)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap tabular-nums cursor-pointer ${
+                    activeFilter === tab.id
+                      ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                      : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/70'
+                  }`}
                 >
-                  <CheckCheck size={14} />
-                  <span className="hidden sm:inline">Mark all read</span>
+                  {tab.label}
+                  {typeof tab.count === 'number' && tab.count > 0 ? ` (${tab.count})` : ''}
                 </button>
-              )}
-
-              <button
-                type="button"
-                onClick={closeDrawer}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-                aria-label="Close notification panel"
-              >
-                <X size={18} />
-              </button>
+              ))}
             </div>
           </div>
 
-          {/* MAIN CONTENT AREA */}
-          {selectedNotification ? (
-            /* DETAIL / READING VIEW */
-            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6 bg-white dark:bg-[#111114]">
-              {/* Target & priority info */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
-                  <span className={getRecipientBadge(selectedNotification).bg}>
-                    {getRecipientBadge(selectedNotification).label}
-                  </span>
-                  {selectedNotification.priority === 'urgent' && (
-                    <>
-                      <span aria-hidden="true" className="text-slate-300 dark:text-zinc-700">·</span>
-                      <span className="text-[#B91C1C] dark:text-red-400 inline-flex items-center gap-1">
-                        <ShieldAlert size={12} /> Urgent Priority
-                      </span>
-                    </>
-                  )}
-                  {selectedNotification.priority === 'high' && (
-                    <>
-                      <span aria-hidden="true" className="text-slate-300 dark:text-zinc-700">·</span>
-                      <span className="text-[#B91C1C] dark:text-red-400">
-                        High Priority
-                      </span>
-                    </>
-                  )}
+          {/* Notification List */}
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-zinc-800/60">
+            {loading ? (
+              <div className="p-10 text-center text-xs text-slate-400 dark:text-zinc-500">
+                Loading notifications...
+              </div>
+            ) : filteredNotifications.length === 0 ? (
+              <div className="p-12 text-center space-y-2">
+                <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-[#18181B] text-slate-400 dark:text-zinc-500 mx-auto flex items-center justify-center">
+                  <Bell size={18} />
                 </div>
+                <p className="text-xs font-medium text-slate-500 dark:text-zinc-400">
+                  No notifications match your filter
+                </p>
+              </div>
+            ) : (
+              filteredNotifications.map((item) => {
+                const isRead = isNotificationRead(item);
+                const isSelected = selectedNotification?.id === item.id;
 
-                {/* Read toggle & Copy */}
-                <div className="flex items-center gap-2">
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => selectNotification(item)}
+                    className={`px-4 py-3.5 transition-colors cursor-pointer flex items-start gap-3 ${
+                      isSelected
+                        ? 'bg-slate-100/90 dark:bg-zinc-800/80'
+                        : !isRead
+                        ? 'bg-slate-50/60 dark:bg-[#18181B]/60 hover:bg-slate-100/60 dark:hover:bg-zinc-900'
+                        : 'hover:bg-slate-50 dark:hover:bg-zinc-900/50'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-[#09090B] flex items-center justify-center shrink-0 mt-0.5 border border-slate-200/60 dark:border-zinc-800">
+                      {getNotificationIcon(item.type, item.priority)}
+                    </div>
+
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className={`text-xs font-semibold truncate ${
+                          !isRead ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-zinc-300'
+                        }`}>
+                          {item.title}
+                        </h3>
+                        <span className="text-[10px] text-slate-400 dark:text-zinc-500 shrink-0 tabular-nums">
+                          {formatTimestamp(item.timestamp)}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-slate-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
+                        {item.message}
+                      </p>
+
+                      <div className="flex items-center justify-between pt-0.5 text-[10px] text-slate-400 dark:text-zinc-500">
+                        <span className="truncate">
+                          {item.senderName || 'Jaystar Office'}
+                        </span>
+                        {item.priority === 'urgent' && (
+                          <span className="text-[#B91C1C] dark:text-red-400 font-bold uppercase tracking-wider">
+                            Urgent
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {!isRead && (
+                      <span className="w-2 h-2 rounded-full bg-[#B91C1C] shrink-0 mt-2" />
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Minimalist Reading Pane */}
+        <div
+          className={`lg:col-span-7 bg-[#F8FAFC] dark:bg-[#09090B] flex flex-col overflow-y-auto ${
+            selectedNotification ? 'flex flex-1' : 'hidden lg:flex'
+          }`}
+        >
+          {selectedNotification ? (
+            <div className="max-w-2xl w-full mx-auto p-5 sm:p-8 space-y-6">
+              {/* Mobile back link */}
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => selectNotification(null)}
+                  className="lg:hidden inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                >
+                  <ArrowLeft size={14} />
+                  <span>All Notifications</span>
+                </button>
+
+                <span className={`text-[11px] font-semibold uppercase tracking-wider ${getRecipientBadge(selectedNotification).bg}`}>
+                  {getRecipientBadge(selectedNotification).label}
+                </span>
+
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => handleCopyText(`${selectedNotification.title}\n\n${selectedNotification.message}`)}
-                    className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                    className="p-2 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                     title="Copy message"
                   >
-                    {copied ? <Check size={15} className="text-[#1E293B] dark:text-white" /> : <Copy size={15} />}
+                    {copied ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
                   </button>
 
                   <button
@@ -321,252 +427,68 @@ export const NotificationDrawer: React.FC = () => {
                         markAsRead(selectedNotification.id, e);
                       }
                     }}
-                    className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <RotateCcw size={12} />
-                    <span>{isNotificationRead(selectedNotification) ? 'Mark as unread' : 'Mark as read'}</span>
+                    <span>{isNotificationRead(selectedNotification) ? 'Mark unread' : 'Mark read'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Title */}
-              <div>
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-tight">
-                  {selectedNotification.title}
-                </h1>
-                
-                {/* Meta details */}
-                <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800 text-xs text-slate-500 dark:text-zinc-400">
-                  <div className="flex items-center gap-1.5">
-                    <User size={13} className="text-slate-400 dark:text-zinc-500" />
-                    <span className="font-semibold text-slate-700 dark:text-zinc-300">
-                      {selectedNotification.senderName || 'Jaystar Central'}
-                    </span>
-                    <span className="text-slate-400 dark:text-zinc-500">({selectedNotification.senderRole || 'Office'})</span>
-                  </div>
-                  <span>•</span>
-                  <div className="flex items-center gap-1">
-                    <Clock size={12} />
-                    <span>{formatTimestamp(selectedNotification.timestamp, true)}</span>
+              {/* Message Card */}
+              <div className="bg-white dark:bg-[#111114] border border-slate-200/80 dark:border-zinc-800 rounded-2xl p-6 sm:p-8 space-y-6 shadow-xs">
+                <div className="space-y-3 border-b border-slate-100 dark:border-zinc-800 pb-5">
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-snug">
+                    {selectedNotification.title}
+                  </h2>
+
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-zinc-400">
+                    <div className="flex items-center gap-1.5">
+                      <User size={13} className="text-slate-400" />
+                      <span className="font-medium text-slate-700 dark:text-zinc-300">
+                        {selectedNotification.senderName || 'Jaystar Central'}
+                      </span>
+                      {selectedNotification.senderRole && (
+                        <span className="text-slate-400">· {selectedNotification.senderRole}</span>
+                      )}
+                    </div>
+                    <span>·</span>
+                    <div className="flex items-center gap-1">
+                      <Clock size={12} />
+                      <span>{formatTimestamp(selectedNotification.timestamp, true)}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Message Body */}
-              <div className="p-5 rounded-2xl bg-slate-50/80 dark:bg-[#09090B] border border-slate-200/70 dark:border-zinc-800 text-sm text-slate-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
-                {selectedNotification.message}
-              </div>
-
-              {/* Action Link Button if present */}
-              {selectedNotification.link && (
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => handleNavigateLink(selectedNotification.link)}
-                    className="w-full py-3.5 px-5 bg-[#B91C1C] hover:bg-red-800 text-white font-bold text-xs rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 active:scale-98 cursor-pointer"
-                  >
-                    <span>{selectedNotification.linkText || 'Open Linked Activity'}</span>
-                    <ExternalLink size={14} />
-                  </button>
+                <div className="text-sm text-slate-700 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
+                  {selectedNotification.message}
                 </div>
-              )}
 
-              {/* Back to Inbox */}
-              <div className="pt-4 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between text-xs text-slate-400 dark:text-zinc-500">
-                <button
-                  type="button"
-                  onClick={() => selectNotification(null)}
-                  className="font-bold text-[#B91C1C] dark:text-red-400 hover:underline flex items-center gap-1 cursor-pointer"
-                >
-                  <ArrowLeft size={13} />
-                  <span>Return to all messages</span>
-                </button>
-                <span className="font-mono text-[11px]">ID: {selectedNotification.id.slice(0, 8)}...</span>
+                {selectedNotification.link && (
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => handleNavigateLink(selectedNotification.link)}
+                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#B91C1C] hover:bg-red-800 text-white font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+                    >
+                      <span>{selectedNotification.linkText || 'Open Linked Activity'}</span>
+                      <ExternalLink size={13} />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
-            /* LIST / INBOX VIEW */
-            <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-[#111114]">
-              
-              {/* Search Box */}
-              <div className="p-3.5 border-b border-slate-100 dark:border-zinc-800 bg-white dark:bg-[#111114] shrink-0">
-                <div className="relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search notifications, announcements..."
-                    className="w-full pl-8 pr-8 py-2 text-xs rounded-xl bg-slate-50 dark:bg-[#09090B] border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-[#B91C1C] transition-all"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 cursor-pointer"
-                    >
-                      <X size={13} />
-                    </button>
-                  )}
-                </div>
-
-                {/* Filter Tabs */}
-                <div className="flex items-center gap-1.5 mt-2.5 overflow-x-auto no-scrollbar pb-1">
-                  {[
-                    { id: 'all', label: `All (${notifications.length})` },
-                    { id: 'unread', label: `Unread (${unreadCount})` },
-                    { id: 'urgent', label: 'Urgent' },
-                    { id: 'academic', label: 'Academic' },
-                    { id: 'billing', label: 'Billing' },
-                    { id: 'system', label: 'Broadcasts' }
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setActiveFilter(tab.id as NotificationFilter)}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap tabular-nums cursor-pointer ${
-                        activeFilter === tab.id
-                          ? 'bg-[#14284B] dark:bg-white text-white dark:text-[#09090B] shadow-xs'
-                          : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-white dark:bg-[#111114] border border-slate-200/80 dark:border-zinc-800 text-slate-400 dark:text-zinc-500 flex items-center justify-center mb-3">
+                <Bell size={20} />
               </div>
-
-              {/* Notification List Items */}
-              <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-zinc-800/80">
-                {loading ? (
-                  <div className="p-8 text-center text-xs text-slate-400 dark:text-zinc-500 font-mono">
-                    Loading notifications...
-                  </div>
-                ) : filteredNotifications.length === 0 ? (
-                  <div className="p-10 text-center space-y-3">
-                    <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-[#18181B] text-slate-400 dark:text-zinc-500 mx-auto flex items-center justify-center">
-                      <Bell size={20} />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-800 dark:text-zinc-200">
-                        No notifications found
-                      </h4>
-                    </div>
-                  </div>
-                ) : (
-                  filteredNotifications.map((item) => {
-                    const isRead = isNotificationRead(item);
-                    const badge = getRecipientBadge(item);
-
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={() => selectNotification(item)}
-                        className={`p-4 transition-all cursor-pointer group flex items-start gap-3.5 relative ${
-                          !isRead 
-                            ? 'bg-slate-50/90 dark:bg-[#18181B] hover:bg-slate-100 dark:hover:bg-zinc-900' 
-                            : 'hover:bg-slate-50 dark:hover:bg-zinc-900/60'
-                        }`}
-                      >
-                        {/* Icon */}
-                        <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-[#09090B] flex items-center justify-center shrink-0 mt-0.5 border border-slate-200/50 dark:border-zinc-800">
-                          {getNotificationIcon(item.type, item.priority)}
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <div className="flex items-center justify-between gap-1.5">
-                            <div className="flex items-center gap-1.5 overflow-hidden text-[10px] font-black uppercase tracking-wider">
-                              <span className={`${badge.bg} truncate max-w-[140px]`}>
-                                {badge.label}
-                              </span>
-                              {!isRead && (
-                                <>
-                                  <span aria-hidden="true" className="text-slate-300 dark:text-zinc-700">·</span>
-                                  <span className="text-[#B91C1C] dark:text-red-400">New</span>
-                                </>
-                              )}
-                              {item.priority === 'urgent' && (
-                                <>
-                                  <span aria-hidden="true" className="text-slate-300 dark:text-zinc-700">·</span>
-                                  <span className="text-[#B91C1C] dark:text-red-400">URGENT</span>
-                                </>
-                              )}
-                            </div>
-
-                            <span className="text-[10px] font-medium text-slate-400 dark:text-zinc-500 shrink-0 tabular-nums">
-                              {formatTimestamp(item.timestamp)}
-                            </span>
-                          </div>
-
-                          <h3 className={`text-xs font-bold leading-snug line-clamp-1 ${
-                            !isRead ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-zinc-300'
-                          }`}>
-                            {item.title}
-                          </h3>
-
-                          <p className="text-[11px] text-slate-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
-                            {item.message}
-                          </p>
-
-                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 text-[10px] text-slate-400 dark:text-zinc-500">
-                            <span className="truncate max-w-[150px]">
-                              From: <strong className="text-slate-600 dark:text-zinc-300">{item.senderName || 'Jaystar Office'}</strong>
-                            </span>
-
-                            <div className="flex items-center gap-2.5 opacity-90 group-hover:opacity-100 transition-opacity">
-                              {item.link && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    markAsRead(item.id);
-                                    handleNavigateLink(item.link);
-                                  }}
-                                  className="px-2.5 py-1 rounded-lg bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold text-[10px] inline-flex items-center gap-1 transition-colors cursor-pointer"
-                                >
-                                  <span>{item.linkText || 'Open'}</span>
-                                  <ExternalLink size={10} />
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (isRead) {
-                                    markAsUnread(item.id, e);
-                                  } else {
-                                    markAsRead(item.id, e);
-                                  }
-                                }}
-                                className="text-slate-400 dark:text-zinc-400 hover:text-[#B91C1C] dark:hover:text-red-400 font-medium transition-colors cursor-pointer"
-                                title={isRead ? 'Mark as unread' : 'Mark as read'}
-                              >
-                                {isRead ? 'Mark unread' : 'Mark read'}
-                              </button>
-
-                              <span className="text-[#B91C1C] dark:text-red-400 font-bold flex items-center gap-0.5">
-                                Read <ChevronRight size={11} />
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="p-3 border-t border-slate-100 dark:border-zinc-800 bg-slate-50/80 dark:bg-[#18181B] flex items-center justify-between text-xs text-slate-500 dark:text-zinc-400 shrink-0">
-                <span className="tabular-nums">
-                  {notifications.length} total message{notifications.length === 1 ? '' : 's'}
-                </span>
-                <span className="text-[11px] text-slate-400 dark:text-zinc-500">
-                  Jaystarbliss Institutional Inbox
-                </span>
-              </div>
+              <p className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
+                Select a notification to read
+              </p>
+              <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1">
+                Choose any message from your inbox list on the left.
+              </p>
             </div>
           )}
         </div>

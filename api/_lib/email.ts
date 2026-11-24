@@ -219,7 +219,7 @@ export async function sendResendEmail(options: SendEmailOptions): Promise<{ succ
       body: JSON.stringify(payload)
     });
 
-    const data = await response.json();
+    const data: any = await response.json();
 
     if (!response.ok) {
       console.warn("[Resend] Email delivery failed:", data);

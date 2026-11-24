@@ -4,7 +4,6 @@ import {
   BookOpen,
   CheckCircle2,
   Plus,
-  Sparkles,
   User,
   Folder,
   FolderOpen,

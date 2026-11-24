@@ -9,7 +9,6 @@ import {
   Layers,
   FolderTree,
   BookOpen,
-  Sparkles,
   X,
   ArrowRight,
   Tag,

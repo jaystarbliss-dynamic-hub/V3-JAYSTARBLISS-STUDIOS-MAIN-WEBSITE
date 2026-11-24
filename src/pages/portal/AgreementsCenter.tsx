@@ -16,6 +16,7 @@ import {
   Clock,
   ShieldCheck,
   ExternalLink,
+  ArrowLeft,
   X,
 } from 'lucide-react';
 import { auth, db } from '../../lib/firebase';
@@ -39,6 +40,13 @@ import {
   createAgreementVersionSnapshot,
   resolvePartnerSchoolName,
 } from '../../lib/classes';
+import { formatAgreementCategoryLabel } from '../../lib/portalRoutes';
+import {
+  sanitizeDocumentHtml,
+  type OfficialDocumentCategory,
+} from '../../lib/documents/documentTemplates';
+import { exportStudioDocumentAsPdf } from '../../lib/documents/documentExporter';
+import { DocumentStudio } from '../../components/documents/DocumentStudio';
 
 interface AgreementsCenterProps {
   role?: 'admin' | 'staff' | 'parent' | 'school';
@@ -99,9 +107,15 @@ interface RecipientOption {
 const CATEGORY_TABS: Array<{ id: 'ALL' | AgreementCategory; label: string }> = [
   { id: 'ALL', label: 'All documents' },
   { id: 'PROPOSAL', label: 'Proposals' },
-  { id: 'COMMUNICATION', label: 'Communications' },
+  { id: 'COMMUNICATION', label: 'Communiqués' },
   { id: 'CONTRACT', label: 'Contracts / Agreements' },
 ];
+
+const toStudioCategory = (cat: AgreementCategory): OfficialDocumentCategory =>
+  cat === 'COMMUNICATION' ? 'COMMUNIQUE' : cat === 'PROPOSAL' ? 'PROPOSAL' : 'CONTRACT';
+
+const fromStudioCategory = (cat: OfficialDocumentCategory): AgreementCategory =>
+  cat === 'COMMUNIQUE' ? 'COMMUNICATION' : cat === 'PROPOSAL' ? 'PROPOSAL' : 'CONTRACT';
 
 function stripHtmlForPdf(raw: string): string {
   return String(raw || '')
@@ -332,6 +346,23 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
 
   const handleDownloadPdf = (agreement: AgreementRecord, versionOverride?: AgreementVersion | null) => {
     const ver = versionOverride || activeVersion;
+    const rawHtml = ver?.contentHtml || agreement.contentHtml || '';
+    const hasRichMarkup = /<(h[1-3]|table|ul|ol|p|strong|blockquote)\b/i.test(rawHtml);
+    if (hasRichMarkup) {
+      void exportStudioDocumentAsPdf({
+        id: agreement.id,
+        title: String(ver?.title || agreement.title || 'Institutional Agreement'),
+        category: toStudioCategory((ver?.category || agreement.category || 'CONTRACT') as AgreementCategory),
+        status: String(ver?.status || agreement.status || 'SHARED'),
+        recipientName: agreement.recipientName,
+        schoolName: agreement.recipientType === 'SCHOOL' ? agreement.recipientName : undefined,
+        versionNumber: ver?.versionNumber || 1,
+        effectiveDate: ver?.effectiveDate || agreement.effectiveDate,
+        expiryDate: ver?.expiryDate || agreement.expiryDate,
+        contentHtml: rawHtml,
+      });
+      return;
+    }
     void generateAgreementPdf({
       id: agreement.id,
       title: String(ver?.title || agreement.title || 'Institutional Agreement'),
@@ -343,7 +374,7 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
       versionNumber: ver?.versionNumber || 1,
       effectiveDate: ver?.effectiveDate || agreement.effectiveDate,
       expiryDate: ver?.expiryDate || agreement.expiryDate,
-      contentHtml: ver?.contentHtml || agreement.contentHtml || '',
+      contentHtml: rawHtml,
       acknowledgedAt: agreement.acknowledgedAt,
       acknowledgedByName: agreement.acknowledgedByName,
     });
@@ -577,6 +608,224 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
     return recipientOptions.filter(o => o.type === recipientType);
   }, [recipientOptions, recipientType]);
 
+  // Full-Page Standalone Document Studio View (No Modal)
+  if (isAdmin && editorOpen) {
+    return (
+      <div className="space-y-5 pb-12">
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 rounded-2xl px-4 py-3.5 sm:px-6">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setEditorOpen(false)}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <ArrowLeft size={14} />
+              Back to Agreements &amp; Documents
+            </button>
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                {editingId
+                  ? 'Update Official Document (Creates Immutable Version)'
+                  : 'Official Document Studio — Communiqué, Proposal or Agreement'}
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                Full-page A4 document workspace with official Jaystarbliss letterhead, watermark, and PDF export.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setEditorOpen(false)}
+              className="px-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-xs text-slate-600 dark:text-slate-300 font-semibold cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={(e) => void handleSaveAgreement(e as unknown as React.FormEvent)}
+              className="px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-xs text-white font-bold cursor-pointer disabled:opacity-50"
+            >
+              {saving ? 'Saving Version…' : editingId ? 'Publish New Version' : 'Publish Official Document'}
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveAgreement} className="space-y-4">
+          <DocumentStudio
+            documentId={editingId || undefined}
+            title={title}
+            onTitleChange={setTitle}
+            contentHtml={contentHtml}
+            onContentChange={setContentHtml}
+            category={toStudioCategory(category)}
+            allowedCategories={['COMMUNIQUE', 'PROPOSAL', 'CONTRACT']}
+            onCategoryChange={(next) => setCategory(fromStudioCategory(next))}
+            statusLabel={status}
+            isBusy={saving}
+            authorName={
+              auth.currentUser?.displayName ||
+              auth.currentUser?.email ||
+              'Jaystarbliss Administration'
+            }
+            recipientName={
+              filteredRecipientOptions.find(o => o.id === recipientId)?.name ||
+              (recipientType === 'SCHOOL' ? 'Partner School' : recipientType)
+            }
+            effectiveDate={effectiveDate}
+            expiryDate={expiryDate}
+            onPrimarySubmit={async (html) => {
+              setContentHtml(html);
+              await handleSaveAgreement({ preventDefault: () => undefined } as React.FormEvent);
+            }}
+            primarySubmitLabel={
+              editingId ? 'Publish New Version' : 'Publish Official Document'
+            }
+            headerSlot={
+              <div className="space-y-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Assign Category
+                    </label>
+                    <select
+                      value={category}
+                      onChange={e => setCategory(e.target.value as AgreementCategory)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+                    >
+                      {AGREEMENT_CATEGORIES.map(c => (
+                        <option key={c} value={c}>
+                          {formatAgreementCategoryLabel(c)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Lifecycle Status
+                    </label>
+                    <select
+                      value={status}
+                      onChange={e => setStatus(e.target.value as AgreementStatus)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+                    >
+                      {AGREEMENT_STATUSES.map(s => (
+                        <option key={s} value={s}>
+                          {s.replace(/_/g, ' ')}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Recipient Type
+                    </label>
+                    <select
+                      value={recipientType}
+                      onChange={e => {
+                        setRecipientType(e.target.value as 'SCHOOL' | 'TUTOR' | 'PARENT');
+                        setRecipientId('');
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+                    >
+                      <option value="SCHOOL">Partner School</option>
+                      <option value="TUTOR">Tutor / Staff</option>
+                      <option value="PARENT">Parent / Family</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Select Authorised Recipient
+                    </label>
+                    {filteredRecipientOptions.length > 0 ? (
+                      <select
+                        value={recipientId}
+                        onChange={e => setRecipientId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+                      >
+                        <option value="">-- Choose {recipientType.toLowerCase()} --</option>
+                        {filteredRecipientOptions.map(o => (
+                          <option key={o.id} value={o.id}>
+                            {o.name} ({o.subtitle})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={recipientId}
+                        onChange={e => setRecipientId(e.target.value)}
+                        placeholder="Enter recipient ID or school ID"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Version Change Summary
+                    </label>
+                    <input
+                      type="text"
+                      value={versionSummary}
+                      onChange={e => setVersionSummary(e.target.value)}
+                      placeholder="e.g., Added Term 2 schedule clauses and updated tuition split"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Effective / Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={effectiveDate}
+                      onChange={e => setEffectiveDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Expiry / End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={expiryDate}
+                      onChange={e => setExpiryDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Supporting File URL (Optional)
+                    </label>
+                    <input
+                      type="url"
+                      value={attachmentUrl}
+                      onChange={e => setAttachmentUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                </div>
+              </div>
+            }
+          />
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Action & Filter Bar */}
@@ -584,8 +833,8 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
         <div>
           <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
             {isAdmin
-              ? 'Author, version, and manage proposals, recorded communications, and active contracts for partner schools, tutors, and families.'
-              : 'Review official proposals, recorded communications, and active agreements applicable to your account.'}
+              ? 'Author, version, and manage proposals, official communiqués, and active contracts for partner schools, tutors, and families.'
+              : 'Review official proposals, institutional communiqués, and active agreements applicable to your account.'}
           </p>
         </div>
         {isAdmin && (
@@ -594,7 +843,7 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
             onClick={openCreateModal}
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-bold transition-colors shrink-0 cursor-pointer"
           >
-            <Plus size={15} /> Create Agreement / Proposal
+            <Plus size={15} /> Create Communiqué, Proposal or Agreement
           </button>
         )}
       </div>
@@ -671,8 +920,8 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 {isAdmin
-                  ? 'Use "Create Agreement / Proposal" above to publish a proposal, communication record, or contract.'
-                  : 'When Jaystarbliss shares a proposal, communication summary, or contract with your account, it will appear here.'}
+                  ? 'Use "Create Communiqué, Proposal or Agreement" above to publish a communiqué, proposal, or contract.'
+                  : 'When Jaystarbliss shares a proposal, official communiqué, or contract with your account, it will appear here.'}
               </p>
             </div>
           ) : (
@@ -697,7 +946,7 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
                           <span className="font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
-                            {rec.category}
+                            {formatAgreementCategoryLabel(rec.category)}
                           </span>
                           <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
                           <span className={statusBadgeStyle(rec.status)}>
@@ -762,7 +1011,7 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
               <div>
                 <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
                   <span className="font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
-                    {activeVersion?.category || selectedAgreement.category}
+                    {formatAgreementCategoryLabel(activeVersion?.category || selectedAgreement.category)}
                   </span>
                   <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
                   <span className={statusBadgeStyle(activeVersion?.status || selectedAgreement.status)}>
@@ -823,10 +1072,23 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
             )}
 
             {/* Authoritative Agreement Body */}
-            <div className="prose prose-sm dark:prose-invert max-w-none bg-slate-50/60 dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800 rounded-xl p-4 sm:p-5 text-xs sm:text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
-              {stripHtmlForPdf(activeVersion?.contentHtml || selectedAgreement.contentHtml) ||
-                'No text content recorded for this version.'}
-            </div>
+            {/<(h[1-3]|p|table|ul|ol|div|strong|em|blockquote)\b/i.test(
+              activeVersion?.contentHtml || selectedAgreement.contentHtml || ''
+            ) ? (
+              <div
+                className="bg-white dark:bg-slate-950/60 border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 sm:p-6 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed [&_h1]:text-lg [&_h1]:font-extrabold [&_h1]:mb-2 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:text-[#991B1B] [&_h2]:dark:text-red-400 [&_h2]:border-b [&_h2]:border-slate-200 [&_h2]:dark:border-slate-800 [&_h2]:pb-1 [&_h2]:mt-4 [&_h2]:mb-2 [&_p]:mb-2.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2.5 [&_table]:w-full [&_table]:border-collapse [&_table]:my-3 [&_th]:border [&_th]:border-slate-300 [&_th]:dark:border-slate-700 [&_th]:bg-slate-100 [&_th]:dark:bg-slate-900 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_td]:border [&_td]:border-slate-300 [&_td]:dark:border-slate-700 [&_td]:px-2.5 [&_td]:py-1.5"
+                dangerouslySetInnerHTML={{
+                  __html: sanitizeDocumentHtml(
+                    activeVersion?.contentHtml || selectedAgreement.contentHtml || ''
+                  ),
+                }}
+              />
+            ) : (
+              <div className="prose prose-sm dark:prose-invert max-w-none bg-slate-50/60 dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800 rounded-xl p-4 sm:p-5 text-xs sm:text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
+                {stripHtmlForPdf(activeVersion?.contentHtml || selectedAgreement.contentHtml) ||
+                  'No text content recorded for this version.'}
+              </div>
+            )}
 
             {activeVersion?.attachmentUrl && (
               <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs">
@@ -913,205 +1175,6 @@ const AgreementsCenter: React.FC<AgreementsCenterProps> = ({ role = 'staff' }) =
           </div>
         )}
       </div>
-
-      {/* Admin Authoring Modal */}
-      {isAdmin && editorOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                {editingId ? 'Update Agreement (Creates Immutable Version)' : 'Create Agreement, Proposal or Communication'}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setEditorOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveAgreement} className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Category
-                  </label>
-                  <select
-                    value={category}
-                    onChange={e => setCategory(e.target.value as AgreementCategory)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                  >
-                    {AGREEMENT_CATEGORIES.map(c => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Lifecycle Status
-                  </label>
-                  <select
-                    value={status}
-                    onChange={e => setStatus(e.target.value as AgreementStatus)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                  >
-                    {AGREEMENT_STATUSES.map(s => (
-                      <option key={s} value={s}>
-                        {s.replace(/_/g, ' ')}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Recipient Type
-                  </label>
-                  <select
-                    value={recipientType}
-                    onChange={e => {
-                      setRecipientType(e.target.value as 'SCHOOL' | 'TUTOR' | 'PARENT');
-                      setRecipientId('');
-                    }}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                  >
-                    <option value="SCHOOL">Partner School</option>
-                    <option value="TUTOR">Tutor / Staff</option>
-                    <option value="PARENT">Parent / Family</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Select Authorised Recipient
-                </label>
-                {filteredRecipientOptions.length > 0 ? (
-                  <select
-                    value={recipientId}
-                    onChange={e => setRecipientId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                  >
-                    <option value="">-- Choose {recipientType.toLowerCase()} --</option>
-                    {filteredRecipientOptions.map(o => (
-                      <option key={o.id} value={o.id}>
-                        {o.name} ({o.subtitle})
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    value={recipientId}
-                    onChange={e => setRecipientId(e.target.value)}
-                    placeholder="Enter recipient ID or school ID"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                  />
-                )}
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Document Title
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={e => setTitle(e.target.value)}
-                  placeholder="e.g., 2026/2027 Partner School STEM & Robotics Delivery Agreement"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Effective / Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={effectiveDate}
-                    onChange={e => setEffectiveDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Expiry / End Date
-                  </label>
-                  <input
-                    type="date"
-                    value={expiryDate}
-                    onChange={e => setExpiryDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Supporting File URL (Optional)
-                  </label>
-                  <input
-                    type="url"
-                    value={attachmentUrl}
-                    onChange={e => setAttachmentUrl(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Agreement / Proposal / Communication Content
-                </label>
-                <textarea
-                  rows={8}
-                  required
-                  value={contentHtml}
-                  onChange={e => setContentHtml(e.target.value)}
-                  placeholder="Paste or author the full proposal, recorded communication outcomes, or contract terms here..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-sans leading-relaxed"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Version Change Summary
-                </label>
-                <input
-                  type="text"
-                  value={versionSummary}
-                  onChange={e => setVersionSummary(e.target.value)}
-                  placeholder="e.g., Added Term 2 schedule clauses and updated tuition split"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setEditorOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white font-bold cursor-pointer disabled:opacity-50"
-                >
-                  {saving ? 'Saving Version…' : editingId ? 'Publish New Version' : 'Publish Document'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -15,9 +15,57 @@ export const handler: Handler = async (event) => {
     if (!process.env.PAYSTACK_SECRET_KEY) return json(503, { error: "Payment gateway is not configured." });
     const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } });
     const data = await response.json();
-    if (!response.ok || !data.status || String(data.data?.status || "").toLowerCase() !== "success") return json(402, { error: "Payment has not been verified." });
+    const gatewayStatus = String(data.data?.status || "").toLowerCase();
+    if (!response.ok || !data.status) {
+      return json(402, {
+        verified: false,
+        status: "failed",
+        reference,
+        error: data?.message || "Payment could not be verified with Paystack.",
+      });
+    }
+    if (gatewayStatus === "pending" || gatewayStatus === "ongoing" || gatewayStatus === "queued") {
+      return json(202, {
+        verified: false,
+        status: "pending",
+        reference,
+        message: "Paystack is still processing this transaction. You can retry verification shortly without paying again.",
+      });
+    }
+    if (gatewayStatus === "abandoned") {
+      return json(402, {
+        verified: false,
+        status: "cancelled",
+        reference,
+        error: "Checkout was closed or cancelled before payment completed.",
+      });
+    }
+    if (gatewayStatus !== "success") {
+      return json(402, {
+        verified: false,
+        status: "failed",
+        reference,
+        error: data.data?.gateway_response || "Payment was not completed successfully.",
+      });
+    }
     const result = await reconcileSuccessfulCharge(data.data, decoded.uid);
-    return json(200, { verified: true, reference, alreadyRecorded: !result.created, payment: result.payment ? { baseAmount: result.payment.baseAmount, transactionFee: result.payment.transactionFee, customerTotal: result.payment.customerTotal, paymentMethod: result.payment.paymentMethod } : null });
+    return json(200, {
+      verified: true,
+      status: "success",
+      reference,
+      alreadyRecorded: !result.created,
+      payment: result.payment
+        ? {
+            baseAmount: result.payment.baseAmount,
+            transactionFee: result.payment.transactionFee,
+            customerTotal: result.payment.customerTotal,
+            paymentMethod: result.payment.paymentMethod,
+            paidAt: result.payment.paidAt || data.data?.paid_at || new Date().toISOString(),
+            planName: result.payment.planName || data.data?.metadata?.planName || "Tuition Settlement",
+            studentName: result.payment.studentName || data.data?.metadata?.studentName || null,
+          }
+        : null,
+    });
   } catch (error) {
     const code = error instanceof Error ? error.message : "";
     const errors: Record<string, [number, string]> = {

@@ -1,20 +1,30 @@
 import React, { useEffect, useId, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ShieldCheck, LogOut, School, GraduationCap, User } from 'lucide-react';
-import { getActiveImpersonation, stopImpersonation } from '../../utils/impersonation';
+import { ShieldCheck, LogOut, School, GraduationCap, User, Clock } from 'lucide-react';
+import {
+  getActiveImpersonation,
+  stopImpersonation,
+  type ActiveImpersonationRecord,
+} from '../../utils/impersonation';
 
 let activeBannerOwner: string | null = null;
+
+function formatRemaining(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
 
 export const AdminImpersonationBanner: React.FC = () => {
   const instanceId = useId();
   const [ownsBanner, setOwnsBanner] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const [impersonation, setImpersonation] = useState<any>(null);
+  const [impersonation, setImpersonation] = useState<ActiveImpersonationRecord | null>(null);
+  const [remainingMs, setRemainingMs] = useState<number | null>(null);
 
   useEffect(() => {
-    // Only one instance may render globally; nested portal/admin shells can otherwise
-    // mount the shared banner twice and create duplicate full-width bars.
     if (!activeBannerOwner) {
       activeBannerOwner = instanceId;
       setOwnsBanner(true);
@@ -28,25 +38,59 @@ export const AdminImpersonationBanner: React.FC = () => {
     const check = () => {
       const active = getActiveImpersonation();
       setImpersonation(active && active.isMasquerading ? active : null);
+      if (active?.expiresAt) {
+        const diff = new Date(active.expiresAt).getTime() - Date.now();
+        setRemainingMs(Math.max(0, diff));
+      } else {
+        setRemainingMs(null);
+      }
     };
 
     check();
     window.addEventListener('storage', check);
-    return () => window.removeEventListener('storage', check);
-  }, [location.pathname]);
+    const interval = window.setInterval(() => {
+      const active = getActiveImpersonation();
+      if (!active) {
+        setImpersonation((prev) => {
+          if (prev) {
+            navigate('/admin');
+          }
+          return null;
+        });
+        setRemainingMs(null);
+        return;
+      }
+      if (active.expiresAt) {
+        const diff = new Date(active.expiresAt).getTime() - Date.now();
+        if (diff <= 0) {
+          stopImpersonation(navigate, 'EXPIRED');
+          return;
+        }
+        setRemainingMs(diff);
+      }
+    }, 1000);
+
+    return () => {
+      window.removeEventListener('storage', check);
+      window.clearInterval(interval);
+    };
+  }, [location.pathname, navigate]);
 
   if (!ownsBanner || !impersonation) {
     return null;
   }
 
-  const target = impersonation.targetUser || {};
+  const target = impersonation.targetUser || ({} as any);
   const targetRole = String(impersonation.targetRole || 'STUDENT').toUpperCase();
   const targetName = target.name || target.fullName || target.email?.split('@')[0] || 'User';
-  const targetSchool = target.schoolName || sessionStorage.getItem('studentSchoolName') || '';
-  const targetClass = target.class || target.classLevel || sessionStorage.getItem('studentClass') || '';
+  const targetSchool =
+    targetRole === 'STUDENT' && target.schoolName ? String(target.schoolName) : '';
+  const targetClass =
+    targetRole === 'STUDENT' ? String(target.class || target.classLevel || '') : '';
+  const isSchoolSupport = targetRole === 'SCHOOL' || impersonation.isAuditedSupportSession;
 
   const handleExit = () => {
-    stopImpersonation(navigate);
+    stopImpersonation(navigate, 'MANUAL_EXIT');
   };
 
   return (
@@ -54,7 +98,7 @@ export const AdminImpersonationBanner: React.FC = () => {
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
         <span className="inline-flex items-center gap-1.5 font-black uppercase text-[10px] tracking-wider shrink-0 text-red-400">
           <ShieldCheck size={13} className="text-red-400" />
-          Admin Impersonation Active
+          {isSchoolSupport ? 'Audited Admin Support Access' : 'Admin Impersonation Active'}
         </span>
 
         <span aria-hidden="true" className="hidden sm:inline text-slate-500">·</span>
@@ -81,17 +125,30 @@ export const AdminImpersonationBanner: React.FC = () => {
               <span>Class: <strong className="text-white">{targetClass}</strong></span>
             </span>
           )}
+
+          {impersonation.reason && (
+            <span className="hidden lg:inline-flex items-center gap-1.5 text-slate-300">
+              <span aria-hidden="true" className="text-slate-500">·</span>
+              <span className="truncate max-w-[240px]">Reason: {impersonation.reason}</span>
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-3 shrink-0">
+        {remainingMs !== null && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-mono tabular-nums text-amber-300 font-bold">
+            <Clock size={12} />
+            {formatRemaining(remainingMs)} left
+          </span>
+        )}
         <button
           type="button"
           onClick={handleExit}
-          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white font-black text-xs shadow-sm transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white font-black text-xs shadow-sm transition-colors cursor-pointer whitespace-nowrap"
         >
           <LogOut size={13} />
-          Exit &amp; Return to Admin
+          End Support Session
         </button>
       </div>
     </div>

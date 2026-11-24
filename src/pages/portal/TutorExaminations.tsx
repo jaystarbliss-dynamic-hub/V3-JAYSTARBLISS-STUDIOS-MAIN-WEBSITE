@@ -62,7 +62,6 @@ import {
   Search,
   ExternalLink,
   ChevronDown,
-  Sparkles,
   X,
   Link2,
   Layers,
@@ -2550,6 +2549,95 @@ ANSWER KEY
     }
   };
 
+  // Manual Open / Close / Reopen Assessment Control (blocks new starts on close; lets in-progress students finish)
+  const handleManualAssessmentStatusChange = async (
+    exam: ExistingExamItem,
+    nextStatus: "active" | "completed"
+  ) => {
+    setItemActionBusy(exam.id);
+    setErrorMessage("");
+    setMessage("");
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Please sign in again.");
+      const token = await currentUser.getIdToken();
+      const prevStatus = String(exam.status || "draft").toLowerCase();
+      const nowIso = new Date().toISOString();
+      const actorName =
+        currentUser.displayName ||
+        currentUser.email ||
+        sessionStorage.getItem("userName") ||
+        "Tutor";
+
+      let handledServerSide = false;
+      try {
+        const res = await fetch("/.netlify/functions/jdi-exam-management", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action: "activate",
+            examId: exam.id,
+            status: nextStatus,
+            allowInProgressFinish: true,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && !data.fallback) {
+          handledServerSide = true;
+        } else if (!data.fallback && res.status !== 404 && res.status !== 503) {
+          throw new Error(data.error || "Unable to update assessment status.");
+        }
+      } catch (serverErr) {
+        if (serverErr instanceof Error && !serverErr.message.includes("Failed to fetch")) {
+          throw serverErr;
+        }
+      }
+
+      if (!handledServerSide) {
+        const updatePayload: Record<string, any> = {
+          status: nextStatus,
+          allowInProgressFinish: true,
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.uid,
+          ...(nextStatus === "completed"
+            ? { manuallyClosedAt: nowIso, manuallyClosedBy: currentUser.uid }
+            : prevStatus === "completed"
+            ? { manuallyReopenedAt: nowIso, manuallyReopenedBy: currentUser.uid }
+            : { manuallyOpenedAt: nowIso, manuallyOpenedBy: currentUser.uid }),
+        };
+        for (const dbInstance of getClientDatabases()) {
+          await Promise.all([
+            updateDoc(doc(dbInstance, "jdiExams", exam.id), updatePayload).catch(() => undefined),
+            updateDoc(doc(dbInstance, "schoolExams", exam.id), updatePayload).catch(() => undefined),
+          ]);
+        }
+      }
+
+      setExistingExams((prev) =>
+        prev.map((item) => (item.id === exam.id ? { ...item, status: nextStatus } : item))
+      );
+
+      if (nextStatus === "completed") {
+        setMessage(
+          `"${exam.title}" is now closed for new starts. In-progress students can finish and submit before their timer ends.`
+        );
+      } else if (prevStatus === "completed") {
+        setMessage(`"${exam.title}" has been reopened (${actorName}).`);
+      } else {
+        setMessage(`"${exam.title}" is now open and active for assigned learners.`);
+      }
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Unable to update assessment status right now."
+      );
+    } finally {
+      setItemActionBusy(null);
+    }
+  };
+
   // Delete or Archive Examination Safely (Preserves legitimate student attempts)
   const handleDeleteExam = async (exam: ExistingExamItem) => {
     setItemActionBusy(exam.id);
@@ -3053,6 +3141,12 @@ ANSWER KEY
               void handleDeleteExam(match);
             }
           }}
+          onChangeAssessmentStatus={async (assessment, nextStatus) => {
+            const match = existingExams.find((e) => e.id === assessment.id);
+            if (match) {
+              await handleManualAssessmentStatusChange(match, nextStatus);
+            }
+          }}
           isTutor={!isAdminWorkspace}
         />
         </div>
@@ -3133,6 +3227,16 @@ ANSWER KEY
             setQuestions(examData.questions || questions);
             setShowPreview(true);
           }}
+          onChangeAssessmentStatus={
+            editingExamId
+              ? async (nextStatus) => {
+                  const match = existingExams.find((e) => e.id === editingExamId);
+                  if (match) {
+                    await handleManualAssessmentStatusChange(match, nextStatus);
+                  }
+                }
+              : undefined
+          }
         />
       )}
 
@@ -3576,7 +3680,7 @@ ANSWER KEY
                       onClick={handleInsertSampleTemplate}
                       className="text-xs font-semibold text-[#B91C1C] dark:text-red-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
                     >
-                      <Sparkles size={13} /> Insert Format Example
+                      <FileText size={13} /> Insert Format Example
                     </button>
                   </div>
 

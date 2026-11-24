@@ -490,6 +490,23 @@ export const LEARNING_SCHOOLS: LearningSchool[] = [
   }
 ];
 
+/**
+ * Jaystarbliss Dynamic Institute's four core institutional programmes.
+ * Authoritative source for School Partnership applications (never maintain separate hardcoded lists).
+ */
+export const CORE_PARTNERSHIP_PROGRAMME_IDS = [
+  'tech-programming',
+  'digital-literacy',
+  'creative-design',
+  'music-performing-arts',
+] as const;
+
+export type CorePartnershipProgrammeId = (typeof CORE_PARTNERSHIP_PROGRAMME_IDS)[number];
+
+export const CORE_PARTNERSHIP_PROGRAMMES: LearningSchool[] = CORE_PARTNERSHIP_PROGRAMME_IDS
+  .map((id) => LEARNING_SCHOOLS.find((school) => school.id === id))
+  .filter((school): school is LearningSchool => Boolean(school));
+
 export interface SchoolDeliveryTier {
   tier: number;
   id: string;

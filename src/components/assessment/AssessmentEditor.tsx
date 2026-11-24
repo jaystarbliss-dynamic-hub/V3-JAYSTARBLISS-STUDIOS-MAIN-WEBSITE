@@ -20,7 +20,6 @@ import {
   Upload,
   ExternalLink,
   ChevronDown,
-  Sparkles,
   Link2,
   Lock,
   Layers,
@@ -33,6 +32,8 @@ import {
   Shuffle,
   ShieldCheck,
   BookOpen,
+  Play,
+  RotateCcw,
 } from 'lucide-react';
 import {
   type AcademicWorkType,
@@ -96,6 +97,7 @@ export interface AssessmentEditorProps {
   onSaveTutorRemark?: (attempt: any, remark: string) => Promise<void>;
   onExportCsv?: () => void;
   onPreviewStudent?: (exam: any) => void;
+  onChangeAssessmentStatus?: (nextStatus: 'active' | 'completed') => Promise<void>;
   initialTab?: 'questions' | 'responses' | 'settings';
   initialPreviewOpen?: boolean;
 }
@@ -117,6 +119,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   onSaveTutorRemark,
   onExportCsv,
   onPreviewStudent,
+  onChangeAssessmentStatus,
   initialTab = 'questions',
   initialPreviewOpen = false,
 }) => {
@@ -202,9 +205,10 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
     Array.isArray(initialExam?.excludedStudentIds) ? initialExam.excludedStudentIds : []
   );
   const [externalUrl, setExternalUrl] = useState<string>(initialExam?.externalUrl || '');
-  const [status, setStatus] = useState<'draft' | 'active' | 'scheduled'>(
+  const [status, setStatus] = useState<'draft' | 'active' | 'scheduled' | 'completed' | 'archived'>(
     initialExam?.status || 'draft'
   );
+  const [manualStatusBusy, setManualStatusBusy] = useState(false);
 
   // -------------------------------------------------------------
   // Recipients State
@@ -723,7 +727,8 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
     }
 
     // Determine effective status based on targetStatus and activationMode
-    let resolvedStatus: 'draft' | 'active' | 'scheduled' = targetStatus || status;
+    let resolvedStatus: 'draft' | 'active' | 'scheduled' | 'completed' | 'archived' =
+      targetStatus || status;
     if (targetStatus === 'active' && activationMode === 'scheduled') {
       resolvedStatus = 'scheduled';
     }
@@ -1301,6 +1306,52 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     : 'Publish Now'}
                 </span>
               </button>
+
+              {onChangeAssessmentStatus && !isCreatingNew && (
+                <button
+                  type="button"
+                  disabled={manualStatusBusy || isSaving}
+                  onClick={async () => {
+                    const next: 'active' | 'completed' = status === 'active' ? 'completed' : 'active';
+                    setManualStatusBusy(true);
+                    try {
+                      await onChangeAssessmentStatus(next);
+                      setStatus(next);
+                    } finally {
+                      setManualStatusBusy(false);
+                    }
+                  }}
+                  className={`px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors disabled:opacity-50 ${
+                    status === 'active'
+                      ? 'border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-[#991B1B] dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/60'
+                      : 'border-emerald-300 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950/60'
+                  }`}
+                  title={
+                    status === 'active'
+                      ? 'Manually close assessment (blocks new starts; lets in-progress students finish)'
+                      : status === 'completed'
+                      ? 'Reopen this closed assessment'
+                      : 'Open this assessment immediately'
+                  }
+                >
+                  {status === 'active' ? (
+                    <Lock size={12} className="shrink-0" />
+                  ) : status === 'completed' ? (
+                    <RotateCcw size={12} className="shrink-0" />
+                  ) : (
+                    <Play size={12} className="shrink-0" />
+                  )}
+                  <span className="hidden md:inline">
+                    {manualStatusBusy
+                      ? 'Updating...'
+                      : status === 'active'
+                      ? 'Close Now'
+                      : status === 'completed'
+                      ? 'Reopen'
+                      : 'Open Now'}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1802,7 +1853,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       onClick={() => setShowImportModal(true)}
                       className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-[#1E293B] dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 inline-flex items-center gap-1.5"
                     >
-                      <Sparkles size={13} className="text-[#B91C1C] dark:text-red-400" />
+                      <Upload size={13} className="text-[#B91C1C] dark:text-red-400" />
                       <span>Import Questions</span>
                     </button>
                     <button

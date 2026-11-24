@@ -55,7 +55,8 @@ export async function createAgreementPdfDocument(data: AgreementPdfInput): Promi
   const contentWidth = pageWidth - marginX * 2;
   const watermarkAsset = await loadOfficialWatermarkAsset();
 
-  const categoryUpper = sanitizePdfText(data.category || 'AGREEMENT').toUpperCase();
+  const rawCategoryUpper = sanitizePdfText(data.category || 'AGREEMENT').toUpperCase();
+  const categoryUpper = rawCategoryUpper === 'COMMUNICATION' ? 'COMMUNIQUE' : rawCategoryUpper;
   const versionNum = Number(data.versionNumber || 1);
   const statusUpper = sanitizePdfText(data.status || 'SHARED').toUpperCase();
   const shortDate = formatShortDateDDMMYY(new Date());
