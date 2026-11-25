@@ -6,7 +6,9 @@ import {
   getDocs,
   doc,
   setDoc,
+  addDoc,
   updateDoc,
+  arrayUnion,
   serverTimestamp,
   getDoc,
   query,
@@ -28,6 +30,9 @@ import {
   isAttemptResultReleased,
   classifyStudentEnrolment,
   isAttemptOverdueForExpiry,
+  isExamPastEffectiveDeadline,
+  resolveCanonicalExamStatus,
+  mergeExamRecordByPrecedence,
   gradeAnswers,
   resolveAttemptQuestions,
   type WorkType,
@@ -39,6 +44,13 @@ import {
 } from "../../lib/tutorRemarks";
 import { ReferenceLookupPanel } from "../../components/academic-reporting/ReferenceLookupPanel";
 import { ReleasedOfficialReportsSection } from "../../components/academic-reporting/ReleasedOfficialReportsSection";
+import { getEffectiveAuth } from "../../utils/impersonation";
+import {
+  FloatingActionMenu,
+  RowActionMenuButton,
+  type RowActionItem,
+  useRowActionMenu,
+} from "../../components/ui/RowActionMenu";
 import {
   School,
   BookOpenCheck,
@@ -69,6 +81,8 @@ import {
   ChevronRight,
   SlidersHorizontal,
   Award,
+  Play,
+  RotateCcw,
 } from "lucide-react";
 import { TableSkeleton, MetricGridSkeleton } from "../../components/ui/Skeleton";
 
@@ -185,6 +199,16 @@ type Exam = {
   questions?: Question[];
   createdBy?: string;
   tutorId?: string;
+  authorUid?: string;
+  assignedTutorId?: string;
+  authorizedTutorIds?: string[];
+  permittedTutorIds?: string[];
+  collaboratorUids?: string[];
+  assignedTutorIds?: string[];
+  allowInProgressFinish?: boolean;
+  manuallyOpenedAt?: string | null;
+  manuallyClosedAt?: string | null;
+  manuallyReopenedAt?: string | null;
   updatedAt?: any;
   createdAt?: any;
 };
@@ -484,10 +508,310 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   const [archivedDetailExam, setArchivedDetailExam] = useState<Exam | null>(null);
   const deepLinkHandledRef = useRef<string>("");
 
+  // Contextual Assessment Options Menu & Manual Status Confirmation Modal state
+  const examContextMenu = useRowActionMenu<Exam>();
+  const [pendingStatusAction, setPendingStatusAction] = useState<{
+    exam: Exam;
+    nextStatus: "active" | "completed";
+    mode: "open" | "close" | "reopen";
+  } | null>(null);
+  const [statusSubmitting, setStatusSubmitting] = useState(false);
+
   const isSchoolUser =
     isSchoolPortal || ["SCHOOL", "SCHOOL_ADMIN"].includes(userRole.toUpperCase());
   const isPlatformAdmin =
     isAdminWorkspace || ["ADMIN", "SUPER_ADMIN", "SUPERADMIN"].includes(userRole.toUpperCase());
+
+  const canManageExamForCaller = useCallback(
+    (ex?: Exam | null): boolean => {
+      if (!ex || isSchoolUser) return false;
+      if (isPlatformAdmin) return true;
+      const effectiveAuth = getEffectiveAuth();
+      const callerUid = effectiveAuth.effectiveUid || auth.currentUser?.uid || "";
+      const callerRole =
+        effectiveAuth.effectiveRole || userRole || sessionStorage.getItem("userRole") || "STAFF";
+      return canManageExamRecord(
+        ex,
+        callerUid,
+        callerRole,
+        availableSchools.map((s) => s.id)
+      );
+    },
+    [isSchoolUser, isPlatformAdmin, userRole, availableSchools]
+  );
+
+  const handleManualExamStatusChange = async (
+    exam: Exam,
+    nextStatus: "active" | "completed"
+  ) => {
+    setMessage("");
+    const currentUser = auth.currentUser;
+    const effectiveAuth = getEffectiveAuth();
+    const callerUid = effectiveAuth.effectiveUid || currentUser?.uid || "";
+    const callerRole =
+      effectiveAuth.effectiveRole ||
+      (isPlatformAdmin ? "SUPER_ADMIN" : userRole || sessionStorage.getItem("userRole") || "STAFF");
+    if (!currentUser || !callerUid) {
+      throw new Error("Please sign in again.");
+    }
+    if (!canManageExamForCaller(exam)) {
+      const msg =
+        "You do not have permission to change the status of an assessment belonging to another tutor.";
+      setMessage(msg);
+      throw new Error(msg);
+    }
+
+    const token = await currentUser.getIdToken();
+    const prevStatus = String(exam.status || "draft").toLowerCase();
+    const nowIso = new Date().toISOString();
+    const actorRoleLabel = isPlatformAdmin ? "Administrator" : "Tutor";
+    const actorName =
+      effectiveAuth.effectiveName ||
+      currentUser.displayName ||
+      currentUser.email ||
+      sessionStorage.getItem("userName") ||
+      actorRoleLabel;
+    const isManualClose = nextStatus === "completed";
+    const isManualReopen =
+      nextStatus === "active" &&
+      (prevStatus === "completed" ||
+        prevStatus === "closed" ||
+        isExamPastEffectiveDeadline(exam));
+    const actionType = isManualClose
+      ? "manual_closure"
+      : isManualReopen
+        ? "manual_reopen"
+        : "manual_activation";
+
+    let handledServerSide = false;
+    try {
+      const res = await fetch("/.netlify/functions/jdi-exam-management", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "activate",
+          examId: exam.id,
+          status: nextStatus,
+          allowInProgressFinish: false,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && !data.fallback) {
+        handledServerSide = true;
+      } else if (!data.fallback && res.status !== 404 && res.status !== 503) {
+        throw new Error(data.error || "Unable to update assessment status.");
+      }
+    } catch (serverErr) {
+      if (serverErr instanceof Error && !serverErr.message.includes("Failed to fetch")) {
+        setMessage(serverErr.message);
+        throw serverErr;
+      }
+    }
+
+    if (!handledServerSide) {
+      const historyEntry = {
+        examId: exam.id,
+        examTitle: exam.title || "Assessment",
+        fromStatus: prevStatus,
+        toStatus: nextStatus,
+        previousStatus: prevStatus,
+        newStatus: nextStatus,
+        actionType,
+        actorUid: callerUid,
+        actorName,
+        actorRole: callerRole,
+        timestamp: nowIso,
+        note: isManualClose
+          ? `Manually closed by ${actorName} (${actorRoleLabel})`
+          : isManualReopen
+            ? `Manually reopened by ${actorName} (${actorRoleLabel})`
+            : `Manually activated by ${actorName} (${actorRoleLabel})`,
+      };
+      const updatePayload: Record<string, any> = {
+        status: nextStatus,
+        allowInProgressFinish: !isManualClose,
+        updatedAt: serverTimestamp(),
+        updatedBy: callerUid,
+        statusHistory: arrayUnion(historyEntry),
+        ...(isManualClose
+          ? {
+              manuallyClosedAt: nowIso,
+              manuallyClosedBy: callerUid,
+              manuallyClosedByName: actorName,
+              manuallyClosedByRole: callerRole,
+              closureReason: "manual",
+            }
+          : isManualReopen
+            ? {
+                manuallyReopenedAt: nowIso,
+                manuallyReopenedBy: callerUid,
+                manuallyReopenedByName: actorName,
+                manuallyReopenedByRole: callerRole,
+                closureReason: null,
+              }
+            : {
+                manuallyOpenedAt: nowIso,
+                manuallyOpenedBy: callerUid,
+                manuallyOpenedByName: actorName,
+                manuallyOpenedByRole: callerRole,
+                closureReason: null,
+              }),
+      };
+      let wroteAtLeastOne = false;
+      for (const dbInstance of getAllClientDatabases()) {
+        const [jdiOk, schOk] = await Promise.all([
+          updateDoc(doc(dbInstance, "jdiExams", exam.id), updatePayload)
+            .then(() => true)
+            .catch(() => false),
+          updateDoc(doc(dbInstance, "schoolExams", exam.id), updatePayload)
+            .then(() => true)
+            .catch(() => false),
+        ]);
+        if (jdiOk || schOk) wroteAtLeastOne = true;
+        await Promise.all([
+          addDoc(collection(dbInstance, "jdiExams", exam.id, "events"), {
+            type: isManualClose
+              ? "exam_manually_closed"
+              : isManualReopen
+                ? "exam_manually_reopened"
+                : "exam_manually_opened",
+            actionType,
+            examId: exam.id,
+            examTitle: exam.title || "Assessment",
+            status: nextStatus,
+            newStatus: nextStatus,
+            previousStatus: prevStatus,
+            actorUid: callerUid,
+            actorName,
+            actorRole: callerRole,
+            allowInProgressFinish: !isManualClose,
+            timestamp: nowIso,
+            createdAt: serverTimestamp(),
+          }).catch(() => undefined),
+          addDoc(collection(dbInstance, "academicAuditLogs"), {
+            action: isManualClose
+              ? "ASSESSMENT_MANUALLY_CLOSED"
+              : isManualReopen
+                ? "ASSESSMENT_MANUALLY_REOPENED"
+                : "ASSESSMENT_MANUALLY_ACTIVATED",
+            actionType,
+            examId: exam.id,
+            examTitle: exam.title || "Assessment",
+            previousStatus: prevStatus,
+            newStatus: nextStatus,
+            actorUid: callerUid,
+            actorName,
+            actorRole: callerRole,
+            schoolId: exam.schoolId || null,
+            schoolName: exam.schoolName || null,
+            timestamp: nowIso,
+            createdAt: serverTimestamp(),
+          }).catch(() => undefined),
+        ]);
+      }
+      if (!wroteAtLeastOne) {
+        const msg =
+          "Could not save the assessment status change. Please verify your connection and permissions.";
+        setMessage(msg);
+        throw new Error(msg);
+      }
+    }
+
+    const updatedExamPatch: Partial<Exam> = {
+      status: nextStatus,
+      allowInProgressFinish: !isManualClose,
+      ...(isManualClose
+        ? { manuallyClosedAt: nowIso }
+        : isManualReopen
+          ? { manuallyReopenedAt: nowIso }
+          : { manuallyOpenedAt: nowIso }),
+    };
+
+    setExams((prev) =>
+      prev.map((item) => (item.id === exam.id ? { ...item, ...updatedExamPatch } : item))
+    );
+    setArchivedDetailExam((prev) =>
+      prev && prev.id === exam.id ? { ...prev, ...updatedExamPatch } : prev
+    );
+
+    if (isManualClose) {
+      setMessage(
+        `"${exam.title}" is now closed. Learners can no longer start or submit responses while it remains closed.`
+      );
+    } else if (isManualReopen) {
+      setMessage(
+        `"${exam.title}" has been reopened by ${actorName} and is now active for eligible learners.`
+      );
+    } else {
+      setMessage(`"${exam.title}" is now active and available to eligible learners.`);
+    }
+  };
+
+  const buildExamContextMenuItems = (ex: Exam): RowActionItem[] => {
+    const canonicalStatus = resolveCanonicalExamStatus(ex);
+    const isClosedState = canonicalStatus === "completed";
+    const isActiveState = canonicalStatus === "active";
+    const isScheduledState = canonicalStatus === "scheduled";
+    const canManage = canManageExamForCaller(ex);
+
+    const statusItems: RowActionItem[] = [];
+    if (canManage) {
+      if (isActiveState) {
+        statusItems.push({
+          id: "close-assessment",
+          label: "Close Assessment",
+          icon: <Lock size={14} />,
+          onClick: () =>
+            setPendingStatusAction({ exam: ex, nextStatus: "completed", mode: "close" }),
+          dividerBefore: true,
+        });
+      } else if (isClosedState) {
+        statusItems.push({
+          id: "reopen-assessment",
+          label: "Reopen Assessment",
+          icon: <RotateCcw size={14} />,
+          onClick: () =>
+            setPendingStatusAction({ exam: ex, nextStatus: "active", mode: "reopen" }),
+          dividerBefore: true,
+        });
+      } else if (isScheduledState) {
+        statusItems.push({
+          id: "activate-assessment",
+          label: "Activate Assessment",
+          icon: <Play size={14} />,
+          onClick: () =>
+            setPendingStatusAction({ exam: ex, nextStatus: "active", mode: "open" }),
+          dividerBefore: true,
+        });
+      }
+    }
+
+    return [
+      {
+        id: "view-records",
+        label: "View Participation Records",
+        icon: <Eye size={14} />,
+        onClick: () => setArchivedDetailExam(ex),
+      },
+      {
+        id: "filter-submissions",
+        label: "Filter Submissions by Assessment",
+        icon: <Search size={14} />,
+        onClick: () => setSelected(ex.id),
+      },
+      {
+        id: "copy-passcode",
+        label: "Copy Access Code",
+        icon: <KeyRound size={14} />,
+        onClick: () => copyPasscode(ex.id, ex.passcode),
+        hidden: !ex.passcode,
+      },
+      ...statusItems,
+    ];
+  };
 
   // Close compact actions dropdown on outside click
   useEffect(() => {
@@ -880,12 +1204,16 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         return Boolean(sKey && allowedSchoolKeys.has(sKey));
       };
 
+      const nowForExams = Date.now();
       const examMap = new Map<string, Exam>();
       serverExams.forEach((ex) => {
+        const canonicalStatus = resolveCanonicalExamStatus(ex, nowForExams);
+        if (isSchoolUser && (canonicalStatus === "draft" || canonicalStatus === "archived")) return;
         const sLabel = resolveSchoolLabel(ex.schoolId, ex.schoolName);
         const maxScore = computeExamMaxScore(ex);
         examMap.set(ex.id, {
           ...ex,
+          status: canonicalStatus,
           deliveryMode: normalizeDeliveryMode(ex),
           schoolName: sLabel,
           maxScore,
@@ -893,16 +1221,53 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       });
 
       const dbInstances = getAllClientDatabases();
-      const examSnaps = await Promise.all(
-        dbInstances.flatMap((dbInst) => [
-          getDocs(collection(dbInst, "jdiExams")).catch(() => ({ docs: [] } as any)),
-          getDocs(collection(dbInst, "schoolExams")).catch(() => ({ docs: [] } as any)),
-        ])
-      );
+      const [schoolExamSnaps, jdiExamSnaps] = await Promise.all([
+        Promise.all(
+          dbInstances.map((dbInst) =>
+            getDocs(collection(dbInst, "schoolExams")).catch(() => ({ docs: [] } as any))
+          )
+        ),
+        Promise.all(
+          dbInstances.map((dbInst) =>
+            getDocs(collection(dbInst, "jdiExams")).catch(() => ({ docs: [] } as any))
+          )
+        ),
+      ]);
 
-      examSnaps.flatMap((s) => s.docs || []).forEach((d: any) => {
-        const data = d.data();
-        if (data.status === "archived" && isSchoolUser) return;
+      const rawMergedExamMap = new Map<string, Record<string, any>>();
+      schoolExamSnaps.flatMap((s) => s.docs || []).forEach((d: any) => {
+        rawMergedExamMap.set(
+          d.id,
+          mergeExamRecordByPrecedence(
+            rawMergedExamMap.get(d.id),
+            { id: d.id, ...(d.data() || {}) },
+            "schoolExams",
+            nowForExams
+          )
+        );
+      });
+      jdiExamSnaps.flatMap((s) => s.docs || []).forEach((d: any) => {
+        rawMergedExamMap.set(
+          d.id,
+          mergeExamRecordByPrecedence(
+            rawMergedExamMap.get(d.id),
+            { id: d.id, ...(d.data() || {}) },
+            "jdiExams",
+            nowForExams
+          )
+        );
+      });
+
+      rawMergedExamMap.forEach((data: any, docId: string) => {
+        const canonicalStatus = resolveCanonicalExamStatus(data, nowForExams);
+        if (canonicalStatus === "archived" && isSchoolUser) {
+          examMap.delete(docId);
+          return;
+        }
+        if (isSchoolUser && canonicalStatus === "draft") {
+          examMap.delete(docId);
+          return;
+        }
         if (!isSchoolUser && !isPlatformAdmin) {
           const canSee =
             matchesScope(data.schoolId, data) ||
@@ -916,15 +1281,15 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         } else if (!matchesScope(data.schoolId, data)) {
           return;
         }
-        if (isSchoolUser && data.status === "draft") return;
 
         const sLabel = resolveSchoolLabel(data.schoolId, data.schoolName);
         const maxScore = computeExamMaxScore(data);
-        const existing = examMap.get(d.id);
-        examMap.set(d.id, {
+        const existing = examMap.get(docId);
+        examMap.set(docId, {
           ...(existing || {}),
-          id: d.id,
+          id: docId,
           ...data,
+          status: canonicalStatus,
           deliveryMode: normalizeDeliveryMode(data),
           schoolName: sLabel,
           maxScore,
@@ -1419,31 +1784,15 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     const completed: Exam[] = [];
 
     exams.forEach((ex) => {
-      if (ex.status === "draft" || ex.status === "archived") return;
-      const from = ex.availableFrom ? new Date(ex.availableFrom).getTime() : 0;
-      const until = ex.availableUntil
-        ? new Date(ex.availableUntil).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      let dueDeadline = Number.MAX_SAFE_INTEGER;
-      if (ex.dueDate) {
-        const rawDue = String(ex.dueDate).trim();
-        const parsed = /^\d{4}-\d{2}-\d{2}$/.test(rawDue)
-          ? new Date(`${rawDue}T23:59:59.999`).getTime()
-          : new Date(rawDue).getTime();
-        if (Number.isFinite(parsed) && parsed > 0) dueDeadline = parsed;
-      }
+      const canonicalStatus = resolveCanonicalExamStatus(ex, now);
+      if (canonicalStatus === "draft" || canonicalStatus === "archived") return;
 
-      if (
-        ex.status === "completed" ||
-        ex.status === "closed" ||
-        now >= until ||
-        now > dueDeadline
-      ) {
-        completed.push(ex);
-      } else if (ex.status === "scheduled" || (from > 0 && now < from)) {
-        upcoming.push(ex);
+      if (canonicalStatus === "completed") {
+        completed.push({ ...ex, status: "completed" });
+      } else if (canonicalStatus === "scheduled") {
+        upcoming.push({ ...ex, status: "scheduled" });
       } else {
-        active.push(ex);
+        active.push({ ...ex, status: "active" });
       }
     });
 
@@ -2451,6 +2800,12 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 return (
                   <article
                     key={ex.id}
+                    onContextMenu={(e) => {
+                      if (!isSchoolUser) {
+                        examContextMenu.openFromContextMenu(e, ex);
+                      }
+                    }}
+                    {...(!isSchoolUser ? examContextMenu.getTouchHandlers(ex) : {})}
                     className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-4 sm:p-5 flex flex-col justify-between gap-4"
                   >
                     <div className="space-y-2">
@@ -2475,9 +2830,23 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                             {isExternal ? "External Link" : "Native CBT"}
                           </span>
                         </div>
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                          Class: {ex.targetClass || ex.classIds?.join(", ") || "All"}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            Class: {ex.targetClass || ex.classIds?.join(", ") || "All"}
+                          </span>
+                          {!isSchoolUser && (
+                            <RowActionMenuButton
+                              onClick={(e) => {
+                                if (examContextMenu.state?.data?.id === ex.id) {
+                                  examContextMenu.close();
+                                } else {
+                                  examContextMenu.openFromButton(e, ex);
+                                }
+                              }}
+                              ariaLabel={`Actions for ${ex.title}`}
+                            />
+                          )}
+                        </div>
                       </div>
 
                       <h3 className="font-bold text-base text-slate-900 dark:text-white">
@@ -2546,6 +2915,98 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             </div>
           )}
         </section>
+
+        {examContextMenu.state && !isSchoolUser && (
+          <FloatingActionMenu
+            coords={examContextMenu.coords}
+            items={buildExamContextMenuItems(examContextMenu.state.data)}
+            onClose={examContextMenu.close}
+            title={examContextMenu.state.data.title || "Assessment Actions"}
+          />
+        )}
+
+        {pendingStatusAction && !isSchoolUser && (
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 shadow-2xl p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    {pendingStatusAction.mode === "close"
+                      ? "Close Assessment?"
+                      : pendingStatusAction.mode === "reopen"
+                        ? "Reopen Assessment?"
+                        : "Activate Assessment?"}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
+                    {pendingStatusAction.exam.title}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={statusSubmitting}
+                  onClick={() => setPendingStatusAction(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-zinc-300 leading-relaxed">
+                {pendingStatusAction.mode === "close"
+                  ? "Learners will no longer be able to start or submit responses while this assessment is closed. All existing learner submissions, scores, attempts, and assessment history will remain intact and accessible."
+                  : pendingStatusAction.mode === "reopen"
+                    ? "This assessment will become active and available again to eligible learners according to its target school, class, programme, or learner settings. Existing learner submissions, scores, and attempt limits will be preserved."
+                    : "This assessment will become active and available to eligible learners according to its target school, class, programme, or learner settings."}
+              </p>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  disabled={statusSubmitting}
+                  onClick={() => setPendingStatusAction(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={statusSubmitting}
+                  onClick={async () => {
+                    setStatusSubmitting(true);
+                    try {
+                      await handleManualExamStatusChange(
+                        pendingStatusAction.exam,
+                        pendingStatusAction.nextStatus
+                      );
+                      setPendingStatusAction(null);
+                    } catch {
+                      // Error message displayed in banner
+                    } finally {
+                      setStatusSubmitting(false);
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold text-white transition-colors disabled:opacity-60 ${
+                    pendingStatusAction.mode === "close"
+                      ? "bg-[#991B1B] hover:bg-[#7F1D1D]"
+                      : "bg-emerald-700 hover:bg-emerald-800"
+                  }`}
+                >
+                  {statusSubmitting
+                    ? "Updating..."
+                    : pendingStatusAction.mode === "close"
+                      ? "Close Assessment"
+                      : pendingStatusAction.mode === "reopen"
+                        ? "Reopen Assessment"
+                        : "Activate Assessment"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     );
   }
@@ -3472,14 +3933,37 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                     ex.dueDate || ex.availableUntil || ex.updatedAt || ex.createdAt
                   );
 
+                  const rawSt = String(ex.status || "completed").toLowerCase();
+                  const isClosedRow =
+                    rawSt === "completed" ||
+                    rawSt === "closed" ||
+                    isExamPastEffectiveDeadline(ex);
+
                   return (
                     <tr
                       key={ex.id}
                       onClick={() => setArchivedDetailExam(ex)}
+                      onContextMenu={(e) => {
+                        if (!isSchoolUser) {
+                          examContextMenu.openFromContextMenu(e, ex);
+                        }
+                      }}
+                      {...(!isSchoolUser ? examContextMenu.getTouchHandlers(ex) : {})}
                       className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
                     >
                       <td className="p-3.5 sm:p-4 font-bold text-slate-900 dark:text-white group-hover:text-[#B91C1C] dark:group-hover:text-red-400">
-                        {ex.title}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{ex.title}</span>
+                          <span
+                            className={`text-[10px] font-black uppercase tracking-wider ${
+                              isClosedRow
+                                ? "text-[#B91C1C] dark:text-red-400"
+                                : "text-emerald-700 dark:text-emerald-400"
+                            }`}
+                          >
+                            · {isClosedRow ? "Closed" : "Active"}
+                          </span>
+                        </div>
                       </td>
                       <td className="p-3.5 sm:p-4">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
@@ -3504,11 +3988,33 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                       <td className="p-3.5 sm:p-4 text-slate-600 dark:text-slate-400 whitespace-nowrap tabular-nums">
                         {closingDateDisplay}
                       </td>
-                      <td className="p-3.5 sm:p-4 text-right whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 text-xs font-bold text-[#B91C1C] dark:text-red-400 group-hover:translate-x-0.5 transition-transform">
-                          View Records
-                          <ChevronRight size={14} />
-                        </span>
+                      <td
+                        className="p-3.5 sm:p-4 text-right whitespace-nowrap"
+                        onClick={(e) => {
+                          // Prevent row modal open when clicking the options button container
+                          if ((e.target as HTMLElement).closest("button")) {
+                            e.stopPropagation();
+                          }
+                        }}
+                      >
+                        <div className="inline-flex items-center justify-end gap-2">
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-[#B91C1C] dark:text-red-400 group-hover:translate-x-0.5 transition-transform">
+                            View Records
+                            <ChevronRight size={14} />
+                          </span>
+                          {!isSchoolUser && (
+                            <RowActionMenuButton
+                              onClick={(e) => {
+                                if (examContextMenu.state?.data?.id === ex.id) {
+                                  examContextMenu.close();
+                                } else {
+                                  examContextMenu.openFromButton(e, ex);
+                                }
+                              }}
+                              ariaLabel={`Actions for ${ex.title}`}
+                            />
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -3536,7 +4042,11 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                   </span>
                   <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
                   <span className="text-slate-600 dark:text-slate-300">
-                    Archived Record
+                    {archivedDetailExam.status === "completed" ||
+                    archivedDetailExam.status === "closed" ||
+                    isExamPastEffectiveDeadline(archivedDetailExam)
+                      ? "Closed Assessment"
+                      : "Active Assessment"}
                   </span>
                 </div>
                 <h3 className="text-base sm:text-xl font-bold text-slate-900 dark:text-white break-words">
@@ -3548,13 +4058,52 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                   <strong>{computeExamMaxScore(archivedDetailExam)} pts</strong>
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setArchivedDetailExam(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {canManageExamForCaller(archivedDetailExam) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isClosedNow =
+                        archivedDetailExam.status === "completed" ||
+                        archivedDetailExam.status === "closed" ||
+                        isExamPastEffectiveDeadline(archivedDetailExam);
+                      setPendingStatusAction({
+                        exam: archivedDetailExam,
+                        nextStatus: isClosedNow ? "active" : "completed",
+                        mode: isClosedNow ? "reopen" : "close",
+                      });
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold text-white cursor-pointer ${
+                      archivedDetailExam.status === "completed" ||
+                      archivedDetailExam.status === "closed" ||
+                      isExamPastEffectiveDeadline(archivedDetailExam)
+                        ? "bg-emerald-700 hover:bg-emerald-800"
+                        : "bg-[#991B1B] hover:bg-[#7F1D1D]"
+                    }`}
+                  >
+                    {archivedDetailExam.status === "completed" ||
+                    archivedDetailExam.status === "closed" ||
+                    isExamPastEffectiveDeadline(archivedDetailExam) ? (
+                      <>
+                        <RotateCcw size={13} />
+                        Reopen Assessment
+                      </>
+                    ) : (
+                      <>
+                        <Lock size={13} />
+                        Close Assessment
+                      </>
+                    )}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setArchivedDetailExam(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {(() => {
@@ -4217,6 +4766,98 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                   : isAttemptResultReleased(releaseModalAttempt)
                   ? "Save Tutor Remark"
                   : "Release Result & Remark"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {examContextMenu.state && !isSchoolUser && (
+        <FloatingActionMenu
+          coords={examContextMenu.coords}
+          items={buildExamContextMenuItems(examContextMenu.state.data)}
+          onClose={examContextMenu.close}
+          title={examContextMenu.state.data.title || "Assessment Actions"}
+        />
+      )}
+
+      {pendingStatusAction && !isSchoolUser && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 shadow-2xl p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {pendingStatusAction.mode === "close"
+                    ? "Close Assessment?"
+                    : pendingStatusAction.mode === "reopen"
+                      ? "Reopen Assessment?"
+                      : "Activate Assessment?"}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
+                  {pendingStatusAction.exam.title}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={statusSubmitting}
+                onClick={() => setPendingStatusAction(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-zinc-300 leading-relaxed">
+              {pendingStatusAction.mode === "close"
+                ? "Learners will no longer be able to start or submit responses while this assessment is closed. All existing learner submissions, scores, attempts, and assessment history will remain intact and accessible."
+                : pendingStatusAction.mode === "reopen"
+                  ? "This assessment will become active and available again to eligible learners according to its target school, class, programme, or learner settings. Existing learner submissions, scores, and attempt limits will be preserved."
+                  : "This assessment will become active and available to eligible learners according to its target school, class, programme, or learner settings."}
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={statusSubmitting}
+                onClick={() => setPendingStatusAction(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={statusSubmitting}
+                onClick={async () => {
+                  setStatusSubmitting(true);
+                  try {
+                    await handleManualExamStatusChange(
+                      pendingStatusAction.exam,
+                      pendingStatusAction.nextStatus
+                    );
+                    setPendingStatusAction(null);
+                  } catch {
+                    // Error message displayed in banner
+                  } finally {
+                    setStatusSubmitting(false);
+                  }
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold text-white transition-colors disabled:opacity-60 ${
+                  pendingStatusAction.mode === "close"
+                    ? "bg-[#991B1B] hover:bg-[#7F1D1D]"
+                    : "bg-emerald-700 hover:bg-emerald-800"
+                }`}
+              >
+                {statusSubmitting
+                  ? "Updating..."
+                  : pendingStatusAction.mode === "close"
+                    ? "Close Assessment"
+                    : pendingStatusAction.mode === "reopen"
+                      ? "Reopen Assessment"
+                      : "Activate Assessment"}
               </button>
             </div>
           </div>

@@ -41,6 +41,9 @@ import {
   isAttemptResultReleased,
   shouldAutoReleaseAttemptResult,
   isAttemptOverdueForExpiry,
+  isExamPastEffectiveDeadline,
+  resolveCanonicalExamStatus,
+  mergeExamRecordByPrecedence,
   gradeAnswers,
   resolveAttemptQuestions,
   type WorkType,
@@ -48,6 +51,7 @@ import {
 import { ExamListSkeleton } from "../../components/ui/Skeleton";
 import EmbeddedLearningMedia from "../../components/portal/EmbeddedLearningMedia";
 import { getFriendlyErrorMessage, logInternalDiagnostic } from "../../utils/friendlyErrors";
+import { getPortalCache, setPortalCache } from "../../lib/portalDataCache";
 
 type ExamCard = {
   id: string;
@@ -62,6 +66,10 @@ type ExamCard = {
   resourceUrl?: string;
   videoUrl?: string;
   status: "active" | "upcoming" | "completed";
+  rawStatus?: string;
+  manuallyReopenedAt?: unknown;
+  manuallyClosedAt?: unknown;
+  allowInProgressFinish?: boolean;
   hasTimeLimit?: boolean;
   durationMinutes: number;
   limitOneAttempt?: boolean;
@@ -130,6 +138,21 @@ export default function StudentExaminations() {
 
   // 1. Resolve Current Student Identity & School Aliases (across users, individualStudents, students, and schools)
   const resolveStudentContext = async () => {
+    const cachedCtx = getPortalCache<{
+      id: string;
+      uid: string;
+      schoolId: string;
+      schoolAliases: string[];
+      schoolName: string;
+      class: string;
+      name: string;
+      programIds?: string[];
+      programTitles?: string[];
+    }>("student_exam_context", "student", 15 * 60 * 1000);
+    if (cachedCtx?.data && cachedCtx.isFresh && (cachedCtx.data.class || cachedCtx.data.schoolId || cachedCtx.data.id)) {
+      setStudentInfo(cachedCtx.data);
+      return cachedCtx.data;
+    }
     const user = auth.currentUser;
     const cachedSchId = sessionStorage.getItem("schoolId") || "";
     const cachedSchName = sessionStorage.getItem("schoolName") || "";
@@ -338,16 +361,24 @@ export default function StudentExaminations() {
       programTitles: Array.from(programTitleSet),
     };
     setStudentInfo(ctx);
+    setPortalCache("student_exam_context", ctx, { roleHint: "student", sessionOnly: true });
     return ctx;
   };
 
   // 2. Load Examinations with Canonical Class Matching & Upcoming Notifications
   const load = async () => {
-    setLoading(true);
+    const cachedExams = getPortalCache<ExamCard[]>("student_exams_list", "student", 10 * 60 * 1000);
+    if (cachedExams?.data && Array.isArray(cachedExams.data) && cachedExams.data.length > 0) {
+      setExams(cachedExams.data);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setMessage(null);
     try {
       const ctx = await resolveStudentContext();
       const examMap = new Map<string, ExamCard>();
+      const now = Date.now();
 
       // 1. Try server endpoint (ignore fallback: true responses)
       try {
@@ -360,6 +391,10 @@ export default function StudentExaminations() {
             const data = await response.json().catch(() => ({}));
             if (!data.fallback && Array.isArray(data.exams)) {
               data.exams.forEach((exam: any) => {
+                const canonicalStatus = resolveCanonicalExamStatus(exam, now);
+                if (canonicalStatus === "draft" || canonicalStatus === "archived") {
+                  return;
+                }
                 const attStatus = String(exam.attemptStatus || "").toLowerCase();
                 const isAttemptDone =
                   attStatus === "submitted" ||
@@ -367,9 +402,16 @@ export default function StudentExaminations() {
                   attStatus === "graded" ||
                   attStatus === "expired" ||
                   Boolean(exam.releasedAt);
+                const resolvedCardStatus: "active" | "upcoming" | "completed" =
+                  isAttemptDone || canonicalStatus === "completed"
+                    ? "completed"
+                    : canonicalStatus === "scheduled" || exam.status === "upcoming"
+                    ? "upcoming"
+                    : "active";
                 examMap.set(String(exam.id), {
                   ...exam,
-                  status: isAttemptDone ? "completed" : exam.status,
+                  status: resolvedCardStatus,
+                  rawStatus: canonicalStatus,
                   workType: normalizeWorkType(exam.workType, exam),
                   deliveryMode: normalizeDeliveryMode(exam),
                   externalUrl: String(exam.externalUrl || "").trim(),
@@ -410,19 +452,64 @@ export default function StudentExaminations() {
       ]);
 
       legacyExamsSnaps.forEach((s) =>
-        s.docs?.forEach((d: any) => rawDocsMap.set(d.id, { id: d.id, ...d.data() }))
+        s.docs?.forEach((d: any) => {
+          const rawData = d.data() || {};
+          rawDocsMap.set(
+            d.id,
+            mergeExamRecordByPrecedence(
+              rawDocsMap.get(d.id),
+              { id: d.id, ...rawData, _rawOriginalStatus: rawData.status },
+              "exams",
+              now
+            )
+          );
+        })
       );
       schoolExamsSnaps.forEach((s) =>
-        s.docs?.forEach((d: any) => rawDocsMap.set(d.id, { id: d.id, ...d.data() }))
+        s.docs?.forEach((d: any) => {
+          const rawData = d.data() || {};
+          rawDocsMap.set(
+            d.id,
+            mergeExamRecordByPrecedence(
+              rawDocsMap.get(d.id),
+              { id: d.id, ...rawData, _rawOriginalStatus: rawData.status },
+              "schoolExams",
+              now
+            )
+          );
+        })
       );
       jdiSnaps.forEach((s) =>
-        s.docs?.forEach((d: any) => rawDocsMap.set(d.id, { id: d.id, ...d.data() }))
+        s.docs?.forEach((d: any) => {
+          const rawData = d.data() || {};
+          rawDocsMap.set(
+            d.id,
+            mergeExamRecordByPrecedence(
+              rawDocsMap.get(d.id),
+              { id: d.id, ...rawData, _rawOriginalStatus: rawData.status },
+              "jdiExams",
+              now
+            )
+          );
+        })
       );
 
       const allRawExams = Array.from(rawDocsMap.values());
 
-      const classEligibleExams = allRawExams.filter((exam: any) =>
-        isStudentEligibleForWork(
+      // Purge any draft or archived assessments that might have been returned by a stale endpoint
+      allRawExams.forEach((exam: any) => {
+        const canonicalStatus = resolveCanonicalExamStatus(exam, now);
+        if (canonicalStatus === "draft" || canonicalStatus === "archived") {
+          examMap.delete(String(exam.id));
+        }
+      });
+
+      const classEligibleExams = allRawExams.filter((exam: any) => {
+        const canonicalStatus = resolveCanonicalExamStatus(exam, now);
+        if (canonicalStatus === "draft" || canonicalStatus === "archived") {
+          return false;
+        }
+        return isStudentEligibleForWork(
           {
             id: currentStudentId,
             uid: currentUid,
@@ -433,16 +520,15 @@ export default function StudentExaminations() {
             programIds: ctx.programIds,
             programTitles: ctx.programTitles,
           },
-          exam
-        )
-      );
+          { ...exam, status: canonicalStatus }
+        );
+      });
 
       const attemptsSnaps = await Promise.all(
         allDbs.map((dbInst) =>
           getDocs(collection(dbInst, "jdiExamAttempts")).catch(() => ({ docs: [] } as any))
         )
       );
-      const now = Date.now();
       const attemptsByExam: Record<string, any> = {};
 
       attemptsSnaps.forEach((attemptsSnap) => {
@@ -608,12 +694,39 @@ export default function StudentExaminations() {
           effectiveAttemptStatus === "expired" ||
           Boolean(att.resultReleased || existingServerItem?.releasedAt);
 
-        const isPastDeadline = now >= until || now > dueDateDeadline;
+        const isPastDeadline = isExamPastEffectiveDeadline(exam, now);
+        const deliveryMode = normalizeDeliveryMode(exam);
+
+        // Resolve canonical status across all collections (never default missing status to "active")
+        let effectiveExamStatus = resolveCanonicalExamStatus(exam, now);
+        if (effectiveExamStatus === "draft" || effectiveExamStatus === "archived") {
+          examMap.delete(String(exam.id));
+          return;
+        }
+
+        // One-time self-heal for legacy external-link CBT assessments that resolved to "completed"
+        const originalRawStatus = String(exam._rawOriginalStatus ?? "").trim().toLowerCase();
+        if (
+          deliveryMode === "EXTERNAL_LINK" &&
+          effectiveExamStatus === "completed" &&
+          originalRawStatus !== "completed"
+        ) {
+          allDbs.forEach((dbInst) => {
+            setDoc(
+              doc(dbInst, "jdiExams", String(exam.id)),
+              { status: "completed", updatedAt: serverTimestamp() },
+              { merge: true }
+            ).catch(() => undefined);
+            setDoc(
+              doc(dbInst, "schoolExams", String(exam.id)),
+              { status: "completed", updatedAt: serverTimestamp() },
+              { merge: true }
+            ).catch(() => undefined);
+          });
+        }
 
         // Automatic scheduled activation: when a scheduled assessment's availableFrom time arrives, promote it to active
-        let effectiveExamStatus = String(exam.status || "active").toLowerCase();
-        if (effectiveExamStatus === "scheduled" && from > 0 && now >= from && !isPastDeadline) {
-          effectiveExamStatus = "active";
+        if (String(exam._rawOriginalStatus || "").toLowerCase() === "scheduled" && effectiveExamStatus === "active" && from > 0 && now >= from && !isPastDeadline) {
           const currentUid = auth.currentUser?.uid || ctx.uid;
           allDbs.forEach((dbInst) => {
             setDoc(doc(dbInst, "jdiExams", String(exam.id)), { status: "active", updatedAt: serverTimestamp() }, { merge: true }).catch(() => undefined);
@@ -644,14 +757,14 @@ export default function StudentExaminations() {
           });
         }
 
+        const isExamClosedStatus = effectiveExamStatus === "completed";
+
         const computedStatus: "active" | "upcoming" | "completed" =
-          isAttemptSubmittedOrDone || effectiveExamStatus === "completed" || isPastDeadline
+          isAttemptSubmittedOrDone || isExamClosedStatus || isPastDeadline
             ? "completed"
             : (from > 0 && now < from) || effectiveExamStatus === "scheduled"
             ? "upcoming"
             : "active";
-
-        const deliveryMode = normalizeDeliveryMode(exam);
         const maxScore = computeExamMaxScore(exam, att);
         const releasedFlag = Boolean(
           att.resultReleased ||
@@ -700,6 +813,10 @@ export default function StudentExaminations() {
           resourceUrl: String(exam.resourceUrl || exam.videoUrl || exam.learningVideoUrl || "").trim(),
           videoUrl: String(exam.videoUrl || exam.learningVideoUrl || "").trim(),
           status: computedStatus,
+          rawStatus: effectiveExamStatus,
+          manuallyReopenedAt: exam.manuallyReopenedAt,
+          manuallyClosedAt: exam.manuallyClosedAt,
+          allowInProgressFinish: exam.allowInProgressFinish,
           hasTimeLimit,
           durationMinutes: resolvedDurationMinutes,
           limitOneAttempt,
@@ -714,10 +831,13 @@ export default function StudentExaminations() {
           schoolId: exam.schoolId,
           schoolName: resolvePartnerSchoolName(exam.schoolName, ctx.schoolName),
           targetClass: normalizeClassName(exam.targetClass || exam.className || ""),
-          // Hide passcode while assessment is scheduled/upcoming; reveal once active or when eligible for retake
+          // Hide passcode while assessment is scheduled/upcoming or manually closed; reveal once active or when eligible for retake
           passcode:
             computedStatus === "active" ||
-            (computedStatus === "completed" && (!limitOneAttempt || att.hasEmptyExpiredAttempt) && !isPastDeadline)
+            (computedStatus === "completed" &&
+              !isExamClosedStatus &&
+              (!limitOneAttempt || att.hasEmptyExpiredAttempt) &&
+              !isPastDeadline)
               ? exam.passcode
               : undefined,
           passcodeHash: exam.passcodeHash,
@@ -764,6 +884,7 @@ export default function StudentExaminations() {
       }
 
       setExams(loadedExams);
+      setPortalCache("student_exams_list", loadedExams, { roleHint: "student" });
     } catch (error) {
       setMessage({
         id: "list",
@@ -845,6 +966,7 @@ export default function StudentExaminations() {
       let unlockedExternalUrl = "";
 
       // 1. Try server function
+      let serverClosureError = "";
       try {
         if (auth.currentUser) {
           const token = await auth.currentUser.getIdToken();
@@ -860,15 +982,41 @@ export default function StudentExaminations() {
             } else if (result.attemptId) {
               attemptId = result.attemptId;
             }
+          } else if (response.status === 403 || response.status === 409) {
+            const errResult = await response.json().catch(() => ({}));
+            if (errResult?.error) {
+              serverClosureError = String(errResult.error);
+            }
           }
         }
       } catch (err) {
         console.warn("Server passcode verification note, using direct client resolver:", err);
       }
 
+      if (serverClosureError) {
+        throw new Error(serverClosureError);
+      }
+
       // 2. Direct Firestore fallback
       if (!attemptId && !unlockedExternalUrl) {
         if (!targetExam) throw new Error("Assessment details could not be found.");
+
+        // Re-check latest Firestore assessment status before creating an attempt
+        let latestExamData: any = targetExam;
+        for (const dbInst of getAllClientDatabases()) {
+          const snap = await getDoc(doc(dbInst, "jdiExams", examId)).catch(() => null);
+          if (snap?.exists()) {
+            latestExamData = { ...targetExam, ...snap.data() };
+            break;
+          }
+        }
+        const latestStatus = String(latestExamData.status || latestExamData.rawStatus || "active").toLowerCase();
+        if (
+          ["completed", "closed", "archived", "draft"].includes(latestStatus) ||
+          isExamPastEffectiveDeadline(latestExamData, Date.now())
+        ) {
+          throw new Error("This assessment is currently closed and is not accepting responses.");
+        }
 
         if (requiresCode) {
           const cleanInput = inputPasscode.trim().toUpperCase();

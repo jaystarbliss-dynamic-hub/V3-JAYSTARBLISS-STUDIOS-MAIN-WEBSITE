@@ -19,7 +19,7 @@ import {
   RotateCcw,
   X,
 } from 'lucide-react';
-import type { AcademicWorkType } from '../../lib/classes';
+import { resolveCanonicalExamStatus, type AcademicWorkType } from '../../lib/classes';
 import {
   FloatingActionMenu,
   RowActionMenuButton,
@@ -69,6 +69,7 @@ interface AssessmentOverviewProps {
   onDuplicateAssessment: (assessment: AssessmentListItem) => void;
   onDeleteAssessment: (assessmentId: string) => void;
   onChangeAssessmentStatus?: (assessment: AssessmentListItem, nextStatus: 'active' | 'completed') => Promise<void>;
+  canManageAssessment?: (assessment: AssessmentListItem) => boolean;
   isTutor?: boolean;
 }
 
@@ -83,6 +84,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
   onDuplicateAssessment,
   onDeleteAssessment,
   onChangeAssessmentStatus,
+  canManageAssessment,
   isTutor = false,
 }) => {
   // 1. Primary Filter Tab: All | School | Private
@@ -105,22 +107,14 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
   const rowContextMenu = useRowActionMenu<AssessmentListItem>();
 
   const buildRowActions = (exam: AssessmentListItem): RowActionItem[] => {
-    const st = String(exam.status || 'draft').toLowerCase();
+    const st = resolveCanonicalExamStatus(exam);
+    const canManage = canManageAssessment ? canManageAssessment(exam) : true;
     const statusActions: RowActionItem[] = [];
-    if (onChangeAssessmentStatus) {
-      if (st === 'draft' || st === 'scheduled') {
-        statusActions.push({
-          id: 'open-now',
-          label: 'Open Assessment Now',
-          icon: <Play size={14} />,
-          onClick: () =>
-            setPendingStatusAction({ assessment: exam, nextStatus: 'active', mode: 'open' }),
-          dividerBefore: true,
-        });
-      } else if (st === 'active') {
+    if (onChangeAssessmentStatus && canManage) {
+      if (st === 'active') {
         statusActions.push({
           id: 'close-now',
-          label: 'Close Assessment Now',
+          label: 'Close Assessment',
           icon: <Lock size={14} />,
           onClick: () =>
             setPendingStatusAction({ assessment: exam, nextStatus: 'completed', mode: 'close' }),
@@ -135,6 +129,15 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
             setPendingStatusAction({ assessment: exam, nextStatus: 'active', mode: 'reopen' }),
           dividerBefore: true,
         });
+      } else if (st === 'scheduled') {
+        statusActions.push({
+          id: 'activate-now',
+          label: 'Activate Assessment',
+          icon: <Play size={14} />,
+          onClick: () =>
+            setPendingStatusAction({ assessment: exam, nextStatus: 'active', mode: 'open' }),
+          dividerBefore: true,
+        });
       }
     }
 
@@ -144,6 +147,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
         label: 'Edit Assessment',
         icon: <Edit3 size={14} />,
         onClick: () => onEditAssessment(exam),
+        hidden: !canManage,
       },
       {
         id: 'monitor',
@@ -173,6 +177,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
         confirmDanger: true,
         confirmLabel: 'Delete this assessment?',
         dividerBefore: true,
+        hidden: !canManage,
       },
     ];
   };
@@ -223,8 +228,9 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
 
       // 3. Status Filter
       if (statusFilter !== 'ALL') {
-        const itemStatus = String(item.status || 'draft').toLowerCase();
-        if (statusFilter.toLowerCase() !== itemStatus) return false;
+        const normalizedItemStatus = resolveCanonicalExamStatus(item);
+        const filterNorm = statusFilter.toLowerCase() === 'closed' ? 'completed' : statusFilter.toLowerCase();
+        if (filterNorm !== normalizedItemStatus) return false;
       }
 
       // 4. Work Type Filter
@@ -373,10 +379,11 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
           className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold focus:outline-none focus:border-[#1E293B] cursor-pointer"
         >
           <option value="ALL">All Statuses</option>
-          <option value="active">Active (Published)</option>
+          <option value="active">Active (Open)</option>
           <option value="draft">Drafts</option>
           <option value="scheduled">Scheduled</option>
-          <option value="completed">Completed</option>
+          <option value="completed">Closed / Completed</option>
+          <option value="archived">Archived</option>
         </select>
 
         {/* Work Type Dropdown */}
@@ -481,7 +488,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                     ((exam.targetSchoolIds?.length || 0) > 1) ||
                     ((exam.targetSchoolIds?.length || 0) > 0 && (exam.targetStudentIds?.length || 0) > 0);
 
-                  const statusLower = String(exam.status || 'draft').toLowerCase();
+                  const statusLower = resolveCanonicalExamStatus(exam);
 
                   return (
                     <tr
@@ -489,6 +496,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                       onContextMenu={(e) => {
                         rowContextMenu.openFromContextMenu(e, exam);
                       }}
+                      {...rowContextMenu.getTouchHandlers(exam)}
                       className="hover:bg-slate-50/80 dark:hover:bg-zinc-900/60 transition-colors group"
                     >
                       {/* 1. Assessment Title & Format */}
@@ -598,7 +606,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                             }`}
                           >
                             {statusLower === 'active'
-                              ? 'Open (Active)'
+                              ? 'Active'
                               : statusLower === 'scheduled'
                               ? 'Scheduled'
                               : statusLower === 'completed'
@@ -659,10 +667,10 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
                   {pendingStatusAction.mode === 'close'
-                    ? 'Close Assessment Now?'
+                    ? 'Close Assessment?'
                     : pendingStatusAction.mode === 'reopen'
-                    ? 'Reopen Closed Assessment?'
-                    : 'Open Assessment Now?'}
+                    ? 'Reopen Assessment?'
+                    : 'Activate Assessment?'}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
                   {pendingStatusAction.assessment.title}
@@ -680,10 +688,10 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
 
             <p className="text-xs text-slate-600 dark:text-zinc-300 leading-relaxed">
               {pendingStatusAction.mode === 'close'
-                ? 'New students will be blocked from starting this assessment. Students who already started will be allowed to finish and submit before their timer ends. All existing submissions and scores are preserved.'
+                ? 'Learners will no longer be able to start or submit responses while this assessment is closed. All existing learner submissions, scores, attempts, and assessment history will remain intact and accessible.'
                 : pendingStatusAction.mode === 'reopen'
-                ? 'This assessment will immediately return to Open (Active) status so eligible students can start it again.'
-                : 'This assessment will immediately become Open (Active) and eligible students will be notified.'}
+                ? 'This assessment will become active and available again to eligible learners according to its target school, class, programme, or learner settings. Existing learner submissions, scores, and attempt limits will be preserved.'
+                : 'This assessment will become active and available to eligible learners according to its target school, class, programme, or learner settings.'}
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -706,6 +714,8 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                       pendingStatusAction.nextStatus
                     );
                     setPendingStatusAction(null);
+                  } catch {
+                    // Keep modal state or let caller display the error notification without falsely closing as succeeded
                   } finally {
                     setStatusSubmitting(false);
                   }
@@ -722,7 +732,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                   ? 'Close Assessment'
                   : pendingStatusAction.mode === 'reopen'
                   ? 'Reopen Assessment'
-                  : 'Open Now'}
+                  : 'Activate Assessment'}
               </button>
             </div>
           </div>

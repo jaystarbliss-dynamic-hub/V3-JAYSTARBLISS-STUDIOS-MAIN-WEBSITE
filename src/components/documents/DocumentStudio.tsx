@@ -133,14 +133,19 @@ export const DocumentStudio: React.FC<DocumentStudioProps> = ({
   const [measuredPageCount, setMeasuredPageCount] = useState<number>(1);
   const autosaveTimerRef = useRef<number | null>(null);
   const paginationRafRef = useRef<number | null>(null);
+  const editorContainerRef = useRef<HTMLDivElement | null>(null);
   const lastExternalHtmlRef = useRef<string>(contentHtml);
 
-  const schedulePaginationMeasurement = (edInstance?: { view?: { dom?: HTMLElement } } | null) => {
+  const getMountedProseMirrorDom = (): HTMLElement | null => {
+    return (editorContainerRef.current?.querySelector('.ProseMirror') as HTMLElement | null) || null;
+  };
+
+  const schedulePaginationMeasurement = () => {
     if (paginationRafRef.current) {
       window.cancelAnimationFrame(paginationRafRef.current);
     }
     paginationRafRef.current = window.requestAnimationFrame(() => {
-      const domEl = (edInstance?.view?.dom as HTMLElement | undefined) || null;
+      const domEl = getMountedProseMirrorDom();
       if (!domEl) return;
       const { totalPages } = measureAndPaginateA4Blocks(domEl);
       setMeasuredPageCount((prev) => (prev === totalPages ? prev : totalPages));
@@ -175,11 +180,11 @@ export const DocumentStudio: React.FC<DocumentStudioProps> = ({
       }),
     ],
     content: sanitizeDocumentHtml(contentHtml || ''),
-    onCreate: ({ editor: ed }) => {
-      schedulePaginationMeasurement(ed);
+    onCreate: () => {
+      schedulePaginationMeasurement();
     },
     onUpdate: ({ editor: ed }) => {
-      schedulePaginationMeasurement(ed);
+      schedulePaginationMeasurement();
       const nextHtml = sanitizeDocumentHtml(ed.getHTML());
       lastExternalHtmlRef.current = nextHtml;
       onContentChange(nextHtml);
@@ -215,39 +220,38 @@ export const DocumentStudio: React.FC<DocumentStudioProps> = ({
     if (sanitized !== lastExternalHtmlRef.current) {
       lastExternalHtmlRef.current = sanitized;
       editor.commands.setContent(sanitized, { emitUpdate: false });
-      schedulePaginationMeasurement(editor);
+      schedulePaginationMeasurement();
     }
   }, [contentHtml, editor]);
 
   // Re-measure A4 pagination when margins, fonts, images, or layout resize change
   useEffect(() => {
-    if (!editor) return;
-    schedulePaginationMeasurement(editor);
-    const domEl = editor.view?.dom as HTMLElement | undefined;
-    if (!domEl) return;
+    const containerEl = editorContainerRef.current;
+    if (!containerEl) return;
+    schedulePaginationMeasurement();
 
     const resizeObserver =
       typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(() => schedulePaginationMeasurement(editor))
+        ? new ResizeObserver(() => schedulePaginationMeasurement())
         : null;
-    resizeObserver?.observe(domEl);
+    resizeObserver?.observe(containerEl);
 
     const handleImageLoad = (e: Event) => {
       if ((e.target as HTMLElement)?.tagName === 'IMG') {
-        schedulePaginationMeasurement(editor);
+        schedulePaginationMeasurement();
       }
     };
-    domEl.addEventListener('load', handleImageLoad, true);
+    containerEl.addEventListener('load', handleImageLoad, true);
 
     if (typeof document !== 'undefined' && 'fonts' in document) {
       void (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready.then(() =>
-        schedulePaginationMeasurement(editor)
+        schedulePaginationMeasurement()
       );
     }
 
     return () => {
       resizeObserver?.disconnect();
-      domEl.removeEventListener('load', handleImageLoad, true);
+      containerEl.removeEventListener('load', handleImageLoad, true);
     };
   }, [editor, marginPreset]);
 
@@ -313,7 +317,7 @@ export const DocumentStudio: React.FC<DocumentStudioProps> = ({
     const html = buildTemplateForCategory(category, mergedTemplateContext);
     lastExternalHtmlRef.current = html;
     editor?.commands.setContent(html, { emitUpdate: false });
-    schedulePaginationMeasurement(editor);
+    schedulePaginationMeasurement();
     onContentChange(html);
   };
 
@@ -614,7 +618,9 @@ export const DocumentStudio: React.FC<DocumentStudioProps> = ({
           zoom={zoom}
           metadataItems={metadataItems}
         >
-          <EditorContent editor={editor} />
+          <div ref={editorContainerRef}>
+            <EditorContent editor={editor} />
+          </div>
         </OfficialA4PageFrame>
       </div>
 

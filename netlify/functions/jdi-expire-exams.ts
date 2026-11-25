@@ -1,7 +1,7 @@
 import type { Handler } from "@netlify/functions";
 import { adminDb } from "../../api/_lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
-import { gradeAnswers } from "../../api/_lib/jdi-assessment.js";
+import { gradeAnswers, isExamPastEffectiveDeadline } from "../../api/_lib/jdi-assessment.js";
 import { sendActionableNotificationEmail } from "../../api/_lib/email";
 
 export const config = { schedule: "*/5 * * * *" };
@@ -335,7 +335,7 @@ async function updateScheduledExamStatuses(now: string) {
       const snap = await tx.get(doc.ref);
       if (!snap.exists) return null;
       const exam = snap.data() || {};
-      if (exam.status !== "active" || !exam.availableUntil || Date.parse(String(exam.availableUntil)) > nowMs) return null;
+      if (exam.status !== "active" || !exam.availableUntil || !isExamPastEffectiveDeadline(exam, nowMs)) return null;
       tx.update(doc.ref, { status: "completed", updatedAt: FieldValue.serverTimestamp(), autoClosedAt: FieldValue.serverTimestamp() });
       return exam;
     });

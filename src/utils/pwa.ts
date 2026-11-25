@@ -175,3 +175,33 @@ export function usePWAInstall() {
     install,
   };
 }
+
+/**
+ * Registers the production PWA service worker (`/sw.js`) for fast app-shell and
+ * static asset caching on installed PWAs and production browsers, while skipping
+ * registration on local dev / Cloud Run preview containers.
+ */
+export function registerPortalServiceWorker(): void {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  if (!import.meta.env.PROD) return;
+
+  const host = (window.location.hostname || '').toLowerCase();
+  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.run.app')) {
+    return;
+  }
+
+  const register = () => {
+    navigator.serviceWorker
+      .register('/sw.js', { scope: '/' })
+      .catch((err) => {
+        console.warn('[PWA] Service worker registration skipped:', err);
+      });
+  };
+
+  if (document.readyState === 'complete') {
+    register();
+  } else {
+    window.addEventListener('load', register, { once: true });
+  }
+}
+

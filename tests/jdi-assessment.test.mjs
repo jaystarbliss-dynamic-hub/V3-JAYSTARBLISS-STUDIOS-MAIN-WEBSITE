@@ -39,6 +39,9 @@ import {
   canViewOrPrintAttemptResult,
   getWorkTypeLabels,
   isAttemptOverdueForExpiry,
+  isExamPastEffectiveDeadline,
+  resolveCanonicalExamStatus,
+  mergeExamRecordByPrecedence,
 } from "../api/_lib/jdi-assessment.js";
 
 const objective = (overrides = {}) => ({
@@ -281,6 +284,7 @@ test("exam lifecycle permissions, tutor ownership, and safe delete vs archive ru
     }),
     true
   );
+  // Unrelated tutor at a different school cannot manage
   assert.equal(
     canManageExamRecord({
       uid: "tutor-2",
@@ -289,6 +293,36 @@ test("exam lifecycle permissions, tutor ownership, and safe delete vs archive ru
       assignedSchoolIds: ["sch-b"],
     }),
     false
+  );
+  // Unrelated tutor at the SAME school cannot manage another tutor's assessment
+  assert.equal(
+    canManageExamRecord({
+      uid: "tutor-2",
+      role: "TUTOR",
+      exam,
+      assignedSchoolIds: ["sch-a"],
+    }),
+    false
+  );
+  // Explicitly permitted collaborator tutor can manage
+  assert.equal(
+    canManageExamRecord({
+      uid: "tutor-2",
+      role: "TUTOR",
+      exam: { ...exam, authorizedTutorIds: ["tutor-2"] },
+      assignedSchoolIds: ["sch-a"],
+    }),
+    true
+  );
+  // Platform Administrator can manage assessments created by any tutor
+  assert.equal(
+    canManageExamRecord({
+      uid: "admin-1",
+      role: "ADMIN",
+      exam,
+      assignedSchoolIds: [],
+    }),
+    true
   );
   assert.equal(
     canManageExamRecord({
@@ -299,6 +333,24 @@ test("exam lifecycle permissions, tutor ownership, and safe delete vs archive ru
     }),
     false
   );
+
+  // Manual reopen supersedes past availableUntil / dueDate without erasing original deadline fields
+  const pastExam = {
+    id: "exam-past",
+    status: "active",
+    availableUntil: "2026-01-10T12:00:00.000Z",
+    dueDate: "2026-01-10",
+  };
+  const checkNowMs = new Date("2026-02-01T10:00:00.000Z").getTime();
+  assert.equal(isExamPastEffectiveDeadline(pastExam, checkNowMs), true);
+
+  const reopenedPastExam = {
+    ...pastExam,
+    manuallyReopenedAt: "2026-01-25T09:00:00.000Z",
+  };
+  assert.equal(isExamPastEffectiveDeadline(reopenedPastExam, checkNowMs), false);
+  assert.equal(reopenedPastExam.availableUntil, "2026-01-10T12:00:00.000Z");
+  assert.equal(reopenedPastExam.dueDate, "2026-01-10");
 
   assert.equal(resolveExamDeletionMode(0), "delete");
   assert.equal(resolveExamDeletionMode(3), "archive");
@@ -1000,5 +1052,129 @@ test("enforces grade-range + multi-programme intersection and explicit student e
     false
   );
 });
+
+test("resolveCanonicalExamStatus marks past legacy external-link CBT assessments as completed and preserves explicit drafts", () => {
+  const nowMs = new Date("2026-11-25T12:00:00.000Z").getTime();
+
+  // 1. Legacy external-link CBT assessment with missing status -> completed
+  const legacyExternalMissingStatus = {
+    id: "ext-legacy-1",
+    title: "Term 1 Google Forms CBT",
+    deliveryMode: "EXTERNAL_LINK",
+    externalUrl: "https://docs.google.com/forms/d/e/1FAIpQLSe/viewform",
+  };
+  assert.equal(resolveCanonicalExamStatus(legacyExternalMissingStatus, nowMs), "completed");
+
+  // 2. Legacy external-link CBT assessment marked draft with recorded attempts -> completed
+  const legacyExternalDraftWithAttempts = {
+    id: "ext-legacy-2",
+    title: "Past External CBT With Attempts",
+    deliveryMode: "EXTERNAL_LINK",
+    externalUrl: "https://docs.google.com/forms/d/e/1FAIpQLSe/viewform",
+    status: "draft",
+    attemptCount: 5,
+  };
+  assert.equal(resolveCanonicalExamStatus(legacyExternalDraftWithAttempts, nowMs), "completed");
+
+  // 3. Past external-link CBT assessment created > 12h ago without future deadline or manual reopen -> completed
+  const pastExternalActive = {
+    id: "ext-legacy-3",
+    title: "Last Month External CBT",
+    deliveryMode: "EXTERNAL_LINK",
+    externalUrl: "https://docs.google.com/forms/d/e/1FAIpQLSe/viewform",
+    status: "active",
+    createdAt: "2026-10-15T09:00:00.000Z",
+  };
+  assert.equal(resolveCanonicalExamStatus(pastExternalActive, nowMs), "completed");
+
+  // 4. External-link CBT assessment manually reopened by tutor/admin -> active
+  const reopenedExternal = {
+    ...pastExternalActive,
+    manuallyReopenedAt: "2026-11-25T10:00:00.000Z",
+  };
+  assert.equal(resolveCanonicalExamStatus(reopenedExternal, nowMs), "active");
+
+  // 5. Newly authored draft assessment with 0 attempts -> remains draft and strictly hidden from students
+  const genuineDraft = {
+    id: "draft-new-1",
+    title: "Unpublished Tutor Draft",
+    deliveryMode: "NATIVE",
+    status: "draft",
+    attemptCount: 0,
+    schoolId: "sch-alpha",
+    classIds: ["Grade 5"],
+  };
+  assert.equal(resolveCanonicalExamStatus(genuineDraft, nowMs), "draft");
+  assert.equal(
+    isStudentEligibleForWork(
+      { id: "stu-1", uid: "uid-1", schoolId: "sch-alpha", class: "Grade 5" },
+      genuineDraft
+    ),
+    false
+  );
+});
+
+test("mergeExamRecordByPrecedence enforces jdiExams > schoolExams > exams so stale schoolExams records never overwrite jdiExams status", () => {
+  const nowMs = new Date("2026-11-25T12:00:00.000Z").getTime();
+
+  const jdiClosedRecord = {
+    id: "exam-sync-1",
+    title: "Mid-Term Robotics CBT",
+    status: "completed",
+    closedAt: "2026-11-20T15:00:00.000Z",
+    schoolId: "sch-1",
+    classIds: ["Grade 6"],
+  };
+
+  const staleSchoolExamRecord = {
+    id: "exam-sync-1",
+    title: "Mid-Term Robotics CBT",
+    status: "active",
+    schoolId: "sch-1",
+    classIds: ["Grade 6"],
+  };
+
+  // Even if jdiExams is loaded first and schoolExams is merged second, jdiExams status wins
+  const mergedJdiFirst = mergeExamRecordByPrecedence(
+    mergeExamRecordByPrecedence(null, jdiClosedRecord, "jdiExams", nowMs),
+    staleSchoolExamRecord,
+    "schoolExams",
+    nowMs
+  );
+  assert.equal(mergedJdiFirst.status, "completed");
+
+  // And if schoolExams is loaded first and jdiExams is merged second, jdiExams status also wins
+  const mergedSchoolFirst = mergeExamRecordByPrecedence(
+    mergeExamRecordByPrecedence(null, staleSchoolExamRecord, "schoolExams", nowMs),
+    jdiClosedRecord,
+    "jdiExams",
+    nowMs
+  );
+  assert.equal(mergedSchoolFirst.status, "completed");
+
+  // If jdiExams has status "draft" and schoolExams has stale "active", merged record stays "draft" and is hidden from students
+  const jdiDraftRecord = {
+    id: "exam-draft-sync",
+    title: "Draft CBT",
+    status: "draft",
+    schoolId: "sch-1",
+    classIds: ["Grade 6"],
+  };
+  const mergedDraft = mergeExamRecordByPrecedence(
+    mergeExamRecordByPrecedence(null, jdiDraftRecord, "jdiExams", nowMs),
+    { ...jdiDraftRecord, status: "active" },
+    "schoolExams",
+    nowMs
+  );
+  assert.equal(mergedDraft.status, "draft");
+  assert.equal(
+    isStudentEligibleForWork(
+      { id: "stu-1", uid: "uid-1", schoolId: "sch-1", class: "Grade 6" },
+      mergedDraft
+    ),
+    false
+  );
+});
+
 
 

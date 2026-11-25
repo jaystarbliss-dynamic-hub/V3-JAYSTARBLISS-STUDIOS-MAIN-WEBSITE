@@ -48,6 +48,7 @@ import {
   resolveRecipientEnrolledPrograms,
   type ProgramRecord,
 } from '../../lib/programHierarchy';
+import { getPortalCache, setPortalCache } from '../../lib/portalDataCache';
 import { EmbeddedLearningMedia } from '../../components/portal/EmbeddedLearningMedia';
 import SEO from '../../components/ui/SEO';
 import { ExamListSkeleton } from '../../components/ui/Skeleton';
@@ -222,8 +223,28 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
 
   const loadData = useCallback(
     async (isRefresh = false) => {
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
+      const cacheKey = `assignment_center_snapshot_${role}`;
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        const cached = getPortalCache<{
+          assignments: UnifiedAssignmentRecord[];
+          linkedChildren?: LinkedLearnerProfile[];
+          studentProfile?: LinkedLearnerProfile | null;
+        }>(cacheKey, role, 10 * 60 * 1000);
+        if (cached?.data && Array.isArray(cached.data.assignments)) {
+          setAssignments(cached.data.assignments);
+          if (Array.isArray(cached.data.linkedChildren)) {
+            setLinkedChildren(cached.data.linkedChildren);
+          }
+          if (cached.data.studentProfile) {
+            setStudentProfile(cached.data.studentProfile);
+          }
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
+      }
       setError('');
 
       try {
@@ -232,16 +253,32 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
           const parentAssignments = await fetchAssignmentsForParent(children);
           setLinkedChildren(children);
           setAssignments(parentAssignments);
+          setPortalCache(
+            cacheKey,
+            { assignments: parentAssignments, linkedChildren: children },
+            { roleHint: role }
+          );
         } else if (role === 'student') {
           const profile = await resolveStudentLearnerProfile();
           setStudentProfile(profile);
           if (profile) {
             const list = await fetchAssignmentsForLearner(profile);
             setAssignments(list);
+            setPortalCache(
+              cacheKey,
+              { assignments: list, studentProfile: profile },
+              { roleHint: role }
+            );
           } else {
             // Fallback API if profile not resolved directly
             const res = await api('/api/academic-assignments?action=list').catch(() => ({ assignments: [] }));
-            setAssignments(res.assignments || []);
+            const fallbackList = res.assignments || [];
+            setAssignments(fallbackList);
+            setPortalCache(
+              cacheKey,
+              { assignments: fallbackList, studentProfile: null },
+              { roleHint: role }
+            );
           }
         } else if (role === 'staff' || role === 'school') {
           const currentUser = auth.currentUser;
@@ -258,6 +295,7 @@ const AssignmentCenter: React.FC<{ role: AssignmentCenterRole }> = ({ role }) =>
 
           setAssignments(tutorAssList);
           setProgramsMap(loadedProgramsMap);
+          setPortalCache(cacheKey, { assignments: tutorAssList }, { roleHint: role });
 
           const schoolMap = new Map<string, SchoolOption>();
           schoolsSnap.docs?.forEach((d: any) => {

@@ -26,6 +26,8 @@ import {
   normalizeDeliveryMode,
   normalizeWorkType,
   resolvePartnerSchoolName,
+  resolveCanonicalExamStatus,
+  mergeExamRecordByPrecedence,
 } from './classes';
 import { getEffectiveAuth } from '../utils/impersonation';
 import { fetchAcademicSchoolsFallback, fetchAcademicStudentsFallback } from './academicFallback';
@@ -185,43 +187,68 @@ export interface UnifiedAssessmentQuizRecord {
   questionCount: number;
 }
 
+let cachedSchoolDirectoryMap: Map<string, { id: string; name: string; aliases: string[] }> | null = null;
+let cachedSchoolDirectoryAt = 0;
+let inFlightSchoolDirectoryPromise: Promise<{
+  byKey: Map<string, { id: string; name: string; aliases: string[] }>;
+}> | null = null;
+
 /**
  * Loads a school lookup map so schoolId, schoolCode, and schoolName aliases can be resolved.
+ * Cached in memory for 5 minutes to prevent redundant full-collection scans on tab switches.
  */
 async function loadSchoolDirectoryMap(): Promise<{
   byKey: Map<string, { id: string; name: string; aliases: string[] }>;
 }> {
-  const byKey = new Map<string, { id: string; name: string; aliases: string[] }>();
-  const allDbs = getAllClientDatabases();
-  const snaps = await Promise.all(
-    allDbs.map((dbInst) =>
-      getDocs(collection(dbInst, 'schools')).catch(() => ({ docs: [] } as any))
-    )
-  );
+  const now = Date.now();
+  if (cachedSchoolDirectoryMap && cachedSchoolDirectoryMap.size > 0 && now - cachedSchoolDirectoryAt < 5 * 60 * 1000) {
+    return { byKey: cachedSchoolDirectoryMap };
+  }
+  if (inFlightSchoolDirectoryPromise) {
+    return inFlightSchoolDirectoryPromise;
+  }
 
-  snaps.forEach((snap) => {
-    snap.docs?.forEach((d: any) => {
-      const s = d.data() || {};
-      const id = d.id;
-      const name =
-        resolvePartnerSchoolName(s.name, s.schoolName, s.institutionName) ||
-        `Partner School (${id})`;
-      const aliases = Array.from(
-        new Set(
-          [id, s.schoolId, s.code, s.schoolCode, name]
-            .map((v) => norm(v))
-            .filter(Boolean)
-        )
-      );
-      const entry = { id, name, aliases };
-      aliases.forEach((a) => {
-        byKey.set(a, entry);
-        byKey.set(a.toLowerCase(), entry);
+  inFlightSchoolDirectoryPromise = (async () => {
+    const byKey = new Map<string, { id: string; name: string; aliases: string[] }>();
+    const allDbs = getAllClientDatabases();
+    const snaps = await Promise.all(
+      allDbs.map((dbInst) =>
+        getDocs(collection(dbInst, 'schools')).catch(() => ({ docs: [] } as any))
+      )
+    );
+
+    snaps.forEach((snap) => {
+      snap.docs?.forEach((d: any) => {
+        const s = d.data() || {};
+        const id = d.id;
+        const name =
+          resolvePartnerSchoolName(s.name, s.schoolName, s.institutionName) ||
+          `Partner School (${id})`;
+        const aliases = Array.from(
+          new Set(
+            [id, s.schoolId, s.code, s.schoolCode, name]
+              .map((v) => norm(v))
+              .filter(Boolean)
+          )
+        );
+        const entry = { id, name, aliases };
+        aliases.forEach((a) => {
+          byKey.set(a, entry);
+          byKey.set(a.toLowerCase(), entry);
+        });
       });
     });
+
+    if (byKey.size > 0) {
+      cachedSchoolDirectoryMap = byKey;
+      cachedSchoolDirectoryAt = Date.now();
+    }
+    return { byKey };
+  })().finally(() => {
+    inFlightSchoolDirectoryPromise = null;
   });
 
-  return { byKey };
+  return inFlightSchoolDirectoryPromise;
 }
 
 /**
@@ -1047,16 +1074,39 @@ export async function fetchAssignmentsForLearner(
   });
 
   // 2. Process `jdiExams` and `schoolExams` where workType === 'ASSIGNMENT'
+  const nowForAssignments = Date.now();
   const examDocsMap = new Map<string, Record<string, any>>();
   schoolExamsSnaps.forEach((snap) => {
-    snap.docs?.forEach((d: any) => examDocsMap.set(d.id, { id: d.id, ...d.data() }));
+    snap.docs?.forEach((d: any) =>
+      examDocsMap.set(
+        d.id,
+        mergeExamRecordByPrecedence(
+          examDocsMap.get(d.id),
+          { id: d.id, ...d.data() },
+          'schoolExams',
+          nowForAssignments
+        )
+      )
+    );
   });
   jdiExamsSnaps.forEach((snap) => {
-    snap.docs?.forEach((d: any) => examDocsMap.set(d.id, { id: d.id, ...d.data() }));
+    snap.docs?.forEach((d: any) =>
+      examDocsMap.set(
+        d.id,
+        mergeExamRecordByPrecedence(
+          examDocsMap.get(d.id),
+          { id: d.id, ...d.data() },
+          'jdiExams',
+          nowForAssignments
+        )
+      )
+    );
   });
 
   examDocsMap.forEach((exam) => {
     if (linkedExamIdsHandled.has(exam.id) || resultsMap.has(exam.id)) return;
+    const canonicalStatus = resolveCanonicalExamStatus(exam, nowForAssignments);
+    if (canonicalStatus === 'draft' || canonicalStatus === 'archived') return;
     const wType = normalizeWorkType(exam.workType, exam);
     if (wType !== 'ASSIGNMENT') return;
 
@@ -1076,7 +1126,7 @@ export async function fetchAssignmentsForLearner(
         programName: learner.programName,
         track: learner.track,
       },
-      exam
+      { ...exam, status: canonicalStatus }
     );
     const attempt = attemptsByExamId.get(exam.id);
     if (!eligible && !attempt) return;
@@ -2135,15 +2185,46 @@ export async function fetchAssessmentsAndQuizzesForLearner(
       ),
     ]);
 
+  const now = Date.now();
   const examDocsMap = new Map<string, Record<string, any>>();
   legacyExamsSnaps.forEach((s) =>
-    s.docs?.forEach((d: any) => examDocsMap.set(d.id, { id: d.id, ...d.data() }))
+    s.docs?.forEach((d: any) =>
+      examDocsMap.set(
+        d.id,
+        mergeExamRecordByPrecedence(
+          examDocsMap.get(d.id),
+          { id: d.id, ...d.data() },
+          'exams',
+          now
+        )
+      )
+    )
   );
   schoolExamsSnaps.forEach((s) =>
-    s.docs?.forEach((d: any) => examDocsMap.set(d.id, { id: d.id, ...d.data() }))
+    s.docs?.forEach((d: any) =>
+      examDocsMap.set(
+        d.id,
+        mergeExamRecordByPrecedence(
+          examDocsMap.get(d.id),
+          { id: d.id, ...d.data() },
+          'schoolExams',
+          now
+        )
+      )
+    )
   );
   jdiSnaps.forEach((s) =>
-    s.docs?.forEach((d: any) => examDocsMap.set(d.id, { id: d.id, ...d.data() }))
+    s.docs?.forEach((d: any) =>
+      examDocsMap.set(
+        d.id,
+        mergeExamRecordByPrecedence(
+          examDocsMap.get(d.id),
+          { id: d.id, ...d.data() },
+          'jdiExams',
+          now
+        )
+      )
+    )
   );
 
   const learnerIdSet = new Set(learner.allIds);
@@ -2180,7 +2261,6 @@ export async function fetchAssessmentsAndQuizzesForLearner(
   });
 
   const recordsMap = new Map<string, UnifiedAssessmentQuizRecord>();
-  const now = Date.now();
 
   const buildFromExamAndAttempt = (
     examId: string,
@@ -2230,6 +2310,7 @@ export async function fetchAssessmentsAndQuizzesForLearner(
     let lifecycleStatus: UnifiedAssessmentLifecycleStatus = 'ONGOING';
     let submissionStatusLabel = 'Assigned • Ready to Start';
 
+    const canonicalExamStatus = resolveCanonicalExamStatus(exam, now);
     if (released || rawAttemptStatus === 'graded') {
       lifecycleStatus = isUngraded ? 'COMPLETED' : 'GRADED';
       submissionStatusLabel = isUngraded
@@ -2248,12 +2329,12 @@ export async function fetchAssessmentsAndQuizzesForLearner(
       submissionStatusLabel = 'In Progress';
     } else if (
       (fromMs > 0 && now < fromMs) ||
-      normLower(exam.status) === 'scheduled'
+      canonicalExamStatus === 'scheduled'
     ) {
       lifecycleStatus = 'UPCOMING';
       submissionStatusLabel = 'Upcoming • Not Started';
     } else if (
-      normLower(exam.status) === 'completed' ||
+      canonicalExamStatus === 'completed' ||
       (untilMs < Number.MAX_SAFE_INTEGER && now >= untilMs)
     ) {
       lifecycleStatus = 'COMPLETED';
@@ -2329,7 +2410,13 @@ export async function fetchAssessmentsAndQuizzesForLearner(
   };
 
   // 1. Add all eligible exams from `jdiExams`, `schoolExams`, `exams`
+  const draftOrArchivedExamIds = new Set<string>();
   examDocsMap.forEach((exam, examId) => {
+    const canonicalStatus = resolveCanonicalExamStatus(exam, now);
+    if (canonicalStatus === 'draft' || canonicalStatus === 'archived') {
+      draftOrArchivedExamIds.add(examId);
+      return;
+    }
     const eligible = isStudentEligibleForWork(
       {
         id: learner.id,
@@ -2346,15 +2433,16 @@ export async function fetchAssessmentsAndQuizzesForLearner(
         programName: learner.programName,
         track: learner.track,
       },
-      exam
+      { ...exam, status: canonicalStatus }
     );
     const attempt = attemptsByExamId.get(examId);
     if (!eligible && !attempt) return;
-    buildFromExamAndAttempt(examId, exam, attempt);
+    buildFromExamAndAttempt(examId, { ...exam, status: canonicalStatus }, attempt);
   });
 
-  // 2. Add any attempt whose exam doc wasn't in `examDocsMap`
+  // 2. Add any attempt whose exam doc wasn't in `examDocsMap` (skipping drafts/archived)
   attemptsByExamId.forEach((attempt, examId) => {
+    if (draftOrArchivedExamIds.has(examId)) return;
     if (recordsMap.has(`${learner.id}__${examId}`)) return;
     buildFromExamAndAttempt(examId, {}, attempt);
   });

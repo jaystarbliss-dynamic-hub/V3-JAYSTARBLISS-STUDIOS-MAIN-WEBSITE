@@ -37,6 +37,9 @@ import {
   getWorkTypeLabels as sharedGetWorkTypeLabels,
   classifyStudentEnrolment as sharedClassifyStudentEnrolment,
   isAttemptOverdueForExpiry as sharedIsAttemptOverdueForExpiry,
+  isExamPastEffectiveDeadline as sharedIsExamPastEffectiveDeadline,
+  resolveCanonicalExamStatus as sharedResolveCanonicalExamStatus,
+  mergeExamRecordByPrecedence as sharedMergeExamRecordByPrecedence,
   MANUAL_DELIVERABLE_TYPES as SHARED_MANUAL_DELIVERABLE_TYPES,
   type WorkTypeLabels as SharedWorkTypeLabels,
   type StudentEnrolmentClassification as SharedStudentEnrolmentClassification,
@@ -62,6 +65,31 @@ export function isAttemptOverdueForExpiry(
   nowMs?: number
 ): boolean {
   return sharedIsAttemptOverdueForExpiry(attempt || {}, exam || {}, nowMs);
+}
+
+export function isExamPastEffectiveDeadline(
+  exam?: Record<string, any> | null,
+  nowMs?: number
+): boolean {
+  return sharedIsExamPastEffectiveDeadline(exam || {}, nowMs);
+}
+
+export type CanonicalExamStatus = 'draft' | 'scheduled' | 'active' | 'completed' | 'archived';
+
+export function resolveCanonicalExamStatus(
+  exam?: Record<string, any> | null,
+  nowMs?: number
+): CanonicalExamStatus {
+  return sharedResolveCanonicalExamStatus(exam || {}, nowMs) as CanonicalExamStatus;
+}
+
+export function mergeExamRecordByPrecedence(
+  existing: Record<string, any> | null | undefined,
+  incoming: Record<string, any> | null | undefined,
+  incomingSource?: 'jdiExams' | 'schoolExams' | 'exams',
+  nowMs?: number
+): Record<string, any> {
+  return sharedMergeExamRecordByPrecedence(existing || null, incoming || null, incomingSource || 'jdiExams', nowMs);
 }
 
 export type AcademicWorkType = 'ASSIGNMENT' | 'ACTIVITY' | 'TEST' | 'EXAMINATION';

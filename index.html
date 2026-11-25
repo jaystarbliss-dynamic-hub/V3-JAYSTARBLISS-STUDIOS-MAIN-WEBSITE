@@ -127,7 +127,12 @@
     <script>
       (function () {
         try {
-          if ('serviceWorker' in navigator) {
+          var host = (window.location && window.location.hostname || '').toLowerCase();
+          var isDevOrPreviewHost =
+            host === 'localhost' ||
+            host === '127.0.0.1' ||
+            host.slice(-8) === '.run.app';
+          if (isDevOrPreviewHost && 'serviceWorker' in navigator) {
             navigator.serviceWorker.getRegistrations().then(function (regs) {
               regs.forEach(function (reg) {
                 reg.unregister();

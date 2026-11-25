@@ -16,6 +16,7 @@ import {
   type ProgramRecord,
   fetchAllProgramsMap,
 } from '../../lib/programHierarchy';
+import { getPortalCache, setPortalCache } from '../../lib/portalDataCache';
 import {
   type ProgrammeEnrollmentRecord,
   PAYABLE_ENROLLMENT_STATUSES,
@@ -175,7 +176,40 @@ export const PortalCourses: React.FC = () => {
   const [submittingPriorReq, setSubmittingPriorReq] = useState(false);
 
   const loadCourses = async () => {
-    setLoading(true);
+    const cachedCourses = getPortalCache<{
+      modules: CourseModule[];
+      studentTrackTitle: string;
+      studentEligibility: ReturnType<typeof resolveStudentPortalEligibility>;
+      studentProfileMeta: {
+        uid: string;
+        studentDocId: string;
+        name: string;
+        email: string;
+        schoolId: string;
+        schoolName: string;
+      };
+      resolvedStudentId: string;
+      resolvedStudentName: string;
+      selfFundedEnrollments: ProgrammeEnrollmentRecord[];
+    }>('portal_courses_snapshot', 'student', 10 * 60 * 1000);
+
+    if (cachedCourses?.data && Array.isArray(cachedCourses.data.modules)) {
+      const snap = cachedCourses.data;
+      setModules(snap.modules);
+      setSelectedId((prev) =>
+        prev && snap.modules.some((m) => m.id === prev) ? prev : snap.modules[0]?.id || ''
+      );
+      if (snap.studentTrackTitle) setStudentTrackTitle(snap.studentTrackTitle);
+      if (snap.studentEligibility) setStudentEligibility(snap.studentEligibility);
+      if (snap.studentProfileMeta) setStudentProfileMeta(snap.studentProfileMeta);
+      if (snap.resolvedStudentId) setResolvedStudentId(snap.resolvedStudentId);
+      if (snap.resolvedStudentName) setResolvedStudentName(snap.resolvedStudentName);
+      if (Array.isArray(snap.selfFundedEnrollments)) setSelfFundedEnrollments(snap.selfFundedEnrollments);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
     setMessage('');
     try {
       const effective = getEffectiveAuth();
@@ -359,6 +393,27 @@ export const PortalCourses: React.FC = () => {
       setModules(list);
       setSelectedId((prev) =>
         prev && list.some((m) => m.id === prev) ? prev : list[0]?.id || ''
+      );
+
+      setPortalCache(
+        'portal_courses_snapshot',
+        {
+          modules: list,
+          studentTrackTitle: primaryTrack,
+          studentEligibility: eligibility,
+          studentProfileMeta: {
+            uid: currentUid || '',
+            studentDocId: effectiveStudentId,
+            name: resolvedName,
+            email: resolvedEmail,
+            schoolId: String(studentRecord?.schoolId || sessionStorage.getItem('schoolId') || ''),
+            schoolName: String(studentRecord?.schoolName || sessionStorage.getItem('schoolName') || ''),
+          },
+          resolvedStudentId: effectiveStudentId,
+          resolvedStudentName: resolvedName,
+          selfFundedEnrollments: selfEnrollments,
+        },
+        { roleHint: 'student' }
       );
 
       if (!list.length) {

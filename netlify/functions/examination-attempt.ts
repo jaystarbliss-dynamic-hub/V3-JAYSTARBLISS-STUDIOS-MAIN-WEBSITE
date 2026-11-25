@@ -541,6 +541,10 @@ export const handler: Handler = async event => {
               : Number(exam.maxAttempts || 1),
           gradingMode: exam.gradingMode || "automatic",
           releaseGradesPolicy: exam.releaseGradesPolicy,
+          status: exam.status || "active",
+          allowInProgressFinish: exam.allowInProgressFinish === true,
+          manuallyClosedAt: exam.manuallyClosedAt || null,
+          manuallyReopenedAt: exam.manuallyReopenedAt || null,
           maxScore,
         },
         questions: released ? resultQuestions : submitted ? [] : displayedQuestions,
@@ -582,7 +586,25 @@ export const handler: Handler = async event => {
       const deadline = hasDeadline ? new Date(a.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
       const isExpired = hasDeadline && Number.isFinite(deadline) && Date.now() >= deadline;
 
-      // Fast-path for ordinary non-expired answer autosaves: avoid fetching the exam document if question IDs are already known on the attempt
+      let examSnap = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
+      if (!examSnap.exists) {
+        examSnap = await adminDb.collection("schoolExams").doc(String(a.examId)).get();
+      }
+      if (!examSnap.exists) return json(404, { error: "Assessment not found." });
+      const exam = examSnap.data() || {};
+      const examStatusNorm = String(exam.status || "active").trim().toLowerCase();
+      const isManuallyClosedAndLocked =
+        (examStatusNorm === "completed" || examStatusNorm === "closed" || examStatusNorm === "archived") &&
+        exam.allowInProgressFinish !== true;
+
+      if (isManuallyClosedAndLocked && (action === "save" || action === "submit")) {
+        return json(409, {
+          error: "This assessment has been closed and is no longer accepting responses.",
+          status: "closed",
+        });
+      }
+
+      // Fast-path for ordinary non-expired answer autosaves
       if (action === "save" && !isExpired) {
         const answers = body.answers;
         if (!answers || typeof answers !== "object" || Array.isArray(answers) || Object.keys(answers).length > 200) {
@@ -594,10 +616,7 @@ export const handler: Handler = async event => {
         } else if (Array.isArray(a.questionsSnapshot) && a.questionsSnapshot.length > 0) {
           allowedQuestionIds = new Set(a.questionsSnapshot.map((q: any) => String(q.id)));
         } else {
-          const examSnapForSave = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
-          if (!examSnapForSave.exists) return json(404, { error: "Assessment not found." });
-          const examForSave = examSnapForSave.data() || {};
-          const qs = resolveAttemptQuestions(examForSave, a);
+          const qs = resolveAttemptQuestions(exam, a);
           allowedQuestionIds = new Set(qs.map((q: any) => String(q.id)));
         }
 
@@ -635,9 +654,6 @@ export const handler: Handler = async event => {
         return json(200, { ok: true });
       }
 
-      const examSnap = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
-      if (!examSnap.exists) return json(404, { error: "Assessment not found." });
-      const exam = examSnap.data() || {};
       const effectiveQuestions = resolveAttemptQuestions(exam, a);
 
       if (isExpired) {

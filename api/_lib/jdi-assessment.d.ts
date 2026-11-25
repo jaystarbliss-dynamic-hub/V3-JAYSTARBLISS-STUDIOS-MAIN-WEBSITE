@@ -313,3 +313,9 @@ export function getWorkTypeLabels(
   fallbackObj?: Record<string, any> | null
 ): WorkTypeLabels;
 
+export function isExamPastEffectiveDeadline(
+  exam?: Record<string, any> | null,
+  nowMs?: number
+): boolean;
+
+

@@ -361,4 +361,24 @@ export function isAttemptOverdueForExpiry(
   nowMs?: number
 ): boolean;
 
+export function isExamPastEffectiveDeadline(
+  exam?: Record<string, any> | null,
+  nowMs?: number
+): boolean;
+
+export type CanonicalExamStatus = "draft" | "scheduled" | "active" | "completed" | "archived";
+
+export function resolveCanonicalExamStatus(
+  exam?: Record<string, any> | null,
+  nowMs?: number
+): CanonicalExamStatus;
+
+export function mergeExamRecordByPrecedence(
+  existing?: Record<string, any> | null,
+  incoming?: Record<string, any> | null,
+  incomingSource?: "jdiExams" | "schoolExams" | "exams",
+  nowMs?: number
+): Record<string, any>;
+
+
 

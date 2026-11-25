@@ -18,6 +18,9 @@ import {
   validateExamCreationPayload,
   isStudentEligibleForWork,
   isAttemptResultReleased,
+  isExamPastEffectiveDeadline,
+  resolveCanonicalExamStatus,
+  mergeExamRecordByPrecedence,
   normalizeWorkType,
 } from "../../api/_lib/jdi-assessment.js";
 
@@ -467,10 +470,30 @@ export const handler: Handler = async event => {
         adminDb.collection("schoolExams").limit(250).get().catch(() => null),
       ]);
 
-      const examDocs = new Map<string, any>();
-      for (const snap of [jdiSnap, schoolExamsSnap]) {
-        snap?.docs.forEach(d => examDocs.set(d.id, d));
-      }
+      const now = Date.now();
+      const mergedExamMap = new Map<string, Record<string, any>>();
+      schoolExamsSnap?.docs.forEach(d => {
+        mergedExamMap.set(
+          d.id,
+          mergeExamRecordByPrecedence(
+            mergedExamMap.get(d.id) || null,
+            { id: d.id, ...(d.data() || {}) },
+            "schoolExams",
+            now
+          )
+        );
+      });
+      jdiSnap?.docs.forEach(d => {
+        mergedExamMap.set(
+          d.id,
+          mergeExamRecordByPrecedence(
+            mergedExamMap.get(d.id) || null,
+            { id: d.id, ...(d.data() || {}) },
+            "jdiExams",
+            now
+          )
+        );
+      });
 
       const resolvedSchoolName = schoolId
         ? await resolveSchoolNameById(schoolId, student.data.schoolName || c.user.schoolName || "")
@@ -492,22 +515,24 @@ export const handler: Handler = async event => {
         }
       }
 
-      const now = Date.now();
-      const rows = Array.from(examDocs.values())
-        .map(doc => {
-          const raw = doc.data() || {};
+      const rows = Array.from(mergedExamMap.values())
+        .map(raw => {
+          const canonicalStatus = resolveCanonicalExamStatus(raw, now);
           const metadata: any = { ...studentSafe(raw) };
           delete metadata.questions;
           return {
-            id: doc.id,
+            id: String(raw.id),
             ...metadata,
             schoolName: resolvePartnerSchoolName(raw.schoolName, resolvedSchoolName),
-            _raw: raw,
-            _rawStatus: String(raw.status || "draft"),
+            _raw: { ...raw, status: canonicalStatus },
+            _rawStatus: canonicalStatus,
           };
         })
-        .filter((exam: any) =>
-          isStudentEligibleForWork(
+        .filter((exam: any) => {
+          if (exam._rawStatus === "draft" || exam._rawStatus === "archived") {
+            return false;
+          }
+          return isStudentEligibleForWork(
             {
               id: student.id,
               uid: c.uid,
@@ -524,9 +549,10 @@ export const handler: Handler = async event => {
               track: student.data.track || student.data.plan || c.user.track,
             },
             exam._raw
-          )
-        )
+          );
+        })
         .map((exam: any) => {
+          const { _raw, _rawStatus, ...safeExam } = exam;
           const rawFrom = exam.availableFrom ? new Date(exam.availableFrom).getTime() : 0;
           const from = Number.isFinite(rawFrom) ? rawFrom : 0;
           const rawUntil = exam.availableUntil ? new Date(exam.availableUntil).getTime() : Number.MAX_SAFE_INTEGER;
@@ -536,7 +562,7 @@ export const handler: Handler = async event => {
             until = plus12h > from ? plus12h : Number.MAX_SAFE_INTEGER;
           }
           // Automatic scheduled activation: if status is scheduled and activation time has arrived, promote to active
-          let effectiveRawStatus = exam._rawStatus;
+          let effectiveRawStatus = _rawStatus;
           if (
             effectiveRawStatus === "scheduled" &&
             from > 0 &&
@@ -544,26 +570,31 @@ export const handler: Handler = async event => {
             now < until
           ) {
             effectiveRawStatus = "active";
-            const activatedData = { ...exam._raw, status: "active" };
+            const activatedData = { ..._raw, status: "active" };
             void Promise.all([
               adminDb.collection("jdiExams").doc(exam.id).set({ status: "active", updatedAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => undefined),
               adminDb.collection("schoolExams").doc(exam.id).set({ status: "active", updatedAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => undefined),
               notifyStudentsOfPublishedExam(exam.id, activatedData).catch(() => undefined),
             ]);
           }
+          const manuallyOpenedOrReopened = Boolean(_raw?.manuallyOpenedAt || _raw?.manuallyReopenedAt);
+          const pastEffectiveDeadline = isExamPastEffectiveDeadline(_raw, now);
           const status =
-            effectiveRawStatus === "completed" || (Number.isFinite(until) && now >= until)
+            effectiveRawStatus === "completed" || effectiveRawStatus === "closed" || pastEffectiveDeadline
               ? "completed"
-              : (Number.isFinite(from) && from > 0 && now < from) || effectiveRawStatus === "scheduled"
+              : (!manuallyOpenedOrReopened && Number.isFinite(from) && from > 0 && now < from) || effectiveRawStatus === "scheduled"
                 ? "upcoming"
                 : effectiveRawStatus === "active"
                   ? "active"
-                  : "upcoming";
-          const { _raw, _rawStatus, ...safeExam } = exam;
+                  : "completed";
           return {
             ...safeExam,
             rawStatus: effectiveRawStatus,
             status,
+            manuallyOpenedAt: _raw?.manuallyOpenedAt || null,
+            manuallyClosedAt: _raw?.manuallyClosedAt || null,
+            manuallyReopenedAt: _raw?.manuallyReopenedAt || null,
+            allowInProgressFinish: _raw?.allowInProgressFinish === true,
             // Passcode becomes visible to eligible student recipients once the assessment is active
             passcode: status === "active" && _raw?.passcode ? String(_raw.passcode) : undefined,
           };
@@ -582,7 +613,7 @@ export const handler: Handler = async event => {
         const current = attemptsByExam[String(a.examId)];
         const startedMs = a.startedAt?.toMillis?.() || (a.startedAt ? new Date(a.startedAt).getTime() : 0) || 0;
         if (!current || startedMs >= (current.startedAtMs || 0)) {
-          const examDoc = examDocs.get(String(a.examId))?.data() || {};
+          const examDoc = mergedExamMap.get(String(a.examId)) || {};
           const maxScore = computeExamMaxScore(examDoc, a);
           const released = isAttemptResultReleased(a, examDoc);
           const resolvedReleasedAt = a.releasedAt?.toDate
@@ -701,10 +732,12 @@ export const handler: Handler = async event => {
         ]);
       }
 
+      const manuallyOpenedOrReopened = Boolean(exam.manuallyOpenedAt || exam.manuallyReopenedAt);
+      const pastEffectiveDeadline = isExamPastEffectiveDeadline(exam, now);
       const active =
         exam.status === "active" &&
-        (!Number.isFinite(from) || now >= from) &&
-        (!Number.isFinite(until) || now < until);
+        (manuallyOpenedOrReopened || !Number.isFinite(from) || now >= from) &&
+        !pastEffectiveDeadline;
 
       let validCode = !requiresCode;
       if (requiresCode) {
@@ -889,14 +922,15 @@ export const handler: Handler = async event => {
           const activeRef = adminDb.collection("jdiExamAttempts").doc(String(lock.activeAttemptId));
           const activeSnap = await tx.get(activeRef);
           const activeData = activeSnap.data() || {};
-          const allowFinishAfterManualClose = currentExam.allowInProgressFinish !== false;
+          const allowFinishAfterManualClose = currentExam.allowInProgressFinish === true;
           if (
             !isRetakeRequest &&
             activeSnap.exists &&
             activeData.status === "in_progress" &&
             activeData.studentUid === c.uid &&
             (!activeData.deadlineAt || new Date(activeData.deadlineAt).getTime() > Date.now()) &&
-            (effectiveStatus === "active" || (effectiveStatus === "completed" && allowFinishAfterManualClose))
+            (effectiveStatus === "active" ||
+              ((effectiveStatus === "completed" || effectiveStatus === "closed") && allowFinishAfterManualClose))
           ) {
             resumed = true;
             finalAttemptId = activeRef.id;
@@ -910,11 +944,13 @@ export const handler: Handler = async event => {
             previousActiveWasEmptyExpired = true;
           }
         }
+        const currentManuallyOpened = Boolean(currentExam.manuallyOpenedAt || currentExam.manuallyReopenedAt);
+        const currentPastEffectiveDeadline = isExamPastEffectiveDeadline(currentExam, Date.now());
         if (
           !existingExam.exists ||
           effectiveStatus !== "active" ||
-          (Number.isFinite(currentFrom) && Date.now() < currentFrom) ||
-          (Number.isFinite(currentUntil) && Date.now() >= currentUntil)
+          (!currentManuallyOpened && Number.isFinite(currentFrom) && Date.now() < currentFrom) ||
+          currentPastEffectiveDeadline
         ) {
           throw new Error("INACTIVE_EXAM");
         }

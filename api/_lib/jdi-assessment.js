@@ -317,8 +317,39 @@ export function canManageExamRecord(examOrOpts, callerUid, callerRole, assignedS
   if (isSchoolAdminRole(role)) return false;
   if (isPlatformAdminRole(role)) return true;
   if (!isTutorRole(role)) return false;
-  const ownerId = String(exam.tutorId || exam.createdBy || "").trim();
-  if (ownerId && ownerId === String(uid).trim()) return true;
+
+  const normalizedUid = String(uid).trim();
+  if (!normalizedUid) return false;
+
+  const ownerIds = [
+    exam.tutorId,
+    exam.createdBy,
+    exam.authorUid,
+    exam.assignedTutorId,
+  ]
+    .map(id => String(id || "").trim())
+    .filter(Boolean);
+
+  const permittedTutorIds = [
+    ...(Array.isArray(exam.authorizedTutorIds) ? exam.authorizedTutorIds : []),
+    ...(Array.isArray(exam.permittedTutorIds) ? exam.permittedTutorIds : []),
+    ...(Array.isArray(exam.collaboratorUids) ? exam.collaboratorUids : []),
+    ...(Array.isArray(exam.assignedTutorIds) ? exam.assignedTutorIds : []),
+  ]
+    .map(id => String(id || "").trim())
+    .filter(Boolean);
+
+  if (ownerIds.includes(normalizedUid) || permittedTutorIds.includes(normalizedUid)) {
+    return true;
+  }
+
+  // If the assessment has an explicit creator/owner tutor, another tutor cannot manage it
+  // unless explicitly listed in permittedTutorIds above.
+  if (ownerIds.length > 0) {
+    return false;
+  }
+
+  // Fallback for legacy ownerless school assessments
   if (Array.isArray(schoolIds) && exam.schoolId) {
     return schoolIds.map(s => String(s).trim().toLowerCase()).includes(String(exam.schoolId).trim().toLowerCase());
   }
@@ -1278,7 +1309,11 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
   if (!student || !workItem) return false;
 
   const rawStatus = String(workItem.status || "").trim().toLowerCase();
-  if (rawStatus === "draft" || rawStatus === "archived") {
+  if (rawStatus === "draft" || rawStatus === "archived" || workItem.isDraft === true || workItem.isArchived === true) {
+    return false;
+  }
+  const canonicalStatus = resolveCanonicalExamStatus(workItem);
+  if (canonicalStatus === "draft" || canonicalStatus === "archived") {
     return false;
   }
 
@@ -2112,7 +2147,7 @@ export function isAttemptOverdueForExpiry(attempt = {}, exam = {}, nowMs = Date.
       if (Number.isFinite(startedMs) && (startedMs >= closingDeadlineMs || nowMs - startedMs < 120000)) {
         return false;
       }
-      if (nowMs > closingDeadlineMs) {
+      if (isExamPastEffectiveDeadline(exam, nowMs) && nowMs > closingDeadlineMs) {
         return true;
       }
     }
@@ -2121,4 +2156,243 @@ export function isAttemptOverdueForExpiry(attempt = {}, exam = {}, nowMs = Date.
   return false;
 }
 
+/**
+ * Determines whether an assessment has passed its effective closing deadline (`availableUntil` or `dueDate`),
+ * accounting for manual reopening (`manuallyReopenedAt`).
+ * When an administrator or authorized tutor manually reopens/activates a closed assessment whose original
+ * `availableUntil` or `dueDate` was in the past, the manual reopen supersedes that past deadline without
+ * erasing the original metadata fields.
+ */
+export function isExamPastEffectiveDeadline(exam = {}, nowMs = Date.now()) {
+  if (!exam || typeof exam !== "object") return false;
 
+  const parseTimestampMs = (rawVal, treatDateOnlyAsEndOfDay = false) => {
+    if (!rawVal) return NaN;
+    if (typeof rawVal?.toDate === "function") return rawVal.toDate().getTime();
+    if (typeof rawVal?.toMillis === "function") return rawVal.toMillis();
+    if (rawVal instanceof Date) return rawVal.getTime();
+    const str = typeof rawVal === "string" ? rawVal.trim() : "";
+    if (!str) return NaN;
+    if (treatDateOnlyAsEndOfDay) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        const [y, m, d] = str.split("-").map(Number);
+        return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+      }
+      if (/^\d{4}-\d{2}-\d{2}T00:00(:00(\.000)?)?$/.test(str)) {
+        const [y, m, d] = str.slice(0, 10).split("-").map(Number);
+        return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+      }
+    }
+    return new Date(str).getTime();
+  };
+
+  const reopenedMs = parseTimestampMs(exam.manuallyReopenedAt, false);
+
+  if (exam.availableUntil) {
+    const untilMs = parseTimestampMs(exam.availableUntil, false);
+    if (Number.isFinite(untilMs) && untilMs > 0) {
+      const supersededByReopen = Number.isFinite(reopenedMs) && reopenedMs >= untilMs;
+      if (!supersededByReopen && nowMs >= untilMs) {
+        return true;
+      }
+    }
+  }
+
+  if (exam.dueDate) {
+    const dueMs = parseTimestampMs(exam.dueDate, true);
+    if (Number.isFinite(dueMs) && dueMs > 0) {
+      const supersededByReopen = Number.isFinite(reopenedMs) && reopenedMs >= dueMs;
+      if (!supersededByReopen && nowMs > dueMs) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Resolves the single canonical status ("draft" | "scheduled" | "active" | "completed" | "archived")
+ * for any examination or work item across Tutor, Admin, School, Parent, and Student views.
+ *
+ * Key guarantees:
+ * 1. Explicit "draft" assessments resolve to "draft" (unless they already have recorded student submissions)
+ *    and are strictly hidden from all student-facing views.
+ * 2. Legacy/past external-link CBT assessments ("EXTERNAL_LINK") that lack a status field or were created
+ *    in past sessions without an active reopen override or future closing date resolve to "completed".
+ * 3. Any assessment past its effective deadline (accounting for manual reopening) resolves to "completed".
+ */
+export function resolveCanonicalExamStatus(exam = {}, nowMs = Date.now()) {
+  if (!exam || typeof exam !== "object") return "draft";
+
+  const parseTsMs = (rawVal, treatDateOnlyAsEndOfDay = false) => {
+    if (!rawVal) return NaN;
+    if (typeof rawVal?.toDate === "function") return rawVal.toDate().getTime();
+    if (typeof rawVal?.toMillis === "function") return rawVal.toMillis();
+    if (rawVal instanceof Date) return rawVal.getTime();
+    if (typeof rawVal === "number" && Number.isFinite(rawVal)) return rawVal;
+    if (typeof rawVal?.seconds === "number") return rawVal.seconds * 1000;
+    const str = typeof rawVal === "string" ? rawVal.trim() : "";
+    if (!str) return NaN;
+    if (treatDateOnlyAsEndOfDay) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        const [y, m, d] = str.split("-").map(Number);
+        return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+      }
+      if (/^\d{4}-\d{2}-\d{2}T00:00(:00(\.000)?)?$/.test(str)) {
+        const [y, m, d] = str.slice(0, 10).split("-").map(Number);
+        return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+      }
+    }
+    return new Date(str).getTime();
+  };
+
+  const rawStatus = String(exam.status || "").trim().toLowerCase();
+  if (rawStatus === "archived" || exam.isArchived === true) {
+    return "archived";
+  }
+
+  const closedMs = parseTsMs(exam.manuallyClosedAt, false);
+  const reopenedMs = parseTsMs(exam.manuallyReopenedAt, false);
+  const isManuallyClosed =
+    Number.isFinite(closedMs) &&
+    closedMs > 0 &&
+    (!Number.isFinite(reopenedMs) || closedMs >= reopenedMs);
+
+  if (rawStatus === "completed" || rawStatus === "closed" || (isManuallyClosed && rawStatus !== "draft")) {
+    return "completed";
+  }
+
+  const isExternal =
+    normalizeDeliveryMode(exam.deliveryMode, exam) === "EXTERNAL_LINK" ||
+    Boolean(
+      String(exam.externalUrl || exam.url || exam.link || "").trim() &&
+        (!Array.isArray(exam.questions) || exam.questions.length === 0)
+    );
+
+  const attemptCount = Number(exam.attemptCount ?? exam.submissionCount ?? 0) || 0;
+
+  if (rawStatus === "draft" || exam.isDraft === true) {
+    if (isExternal && attemptCount > 0) {
+      return "completed";
+    }
+    return "draft";
+  }
+
+  if (isExamPastEffectiveDeadline(exam, nowMs)) {
+    return "completed";
+  }
+
+  // Legacy external-link CBT assessments without an explicit status field were conducted via external forms
+  // and previously defaulted to "draft" in Tutor views and "active" in Student views. Mark them "completed".
+  if (isExternal) {
+    if (!rawStatus) {
+      return "completed";
+    }
+    const untilMs = parseTsMs(exam.availableUntil, false);
+    const dueMs = parseTsMs(exam.dueDate, true);
+    const hasFutureDeadline =
+      (Number.isFinite(untilMs) && untilMs > nowMs) ||
+      (Number.isFinite(dueMs) && dueMs >= nowMs);
+    const hasManualReopen =
+      Number.isFinite(reopenedMs) &&
+      reopenedMs > 0 &&
+      (!Number.isFinite(closedMs) || reopenedMs > closedMs);
+
+    if (!hasFutureDeadline && !hasManualReopen) {
+      const createdMs = parseTsMs(exam.availableFrom || exam.publishedAt || exam.createdAt || exam.updatedAt, false);
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      if (Number.isFinite(createdMs) && createdMs > 0 && nowMs - createdMs > ONE_DAY_MS) {
+        return "completed";
+      }
+    }
+  }
+
+  const fromMs = parseTsMs(exam.availableFrom, false);
+  if (rawStatus === "scheduled") {
+    if (Number.isFinite(fromMs) && fromMs > 0 && nowMs >= fromMs) {
+      return "active";
+    }
+    return "scheduled";
+  }
+
+  if (rawStatus === "active" || rawStatus === "published") {
+    if (Number.isFinite(fromMs) && fromMs > nowMs && !(Number.isFinite(reopenedMs) && reopenedMs > 0)) {
+      return "scheduled";
+    }
+    return "active";
+  }
+
+  // Fallback when status is missing on a native assessment:
+  // If questions is explicitly an empty array on a native exam document (and not a task-only assignment), treat as draft.
+  const isTaskOrSubmission =
+    exam.isTaskOnlyAssignment === true ||
+    Boolean(String(exam.submissionFormat || "").trim());
+  if (Array.isArray(exam.questions) && exam.questions.length === 0 && !isTaskOrSubmission && !isExternal) {
+    return "draft";
+  }
+
+  return "active";
+}
+
+const EXAM_COLLECTION_PRECEDENCE = {
+  exams: 1,
+  schoolExams: 2,
+  jdiExams: 3,
+};
+
+/**
+ * Merges duplicate assessment records across `exams`, `schoolExams`, and `jdiExams` so that
+ * `jdiExams` is always the authoritative source of truth and stale `schoolExams`/`exams` copies
+ * can never overwrite `jdiExams` status (e.g., turning a draft or completed exam back into active).
+ */
+export function mergeExamRecordByPrecedence(
+  existing = null,
+  incoming = null,
+  incomingSource = "jdiExams",
+  nowMs = Date.now()
+) {
+  if (!incoming || typeof incoming !== "object") return existing;
+  const incomingRank = EXAM_COLLECTION_PRECEDENCE[incomingSource] || 2;
+
+  if (!existing || typeof existing !== "object") {
+    const mergedSingle = {
+      ...incoming,
+      _sourceCollection: incomingSource,
+    };
+    mergedSingle.status = resolveCanonicalExamStatus(mergedSingle, nowMs);
+    return mergedSingle;
+  }
+
+  const existingSource = existing._sourceCollection || "schoolExams";
+  const existingRank = EXAM_COLLECTION_PRECEDENCE[existingSource] || 2;
+
+  const primary = incomingRank >= existingRank ? incoming : existing;
+  const secondary = incomingRank >= existingRank ? existing : incoming;
+  const winningSource = incomingRank >= existingRank ? incomingSource : existingSource;
+
+  // Preserve questions array from whichever document carries full questions (since schoolExams often strips questions)
+  const primaryQuestions = Array.isArray(primary.questions) ? primary.questions : [];
+  const secondaryQuestions = Array.isArray(secondary.questions) ? secondary.questions : [];
+  const questions = primaryQuestions.length > 0 ? primaryQuestions : secondaryQuestions;
+
+  // If either record explicitly marks the exam as draft or archived in jdiExams (or if primary has a status),
+  // use primary's status; never let a missing status in one collection override an explicit status in another.
+  const primaryRawStatus = String(primary.status || "").trim().toLowerCase();
+  const secondaryRawStatus = String(secondary.status || "").trim().toLowerCase();
+  const effectiveRawStatus =
+    primaryRawStatus ||
+    secondaryRawStatus ||
+    "";
+
+  const combined = {
+    ...secondary,
+    ...primary,
+    ...(questions.length > 0 ? { questions } : {}),
+    ...(effectiveRawStatus ? { status: effectiveRawStatus } : {}),
+    _sourceCollection: winningSource,
+  };
+
+  combined.status = resolveCanonicalExamStatus(combined, nowMs);
+  return combined;
+}

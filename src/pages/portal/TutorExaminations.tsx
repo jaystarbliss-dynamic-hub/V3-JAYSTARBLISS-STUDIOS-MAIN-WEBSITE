@@ -7,8 +7,10 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  addDoc,
   updateDoc,
   deleteDoc,
+  arrayUnion,
   query,
   where,
   onSnapshot,
@@ -33,6 +35,8 @@ import {
   normalizeRecipientTargets,
   classifyStudentEnrolment,
   isAttemptOverdueForExpiry,
+  resolveCanonicalExamStatus,
+  mergeExamRecordByPrecedence,
   gradeAnswers,
   classesMatch,
 } from "../../lib/classes";
@@ -146,6 +150,16 @@ type ExistingExamItem = {
   confirmationMessage?: string;
   createdBy?: string;
   tutorId?: string;
+  authorUid?: string;
+  assignedTutorId?: string;
+  authorizedTutorIds?: string[];
+  permittedTutorIds?: string[];
+  collaboratorUids?: string[];
+  assignedTutorIds?: string[];
+  allowInProgressFinish?: boolean;
+  manuallyOpenedAt?: string | null;
+  manuallyClosedAt?: string | null;
+  manuallyReopenedAt?: string | null;
   createdAt?: any;
   updatedAt?: any;
 };
@@ -930,16 +944,42 @@ export default function TutorExaminations() {
         ),
       ]);
 
-      const allExamDocs: any[] = [];
-      schSnaps.forEach((s) => allExamDocs.push(...(s.docs || [])));
-      jdiSnaps.forEach((s) => allExamDocs.push(...(s.docs || [])));
-
       const nowMs = Date.now();
+      const rawMergedDocs = new Map<string, Record<string, any>>();
+      schSnaps.forEach((s) =>
+        (s.docs || []).forEach((d: any) => {
+          const raw = d.data() || {};
+          rawMergedDocs.set(
+            d.id,
+            mergeExamRecordByPrecedence(
+              rawMergedDocs.get(d.id),
+              { id: d.id, ...raw, _rawOriginalStatus: raw.status },
+              "schoolExams",
+              nowMs
+            )
+          );
+        })
+      );
+      jdiSnaps.forEach((s) =>
+        (s.docs || []).forEach((d: any) => {
+          const raw = d.data() || {};
+          rawMergedDocs.set(
+            d.id,
+            mergeExamRecordByPrecedence(
+              rawMergedDocs.get(d.id),
+              { id: d.id, ...raw, _rawOriginalStatus: raw.status },
+              "jdiExams",
+              nowMs
+            )
+          );
+        })
+      );
+
       const scheduledPromotions: Array<Record<string, any>> = [];
+      const legacyExternalCompletions: string[] = [];
       const map = new Map<string, ExistingExamItem>();
 
-      allExamDocs.forEach((d: any) => {
-        const data = d.data();
+      rawMergedDocs.forEach((data: any, docId: string) => {
         const canManage = canManageExamRecord({
           uid: currentUser.uid,
           role: userRole || (isAdminWorkspace ? "ADMIN" : "TUTOR"),
@@ -964,12 +1004,18 @@ export default function TutorExaminations() {
         const maxScore =
           resolvedMode === "EXTERNAL_LINK" || isUngraded ? 0 : computeExamMaxScore(data);
 
-        // Auto-promote scheduled assessments whose activation time has arrived (Part 4)
-        let effectiveStatus = String(data.status || "draft").toLowerCase();
+        // Resolve canonical status across all collections (marks legacy external CBT links as "completed")
+        let effectiveStatus = resolveCanonicalExamStatus(data, nowMs);
+        const originalRawStatus = String(data._rawOriginalStatus ?? "").trim().toLowerCase();
         const fromMs = data.availableFrom ? new Date(data.availableFrom).getTime() : NaN;
-        if (effectiveStatus === "scheduled" && Number.isFinite(fromMs) && nowMs >= fromMs) {
-          effectiveStatus = "active";
-          scheduledPromotions.push({ ...data, id: d.id, status: "active" });
+        if (originalRawStatus === "scheduled" && effectiveStatus === "active" && Number.isFinite(fromMs) && nowMs >= fromMs) {
+          scheduledPromotions.push({ ...data, id: docId, status: "active" });
+        } else if (
+          resolvedMode === "EXTERNAL_LINK" &&
+          effectiveStatus === "completed" &&
+          originalRawStatus !== "completed"
+        ) {
+          legacyExternalCompletions.push(docId);
         }
 
         // Respect optional time limit (Part 2): never force a 30-minute default when untimed
@@ -992,8 +1038,8 @@ export default function TutorExaminations() {
             ? "immediate"
             : "manual";
 
-        map.set(d.id, {
-          id: d.id,
+        map.set(docId, {
+          id: docId,
           title: data.title || "Untitled Assessment",
           subject: data.subject || "General",
           subProgramName: data.subProgramName || data.subject || "",
@@ -1071,6 +1117,23 @@ export default function TutorExaminations() {
       });
 
       setExistingExams(Array.from(map.values()));
+
+      if (legacyExternalCompletions.length > 0) {
+        legacyExternalCompletions.forEach((completedId) => {
+          allDbs.forEach((dbInstance) => {
+            setDoc(
+              doc(dbInstance, "jdiExams", completedId),
+              { status: "completed", updatedAt: serverTimestamp() },
+              { merge: true }
+            ).catch(() => undefined);
+            setDoc(
+              doc(dbInstance, "schoolExams", completedId),
+              { status: "completed", updatedAt: serverTimestamp() },
+              { merge: true }
+            ).catch(() => undefined);
+          });
+        });
+      }
 
       if (scheduledPromotions.length > 0) {
         scheduledPromotions.forEach((promoted) => {
@@ -2549,7 +2612,7 @@ ANSWER KEY
     }
   };
 
-  // Manual Open / Close / Reopen Assessment Control (blocks new starts on close; lets in-progress students finish)
+  // Manual Activate / Close / Reopen Assessment Control
   const handleManualAssessmentStatusChange = async (
     exam: ExistingExamItem,
     nextStatus: "active" | "completed"
@@ -2559,15 +2622,38 @@ ANSWER KEY
     setMessage("");
     try {
       const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error("Please sign in again.");
+      const effectiveAuth = getEffectiveAuth();
+      const callerUid = effectiveAuth.effectiveUid || currentUser?.uid || "";
+      const callerRole =
+        effectiveAuth.effectiveRole ||
+        (isAdminWorkspace ? "SUPER_ADMIN" : sessionStorage.getItem("userRole") || "STAFF");
+      if (!currentUser || !callerUid) throw new Error("Please sign in again.");
+
+      const assignedSchoolIdList = assignedSchools.map((s) => s.id);
+      if (!canManageExamRecord(exam, callerUid, callerRole, assignedSchoolIdList)) {
+        throw new Error(
+          "You do not have permission to change the status of an assessment belonging to another tutor."
+        );
+      }
+
       const token = await currentUser.getIdToken();
       const prevStatus = String(exam.status || "draft").toLowerCase();
       const nowIso = new Date().toISOString();
+      const actorRoleLabel = isAdminWorkspace ? "Administrator" : "Tutor";
       const actorName =
+        effectiveAuth.effectiveName ||
         currentUser.displayName ||
         currentUser.email ||
         sessionStorage.getItem("userName") ||
-        "Tutor";
+        actorRoleLabel;
+
+      const isManualClose = nextStatus === "completed";
+      const isManualReopen = nextStatus === "active" && (prevStatus === "completed" || prevStatus === "closed");
+      const actionType = isManualClose
+        ? "manual_closure"
+        : isManualReopen
+          ? "manual_reopen"
+          : "manual_activation";
 
       let handledServerSide = false;
       try {
@@ -2581,7 +2667,7 @@ ANSWER KEY
             action: "activate",
             examId: exam.id,
             status: nextStatus,
-            allowInProgressFinish: true,
+            allowInProgressFinish: false,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -2597,42 +2683,144 @@ ANSWER KEY
       }
 
       if (!handledServerSide) {
+        const historyEntry = {
+          examId: exam.id,
+          examTitle: exam.title || "Assessment",
+          fromStatus: prevStatus,
+          toStatus: nextStatus,
+          previousStatus: prevStatus,
+          newStatus: nextStatus,
+          actionType,
+          actorUid: callerUid,
+          actorName,
+          actorRole: callerRole,
+          timestamp: nowIso,
+          note: isManualClose
+            ? `Manually closed by ${actorName} (${actorRoleLabel})`
+            : isManualReopen
+              ? `Manually reopened by ${actorName} (${actorRoleLabel})`
+              : `Manually activated by ${actorName} (${actorRoleLabel})`,
+        };
         const updatePayload: Record<string, any> = {
           status: nextStatus,
-          allowInProgressFinish: true,
+          allowInProgressFinish: !isManualClose,
           updatedAt: serverTimestamp(),
-          updatedBy: currentUser.uid,
-          ...(nextStatus === "completed"
-            ? { manuallyClosedAt: nowIso, manuallyClosedBy: currentUser.uid }
-            : prevStatus === "completed"
-            ? { manuallyReopenedAt: nowIso, manuallyReopenedBy: currentUser.uid }
-            : { manuallyOpenedAt: nowIso, manuallyOpenedBy: currentUser.uid }),
+          updatedBy: callerUid,
+          statusHistory: arrayUnion(historyEntry),
+          ...(isManualClose
+            ? {
+                manuallyClosedAt: nowIso,
+                manuallyClosedBy: callerUid,
+                manuallyClosedByName: actorName,
+                manuallyClosedByRole: callerRole,
+                closureReason: "manual",
+              }
+            : isManualReopen
+            ? {
+                manuallyReopenedAt: nowIso,
+                manuallyReopenedBy: callerUid,
+                manuallyReopenedByName: actorName,
+                manuallyReopenedByRole: callerRole,
+                closureReason: null,
+              }
+            : {
+                manuallyOpenedAt: nowIso,
+                manuallyOpenedBy: callerUid,
+                manuallyOpenedByName: actorName,
+                manuallyOpenedByRole: callerRole,
+                closureReason: null,
+              }),
         };
+        let wroteAtLeastOne = false;
         for (const dbInstance of getClientDatabases()) {
-          await Promise.all([
-            updateDoc(doc(dbInstance, "jdiExams", exam.id), updatePayload).catch(() => undefined),
-            updateDoc(doc(dbInstance, "schoolExams", exam.id), updatePayload).catch(() => undefined),
+          const [jdiRes, schRes] = await Promise.all([
+            updateDoc(doc(dbInstance, "jdiExams", exam.id), updatePayload)
+              .then(() => true)
+              .catch(() => false),
+            updateDoc(doc(dbInstance, "schoolExams", exam.id), updatePayload)
+              .then(() => true)
+              .catch(() => false),
           ]);
+          if (jdiRes || schRes) wroteAtLeastOne = true;
+          await Promise.all([
+            addDoc(collection(dbInstance, "jdiExams", exam.id, "events"), {
+              type: isManualClose
+                ? "exam_manually_closed"
+                : isManualReopen
+                  ? "exam_manually_reopened"
+                  : "exam_manually_opened",
+              actionType,
+              examId: exam.id,
+              examTitle: exam.title || "Assessment",
+              status: nextStatus,
+              newStatus: nextStatus,
+              previousStatus: prevStatus,
+              actorUid: callerUid,
+              actorName,
+              actorRole: callerRole,
+              allowInProgressFinish: !isManualClose,
+              timestamp: nowIso,
+              createdAt: serverTimestamp(),
+            }).catch(() => undefined),
+            addDoc(collection(dbInstance, "academicAuditLogs"), {
+              action: isManualClose
+                ? "ASSESSMENT_MANUALLY_CLOSED"
+                : isManualReopen
+                  ? "ASSESSMENT_MANUALLY_REOPENED"
+                  : "ASSESSMENT_MANUALLY_ACTIVATED",
+              actionType,
+              examId: exam.id,
+              examTitle: exam.title || "Assessment",
+              previousStatus: prevStatus,
+              newStatus: nextStatus,
+              actorUid: callerUid,
+              actorName,
+              actorRole: callerRole,
+              schoolId: exam.schoolId || null,
+              schoolName: exam.schoolName || null,
+              timestamp: nowIso,
+              createdAt: serverTimestamp(),
+            }).catch(() => undefined),
+          ]);
+        }
+        if (!wroteAtLeastOne) {
+          throw new Error("Could not save the assessment status change. Please verify your connection and permissions.");
         }
       }
 
       setExistingExams((prev) =>
-        prev.map((item) => (item.id === exam.id ? { ...item, status: nextStatus } : item))
+        prev.map((item) =>
+          item.id === exam.id
+            ? {
+                ...item,
+                status: nextStatus,
+                allowInProgressFinish: !isManualClose,
+                ...(isManualClose
+                  ? { manuallyClosedAt: nowIso }
+                  : isManualReopen
+                  ? { manuallyReopenedAt: nowIso }
+                  : { manuallyOpenedAt: nowIso }),
+              }
+            : item
+        )
       );
 
-      if (nextStatus === "completed") {
+      if (isManualClose) {
         setMessage(
-          `"${exam.title}" is now closed for new starts. In-progress students can finish and submit before their timer ends.`
+          `"${exam.title}" is now closed. Learners can no longer start or submit responses while it remains closed.`
         );
-      } else if (prevStatus === "completed") {
-        setMessage(`"${exam.title}" has been reopened (${actorName}).`);
+      } else if (isManualReopen) {
+        setMessage(
+          `"${exam.title}" has been reopened by ${actorName} and is now active for eligible learners.`
+        );
       } else {
-        setMessage(`"${exam.title}" is now open and active for assigned learners.`);
+        setMessage(`"${exam.title}" is now active and available to eligible learners.`);
       }
     } catch (err) {
-      setErrorMessage(
-        err instanceof Error ? err.message : "Unable to update assessment status right now."
-      );
+      const msg =
+        err instanceof Error ? err.message : "Unable to update assessment status right now.";
+      setErrorMessage(msg);
+      throw err;
     } finally {
       setItemActionBusy(null);
     }
@@ -3143,9 +3331,24 @@ ANSWER KEY
           }}
           onChangeAssessmentStatus={async (assessment, nextStatus) => {
             const match = existingExams.find((e) => e.id === assessment.id);
-            if (match) {
-              await handleManualAssessmentStatusChange(match, nextStatus);
+            if (!match) {
+              throw new Error("Assessment record could not be located.");
             }
+            await handleManualAssessmentStatusChange(match, nextStatus);
+          }}
+          canManageAssessment={(assessment) => {
+            const match = existingExams.find((e) => e.id === assessment.id) || assessment;
+            const effectiveAuth = getEffectiveAuth();
+            const callerUid = effectiveAuth.effectiveUid || auth.currentUser?.uid || "";
+            const callerRole =
+              effectiveAuth.effectiveRole ||
+              (isAdminWorkspace ? "SUPER_ADMIN" : sessionStorage.getItem("userRole") || "STAFF");
+            return canManageExamRecord(
+              match,
+              callerUid,
+              callerRole,
+              assignedSchools.map((s) => s.id)
+            );
           }}
           isTutor={!isAdminWorkspace}
         />

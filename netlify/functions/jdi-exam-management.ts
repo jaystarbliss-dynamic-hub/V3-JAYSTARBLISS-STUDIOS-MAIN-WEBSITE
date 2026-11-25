@@ -92,9 +92,10 @@ const schoolRoles = ["SCHOOL", "SCHOOL_ADMIN", "SCHOOLADMIN"];
 
 const statusTransitions: Record<string, string[]> = {
   draft: ["draft", "scheduled", "active", "archived"],
-  scheduled: ["draft", "scheduled", "active", "completed", "archived"],
-  active: ["scheduled", "active", "completed", "archived"],
-  completed: ["scheduled", "active", "completed", "archived"],
+  scheduled: ["draft", "scheduled", "active", "completed", "closed", "archived"],
+  active: ["scheduled", "active", "completed", "closed", "archived"],
+  completed: ["scheduled", "active", "completed", "closed", "archived"],
+  closed: ["scheduled", "active", "completed", "closed", "archived"],
   archived: ["draft", "scheduled", "archived"],
 };
 
@@ -736,6 +737,17 @@ export const handler: Handler = async event => {
             createdAt: e.createdAt,
             availableFrom: e.availableFrom,
             availableUntil: e.availableUntil,
+            dueDate: e.dueDate || undefined,
+            allowInProgressFinish: e.allowInProgressFinish === true,
+            manuallyOpenedAt: e.manuallyOpenedAt || null,
+            manuallyOpenedBy: e.manuallyOpenedBy || null,
+            manuallyClosedAt: e.manuallyClosedAt || null,
+            manuallyClosedBy: e.manuallyClosedBy || null,
+            manuallyReopenedAt: e.manuallyReopenedAt || null,
+            manuallyReopenedBy: e.manuallyReopenedBy || null,
+            autoClosedAt: e.autoClosedAt?.toDate ? e.autoClosedAt.toDate().toISOString() : e.autoClosedAt || null,
+            closureReason: e.closureReason || null,
+            statusHistory: Array.isArray(e.statusHistory) ? e.statusHistory : [],
           };
           if (tutors.includes(c.role) || admins.includes(c.role)) {
             item.questions = Array.isArray(e.questions)
@@ -1360,43 +1372,64 @@ export const handler: Handler = async event => {
       }
 
       if (action === "activate") {
-        const status = String(body.status || "active");
-        if (!["active", "scheduled", "completed", "archived", "draft"].includes(status)) {
+        const rawRequestedStatus = String(body.status || "active").trim().toLowerCase();
+        if (!["active", "scheduled", "completed", "closed", "archived", "draft"].includes(rawRequestedStatus)) {
           return json(400, { error: "Invalid status." });
         }
-        const currentStatus = String(exam.status || "draft");
-        if (!(statusTransitions[currentStatus] || []).includes(status)) {
+        // Normalize "closed" to "completed" in storage while supporting both terms seamlessly
+        const status = rawRequestedStatus === "closed" ? "completed" : rawRequestedStatus;
+        const currentStatusRaw = String(exam.status || "draft").trim().toLowerCase();
+        const currentStatus = currentStatusRaw === "closed" ? "completed" : currentStatusRaw;
+        if (!(statusTransitions[currentStatusRaw] || statusTransitions[currentStatus] || []).includes(rawRequestedStatus)) {
           return json(409, {
             error: "This assessment status transition is not allowed.",
           });
         }
         const unchanged = currentStatus === status;
         const nowIso = new Date().toISOString();
-        const actorName = String(c.user?.name || c.user?.fullName || c.email || "Tutor");
+        const isCallerAdmin = admins.includes(c.role);
+        const actorRoleLabel = isCallerAdmin ? "Administrator" : "Tutor";
+        const actorName = String(c.user?.name || c.user?.fullName || c.email || actorRoleLabel);
         const isManualClose = status === "completed" && currentStatus !== "completed";
         const isManualReopen = status === "active" && currentStatus === "completed";
         const isManualOpen = status === "active" && (currentStatus === "draft" || currentStatus === "scheduled");
-        const allowInProgressFinish = body.allowInProgressFinish !== false;
+        // When manually closing an assessment, block new learner submissions by default unless explicitly overridden
+        const allowInProgressFinish = isManualClose ? Boolean(body.allowInProgressFinish === true) : true;
+        const actionType = isManualClose
+          ? "manual_closure"
+          : isManualReopen
+            ? "manual_reopen"
+            : isManualOpen
+              ? "manual_activation"
+              : "status_update";
 
         if (!unchanged) {
           const statusEvent = ref.collection("events").doc();
+          const auditLogRef = adminDb.collection("academicAuditLogs").doc();
           const statusBatch = adminDb.batch();
+          const examTitle = String(exam.title || "Assessment");
           const historyEntry = {
-            fromStatus: currentStatus,
+            examId,
+            examTitle,
+            fromStatus: currentStatusRaw,
             toStatus: status,
+            previousStatus: currentStatusRaw,
+            newStatus: status,
+            actionType,
             actorUid: c.uid,
             actorName,
+            actorRole: c.role,
             timestamp: nowIso,
             note:
               typeof body.note === "string" && body.note.trim()
                 ? body.note.trim().slice(0, 300)
                 : isManualClose
-                  ? "Manually closed by tutor (in-progress students permitted to finish)"
+                  ? `Manually closed by ${actorName} (${actorRoleLabel})`
                   : isManualReopen
-                    ? "Manually reopened by tutor"
+                    ? `Manually reopened by ${actorName} (${actorRoleLabel})`
                     : isManualOpen
-                      ? "Manually opened now by tutor"
-                      : `Status updated to ${status}`,
+                      ? `Manually activated by ${actorName} (${actorRoleLabel})`
+                      : `Status updated to ${status} by ${actorName}`,
           };
 
           const updatePayload: Record<string, any> = {
@@ -1405,9 +1438,33 @@ export const handler: Handler = async event => {
             updatedAt: FieldValue.serverTimestamp(),
             updatedBy: c.uid,
             statusHistory: FieldValue.arrayUnion(historyEntry),
-            ...(isManualOpen ? { manuallyOpenedAt: nowIso, manuallyOpenedBy: c.uid } : {}),
-            ...(isManualClose ? { manuallyClosedAt: nowIso, manuallyClosedBy: c.uid } : {}),
-            ...(isManualReopen ? { manuallyReopenedAt: nowIso, manuallyReopenedBy: c.uid } : {}),
+            ...(isManualOpen
+              ? {
+                  manuallyOpenedAt: nowIso,
+                  manuallyOpenedBy: c.uid,
+                  manuallyOpenedByName: actorName,
+                  manuallyOpenedByRole: c.role,
+                  closureReason: null,
+                }
+              : {}),
+            ...(isManualClose
+              ? {
+                  manuallyClosedAt: nowIso,
+                  manuallyClosedBy: c.uid,
+                  manuallyClosedByName: actorName,
+                  manuallyClosedByRole: c.role,
+                  closureReason: "manual",
+                }
+              : {}),
+            ...(isManualReopen
+              ? {
+                  manuallyReopenedAt: nowIso,
+                  manuallyReopenedBy: c.uid,
+                  manuallyReopenedByName: actorName,
+                  manuallyReopenedByRole: c.role,
+                  closureReason: null,
+                }
+              : {}),
           };
 
           statusBatch.update(ref, updatePayload);
@@ -1419,11 +1476,38 @@ export const handler: Handler = async event => {
                 : isManualOpen
                   ? "exam_manually_opened"
                   : "exam_status_changed",
+            actionType,
+            examId,
+            examTitle,
             status,
+            newStatus: status,
+            previousStatus: currentStatusRaw,
             actorUid: c.uid,
             actorName,
-            previousStatus: currentStatus,
+            actorRole: c.role,
             allowInProgressFinish,
+            timestamp: nowIso,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+          statusBatch.set(auditLogRef, {
+            action: isManualClose
+              ? "ASSESSMENT_MANUALLY_CLOSED"
+              : isManualReopen
+                ? "ASSESSMENT_MANUALLY_REOPENED"
+                : isManualOpen
+                  ? "ASSESSMENT_MANUALLY_ACTIVATED"
+                  : "ASSESSMENT_STATUS_CHANGED",
+            actionType,
+            examId,
+            examTitle,
+            previousStatus: currentStatusRaw,
+            newStatus: status,
+            actorUid: c.uid,
+            actorName,
+            actorRole: c.role,
+            schoolId: exam.schoolId || null,
+            schoolName: exam.schoolName || null,
+            timestamp: nowIso,
             createdAt: FieldValue.serverTimestamp(),
           });
           await statusBatch.commit();
@@ -1444,9 +1528,9 @@ export const handler: Handler = async event => {
               ? "Assessment Reopened"
               : "Assessment Now Open";
           const notifMessage = isManualClose
-            ? `${String(exam.title || "An assessment")} is now closed for new starts. If you already started, you can still finish and submit before your timer ends.`
+            ? `${String(exam.title || "An assessment")} has been closed and is no longer accepting new responses.`
             : isManualReopen
-              ? `${String(exam.title || "An assessment")} has been reopened by your tutor.`
+              ? `${String(exam.title || "An assessment")} has been reopened and is available again in your portal.`
               : `${String(exam.title || "An assessment")} is now open and available in your portal.`;
           await notify(
             recipients,
@@ -1461,9 +1545,17 @@ export const handler: Handler = async event => {
         }
         return json(200, {
           ok: true,
+          examId,
           status,
+          previousStatus: currentStatusRaw,
+          actionType,
           unchanged,
           allowInProgressFinish,
+          actorUid: c.uid,
+          actorName,
+          actorRole: c.role,
+          timestamp: nowIso,
+          manuallyOpenedAt: isManualOpen ? nowIso : exam.manuallyOpenedAt || null,
           manuallyClosedAt: isManualClose ? nowIso : exam.manuallyClosedAt || null,
           manuallyReopenedAt: isManualReopen ? nowIso : exam.manuallyReopenedAt || null,
         });

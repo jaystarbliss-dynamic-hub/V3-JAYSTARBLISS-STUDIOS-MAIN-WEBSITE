@@ -4,6 +4,8 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 import './uiux-pro-max.css';
+import { registerPortalServiceWorker } from './utils/pwa';
+import { clearAllPortalCaches } from './lib/portalDataCache';
 
 interface RootErrorBoundaryProps {
   children: ReactNode;
@@ -41,6 +43,7 @@ class RootErrorBoundary extends Component<RootErrorBoundaryProps, RootErrorBound
 
   private handleResetCache = () => {
     try {
+      clearAllPortalCaches();
       sessionStorage.clear();
       localStorage.removeItem('jaystar_cached_user_role');
       localStorage.removeItem('jaystar_cached_user_id');
@@ -135,6 +138,7 @@ if (rootElement) {
       </RootErrorBoundary>
     </React.StrictMode>,
   );
+  registerPortalServiceWorker();
 } else {
   console.error('Fatal: #root element not found in DOM.');
 }

@@ -142,6 +142,10 @@ type D = {
     maxAttempts?: number;
     gradingMode?: string;
     releaseGradesPolicy?: string;
+    status?: string;
+    allowInProgressFinish?: boolean;
+    manuallyClosedAt?: unknown;
+    manuallyReopenedAt?: unknown;
     questions?: Q[];
   };
   questions: Q[];
@@ -505,6 +509,10 @@ export default function StudentExamAttempt() {
             maxAttempts,
             gradingMode: examData.gradingMode || "automatic",
             releaseGradesPolicy: examData.releaseGradesPolicy,
+            status: examData.status,
+            allowInProgressFinish: examData.allowInProgressFinish,
+            manuallyClosedAt: examData.manuallyClosedAt,
+            manuallyReopenedAt: examData.manuallyReopenedAt,
             questions: isReleased ? rawQuestions : safeQuestions,
           },
           questions: safeQuestions,
@@ -608,6 +616,7 @@ export default function StudentExamAttempt() {
         .catch(() => undefined)
         .then(async () => {
           let serverOk = false;
+          let closedByTutorError = "";
           try {
             if (auth.currentUser) {
               const token = await auth.currentUser.getIdToken();
@@ -616,13 +625,48 @@ export default function StudentExamAttempt() {
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ attemptId, action: "save", answers: answersToSave }),
               });
-              if (res.ok) serverOk = true;
+              if (res.ok) {
+                serverOk = true;
+              } else if (res.status === 409) {
+                const errJson = await res.json().catch(() => ({}));
+                closedByTutorError =
+                  errJson?.error || "This assessment has been closed and is no longer accepting responses.";
+              }
             }
           } catch {}
 
+          if (closedByTutorError) {
+            if (live) {
+              setSaveStatus("error");
+              setError(closedByTutorError);
+            }
+            return;
+          }
+
           if (!serverOk) {
+            const allDbs = getAllClientDatabases();
+            for (const dbInst of allDbs) {
+              const examSnap = await getDoc(doc(dbInst, "jdiExams", data.attempt.examId)).catch(
+                () => null
+              );
+              if (examSnap?.exists()) {
+                const liveExam = examSnap.data();
+                const liveStatus = String(liveExam?.status || "").toLowerCase();
+                if (
+                  ["completed", "closed", "archived"].includes(liveStatus) &&
+                  liveExam?.allowInProgressFinish !== true
+                ) {
+                  if (live) {
+                    setSaveStatus("error");
+                    setError("This assessment has been closed and is no longer accepting responses.");
+                  }
+                  return;
+                }
+                break;
+              }
+            }
             await Promise.all(
-              getAllClientDatabases().map((dbInst) =>
+              allDbs.map((dbInst) =>
                 setDoc(
                   doc(dbInst, "jdiExamAttempts", attemptId),
                   {
@@ -860,6 +904,7 @@ export default function StudentExamAttempt() {
       let serverOk = false;
       let resultData: any = null;
 
+      let serverClosureError = "";
       try {
         if (auth.currentUser) {
           const token = await auth.currentUser.getIdToken();
@@ -871,14 +916,41 @@ export default function StudentExamAttempt() {
           if (res.ok) {
             resultData = await res.json().catch(() => ({}));
             serverOk = true;
+          } else if (res.status === 409) {
+            const errJson = await res.json().catch(() => ({}));
+            serverClosureError =
+              errJson?.error || "This assessment has been closed and is no longer accepting responses.";
           }
         }
       } catch (e) {
         console.warn("Server action failed, engaging Firestore grading:", e);
       }
 
+      if (serverClosureError) {
+        throw new Error(serverClosureError);
+      }
+
       if (!serverOk) {
         const allDbs = getAllClientDatabases();
+        let fullExam: any = data.exam;
+        for (const dbInst of allDbs) {
+          const examDocSnap = await getDoc(doc(dbInst, "jdiExams", data.attempt.examId)).catch(
+            () => null
+          );
+          if (examDocSnap?.exists()) {
+            fullExam = examDocSnap.data();
+            break;
+          }
+        }
+        const liveExamStatus = String(fullExam?.status || "").toLowerCase();
+        if (
+          (action === "save" || action === "submit") &&
+          ["completed", "closed", "archived"].includes(liveExamStatus) &&
+          fullExam?.allowInProgressFinish !== true
+        ) {
+          throw new Error("This assessment has been closed and is no longer accepting responses.");
+        }
+
         if (action === "save") {
           await Promise.all(
             allDbs.map((dbInst) =>
@@ -892,16 +964,6 @@ export default function StudentExamAttempt() {
           setNotice("Progress saved successfully.");
         } else {
           // Compute grade locally using assessment domain logic
-          let fullExam: any = data.exam;
-          for (const dbInst of allDbs) {
-            const examDocSnap = await getDoc(doc(dbInst, "jdiExams", data.attempt.examId)).catch(
-              () => null
-            );
-            if (examDocSnap?.exists()) {
-              fullExam = examDocSnap.data();
-              break;
-            }
-          }
           const attemptQuestions = resolveAttemptQuestions(fullExam, data.attempt);
           const grading = gradeAnswers({ ...fullExam, questions: attemptQuestions }, answers);
           const autoRelease = shouldAutoReleaseAttemptResult(fullExam, grading);

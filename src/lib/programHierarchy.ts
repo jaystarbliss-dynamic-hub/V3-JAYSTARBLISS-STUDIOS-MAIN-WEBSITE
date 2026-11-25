@@ -948,8 +948,29 @@ export function normalizeProgramRecord(id: string, raw: Record<string, any> = {}
 
 /**
  * Fetches all programmes across configured client Firestore instances, deduplicating by ID.
+ * Uses in-memory + localStorage Stale-While-Revalidate caching and in-flight request deduplication
+ * so Dashboard, Learning Workspace, and Assessment views do not re-download the entire programmes collection on every tab switch.
  */
-export async function fetchAllProgramsMap(): Promise<Map<string, ProgramRecord>> {
+const PROGRAMS_CACHE_STORAGE_KEY = 'jaystar_programs_catalogue_v2';
+const PROGRAMS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+let cachedProgramsMapMemory: Map<string, ProgramRecord> | null = null;
+let cachedProgramsAt = 0;
+let inFlightProgramsPromise: Promise<Map<string, ProgramRecord>> | null = null;
+
+export function invalidateProgramsMapCache(): void {
+  cachedProgramsMapMemory = null;
+  cachedProgramsAt = 0;
+  inFlightProgramsPromise = null;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(PROGRAMS_CACHE_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function fetchProgramsMapFromFirestore(): Promise<Map<string, ProgramRecord>> {
   const map = new Map<string, ProgramRecord>();
   const dbs = getAllClientDatabases();
   const snaps = await Promise.all(
@@ -963,7 +984,71 @@ export async function fetchAllProgramsMap(): Promise<Map<string, ProgramRecord>>
       map.set(d.id, normalizeProgramRecord(d.id, d.data()));
     });
   }
+  if (map.size > 0) {
+    cachedProgramsMapMemory = map;
+    cachedProgramsAt = Date.now();
+    if (typeof window !== 'undefined') {
+      try {
+        const serialized = JSON.stringify({
+          savedAt: cachedProgramsAt,
+          entries: Array.from(map.entries()),
+        });
+        localStorage.setItem(PROGRAMS_CACHE_STORAGE_KEY, serialized);
+      } catch {
+        // ignore quota errors
+      }
+    }
+  }
   return map;
+}
+
+export async function fetchAllProgramsMap(forceRefresh = false): Promise<Map<string, ProgramRecord>> {
+  const now = Date.now();
+  if (!forceRefresh && cachedProgramsMapMemory && cachedProgramsMapMemory.size > 0) {
+    if (now - cachedProgramsAt < PROGRAMS_CACHE_TTL_MS) {
+      return new Map(cachedProgramsMapMemory);
+    }
+    // Stale-while-revalidate: trigger background refresh and return cached immediately
+    if (!inFlightProgramsPromise) {
+      inFlightProgramsPromise = fetchProgramsMapFromFirestore().finally(() => {
+        inFlightProgramsPromise = null;
+      });
+    }
+    return new Map(cachedProgramsMapMemory);
+  }
+
+  if (!forceRefresh && typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(PROGRAMS_CACHE_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { savedAt?: number; entries?: [string, ProgramRecord][] };
+        if (Array.isArray(parsed?.entries) && parsed.entries.length > 0) {
+          const hydrated = new Map<string, ProgramRecord>(parsed.entries);
+          cachedProgramsMapMemory = hydrated;
+          cachedProgramsAt = Number(parsed.savedAt || 0);
+          if (now - cachedProgramsAt >= PROGRAMS_CACHE_TTL_MS && !inFlightProgramsPromise) {
+            inFlightProgramsPromise = fetchProgramsMapFromFirestore().finally(() => {
+              inFlightProgramsPromise = null;
+            });
+          }
+          return new Map(hydrated);
+        }
+      }
+    } catch {
+      // ignore storage parse error
+    }
+  }
+
+  if (inFlightProgramsPromise) {
+    const shared = await inFlightProgramsPromise;
+    return new Map(shared);
+  }
+
+  inFlightProgramsPromise = fetchProgramsMapFromFirestore().finally(() => {
+    inFlightProgramsPromise = null;
+  });
+  const fresh = await inFlightProgramsPromise;
+  return new Map(fresh);
 }
 
 /**

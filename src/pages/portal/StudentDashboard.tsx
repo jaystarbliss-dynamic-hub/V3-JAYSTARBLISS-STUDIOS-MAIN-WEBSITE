@@ -50,8 +50,11 @@ import {
   computeExamMaxScore,
   isAttemptResultReleased,
   isStudentEligibleForWork,
+  mergeExamRecordByPrecedence,
   normalizeWorkType,
+  resolveCanonicalExamStatus,
 } from '../../lib/classes';
+import { getPortalCache, setPortalCache } from '../../lib/portalDataCache';
 import {
   doesScheduleMatchStudent,
   resolveFullStudentEnrollmentContext,
@@ -287,7 +290,52 @@ export const StudentDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const fetchStudentData = async () => {
-    setLoading(true);
+    const cachedSnapshot = getPortalCache<{
+      student: StudentInfo | null;
+      modules: ProgramModule[];
+      exams: ExamItem[];
+      releasedGrades: StudentGradeRecord[];
+      studentSchedules: any[];
+      dynamicMilestones: DynamicMilestone[];
+      studentAssignments: DynamicAssignment[];
+      curriculumTopics: string[];
+      enrolledProgramName: string;
+      attendanceProgressInfo: {
+        percentage: number;
+        attendedSessions: number;
+        expectedSessions: number;
+        source: 'MANUAL_OVERRIDE' | 'AUTO_ATTENDANCE' | 'PRIOR_LEARNING' | 'NONE';
+        completedTopics: string[];
+      };
+      isEdclubAllowed: boolean;
+      programDetails: {
+        hasStages: boolean;
+        stageNumber?: number;
+        stageName?: string;
+        seriesName?: string;
+        nextProgramTitle?: string;
+      };
+    }>('student_dashboard_snapshot', 'student', 10 * 60 * 1000);
+
+    if (cachedSnapshot?.data?.student) {
+      const snap = cachedSnapshot.data;
+      setStudent(snap.student);
+      setModules(snap.modules || []);
+      setExams(snap.exams || []);
+      setReleasedGrades(snap.releasedGrades || []);
+      setStudentSchedules(snap.studentSchedules || []);
+      setDynamicMilestones(snap.dynamicMilestones || []);
+      setStudentAssignments(snap.studentAssignments || []);
+      setCurriculumTopics(snap.curriculumTopics || []);
+      setEnrolledProgramName(snap.enrolledProgramName || '');
+      if (snap.attendanceProgressInfo) setAttendanceProgressInfo(snap.attendanceProgressInfo);
+      setIsEdclubAllowed(Boolean(snap.isEdclubAllowed));
+      if (snap.programDetails) setProgramDetails(snap.programDetails);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
     try {
       const authUser = auth.currentUser;
       const lookupUid = authUser?.uid;
@@ -538,16 +586,19 @@ export const StudentDashboard: React.FC = () => {
         (matchedProgramDoc?.stageNumber && Number(matchedProgramDoc.stageNumber) > 1)
       );
 
-      setProgramDetails({
+      const resolvedProgramDetails = {
         hasStages: hasSeries,
         stageNumber: matchedProgramDoc?.stageNumber ? Number(matchedProgramDoc.stageNumber) : undefined,
         stageName: matchedProgramDoc?.stageName || undefined,
         seriesName: matchedProgramDoc?.seriesName || undefined,
         nextProgramTitle: matchedProgramDoc?.nextProgramTitle || undefined,
-      });
+      };
+      setProgramDetails(resolvedProgramDetails);
 
       // Weekly curriculum topics from program definition (if set by admin/tutor)
+      let resolvedCurriculumTopics: string[] = [];
       if (Array.isArray(matchedProgramDoc?.curriculum) && matchedProgramDoc.curriculum.length > 0) {
+        resolvedCurriculumTopics = matchedProgramDoc.curriculum;
         setCurriculumTopics(matchedProgramDoc.curriculum);
       } else {
         setCurriculumTopics([]);
@@ -556,6 +607,20 @@ export const StudentDashboard: React.FC = () => {
       const assignedClass = (studentRecord.class || studentRecord.grade || cachedClass || '').trim();
       const currentStudentId = studentId;
       const currentUid = authUser?.uid;
+
+      let resolvedAttendanceProgressInfo: {
+        percentage: number;
+        attendedSessions: number;
+        expectedSessions: number;
+        source: 'MANUAL_OVERRIDE' | 'AUTO_ATTENDANCE' | 'PRIOR_LEARNING' | 'NONE';
+        completedTopics: string[];
+      } = {
+        percentage: 0,
+        attendedSessions: 0,
+        expectedSessions: 12,
+        source: 'NONE',
+        completedTopics: [],
+      };
 
       // 0. Attendance-Driven Automatic Learning Progress (respects manual tutor overrides & prior learning)
       try {
@@ -584,18 +649,20 @@ export const StudentDashboard: React.FC = () => {
           null;
 
         if (activeUnit) {
-          setAttendanceProgressInfo({
+          resolvedAttendanceProgressInfo = {
             percentage: activeUnit.selfProgress,
             attendedSessions: activeUnit.attendedSessionsCount,
             expectedSessions: activeUnit.expectedDurationSessions,
             source: activeUnit.progressSource,
             completedTopics: activeUnit.completedTopics || [],
-          });
+          };
+          setAttendanceProgressInfo(resolvedAttendanceProgressInfo);
           if (
             (!Array.isArray(matchedProgramDoc?.curriculum) || matchedProgramDoc.curriculum.length === 0) &&
             Array.isArray(activeUnit.program.curriculum) &&
             activeUnit.program.curriculum.length > 0
           ) {
+            resolvedCurriculumTopics = activeUnit.program.curriculum;
             setCurriculumTopics(activeUnit.program.curriculum);
           }
         } else {
@@ -606,13 +673,14 @@ export const StudentDashboard: React.FC = () => {
             studentIds: studentIdKeys,
             fallbackTopicsCount: fallbackTopicsLen,
           });
-          setAttendanceProgressInfo({
+          resolvedAttendanceProgressInfo = {
             percentage: derived.percentage,
             attendedSessions: derived.attendedSessions,
             expectedSessions: derived.expectedSessions,
             source: derived.attendedSessions > 0 ? 'AUTO_ATTENDANCE' : 'NONE',
             completedTopics: [],
-          });
+          };
+          setAttendanceProgressInfo(resolvedAttendanceProgressInfo);
         }
       } catch (progErr) {
         console.warn('Attendance-driven learning progress lookup warning:', progErr);
@@ -784,11 +852,9 @@ export const StudentDashboard: React.FC = () => {
         personalLinkResults = pLink;
         resourceSnapshot = rSnap;
         examSnapshot = {
-          docs: [
-            ...(jdiExamsSnap.docs || []),
-            ...(schoolExamsSnap.docs || []),
-            ...(eSnap.docs || []),
-          ],
+          eDocs: eSnap.docs || [],
+          schoolDocs: schoolExamsSnap.docs || [],
+          jdiDocs: jdiExamsSnap.docs || [],
         };
       } catch (rErr) {
         console.warn('Resources & schedules fetch warning:', rErr);
@@ -900,9 +966,29 @@ export const StudentDashboard: React.FC = () => {
         .map((v) => String(v || '').trim())
         .filter(Boolean);
 
-      (examSnapshot.docs || []).forEach((examDoc: any) => {
-        const raw = examDoc.data() || {};
-        rawExamLookup.set(examDoc.id, { id: examDoc.id, ...raw });
+      const nowMs = Date.now();
+      const registerRawExam = (examDoc: any, source: 'exams' | 'schoolExams' | 'jdiExams') => {
+        if (!examDoc?.id) return;
+        const raw = examDoc.data?.() || {};
+        const merged = mergeExamRecordByPrecedence(
+          rawExamLookup.get(examDoc.id),
+          { id: examDoc.id, ...raw },
+          source,
+          nowMs
+        );
+        rawExamLookup.set(examDoc.id, merged);
+      };
+
+      (examSnapshot.eDocs || []).forEach((d: any) => registerRawExam(d, 'exams'));
+      (examSnapshot.schoolDocs || []).forEach((d: any) => registerRawExam(d, 'schoolExams'));
+      (examSnapshot.jdiDocs || []).forEach((d: any) => registerRawExam(d, 'jdiExams'));
+
+      rawExamLookup.forEach((raw, examId) => {
+        const canonicalStatus = resolveCanonicalExamStatus(raw, nowMs);
+        if (canonicalStatus === 'draft' || canonicalStatus === 'archived' || canonicalStatus === 'completed') {
+          return;
+        }
+        const normalizedRaw = { ...raw, status: canonicalStatus };
         if (
           isStudentEligibleForWork(
             {
@@ -920,19 +1006,21 @@ export const StudentDashboard: React.FC = () => {
               programName: resolvedProgramTitle,
               track: (studentRecord as any).track || studentRecord.plan || '',
             },
-            raw
+            normalizedRaw
           )
         ) {
-          examMap.set(examDoc.id, {
-            id: examDoc.id,
-            ...raw,
-            workType: normalizeWorkType(raw.workType, raw),
+          examMap.set(examId, {
+            id: examId,
+            ...normalizedRaw,
+            workType: normalizeWorkType(normalizedRaw.workType, normalizedRaw),
           } as ExamItem);
         }
       });
-      setExams(Array.from(examMap.values()));
+      const resolvedExamsList = Array.from(examMap.values());
+      setExams(resolvedExamsList);
 
       // Load released exam/test attempts for analytics grade trends
+      let resolvedReleasedGrades: StudentGradeRecord[] = [];
       try {
         const allDbs = getAllClientDatabases();
         const attemptSnaps = await Promise.all(
@@ -975,13 +1063,15 @@ export const StudentDashboard: React.FC = () => {
             });
           });
         });
-        setReleasedGrades(Array.from(gradesMap.values()));
+        resolvedReleasedGrades = Array.from(gradesMap.values());
+        setReleasedGrades(resolvedReleasedGrades);
       } catch (gErr) {
         console.warn('Student released grades lookup notice:', gErr);
         setReleasedGrades([]);
       }
 
       // Student verified modules (for certificates)
+      let resolvedModulesList: ProgramModule[] = [];
       try {
         const moduleQueries = [
           getDocs(query(collection(db, 'studentModules'), where('studentId', '==', currentStudentId))).catch(() => ({ docs: [] } as any)),
@@ -1014,17 +1104,18 @@ export const StudentDashboard: React.FC = () => {
             }
           });
         });
-        setModules(Array.from(moduleMap.values()).sort((a, b) => a.stageNumber - b.stageNumber));
+        resolvedModulesList = Array.from(moduleMap.values()).sort((a, b) => a.stageNumber - b.stageNumber);
+        setModules(resolvedModulesList);
       } catch (error) {
         console.warn('Student module lookup failed:', error);
         setModules([]);
       }
 
       // Class schedules (combining Netlify API + Firestore classSchedules with full school, cohort, and program interlinking)
+      let resolvedSchedulesList: any[] = [];
       try {
         const schId = (studentRecord?.schoolId || '').trim();
         const schName = (studentRecord?.schoolName || studentRecord?.school || '').trim().toLowerCase();
-        const studentClass = (studentRecord?.class || studentRecord?.grade || cachedClass || '').trim().toLowerCase();
         const sName = (studentRecord?.fullName || studentRecord?.name || '').trim().toLowerCase();
         const sEmail = (studentRecord?.email || '').trim().toLowerCase();
         const pEmail = (studentRecord?.parentEmail || '').trim().toLowerCase();
@@ -1068,11 +1159,30 @@ export const StudentDashboard: React.FC = () => {
           return doesScheduleMatchStudent(r, enrollmentCtx);
         });
 
+        resolvedSchedulesList = filtered;
         setStudentSchedules(filtered);
       } catch (err) {
         console.warn('Student class schedules fetch error:', err);
       }
 
+      setPortalCache(
+        'student_dashboard_snapshot',
+        {
+          student: studentRecord,
+          modules: resolvedModulesList,
+          exams: resolvedExamsList,
+          releasedGrades: resolvedReleasedGrades,
+          studentSchedules: resolvedSchedulesList,
+          dynamicMilestones: milestoneList,
+          studentAssignments: assignmentList,
+          curriculumTopics: resolvedCurriculumTopics,
+          enrolledProgramName: resolvedProgramTitle,
+          attendanceProgressInfo: resolvedAttendanceProgressInfo,
+          isEdclubAllowed: edclubAccess,
+          programDetails: resolvedProgramDetails,
+        },
+        { roleHint: 'student' }
+      );
     } catch (error) {
       console.error('Error loading student dashboard:', error);
       toast.error('Some student dashboard data could not be loaded.');

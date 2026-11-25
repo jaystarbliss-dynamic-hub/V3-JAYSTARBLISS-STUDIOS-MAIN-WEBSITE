@@ -33,11 +33,29 @@ export interface RowContextMenuState<T = any> {
   openFromElement: (el: HTMLElement, data?: T) => void;
   openFromContextMenu: (e: React.MouseEvent, data: T) => void;
   openFromButton: (e: React.MouseEvent<HTMLElement>, data: T) => void;
+  getTouchHandlers: (data: T) => {
+    onTouchStart: (e: React.TouchEvent<HTMLElement>) => void;
+    onTouchMove: () => void;
+    onTouchEnd: () => void;
+    onTouchCancel: () => void;
+  };
   close: () => void;
 }
 
 export function useRowActionMenu<T = any>(): RowContextMenuState<T> {
   const [payload, setPayload] = useState<RowContextMenuPayload<T> | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => clearLongPress();
+  }, [clearLongPress]);
 
   const openFromEvent = useCallback((e: React.MouseEvent, data?: T) => {
     e.preventDefault();
@@ -63,9 +81,36 @@ export function useRowActionMenu<T = any>(): RowContextMenuState<T> {
     setPayload({ x: rect.right, y: rect.bottom + 6, alignRight: true, data });
   }, []);
 
+  const getTouchHandlers = useCallback(
+    (data: T) => ({
+      onTouchStart: (e: React.TouchEvent<HTMLElement>) => {
+        clearLongPress();
+        const touch = e.touches?.[0];
+        if (!touch) return;
+        const clientX = touch.clientX;
+        const clientY = touch.clientY;
+        longPressTimerRef.current = window.setTimeout(() => {
+          setPayload({ x: clientX, y: clientY, alignRight: false, data });
+          longPressTimerRef.current = null;
+        }, 480);
+      },
+      onTouchMove: () => {
+        clearLongPress();
+      },
+      onTouchEnd: () => {
+        clearLongPress();
+      },
+      onTouchCancel: () => {
+        clearLongPress();
+      },
+    }),
+    [clearLongPress]
+  );
+
   const close = useCallback(() => {
+    clearLongPress();
     setPayload(null);
-  }, []);
+  }, [clearLongPress]);
 
   const coords: MenuCoords | null = payload
     ? { x: payload.x, y: payload.y, alignRight: payload.alignRight }
@@ -79,6 +124,7 @@ export function useRowActionMenu<T = any>(): RowContextMenuState<T> {
     openFromElement,
     openFromContextMenu,
     openFromButton,
+    getTouchHandlers,
     close,
   };
 }

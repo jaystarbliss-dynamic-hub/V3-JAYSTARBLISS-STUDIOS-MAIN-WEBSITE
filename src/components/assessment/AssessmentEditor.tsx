@@ -209,6 +209,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
     initialExam?.status || 'draft'
   );
   const [manualStatusBusy, setManualStatusBusy] = useState(false);
+  const [pendingHeaderStatusChange, setPendingHeaderStatusChange] = useState<'active' | 'completed' | null>(null);
 
   // -------------------------------------------------------------
   // Recipients State
@@ -1307,19 +1308,13 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 </span>
               </button>
 
-              {onChangeAssessmentStatus && !isCreatingNew && (
+              {onChangeAssessmentStatus && !isCreatingNew && status !== 'draft' && status !== 'archived' && (
                 <button
                   type="button"
                   disabled={manualStatusBusy || isSaving}
-                  onClick={async () => {
+                  onClick={() => {
                     const next: 'active' | 'completed' = status === 'active' ? 'completed' : 'active';
-                    setManualStatusBusy(true);
-                    try {
-                      await onChangeAssessmentStatus(next);
-                      setStatus(next);
-                    } finally {
-                      setManualStatusBusy(false);
-                    }
+                    setPendingHeaderStatusChange(next);
                   }}
                   className={`px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors disabled:opacity-50 ${
                     status === 'active'
@@ -1328,10 +1323,10 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   }`}
                   title={
                     status === 'active'
-                      ? 'Manually close assessment (blocks new starts; lets in-progress students finish)'
+                      ? 'Close Assessment'
                       : status === 'completed'
-                      ? 'Reopen this closed assessment'
-                      : 'Open this assessment immediately'
+                      ? 'Reopen Assessment'
+                      : 'Activate Assessment'
                   }
                 >
                   {status === 'active' ? (
@@ -1345,10 +1340,10 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     {manualStatusBusy
                       ? 'Updating...'
                       : status === 'active'
-                      ? 'Close Now'
+                      ? 'Close Assessment'
                       : status === 'completed'
-                      ? 'Reopen'
-                      : 'Open Now'}
+                      ? 'Reopen Assessment'
+                      : 'Activate Assessment'}
                   </span>
                 </button>
               )}
@@ -3551,6 +3546,87 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         questionBankItems={questionBankItems}
         defaultPointValue={defaultPointValue}
       />
+
+      {/* Confirmation Modal for Header Manual Status Change */}
+      {pendingHeaderStatusChange && onChangeAssessmentStatus && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 shadow-2xl p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {pendingHeaderStatusChange === 'completed'
+                    ? 'Close Assessment?'
+                    : status === 'completed'
+                    ? 'Reopen Assessment?'
+                    : 'Activate Assessment?'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
+                  {title || 'Untitled Assessment'}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={manualStatusBusy}
+                onClick={() => setPendingHeaderStatusChange(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-zinc-300 leading-relaxed">
+              {pendingHeaderStatusChange === 'completed'
+                ? 'Learners will no longer be able to start or submit responses while this assessment is closed. All existing learner submissions, scores, attempts, and assessment history will remain intact and accessible.'
+                : 'This assessment will become active and available again to eligible learners according to its target school, class, programme, or learner settings. Existing learner submissions, scores, and attempt limits will be preserved.'}
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={manualStatusBusy}
+                onClick={() => setPendingHeaderStatusChange(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={manualStatusBusy}
+                onClick={async () => {
+                  const target = pendingHeaderStatusChange;
+                  setManualStatusBusy(true);
+                  try {
+                    await onChangeAssessmentStatus(target);
+                    setStatus(target);
+                    setPendingHeaderStatusChange(null);
+                  } catch {
+                    // Error handled by parent toast banner
+                  } finally {
+                    setManualStatusBusy(false);
+                  }
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold text-white transition-colors disabled:opacity-60 ${
+                  pendingHeaderStatusChange === 'completed'
+                    ? 'bg-[#991B1B] hover:bg-[#7F1D1D]'
+                    : 'bg-emerald-700 hover:bg-emerald-800'
+                }`}
+              >
+                {manualStatusBusy
+                  ? 'Updating...'
+                  : pendingHeaderStatusChange === 'completed'
+                  ? 'Close Assessment'
+                  : status === 'completed'
+                  ? 'Reopen Assessment'
+                  : 'Activate Assessment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

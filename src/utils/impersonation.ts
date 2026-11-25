@@ -81,6 +81,21 @@ export const clearRoleSpecificSessionKeys = () => {
   }
   try {
     localStorage.removeItem('jaystar_cached_student_doc_id');
+    for (const storage of [sessionStorage, localStorage]) {
+      const toRemove: string[] = [];
+      for (let i = 0; i < storage.length; i++) {
+        const k = storage.key(i);
+        if (
+          k &&
+          (k.startsWith('jaystar_portal_swr_v2::') ||
+            k.startsWith('jaystar_entitlement_v2_') ||
+            k.startsWith('jaystar_auth_guard_v2_'))
+        ) {
+          toRemove.push(k);
+        }
+      }
+      toRemove.forEach((k) => storage.removeItem(k));
+    }
   } catch {
     // ignore storage errors
   }
