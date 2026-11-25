@@ -289,6 +289,13 @@ export async function createOfficialStudioPdfDocument(
     const el = node as HTMLElement;
     const tag = el.tagName.toUpperCase();
 
+    const targetPageAttr = Number(el.getAttribute('data-jdi-page-start') || 0);
+    if (targetPageAttr > 1 && doc.getNumberOfPages() < targetPageAttr) {
+      doc.addPage();
+      preparePageBackgroundAndWatermark(doc, watermarkAsset);
+      cursorY = ensurePdfSpace(doc, PDF_LAYOUT.CONTENT_TOP_SUBPAGE_Y, 10, refNo, watermarkAsset);
+    }
+
     if (tag === 'HR') {
       if (el.getAttribute('data-page-break') === 'true') {
         doc.addPage();

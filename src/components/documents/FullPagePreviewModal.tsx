@@ -1,8 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, FileDown, FileText, Printer } from 'lucide-react';
 import {
   DOCUMENT_CATEGORY_META,
-  extractPlainTextFromHtml,
   sanitizeDocumentHtml,
   type OfficialDocumentCategory,
 } from '../../lib/documents/documentTemplates';
@@ -12,7 +11,10 @@ import {
   type OfficialStudioExportInput,
 } from '../../lib/documents/documentExporter';
 import { JDI_INSTITUTION_NAME, formatDocumentRefNo } from '../../lib/pdf/documentBranding';
-import { OfficialA4PageFrame } from './OfficialA4PageFrame';
+import {
+  OfficialA4PageFrame,
+  measureAndPaginateA4Blocks,
+} from './OfficialA4PageFrame';
 
 interface FullPagePreviewModalProps {
   isOpen: boolean;
@@ -25,11 +27,29 @@ export const FullPagePreviewModal: React.FC<FullPagePreviewModalProps> = ({
   onClose,
   documentData,
 }) => {
-  if (!isOpen) return null;
+  const articleRef = useRef<HTMLElement | null>(null);
+  const [measuredPages, setMeasuredPages] = useState(1);
 
   const category: OfficialDocumentCategory = documentData.category || 'PERFORMANCE_REPORT';
   const meta = DOCUMENT_CATEGORY_META[category];
   const cleanHtml = sanitizeDocumentHtml(documentData.contentHtml || '');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const runPagination = () => {
+      const { totalPages } = measureAndPaginateA4Blocks(articleRef.current);
+      setMeasuredPages(totalPages);
+    };
+    const frameId = window.requestAnimationFrame(runPagination);
+    const timerId = window.setTimeout(runPagination, 120);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timerId);
+    };
+  }, [isOpen, cleanHtml]);
+
+  if (!isOpen) return null;
+
   const dateDisplay =
     documentData.dateLabel ||
     new Date().toLocaleDateString('en-GB', {
@@ -42,11 +62,6 @@ export const FullPagePreviewModal: React.FC<FullPagePreviewModalProps> = ({
     meta.refPrefix,
     documentData.id || documentData.title || meta.shortLabel
   );
-
-  const plainWords = extractPlainTextFromHtml(cleanHtml)
-    .split(/\s+/)
-    .filter(Boolean).length;
-  const totalPages = Math.max(1, Math.ceil(plainWords / 420));
 
   const metadataItems =
     category === 'PERFORMANCE_REPORT'
@@ -107,7 +122,8 @@ export const FullPagePreviewModal: React.FC<FullPagePreviewModalProps> = ({
             Official A4 Printout Preview — {documentData.title || meta.label}
           </p>
           <p className="text-xs text-slate-300">
-            {meta.label} · REF: {refNo} · Version v{documentData.versionNumber || 1}
+            {meta.label} · REF: {refNo} · Version v{documentData.versionNumber || 1} · {measuredPages}{' '}
+            A4 Page{measuredPages === 1 ? '' : 's'}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -156,11 +172,12 @@ export const FullPagePreviewModal: React.FC<FullPagePreviewModalProps> = ({
           versionNumber={documentData.versionNumber || 1}
           statusLabel={documentData.status}
           pageNumber={1}
-          totalPages={totalPages}
+          totalPages={measuredPages}
           metadataItems={metadataItems}
         >
           <article
-            className="jdi-document-prose max-w-none text-sm leading-relaxed text-slate-800 [&_h1]:text-lg [&_h1]:sm:text-xl [&_h1]:font-black [&_h1]:text-[#0C2340] [&_h1]:mb-3 [&_h2]:text-sm [&_h2]:font-extrabold [&_h2]:uppercase [&_h2]:tracking-wide [&_h2]:text-[#0C2340] [&_h2]:border-b-2 [&_h2]:border-[#0C2340]/20 [&_h2]:pb-1 [&_h2]:mt-5 [&_h2]:mb-2.5 [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-[#991B1B] [&_h3]:mt-4 [&_h3]:mb-1.5 [&_p]:mb-2.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-3 [&_li]:mb-1 [&_table]:w-full [&_table]:border-collapse [&_table]:my-3.5 [&_table]:text-xs [&_th]:border [&_th]:border-slate-300 [&_th]:bg-[#0C2340] [&_th]:text-white [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-bold [&_td]:border [&_td]:border-slate-300 [&_td]:px-3 [&_td]:py-2 [&_blockquote]:border-l-4 [&_blockquote]:border-[#991B1B] [&_blockquote]:bg-slate-50 [&_blockquote]:px-3.5 [&_blockquote]:py-2.5 [&_blockquote]:rounded-r-lg [&_blockquote]:italic [&_blockquote]:text-slate-700 [&_hr]:my-5 [&_hr]:border-slate-300"
+            ref={articleRef}
+            className="jdi-a4-document-body jdi-document-prose max-w-none text-sm leading-relaxed text-[#0F172A] [&_h1]:text-lg [&_h1]:sm:text-xl [&_h1]:font-black [&_h1]:text-[#0C2340] [&_h1]:mb-3 [&_h2]:text-sm [&_h2]:font-extrabold [&_h2]:uppercase [&_h2]:tracking-wide [&_h2]:text-[#0C2340] [&_h2]:border-b-2 [&_h2]:border-[#0C2340]/20 [&_h2]:pb-1 [&_h2]:mt-5 [&_h2]:mb-2.5 [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-[#991B1B] [&_h3]:mt-4 [&_h3]:mb-1.5 [&_p]:mb-2.5 [&_p]:text-[#0F172A] [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-3 [&_li]:mb-1 [&_li]:text-[#0F172A] [&_table]:w-full [&_table]:border-collapse [&_table]:my-3.5 [&_table]:text-xs [&_th]:border [&_th]:border-slate-300 [&_th]:bg-[#0C2340] [&_th]:text-white [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-bold [&_td]:border [&_td]:border-slate-300 [&_td]:px-3 [&_td]:py-2 [&_td]:text-[#0F172A] [&_blockquote]:border-l-4 [&_blockquote]:border-[#991B1B] [&_blockquote]:bg-slate-50 [&_blockquote]:px-3.5 [&_blockquote]:py-2.5 [&_blockquote]:rounded-r-lg [&_blockquote]:italic [&_blockquote]:text-[#0F172A] [&_hr]:my-5 [&_hr]:border-slate-300"
             dangerouslySetInnerHTML={{ __html: cleanHtml }}
           />
         </OfficialA4PageFrame>

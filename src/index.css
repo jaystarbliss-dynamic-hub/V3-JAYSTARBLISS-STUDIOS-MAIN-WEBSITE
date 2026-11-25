@@ -561,25 +561,82 @@ html:not(.dark) :is(.dashboard-interface, .admin-schools-command) .text-slate-50
   color: #475569;
 }
 
-/* Guarantee readable minimum contrast for dark text classes when inside Dark Mode */
-html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-900:not([class*="dark:text-"]) {
+/* Guarantee readable minimum contrast for dark text classes when inside Dark Mode (excluding white A4 paper sheets) */
+html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-900:not([class*="dark:text-"]):not(.jdi-a4-paper-sheet):not(.jdi-a4-paper-sheet *) {
   color: #F8FAFC;
 }
 
-html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-800:not([class*="dark:text-"]) {
+html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-800:not([class*="dark:text-"]):not(.jdi-a4-paper-sheet):not(.jdi-a4-paper-sheet *) {
   color: #F1F5F9;
 }
 
-html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-700:not([class*="dark:text-"]) {
+html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-700:not([class*="dark:text-"]):not(.jdi-a4-paper-sheet):not(.jdi-a4-paper-sheet *) {
   color: #E2E8F0;
 }
 
-html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-600:not([class*="dark:text-"]) {
+html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-600:not([class*="dark:text-"]):not(.jdi-a4-paper-sheet):not(.jdi-a4-paper-sheet *) {
   color: #CBD5E1;
 }
 
-html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-500:not([class*="dark:text-"]) {
+html.dark :is(.dashboard-interface, .admin-schools-command) .text-slate-500:not([class*="dark:text-"]):not(.jdi-a4-paper-sheet):not(.jdi-a4-paper-sheet *) {
   color: #94A3B8;
+}
+
+/* Official A4 Document Paper Sheet — Always High-Contrast Dark Ink on White Paper */
+.jdi-a4-paper-sheet:not(.jdi-a4-paper-dark) {
+  background-color: #FFFFFF;
+  color: #0F172A !important;
+  caret-color: #0F172A;
+}
+
+.jdi-a4-paper-sheet:not(.jdi-a4-paper-dark) .ProseMirror,
+.jdi-a4-paper-sheet:not(.jdi-a4-paper-dark) .jdi-a4-document-body {
+  color: #0F172A !important;
+  caret-color: #0F172A;
+}
+
+.jdi-a4-paper-sheet:not(.jdi-a4-paper-dark) :is(.ProseMirror, .jdi-a4-document-body) :is(p, li, td, div, blockquote) {
+  color: #0F172A;
+}
+
+.jdi-a4-paper-sheet:not(.jdi-a4-paper-dark) :is(.ProseMirror, .jdi-a4-document-body) :is(h1, h2) {
+  color: #0C2340 !important;
+}
+
+.jdi-a4-paper-sheet:not(.jdi-a4-paper-dark) :is(.ProseMirror, .jdi-a4-document-body) :is(h3, h4) {
+  color: #991B1B !important;
+}
+
+.jdi-a4-paper-sheet:not(.jdi-a4-paper-dark) :is(.ProseMirror, .jdi-a4-document-body) th {
+  background-color: #0C2340;
+  color: #FFFFFF !important;
+}
+
+/* Visual Manual Page Break Indicator inside A4 Editor */
+.jdi-a4-paper-sheet :is(.ProseMirror, .jdi-a4-document-body) hr[data-page-break="true"] {
+  border: 0;
+  border-top: 2px dashed #991B1B;
+  margin: 14px 0;
+  height: 18px;
+  position: relative;
+  overflow: visible;
+}
+
+.jdi-a4-paper-sheet :is(.ProseMirror, .jdi-a4-document-body) hr[data-page-break="true"]::after {
+  content: "MANUAL PAGE BREAK — NEXT CONTENT STARTS ON FOLLOWING A4 PAGE";
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #FEF2F2;
+  color: #991B1B;
+  border: 1px solid #FECACA;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 1px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
 /* Wireframe-consistent interactive form inputs and selects */

@@ -47,7 +47,11 @@ import {
   type OfficialStudioExportInput,
 } from '../../lib/documents/documentExporter';
 import { DocumentRibbon } from './DocumentRibbon';
-import { OfficialA4PageFrame, type PaperMarginPreset } from './OfficialA4PageFrame';
+import {
+  OfficialA4PageFrame,
+  measureAndPaginateA4Blocks,
+  type PaperMarginPreset,
+} from './OfficialA4PageFrame';
 import { TemplateSelector } from './TemplateSelector';
 import { FullPagePreviewModal } from './FullPagePreviewModal';
 import { VersionHistoryModal } from './VersionHistoryModal';
@@ -126,8 +130,22 @@ export const DocumentStudio: React.FC<DocumentStudioProps> = ({
   const [marginPreset, setMarginPreset] = useState<PaperMarginPreset>('normal');
   const [showMarginGuides, setShowMarginGuides] = useState(false);
   const [zoom, setZoom] = useState(100);
+  const [measuredPageCount, setMeasuredPageCount] = useState<number>(1);
   const autosaveTimerRef = useRef<number | null>(null);
+  const paginationRafRef = useRef<number | null>(null);
   const lastExternalHtmlRef = useRef<string>(contentHtml);
+
+  const schedulePaginationMeasurement = (edInstance?: { view?: { dom?: HTMLElement } } | null) => {
+    if (paginationRafRef.current) {
+      window.cancelAnimationFrame(paginationRafRef.current);
+    }
+    paginationRafRef.current = window.requestAnimationFrame(() => {
+      const domEl = (edInstance?.view?.dom as HTMLElement | undefined) || null;
+      if (!domEl) return;
+      const { totalPages } = measureAndPaginateA4Blocks(domEl);
+      setMeasuredPageCount((prev) => (prev === totalPages ? prev : totalPages));
+    });
+  };
 
   const editor = useEditor({
     extensions: [
@@ -157,7 +175,11 @@ export const DocumentStudio: React.FC<DocumentStudioProps> = ({
       }),
     ],
     content: sanitizeDocumentHtml(contentHtml || ''),
+    onCreate: ({ editor: ed }) => {
+      schedulePaginationMeasurement(ed);
+    },
     onUpdate: ({ editor: ed }) => {
+      schedulePaginationMeasurement(ed);
       const nextHtml = sanitizeDocumentHtml(ed.getHTML());
       lastExternalHtmlRef.current = nextHtml;
       onContentChange(nextHtml);
@@ -181,7 +203,7 @@ export const DocumentStudio: React.FC<DocumentStudioProps> = ({
     editorProps: {
       attributes: {
         class:
-          'focus:outline-none min-h-[680px] text-sm leading-relaxed [&_h1]:text-lg [&_h1]:sm:text-xl [&_h1]:font-black [&_h1]:text-[#0C2340] [&_h1]:dark:text-white [&_h1]:mb-3 [&_h2]:text-sm [&_h2]:font-extrabold [&_h2]:uppercase [&_h2]:tracking-wide [&_h2]:text-[#0C2340] [&_h2]:border-b-2 [&_h2]:border-[#0C2340]/20 [&_h2]:pb-1 [&_h2]:mt-5 [&_h2]:mb-2.5 [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-[#991B1B] [&_h3]:mt-4 [&_h3]:mb-1.5 [&_p]:mb-2.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-3 [&_li]:mb-1 [&_table]:w-full [&_table]:border-collapse [&_table]:my-3.5 [&_table]:text-xs [&_th]:border [&_th]:border-slate-300 [&_th]:bg-[#0C2340] [&_th]:text-white [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-bold [&_td]:border [&_td]:border-slate-300 [&_td]:px-3 [&_td]:py-2 [&_blockquote]:border-l-4 [&_blockquote]:border-[#991B1B] [&_blockquote]:bg-slate-50 [&_blockquote]:px-3.5 [&_blockquote]:py-2.5 [&_blockquote]:rounded-r-lg [&_blockquote]:italic [&_blockquote]:text-slate-700 [&_hr]:my-5 [&_hr]:border-slate-300 [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-3',
+          'focus:outline-none min-h-[780px] text-sm leading-relaxed text-[#0F172A] [&_h1]:text-lg [&_h1]:sm:text-xl [&_h1]:font-black [&_h1]:text-[#0C2340] [&_h1]:mb-3 [&_h2]:text-sm [&_h2]:font-extrabold [&_h2]:uppercase [&_h2]:tracking-wide [&_h2]:text-[#0C2340] [&_h2]:border-b-2 [&_h2]:border-[#0C2340]/20 [&_h2]:pb-1 [&_h2]:mt-5 [&_h2]:mb-2.5 [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-[#991B1B] [&_h3]:mt-4 [&_h3]:mb-1.5 [&_p]:mb-2.5 [&_p]:text-[#0F172A] [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-3 [&_li]:mb-1 [&_li]:text-[#0F172A] [&_table]:w-full [&_table]:border-collapse [&_table]:my-3.5 [&_table]:text-xs [&_th]:border [&_th]:border-slate-300 [&_th]:bg-[#0C2340] [&_th]:text-white [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-bold [&_td]:border [&_td]:border-slate-300 [&_td]:px-3 [&_td]:py-2 [&_td]:text-[#0F172A] [&_blockquote]:border-l-4 [&_blockquote]:border-[#991B1B] [&_blockquote]:bg-slate-50 [&_blockquote]:px-3.5 [&_blockquote]:py-2.5 [&_blockquote]:rounded-r-lg [&_blockquote]:italic [&_blockquote]:text-[#0F172A] [&_hr]:my-5 [&_hr]:border-slate-300 [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-3',
       },
     },
   });
@@ -193,12 +215,46 @@ export const DocumentStudio: React.FC<DocumentStudioProps> = ({
     if (sanitized !== lastExternalHtmlRef.current) {
       lastExternalHtmlRef.current = sanitized;
       editor.commands.setContent(sanitized, { emitUpdate: false });
+      schedulePaginationMeasurement(editor);
     }
   }, [contentHtml, editor]);
+
+  // Re-measure A4 pagination when margins, fonts, images, or layout resize change
+  useEffect(() => {
+    if (!editor) return;
+    schedulePaginationMeasurement(editor);
+    const domEl = editor.view?.dom as HTMLElement | undefined;
+    if (!domEl) return;
+
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => schedulePaginationMeasurement(editor))
+        : null;
+    resizeObserver?.observe(domEl);
+
+    const handleImageLoad = (e: Event) => {
+      if ((e.target as HTMLElement)?.tagName === 'IMG') {
+        schedulePaginationMeasurement(editor);
+      }
+    };
+    domEl.addEventListener('load', handleImageLoad, true);
+
+    if (typeof document !== 'undefined' && 'fonts' in document) {
+      void (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready.then(() =>
+        schedulePaginationMeasurement(editor)
+      );
+    }
+
+    return () => {
+      resizeObserver?.disconnect();
+      domEl.removeEventListener('load', handleImageLoad, true);
+    };
+  }, [editor, marginPreset]);
 
   useEffect(() => {
     return () => {
       if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+      if (paginationRafRef.current) window.cancelAnimationFrame(paginationRafRef.current);
     };
   }, []);
 
@@ -257,6 +313,7 @@ export const DocumentStudio: React.FC<DocumentStudioProps> = ({
     const html = buildTemplateForCategory(category, mergedTemplateContext);
     lastExternalHtmlRef.current = html;
     editor?.commands.setContent(html, { emitUpdate: false });
+    schedulePaginationMeasurement(editor);
     onContentChange(html);
   };
 
@@ -280,16 +337,15 @@ export const DocumentStudio: React.FC<DocumentStudioProps> = ({
     year: 'numeric',
   });
 
-  // Live Word, Character & Estimated Page Count (HUB-MIND footer metrics)
-  const { wordCount, charCount, estimatedPages } = useMemo(() => {
+  // Live Word & Character Count + Physical DOM-Measured A4 Page Count
+  const { wordCount, charCount } = useMemo(() => {
     const rawHtml = editor ? editor.getHTML() : contentHtml;
     const text = extractPlainTextFromHtml(rawHtml);
     const words = text ? text.split(/\s+/).filter(Boolean).length : 0;
     const chars = text.length;
-    const explicitBreaks = (rawHtml.match(/data-page-break="true"/g) || []).length;
-    const pages = Math.max(1, Math.ceil(words / 420) + explicitBreaks);
-    return { wordCount: words, charCount: chars, estimatedPages: pages };
+    return { wordCount: words, charCount: chars };
   }, [editor, contentHtml]);
+  const estimatedPages = Math.max(1, measuredPageCount);
 
   const metadataItems = useMemo(() => {
     if (category === 'PERFORMANCE_REPORT') {

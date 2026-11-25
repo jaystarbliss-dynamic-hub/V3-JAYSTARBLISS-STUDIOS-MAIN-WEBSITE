@@ -303,12 +303,24 @@ export async function resolveReportAuthorityContext(overrideRoleHint?: string): 
     if (isAuthorizedTutor) {
       const assignedTutorMatch =
         norm(data.tutorId || data.assignedTutorId || data.staffId || data.instructorId) === uid ||
-        (email && normLower(data.tutorEmail) === email);
+        (email && normLower(data.tutorEmail) === email) ||
+        allIds.some((sid) => authorizedStudentIds.has(sid));
       const schoolMatch =
         (data.schoolId && authorizedSchoolIds.has(norm(data.schoolId))) ||
         (data.schoolName && authorizedSchoolNames.has(normLower(data.schoolName))) ||
         (data.schoolName &&
           authorizedSchoolNames.has(normLower(resolvePartnerSchoolName(data.schoolName))));
+
+      if (assignedTutorMatch) {
+        const rawSName = norm(data.schoolName || data.school || '');
+        const rawSId = norm(data.schoolId || data.partnerSchoolId || '');
+        if (
+          rawSId ||
+          (rawSName && !['individual', 'private', 'none', 'jaystarbliss'].includes(rawSName.toLowerCase()))
+        ) {
+          registerSchoolRef(rawSId, rawSName);
+        }
+      }
 
       if (assignedTutorMatch || schoolMatch) {
         allIds.forEach((sid) => authorizedStudentIds.add(sid));
@@ -493,6 +505,9 @@ export interface ReportingSchoolDirectoryItem {
   id: string;
   name: string;
   classes: string[];
+  adminUid?: string;
+  adminName?: string;
+  adminEmail?: string;
 }
 
 export interface ReportingLearnerDirectoryItem {
@@ -513,11 +528,17 @@ export interface ReportingLearnerDirectoryItem {
   assignedTutorId?: string;
   assignedTutorName?: string;
   parentId?: string;
+  parentUid?: string;
   parentName?: string;
+  parentEmail?: string;
+  schoolAdminUid?: string;
+  schoolAdminName?: string;
+  schoolAdminEmail?: string;
 }
 
 /**
- * Loads all learners and partner schools accessible to the current authority context.
+ * Loads all learners and partner schools accessible to the current authority context,
+ * including verified Parent/Guardian and School Administrator recipient records.
  */
 export async function fetchReportingLearnersAndSchools(
   authority?: ReportAuthorityContext
@@ -528,16 +549,67 @@ export async function fetchReportingLearnersAndSchools(
   programmes: string[];
 }> {
   const authCtx = authority || (await resolveReportAuthorityContext());
-  const [schoolDocs, fallbackSchools, studentDocs, indivDocs, fallbackStudents] = await Promise.all([
-    queryDocsAcrossDbs('schools'),
-    fetchAcademicSchoolsFallback().catch(() => []),
-    queryDocsAcrossDbs('students'),
-    queryDocsAcrossDbs('individualStudents'),
-    fetchAcademicStudentsFallback().catch(() => []),
-  ]);
+  const [schoolDocs, fallbackSchools, studentDocs, indivDocs, fallbackStudents, parentDocs, userDocs] =
+    await Promise.all([
+      queryDocsAcrossDbs('schools'),
+      fetchAcademicSchoolsFallback().catch(() => []),
+      queryDocsAcrossDbs('students'),
+      queryDocsAcrossDbs('individualStudents'),
+      fetchAcademicStudentsFallback().catch(() => []),
+      queryDocsAcrossDbs('parents'),
+      queryDocsAcrossDbs('users'),
+    ]);
+
+  // Build parent lookup maps by ID/UID, Email, and Linked Student ID
+  const parentById = new Map<string, { uid: string; name: string; email: string }>();
+  const parentByEmail = new Map<string, { uid: string; name: string; email: string }>();
+  const parentByStudentId = new Map<string, { uid: string; name: string; email: string }>();
+
+  const registerParentRecord = (docId: string, data: Record<string, any>) => {
+    const pUid = norm(data.uid || data.userId || data.parentId || docId);
+    const pName = norm(
+      data.fullName || data.name || data.parentName || data.guardianName || data.displayName || ''
+    );
+    const pEmail = normLower(data.email || data.parentEmail || data.guardianEmail || '');
+    if (!pUid && !pEmail && !pName) return;
+    const entry = {
+      uid: pUid || docId,
+      name: pName || (pEmail ? pEmail.split('@')[0] : 'Parent / Guardian'),
+      email: pEmail,
+    };
+    if (docId) parentById.set(docId, entry);
+    if (pUid) parentById.set(pUid, entry);
+    if (pEmail) parentByEmail.set(pEmail, entry);
+
+    const linkedIds = [
+      ...(Array.isArray(data.studentIds) ? data.studentIds : []),
+      ...(Array.isArray(data.linkedStudentIds) ? data.linkedStudentIds : []),
+      ...(Array.isArray(data.childrenIds) ? data.childrenIds : []),
+      ...(Array.isArray(data.children)
+        ? data.children.map((c: any) => (typeof c === 'object' ? c?.id || c?.studentId : c))
+        : []),
+    ];
+    linkedIds.forEach((sid) => {
+      const cleanSid = norm(sid);
+      if (cleanSid) parentByStudentId.set(cleanSid, entry);
+    });
+  };
+
+  parentDocs.forEach(({ id, data }) => registerParentRecord(id, data));
+  userDocs.forEach(({ id, data }) => {
+    const role = norm(data.role).toUpperCase();
+    if (['PARENT', 'CLIENT', 'GUARDIAN'].includes(role)) {
+      registerParentRecord(id, data);
+    }
+  });
 
   const schoolMap = new Map<string, ReportingSchoolDirectoryItem>();
-  const registerSchool = (id: string, name: string, className?: string) => {
+  const registerSchool = (
+    id: string,
+    name: string,
+    className?: string,
+    adminMeta?: { adminUid?: string; adminName?: string; adminEmail?: string }
+  ) => {
     const cleanName = resolvePartnerSchoolName(name || id) || norm(name || id);
     if (!cleanName) return;
     const key = cleanName.toLowerCase();
@@ -546,6 +618,13 @@ export async function fetchReportingLearnersAndSchools(
       name: cleanName,
       classes: [],
     };
+    if (norm(id) && (existing.id === existing.name || !existing.id)) {
+      existing.id = norm(id);
+    }
+    if (adminMeta?.adminUid && !existing.adminUid) existing.adminUid = adminMeta.adminUid;
+    if (adminMeta?.adminName && !existing.adminName) existing.adminName = adminMeta.adminName;
+    if (adminMeta?.adminEmail && !existing.adminEmail) existing.adminEmail = adminMeta.adminEmail;
+
     if (className) {
       const formattedClass = formatNormalizedClassDisplay(className) || norm(className);
       if (formattedClass && !existing.classes.includes(formattedClass)) {
@@ -556,11 +635,48 @@ export async function fetchReportingLearnersAndSchools(
   };
 
   schoolDocs.forEach(({ id, data }) => {
-    registerSchool(id, data.name || data.schoolName || id);
+    const sName = norm(data.name || data.schoolName || id);
+    const adminUid = norm(data.adminUid || data.uid || data.userId || id);
+    const adminName = norm(
+      data.adminName ||
+        data.contactPerson ||
+        data.principalName ||
+        data.proprietorName ||
+        data.ownerName ||
+        (sName ? `${sName} Administrator` : 'School Administrator')
+    );
+    const adminEmail = normLower(data.email || data.contactEmail || data.adminEmail || data.officialEmail || '');
+    registerSchool(id, sName, undefined, {
+      adminUid: adminUid || undefined,
+      adminName: adminName || undefined,
+      adminEmail: adminEmail || undefined,
+    });
   });
+
+  // Cross-reference users collection for school administrator accounts
+  userDocs.forEach(({ id, data }) => {
+    const role = norm(data.role).toUpperCase();
+    if (['SCHOOL', 'SCHOOL_ADMIN', 'PARTNER_SCHOOL'].includes(role)) {
+      const sName = norm(data.schoolName || data.organizationName || data.name || '');
+      const sId = norm(data.schoolId || id);
+      if (sName || sId) {
+        registerSchool(sId, sName || sId, undefined, {
+          adminUid: norm(data.uid || id) || undefined,
+          adminName: norm(data.fullName || data.displayName || data.name || `${sName} Administrator`) || undefined,
+          adminEmail: normLower(data.email || '') || undefined,
+        });
+      }
+    }
+  });
+
   if (Array.isArray(fallbackSchools)) {
     fallbackSchools.forEach((s: any) => {
-      registerSchool(norm(s.id || s.schoolId), norm(s.name || s.schoolName));
+      const sName = norm(s.name || s.schoolName);
+      registerSchool(norm(s.id || s.schoolId), sName, undefined, {
+        adminUid: norm(s.adminUid || s.uid || s.id || s.schoolId) || undefined,
+        adminName: norm(s.adminName || s.contactPerson || (sName ? `${sName} Administrator` : '')) || undefined,
+        adminEmail: normLower(s.email || s.contactEmail || '') || undefined,
+      });
     });
   }
 
@@ -576,6 +692,13 @@ export async function fetchReportingLearnersAndSchools(
     );
     if (!fullName) return;
 
+    const canonicalId = norm(id || data.id || data.uid || data.studentId);
+    if (!canonicalId) return;
+
+    const allIds = Array.from(
+      new Set([canonicalId, norm(data.id), norm(data.uid), norm(data.studentId), norm(data.studentUid)].filter(Boolean))
+    );
+
     const rawSchoolId = norm(data.schoolId || data.partnerSchoolId || '');
     const rawSchoolName = norm(data.schoolName || data.school || '');
     const resolvedSchool = resolvePartnerSchoolName(rawSchoolName || rawSchoolId);
@@ -588,9 +711,26 @@ export async function fetchReportingLearnersAndSchools(
           (rawSchoolName && !['individual', 'private', 'none', 'jaystarbliss'].includes(rawSchoolName.toLowerCase()))
       );
 
-    const hasParentLink = Boolean(
-      norm(data.parentId || data.parentUid || data.parentEmail || data.parentName || data.guardianName)
+    // Resolve parent / guardian from student record + cross-referenced parent directory
+    const rawParentId = norm(data.parentId || data.parentUid || data.clientId || '');
+    const rawParentEmail = normLower(data.parentEmail || data.guardianEmail || '');
+    const rawParentName = norm(data.parentName || data.guardianName || '');
+
+    const matchedParent =
+      (rawParentId && parentById.get(rawParentId)) ||
+      (rawParentEmail && parentByEmail.get(rawParentEmail)) ||
+      allIds.map((sid) => parentByStudentId.get(sid)).find(Boolean) ||
+      null;
+
+    const resolvedParentUid = norm(matchedParent?.uid || rawParentId);
+    const resolvedParentEmail = normLower(matchedParent?.email || rawParentEmail);
+    const resolvedParentName = norm(
+      rawParentName ||
+        matchedParent?.name ||
+        (resolvedParentEmail ? resolvedParentEmail.split('@')[0] : '')
     );
+
+    const hasParentLink = Boolean(resolvedParentUid || resolvedParentEmail || resolvedParentName);
 
     const enrolmentCategory: AcademicEnrolmentCategory = isSchoolLearner
       ? 'school'
@@ -625,12 +765,7 @@ export async function fetchReportingLearnersAndSchools(
       registerSchool(schoolId, schoolName, className);
     }
 
-    const canonicalId = norm(id || data.id || data.uid || data.studentId);
-    if (!canonicalId) return;
-
-    const allIds = Array.from(
-      new Set([canonicalId, norm(data.id), norm(data.uid), norm(data.studentId), norm(data.studentUid)].filter(Boolean))
-    );
+    const schoolRecord = isSchoolLearner && schoolName ? schoolMap.get(schoolName.toLowerCase()) : undefined;
 
     const item: ReportingLearnerDirectoryItem = {
       id: canonicalId,
@@ -640,7 +775,7 @@ export async function fetchReportingLearnersAndSchools(
       email: norm(data.email || data.studentEmail || ''),
       enrolmentCategory,
       enrolmentLabel,
-      schoolId,
+      schoolId: schoolRecord?.id || schoolId,
       schoolName,
       className,
       programId: programName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -649,8 +784,15 @@ export async function fetchReportingLearnersAndSchools(
       programCompletionDate: toIso(data.completionDate || data.endDate)?.slice(0, 10) || undefined,
       assignedTutorId: norm(data.tutorId || data.assignedTutorId || data.staffId || '') || undefined,
       assignedTutorName: norm(data.tutorName || data.assignedTutorName || data.instructorName || '') || undefined,
-      parentId: norm(data.parentId || data.parentUid || '') || undefined,
-      parentName: norm(data.parentName || data.guardianName || '') || undefined,
+      parentId: resolvedParentUid || undefined,
+      parentUid: resolvedParentUid || undefined,
+      parentName: resolvedParentName || undefined,
+      parentEmail: resolvedParentEmail || undefined,
+      schoolAdminUid: isSchoolLearner ? schoolRecord?.adminUid || schoolRecord?.id || schoolId || undefined : undefined,
+      schoolAdminName: isSchoolLearner
+        ? schoolRecord?.adminName || (schoolName ? `${schoolName} Administrator` : undefined)
+        : undefined,
+      schoolAdminEmail: isSchoolLearner ? schoolRecord?.adminEmail || undefined : undefined,
     };
 
     if (!learnerMap.has(canonicalId)) {
@@ -664,12 +806,6 @@ export async function fetchReportingLearnersAndSchools(
     fallbackStudents.forEach((s: any) => processLearnerRow(norm(s.id || s.uid), s, 'students'));
   }
 
-  const allSchools = Array.from(schoolMap.values()).filter((s) =>
-    authCtx.isPlatformAdmin
-      ? true
-      : canTutorManageTarget(authCtx, { schoolId: s.id, schoolName: s.name })
-  );
-
   const allLearners = Array.from(learnerMap.values()).filter((l) =>
     authCtx.isPlatformAdmin
       ? true
@@ -678,6 +814,20 @@ export async function fetchReportingLearnersAndSchools(
           schoolName: l.schoolName,
           studentId: l.id,
         })
+  );
+
+  // Ensure every school that has an authorized learner is also present in the tutor's authorized schools list
+  const learnerSchoolKeys = new Set(
+    allLearners
+      .filter((l) => l.enrolmentCategory === 'school' && l.schoolName)
+      .map((l) => l.schoolName.toLowerCase())
+  );
+
+  const allSchools = Array.from(schoolMap.values()).filter((s) =>
+    authCtx.isPlatformAdmin
+      ? true
+      : learnerSchoolKeys.has(s.name.toLowerCase()) ||
+        canTutorManageTarget(authCtx, { schoolId: s.id, schoolName: s.name })
   );
 
   return {

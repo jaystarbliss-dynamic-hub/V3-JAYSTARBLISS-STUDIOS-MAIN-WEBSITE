@@ -916,8 +916,11 @@ service cloud.firestore {
           resource.data.get('status', 'DRAFT') == 'SENT' && (
             resource.data.get('parentUid', '') == request.auth.uid ||
             resource.data.get('parentId', '') == request.auth.uid ||
+            resource.data.get('schoolAdminUid', '') == request.auth.uid ||
+            (isSchoolUser() && resource.data.get('schoolId', '') != '' && isSameSchool(resource.data.get('schoolId', ''))) ||
             (userParentId() != null && resource.data.get('parentId', '') == userParentId()) ||
             (request.auth.token.email != null && resource.data.get('parentEmail', '').lower() == request.auth.token.email.lower()) ||
+            (request.auth.token.email != null && resource.data.get('schoolAdminEmail', '').lower() == request.auth.token.email.lower()) ||
             isParentOfStudent(resource.data.get('studentId', ''))
           ));
       allow create: if isAnyAdmin() || (

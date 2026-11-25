@@ -16,6 +16,17 @@ export interface DocumentVersionSnapshot {
   note?: string;
 }
 
+export interface PerformanceReportStructuredSections {
+  subjectOrProgramme?: string;
+  reportDate?: string;
+  performanceIndicatorsSummary?: string;
+  learningObjectivesCovered?: string;
+  keyStrengths?: string;
+  areasForImprovement?: string;
+  tutorObservations?: string;
+  recommendationsAndNextSteps?: string;
+}
+
 export interface DocumentTemplateContext {
   studentName?: string;
   studentClass?: string;
@@ -33,6 +44,7 @@ export interface DocumentTemplateContext {
     attendanceRate?: number | null;
     assignmentCount?: number | null;
   };
+  structuredSections?: PerformanceReportStructuredSections;
 }
 
 export const DOCUMENT_CATEGORY_META: Record<
@@ -74,15 +86,23 @@ export const DOCUMENT_CATEGORY_META: Record<
   },
 };
 
+function stripAccidentalWhiteInlineTextColor(rawHtml: string): string {
+  return rawHtml.replace(
+    /(style\s*=\s*["'][^"']*?)color\s*:\s*(?:#fff(?:fff)?|white|#f8fafc|#f1f5f9|#fafafa|rgb\(\s*25[0-5]\s*,\s*25[0-5]\s*,\s*25[0-5]\s*\))\s*;?/gi,
+    '$1'
+  );
+}
+
 export function sanitizeDocumentHtml(html: string): string {
   if (!html || typeof html !== 'string') return '';
+  const normalizedHtml = stripAccidentalWhiteInlineTextColor(html);
   if (typeof DOMPurify?.sanitize !== 'function') {
-    return html
+    return normalizedHtml
       .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
       .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
       .replace(/javascript:/gi, '');
   }
-  return DOMPurify.sanitize(html, {
+  return DOMPurify.sanitize(normalizedHtml, {
     ALLOWED_TAGS: [
       'h1',
       'h2',
@@ -128,9 +148,10 @@ export function sanitizeDocumentHtml(html: string): string {
       'target',
       'rel',
       'data-page-break',
+      'data-jdi-page-start',
     ],
     ALLOW_DATA_ATTR: false,
-    ADD_ATTR: ['data-page-break'],
+    ADD_ATTR: ['data-page-break', 'data-jdi-page-start'],
   });
 }
 
@@ -161,8 +182,20 @@ const esc = (value?: string | null, fallback = ''): string => {
     .replace(/"/g, '&quot;');
 };
 
+function formatLinesToHtmlList(text: string | undefined, ordered: boolean, defaultItems: string[]): string {
+  const tag = ordered ? 'ol' : 'ul';
+  const rawLines = String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[\s•\-*\d.)]+/, '').trim())
+    .filter(Boolean);
+  const items = rawLines.length > 0 ? rawLines.map((line) => esc(line)) : defaultItems;
+  return `<${tag}>${items.map((item) => `<li>${item}</li>`).join('')}</${tag}>`;
+}
+
 export function buildPerformanceReportTemplate(ctx: DocumentTemplateContext): string {
+  const structured = ctx.structuredSections;
   const dateLabel =
+    structured?.reportDate ||
     ctx.dateLabel ||
     new Date().toLocaleDateString('en-GB', {
       day: '2-digit',
@@ -171,10 +204,10 @@ export function buildPerformanceReportTemplate(ctx: DocumentTemplateContext): st
     });
   const studentName = esc(ctx.studentName, '[Learner Full Name]');
   const studentClass = esc(ctx.studentClass, '[Class / Level]');
-  const programmeName = esc(ctx.programmeName, '[Enrolled Programme]');
+  const programmeName = esc(structured?.subjectOrProgramme || ctx.programmeName, '[Enrolled Programme]');
   const schoolName = esc(ctx.schoolName, 'Jaystarbliss Dynamic Institute');
   const tutorName = esc(ctx.tutorName, '[Tutor Name]');
-  const parentName = esc(ctx.parentName, 'Parent / Guardian');
+  const parentName = esc(ctx.recipientName || ctx.parentName, 'Parent / Guardian');
   const reportingPeriod = esc(ctx.reportingPeriod, 'Current Learning Period');
 
   const avgText =
@@ -194,6 +227,33 @@ export function buildPerformanceReportTemplate(ctx: DocumentTemplateContext): st
       ? `${ctx.verifiedMetrics.assignmentCount} Recorded`
       : '[Enter assignment summary]';
 
+  const executiveSummaryText = structured?.performanceIndicatorsSummary?.trim()
+    ? esc(structured.performanceIndicatorsSummary)
+    : `Provide a concise overview of ${studentName}&rsquo;s learning trajectory, engagement, and readiness during ${reportingPeriod}.`;
+
+  const learningObjectivesText = structured?.learningObjectivesCovered?.trim()
+    ? esc(structured.learningObjectivesCovered)
+    : `Outline core skills covered this period and the learner&rsquo;s current mastery level across practical exercises and guided sessions.`;
+
+  const tutorObservationsText = structured?.tutorObservations?.trim()
+    ? esc(structured.tutorObservations)
+    : `Summarize classroom focus, teamwork, communication, and consistency in completing practical exercises and projects.`;
+
+  const strengthsListHtml = formatLinesToHtmlList(structured?.keyStrengths, false, [
+    '[Highlight technical, creative, or collaborative milestones achieved.]',
+    '[Note standout project work, curiosity, or leadership in class.]',
+  ]);
+
+  const improvementListHtml = formatLinesToHtmlList(structured?.areasForImprovement, false, [
+    '[Identify specific concepts or habits needing targeted reinforcement.]',
+    '[Explain how upcoming classes will address these focus areas.]',
+  ]);
+
+  const recommendationsListHtml = formatLinesToHtmlList(structured?.recommendationsAndNextSteps, true, [
+    '[Recommended weekly practice routine or revision activity.]',
+    '[How parents/guardians or school coordinators can encourage continued momentum.]',
+  ]);
+
   return sanitizeDocumentHtml(`
     <h1>Student Performance &amp; Progress Report</h1>
     <p>Dear ${parentName}, please find below an official progress update prepared by ${tutorName} on behalf of <strong>Jaystarbliss Dynamic Institute</strong> for <strong>${studentName}</strong>.</p>
@@ -203,13 +263,13 @@ export function buildPerformanceReportTemplate(ctx: DocumentTemplateContext): st
       <tbody>
         <tr><th>Learner Name</th><td>${studentName}</td><th>Date Issued</th><td>${esc(dateLabel)}</td></tr>
         <tr><th>Class / Level</th><td>${studentClass}</td><th>Reporting Period</th><td>${reportingPeriod}</td></tr>
-        <tr><th>Programme</th><td>${programmeName}</td><th>School / Campus</th><td>${schoolName}</td></tr>
-        <tr><th>Prepared By</th><td>${tutorName}</td><th>Parent / Guardian</th><td>${parentName}</td></tr>
+        <tr><th>Subject / Programme</th><td>${programmeName}</td><th>School / Campus</th><td>${schoolName}</td></tr>
+        <tr><th>Prepared By</th><td>${tutorName}</td><th>Authorized Recipient</th><td>${parentName}</td></tr>
       </tbody>
     </table>
 
-    <h2>2. Executive Summary</h2>
-    <p>Provide a concise overview of ${studentName}&rsquo;s learning trajectory, engagement, and readiness during ${reportingPeriod}.</p>
+    <h2>2. Executive Summary &amp; Performance Indicators</h2>
+    <p>${executiveSummaryText}</p>
 
     <h2>3. Recorded Performance Snapshot</h2>
     <table>
@@ -217,41 +277,29 @@ export function buildPerformanceReportTemplate(ctx: DocumentTemplateContext): st
         <tr><th>Indicator</th><th>Current Record / Observation</th><th>Tutor Remarks</th></tr>
       </thead>
       <tbody>
-        <tr><td>Assessment Average</td><td>${esc(avgText)}</td><td>[Add context]</td></tr>
-        <tr><td>Assessments Completed</td><td>${esc(assessmentsText)}</td><td>[Add context]</td></tr>
-        <tr><td>Assignments &amp; Practicals</td><td>${esc(assignmentsText)}</td><td>[Add context]</td></tr>
-        <tr><td>Attendance &amp; Punctuality</td><td>${esc(attendanceText)}</td><td>[Add context]</td></tr>
+        <tr><td>Assessment Average</td><td>${esc(avgText)}</td><td>Verified academic progress record</td></tr>
+        <tr><td>Assessments Completed</td><td>${esc(assessmentsText)}</td><td>Recorded portal assessments</td></tr>
+        <tr><td>Assignments &amp; Practicals</td><td>${esc(assignmentsText)}</td><td>Hands-on tasks &amp; classwork</td></tr>
+        <tr><td>Attendance &amp; Punctuality</td><td>${esc(attendanceText)}</td><td>Session attendance consistency</td></tr>
       </tbody>
     </table>
 
-    <h2>4. Key Strengths &amp; Achievements</h2>
-    <ul>
-      <li>[Highlight technical, creative, or collaborative milestones achieved.]</li>
-      <li>[Note standout project work, curiosity, or leadership in class.]</li>
-    </ul>
+    <h2>4. Learning Objectives &amp; Competencies Covered</h2>
+    <p>${learningObjectivesText}</p>
 
-    <h2>5. Skill &amp; Competency Observations</h2>
-    <p>Outline core skills covered this period and the learner&rsquo;s current mastery level across practical exercises and guided sessions.</p>
+    <h2>5. Key Strengths &amp; Achievements</h2>
+    ${strengthsListHtml}
 
-    <h2>6. Areas for Growth &amp; Attention</h2>
-    <ul>
-      <li>[Identify specific concepts or habits needing targeted reinforcement.]</li>
-      <li>[Explain how upcoming classes will address these focus areas.]</li>
-    </ul>
+    <h2>6. Areas for Growth &amp; Targeted Improvement</h2>
+    ${improvementListHtml}
 
-    <h2>7. Attendance, Conduct &amp; Class Participation</h2>
-    <p>Summarize classroom focus, teamwork, communication, and consistency in bringing materials or completing class tasks.</p>
+    <h2>7. Tutor Observations, Conduct &amp; Practical Engagement</h2>
+    <p>${tutorObservationsText}</p>
 
-    <h2>8. Practical Projects &amp; Portfolio Highlights</h2>
-    <p>Describe recent hands-on projects, code builds, design drafts, or musical pieces completed or currently in progress.</p>
+    <h2>8. Action Plan &amp; Support Recommendations</h2>
+    ${recommendationsListHtml}
 
-    <h2>9. Action Plan &amp; Home Support Recommendations</h2>
-    <ol>
-      <li>[Recommended weekly practice routine or revision activity.]</li>
-      <li>[How parents/guardians can encourage continued momentum at home.]</li>
-    </ol>
-
-    <h2>10. Tutor Sign-Off</h2>
+    <h2>9. Tutor Sign-Off</h2>
     <p><strong>${tutorName}</strong><br/>Faculty Tutor, Jaystarbliss Dynamic Institute<br/>Date: ${esc(dateLabel)}</p>
   `);
 }

@@ -550,10 +550,11 @@ export const DocumentRibbon: React.FC<DocumentRibbonProps> = ({
               <button
                 type="button"
                 onClick={insertPageBreak}
-                className={btnClass()}
-                title="Insert Page Break"
+                className="px-2 py-1 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 text-[11px] font-bold text-[#991B1B] dark:text-red-400 inline-flex items-center gap-1 shrink-0"
+                title="Insert Manual A4 Page Break"
               >
-                <SeparatorHorizontal size={14} />
+                <SeparatorHorizontal size={13} />
+                <span>Page Break</span>
               </button>
               <button
                 type="button"

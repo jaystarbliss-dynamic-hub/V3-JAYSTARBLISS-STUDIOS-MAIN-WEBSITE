@@ -2694,16 +2694,24 @@ export const AcademicReportingCenter: React.FC = () => {
             defaultTutorName={authority?.name}
             autoCreateTrigger={manualReportCreateTrigger}
             onEditingChange={setIsEditingManualReport}
+            schools={schools}
+            programmes={programmes}
             learners={learners.map((l) => ({
               id: l.id,
               name: l.fullName,
+              studentCode: l.studentCode,
+              enrolmentCategory: l.enrolmentCategory,
               className: l.className,
               programmeName: l.programName,
               schoolId: l.schoolId,
               schoolName: l.schoolName,
+              schoolAdminUid: l.schoolAdminUid,
+              schoolAdminName: l.schoolAdminName,
+              schoolAdminEmail: l.schoolAdminEmail,
               parentId: l.parentId,
-              parentUid: l.parentId,
+              parentUid: l.parentUid || l.parentId,
               parentName: l.parentName,
+              parentEmail: l.parentEmail,
             }))}
           />
         </div>
