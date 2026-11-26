@@ -84,7 +84,7 @@ export function normalizeQuestions(
 export function normalizeDeliveryMode(
   input: unknown,
   fallbackExam?: Record<string, any> | null
-): "NATIVE" | "EXTERNAL_LINK";
+): "NATIVE" | "EXTERNAL_LINK" | "CODING_LAB";
 
 export function validateExternalExamUrl(
   input: unknown
@@ -95,7 +95,7 @@ export function validateExamCreationPayload(
   existingDoc?: Record<string, any> | null
 ):
   | {
-      deliveryMode: "NATIVE" | "EXTERNAL_LINK";
+      deliveryMode: "NATIVE" | "EXTERNAL_LINK" | "CODING_LAB";
       title: string;
       subject: string;
       description: string;
@@ -125,6 +125,7 @@ export function validateExamCreationPayload(
       programTitle?: string;
       subProgramName?: string;
       gradingMode: "automatic" | "manual";
+      codingLabConfig?: Record<string, any> | null;
       status: string;
       error?: never;
     }

@@ -731,7 +731,7 @@ export const PortalSettings: React.FC = () => {
       if (role === 'student' && cleanUsername) {
         const check = await checkUsernameAvailability(
           cleanUsername,
-          [targetUid, studentDocId, schoolId].filter(Boolean)
+          [targetUid, user.uid, studentDocId, schoolId, cleanEmail, user.email, effectiveAuth.effectiveEmail].filter(Boolean)
         );
         if (!check.available) {
           throw new Error(check.reason || `The username "${cleanUsername}" is already taken. Please pick another username.`);

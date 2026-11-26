@@ -948,6 +948,122 @@ service cloud.firestore {
         ]);
       allow delete: if false;
     }
+
+    // =========================================================================
+    // INTEGRATED CODING LAB (Assessment Mode only — Playground is local-only)
+    // =========================================================================
+    match /codingLabProjects/{projectId} {
+      allow get: if isAnyAdmin() ||
+        isStaffOrTutor() ||
+        (isAuth() && resource.data.get('ownerUid', '') == request.auth.uid) ||
+        (isSchoolUser() && resource.data.get('schoolId', '') != '' && isSameSchool(resource.data.get('schoolId', '')));
+      allow list: if isAnyAdmin() ||
+        isStaffOrTutor() ||
+        (isAuth() && resource.data.get('ownerUid', '') == request.auth.uid);
+      allow create: if isAnyAdmin() || (
+        isAuth() &&
+        projectId.matches('^[a-zA-Z0-9_-]{4,140}$') &&
+        request.resource.data.get('ownerUid', '') == request.auth.uid &&
+        request.resource.data.get('mode', '') == 'assessment' &&
+        request.resource.data.get('status', 'draft') == 'draft' &&
+        request.resource.data.get('payloadHash', '') is string &&
+        request.resource.data.get('payloadHash', '').size() == 64 &&
+        request.resource.data.get('chunkCount', 0) is int &&
+        request.resource.data.get('chunkCount', 0) >= 0 &&
+        request.resource.data.get('chunkCount', 0) <= 20
+      );
+      allow update: if isAnyAdmin() || (
+        isAuth() &&
+        resource.data.get('ownerUid', '') == request.auth.uid &&
+        resource.data.get('status', 'draft') != 'submitted' &&
+        request.resource.data.get('ownerUid', '') == request.auth.uid &&
+        request.resource.data.get('assessmentId', '') == resource.data.get('assessmentId', '') &&
+        request.resource.data.get('attemptId', '') == resource.data.get('attemptId', '') &&
+        request.resource.data.get('mode', '') == 'assessment' &&
+        request.resource.data.get('status', 'draft') in ['draft', 'submitted'] &&
+        request.resource.data.get('payloadHash', '') is string &&
+        request.resource.data.get('payloadHash', '').size() == 64 &&
+        request.resource.data.get('chunkCount', 0) is int &&
+        request.resource.data.get('chunkCount', 0) >= 0 &&
+        request.resource.data.get('chunkCount', 0) <= 20
+      );
+      allow delete: if isSuperAdmin();
+
+      match /payloadChunks/{chunkIndex} {
+        allow read: if isAnyAdmin() ||
+          isStaffOrTutor() ||
+          (isAuth() && get(/databases/$(database)/documents/codingLabProjects/$(projectId)).data.get('ownerUid', '') == request.auth.uid) ||
+          (isSchoolUser() &&
+            get(/databases/$(database)/documents/codingLabProjects/$(projectId)).data.get('schoolId', '') != '' &&
+            isSameSchool(get(/databases/$(database)/documents/codingLabProjects/$(projectId)).data.get('schoolId', '')));
+        allow create, update: if isAnyAdmin() || (
+          isAuth() &&
+          chunkIndex.matches('^[0-9]{1,2}$') &&
+          get(/databases/$(database)/documents/codingLabProjects/$(projectId)).data.get('ownerUid', '') == request.auth.uid &&
+          get(/databases/$(database)/documents/codingLabProjects/$(projectId)).data.get('status', 'draft') != 'submitted' &&
+          request.resource.data.get('chunkIndex', -1) is int &&
+          request.resource.data.get('chunkIndex', -1) >= 0 &&
+          request.resource.data.get('chunkIndex', -1) < 20 &&
+          request.resource.data.get('payloadHash', '') is string &&
+          request.resource.data.get('payloadHash', '').size() == 64
+        );
+        allow delete: if isSuperAdmin();
+      }
+    }
+
+    match /codingLabSubmissions/{submissionId} {
+      allow get: if isAnyAdmin() ||
+        isStaffOrTutor() ||
+        (isAuth() && resource.data.get('learnerUid', '') == request.auth.uid) ||
+        (isSchoolUser() && resource.data.get('schoolId', '') != '' && isSameSchool(resource.data.get('schoolId', '')));
+      allow list: if isAnyAdmin() ||
+        isStaffOrTutor() ||
+        (isAuth() && resource.data.get('learnerUid', '') == request.auth.uid) ||
+        (isSchoolUser() && resource.data.get('schoolId', '') != '' && isSameSchool(resource.data.get('schoolId', '')));
+      // Learner may create their own immutable submission snapshot once (client fallback when serverless endpoint is offline);
+      // learner CANNOT forge tutor manual grading/overrides or mutate/delete after creation.
+      allow create: if isAnyAdmin() || (
+        isAuth() &&
+        submissionId.matches('^[a-zA-Z0-9_-]{4,140}$') &&
+        request.resource.data.get('learnerUid', '') == request.auth.uid &&
+        request.resource.data.get('immutable', false) == true &&
+        request.resource.data.get('payloadHash', '') is string &&
+        request.resource.data.get('payloadHash', '').size() == 64 &&
+        !('manualScore' in request.resource.data) &&
+        !('tutorFeedback' in request.resource.data) &&
+        !('gradeOverrides' in request.resource.data)
+      );
+      allow update: if isAnyAdmin() || (
+        isStaffOrTutor() &&
+        request.resource.data.get('learnerUid', '') == resource.data.get('learnerUid', '') &&
+        request.resource.data.get('assessmentId', '') == resource.data.get('assessmentId', '') &&
+        request.resource.data.get('projectId', '') == resource.data.get('projectId', '') &&
+        request.resource.data.get('payloadHash', '') == resource.data.get('payloadHash', '') &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'manualScore', 'finalScore', 'maxScore', 'percentage', 'gradingStatus',
+          'tutorFeedback', 'gradeOverrides', 'resultReleased', 'releasedAt',
+          'gradedByUid', 'gradedByName', 'gradedAt', 'updatedAt'
+        ])
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    match /codingLabAssets/{assetHash} {
+      allow get: if isAuth();
+      allow list: if isAnyAdmin() || isStaffOrTutor();
+      allow create, update: if isAnyAdmin() || (
+        isAuth() &&
+        assetHash.matches('^[a-f0-9]{64}$') &&
+        request.resource.data.get('contentHash', '') == assetHash &&
+        request.resource.data.get('assetCategory', '') == 'custom_image' &&
+        request.resource.data.get('mimeType', '') in ['image/png', 'image/jpeg', 'image/svg+xml'] &&
+        request.resource.data.get('sizeBytes', 0) is int &&
+        request.resource.data.get('sizeBytes', 0) > 0 &&
+        request.resource.data.get('sizeBytes', 0) <= 1048576
+      );
+      allow delete: if isSuperAdmin();
+    }
+
     match /{document=**} { allow read, write: if false; }
   }
 }

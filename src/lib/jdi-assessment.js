@@ -622,6 +622,9 @@ export function normalizeDeliveryMode(input, fallbackExam = null) {
       ? input.trim().toUpperCase()
       : String(examObj?.deliveryMode ?? "").trim().toUpperCase();
 
+  if (raw === "CODING_LAB" || raw === "CODING" || raw === "SCRATCH" || raw === "SCRATCH_LAB") {
+    return "CODING_LAB";
+  }
   if (raw === "EXTERNAL_LINK" || raw === "EXTERNAL" || raw === "GOOGLE_FORMS" || raw === "GOOGLE_FORM") {
     return "EXTERNAL_LINK";
   }
@@ -630,8 +633,10 @@ export function normalizeDeliveryMode(input, fallbackExam = null) {
   }
   if (examObj && typeof examObj === "object") {
     const fbMode = String(examObj.deliveryMode ?? "").trim().toUpperCase();
+    if (fbMode === "CODING_LAB" || fbMode === "CODING" || fbMode === "SCRATCH") return "CODING_LAB";
     if (fbMode === "EXTERNAL_LINK" || fbMode === "EXTERNAL") return "EXTERNAL_LINK";
     if (fbMode === "NATIVE") return "NATIVE";
+    if (examObj.codingLabConfig && typeof examObj.codingLabConfig === "object") return "CODING_LAB";
     const hasQuestions = Array.isArray(examObj.questions) && examObj.questions.length > 0;
     const hasExternalUrl = Boolean(
       String(examObj.externalUrl || examObj.url || examObj.link || "").trim()
@@ -777,6 +782,152 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
       durationMinutes,
       gradingMode: "automatic",
       releaseGradesPolicy,
+      status,
+    };
+  }
+
+  if (deliveryMode === "CODING_LAB") {
+    const explicitNoTimeLimit =
+      body.hasTimeLimit === false ||
+      body.durationMinutes === null ||
+      body.durationMinutes === 0 ||
+      body.durationMinutes === "";
+    const hasTimeLimit = explicitNoTimeLimit
+      ? false
+      : body.hasTimeLimit === true
+      ? true
+      : body.durationMinutes !== undefined
+      ? true
+      : existingDoc?.hasTimeLimit !== undefined
+      ? Boolean(existingDoc.hasTimeLimit)
+      : existingDoc?.durationMinutes !== undefined &&
+        existingDoc?.durationMinutes !== null &&
+        Number(existingDoc?.durationMinutes) > 0;
+
+    let durationMinutes = null;
+    if (hasTimeLimit) {
+      const rawDuration = Number(body.durationMinutes ?? existingDoc?.durationMinutes ?? 45);
+      if (!Number.isInteger(rawDuration) || rawDuration < 1 || rawDuration > 525600) {
+        return { error: "Provide a whole-number duration of at least 1 minute." };
+      }
+      durationMinutes = rawDuration;
+    }
+
+    const rawCoding =
+      (body.codingLabConfig && typeof body.codingLabConfig === "object"
+        ? body.codingLabConfig
+        : existingDoc?.codingLabConfig && typeof existingDoc.codingLabConfig === "object"
+        ? existingDoc.codingLabConfig
+        : {}) || {};
+    const rawMethod = String(rawCoding.gradingMethod || "hybrid").trim().toLowerCase();
+    const gradingMethod = ["automatic", "manual", "hybrid"].includes(rawMethod)
+      ? rawMethod
+      : "hybrid";
+    const rubricCriteria = Array.isArray(rawCoding.rubricCriteria)
+      ? rawCoding.rubricCriteria
+          .filter((c) => c && typeof c === "object" && String(c.type || "").trim())
+          .slice(0, 50)
+          .map((c, idx) => ({
+            id: String(c.id || `crit_${idx + 1}`).slice(0, 80),
+            label: String(c.label || `Criterion ${idx + 1}`).trim().slice(0, 200),
+            ...(c.description ? { description: String(c.description).trim().slice(0, 500) } : {}),
+            type: String(c.type).trim().slice(0, 60),
+            marks: Math.max(0, Math.min(500, Number(c.marks ?? c.points ?? 1) || 0)),
+            ...(c.opcode ? { opcode: String(c.opcode).trim().slice(0, 120) } : {}),
+            ...(c.minCount !== undefined ? { minCount: Math.max(0, Number(c.minCount) || 0) } : {}),
+            ...(c.targetScope ? { targetScope: String(c.targetScope).trim().slice(0, 40) } : {}),
+            ...(c.requireAttachedScript !== undefined
+              ? { requireAttachedScript: Boolean(c.requireAttachedScript) }
+              : {}),
+            ...(c.inputName ? { inputName: String(c.inputName).trim().slice(0, 80) } : {}),
+            ...(c.expectedValue !== undefined ? { expectedValue: String(c.expectedValue).slice(0, 200) } : {}),
+            ...(c.comparison ? { comparison: String(c.comparison).trim().slice(0, 40) } : {}),
+            ...(c.fieldName ? { fieldName: String(c.fieldName).trim().slice(0, 80) } : {}),
+            ...(Array.isArray(c.opcodes)
+              ? { opcodes: c.opcodes.map((o) => String(o).trim().slice(0, 120)).filter(Boolean).slice(0, 20) }
+              : {}),
+            ...(c.strictAdjacent !== undefined ? { strictAdjacent: Boolean(c.strictAdjacent) } : {}),
+            ...(c.outerOpcode ? { outerOpcode: String(c.outerOpcode).trim().slice(0, 120) } : {}),
+            ...(c.innerOpcode ? { innerOpcode: String(c.innerOpcode).trim().slice(0, 120) } : {}),
+            ...(c.outerInputName ? { outerInputName: String(c.outerInputName).trim().slice(0, 80) } : {}),
+            ...(c.outerExpectedValue !== undefined
+              ? { outerExpectedValue: String(c.outerExpectedValue).slice(0, 200) }
+              : {}),
+            ...(c.variableKind ? { variableKind: String(c.variableKind).trim().slice(0, 40) } : {}),
+            ...(c.variableName ? { variableName: String(c.variableName).trim().slice(0, 120) } : {}),
+            ...(c.requireReferencedInBlocks !== undefined
+              ? { requireReferencedInBlocks: Boolean(c.requireReferencedInBlocks) }
+              : {}),
+            ...(c.minSprites !== undefined ? { minSprites: Math.max(0, Number(c.minSprites) || 0) } : {}),
+            ...(c.maxSprites !== undefined ? { maxSprites: Math.max(0, Number(c.maxSprites) || 0) } : {}),
+            ...(c.assetTargetKind ? { assetTargetKind: String(c.assetTargetKind).trim().slice(0, 40) } : {}),
+          }))
+      : [];
+
+    if (gradingMethod === "automatic" && status !== "draft" && rubricCriteria.length === 0) {
+      return {
+        error: "Automatic Coding Lab grading requires at least one structural rubric criterion before publishing.",
+      };
+    }
+
+    const rubricPointsTotal = rubricCriteria.reduce((acc, c) => acc + Number(c.marks || 0), 0);
+    const manualRubricMaxMarks = Math.max(0, Math.min(1000, Number(rawCoding.manualRubricMaxMarks ?? 0) || 0));
+    const requestedMax = Number(body.maxScore ?? rawCoding.maxScore ?? existingDoc?.maxScore ?? 0);
+    const computedCodingMax =
+      Number.isFinite(requestedMax) && requestedMax > 0
+        ? Math.min(1000, Math.round(requestedMax))
+        : rubricPointsTotal + manualRubricMaxMarks > 0
+        ? Math.min(1000, Math.round(rubricPointsTotal + manualRubricMaxMarks))
+        : 20;
+    const rawPassMark = Number(rawCoding.passMark ?? Math.round(computedCodingMax * 0.5));
+    const passMark = Number.isFinite(rawPassMark)
+      ? Math.max(0, Math.min(computedCodingMax, Math.round(rawPassMark)))
+      : Math.round(computedCodingMax * 0.5);
+
+    const codingLabConfig = {
+      programmingEnvironment: "scratch-3-visual",
+      gradingMethod,
+      rubricCriteria,
+      ...(manualRubricMaxMarks > 0 ? { manualRubricMaxMarks } : {}),
+      passMark,
+      allowSb3Import: rawCoding.allowSb3Import !== false,
+      disableCustomAudio: true,
+      disableMicrophoneRecording: true,
+      ...(rawCoding.starterProject && typeof rawCoding.starterProject === "object"
+        ? { starterProject: rawCoding.starterProject }
+        : {}),
+    };
+
+    const resolvedCodingGradingMode = gradingMethod === "automatic" ? "automatic" : "manual";
+    const resolvedCodingReleasePolicy =
+      gradingMethod === "automatic" ? releaseGradesPolicy : "manual";
+
+    return {
+      deliveryMode: "CODING_LAB",
+      workType,
+      hasPasscode,
+      hasTimeLimit,
+      limitOneAttempt,
+      maxAttempts,
+      title,
+      subject,
+      description,
+      ...(deliverables ? { deliverables } : {}),
+      ...(resourceTitle ? { resourceTitle } : {}),
+      ...(resourceUrl ? { resourceUrl, videoUrl: resourceUrl } : {}),
+      ...(learningResources.length > 0 ? { learningResources } : {}),
+      ...(programId ? { programId } : {}),
+      ...(programName ? { programName, programTitle: programName } : {}),
+      ...(subProgramName ? { subProgramName } : {}),
+      externalUrl: "",
+      classIds,
+      questions: [],
+      questionCount: 0,
+      maxScore: computedCodingMax,
+      durationMinutes,
+      gradingMode: resolvedCodingGradingMode,
+      releaseGradesPolicy: resolvedCodingReleasePolicy,
+      codingLabConfig,
       status,
     };
   }

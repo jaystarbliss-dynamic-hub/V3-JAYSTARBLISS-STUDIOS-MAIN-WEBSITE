@@ -113,7 +113,8 @@ type ExistingExamItem = {
   targetSchoolIds?: string[];
   targetStudentIds?: string[];
   status: string;
-  deliveryMode: "NATIVE" | "EXTERNAL_LINK";
+  deliveryMode: "NATIVE" | "EXTERNAL_LINK" | "CODING_LAB";
+  codingLabConfig?: Record<string, any> | null;
   externalUrl?: string;
   programTitle?: string;
   programName?: string;
@@ -255,6 +256,7 @@ export default function TutorExaminations() {
   const [editorTab, setEditorTab] = useState<EditorTab>("setup");
   const [responsesSubTab, setResponsesSubTab] = useState<ResponsesSubTab>("live");
   const [editingExamId, setEditingExamId] = useState<string>("");
+  const [editorSessionId, setEditorSessionId] = useState<number>(1);
   const [showCreateTypeModal, setShowCreateTypeModal] = useState<boolean>(false);
   const [showScheduleSection, setShowScheduleSection] = useState<boolean>(false);
   const [showLeftDirectoryRail, setShowLeftDirectoryRail] = useState<boolean>(true);
@@ -296,7 +298,7 @@ export default function TutorExaminations() {
   const [description, setDescription] = useState("");
   const [subject, setSubject] = useState("");
   const [duration, setDuration] = useState(30);
-  const [deliveryMode, setDeliveryMode] = useState<"NATIVE" | "EXTERNAL_LINK">("NATIVE");
+  const [deliveryMode, setDeliveryMode] = useState<"NATIVE" | "EXTERNAL_LINK" | "CODING_LAB">("NATIVE");
   const [externalUrl, setExternalUrl] = useState("");
 
   // School & Class State
@@ -2046,6 +2048,13 @@ ANSWER KEY
         .replace(/[^a-z0-9]/g, "-")}-${Date.now().toString(36)}`;
 
     const preparedQuestions = Array.isArray(payload.questions) ? payload.questions : [];
+    const codingRubricSum =
+      payload.deliveryMode === "CODING_LAB" && Array.isArray(payload.codingLabConfig?.rubricCriteria)
+        ? payload.codingLabConfig.rubricCriteria.reduce(
+            (sum: number, c: any) => sum + (Number(c?.marks ?? c?.points) || 0),
+            0
+          ) + Number(payload.codingLabConfig?.manualRubricMaxMarks || 0)
+        : 0;
     const computedMaxScore =
       payload.deliveryMode === "NATIVE"
         ? preparedQuestions.reduce(
@@ -2053,6 +2062,8 @@ ANSWER KEY
               sum + (q.type === "learning_resource" ? 0 : Number(q.points) || 0),
             0
           )
+        : payload.deliveryMode === "CODING_LAB"
+        ? Math.max(Number(payload.maxScore) || 0, codingRubricSum, 1)
         : 0;
 
     const hasManualDeliverable = preparedQuestions.some((q: any) =>
@@ -2061,8 +2072,15 @@ ANSWER KEY
       )
     );
 
+    const codingGradingMethod = String(payload.codingLabConfig?.gradingMethod || "hybrid");
     const resolvedGradingMode: "automatic" | "manual" =
-      payload.gradingMode === "manual" || hasManualDeliverable ? "manual" : "automatic";
+      payload.deliveryMode === "CODING_LAB"
+        ? codingGradingMethod === "automatic"
+          ? "automatic"
+          : "manual"
+        : payload.gradingMode === "manual" || hasManualDeliverable
+        ? "manual"
+        : "automatic";
     const resolvedReleasePolicy: "immediate" | "manual" =
       resolvedGradingMode === "automatic"
         ? payload.releaseGradesPolicy === "manual"
@@ -2145,6 +2163,7 @@ ANSWER KEY
       showCorrectAnswers: payload.showCorrectAnswers !== false,
       showPointValues: payload.showPointValues !== false,
       defaultPointValue: Number(payload.defaultPointValue || 2),
+      uniformMcqPointsEnabled: Boolean(payload.uniformMcqPointsEnabled),
       limitOneAttempt: payload.limitOneAttempt !== false,
       maxAttempts: payload.limitOneAttempt === false ? 10 : 1,
       shuffleQuestions: Boolean(payload.shuffleQuestions),
@@ -2159,6 +2178,9 @@ ANSWER KEY
       availableUntil: payload.availableUntil || null,
       questions: payload.deliveryMode === "NATIVE" ? preparedQuestions : [],
       questionCount: payload.deliveryMode === "NATIVE" ? preparedQuestions.length : 0,
+      ...(payload.deliveryMode === "CODING_LAB" && payload.codingLabConfig
+        ? { codingLabConfig: payload.codingLabConfig }
+        : {}),
       maxScore: computedMaxScore,
       createdBy: currentUser.uid,
       tutorId: currentUser.uid,
@@ -2238,6 +2260,7 @@ ANSWER KEY
     }
 
     setEditingExamId(targetExamId);
+    setViewMode((prev) => (prev === "create" ? "edit" : prev));
     await loadExistingExams();
     setMessage(
       resolvedStatus === "draft"
@@ -2489,6 +2512,7 @@ ANSWER KEY
 
     // Launch the duplicated assessment directly inside the Assessment Workspace
     handleEditExam(updatedDraft, "questions");
+    setEditorSessionId((prev) => prev + 1);
     setViewMode("edit");
   };
 
@@ -3190,7 +3214,13 @@ ANSWER KEY
       title: ex.title,
       subject: ex.subject,
       workType: normalizeWorkType(ex.workType, ex),
-      deliveryMode: (ex.deliveryMode === "EXTERNAL_LINK" ? "EXTERNAL_LINK" : "NATIVE") as "NATIVE" | "EXTERNAL_LINK",
+      deliveryMode: (
+        ex.deliveryMode === "CODING_LAB"
+          ? "CODING_LAB"
+          : ex.deliveryMode === "EXTERNAL_LINK"
+          ? "EXTERNAL_LINK"
+          : "NATIVE"
+      ) as "NATIVE" | "EXTERNAL_LINK" | "CODING_LAB",
       externalUrl: ex.externalUrl,
       status: ex.status,
       schoolId: ex.schoolId,
@@ -3284,6 +3314,7 @@ ANSWER KEY
             setTitle("");
             setSubject("General");
             setQuestions([]);
+            setEditorSessionId((prev) => prev + 1);
             setViewMode("create");
           }}
           onEditAssessment={(assessment) => {
@@ -3294,6 +3325,7 @@ ANSWER KEY
             } else {
               setEditingExamId(assessment.id);
             }
+            setEditorSessionId((prev) => prev + 1);
             setViewMode("edit");
           }}
           onMonitorAssessment={(assessment) => {
@@ -3305,6 +3337,7 @@ ANSWER KEY
               setEditingExamId(assessment.id);
               setEditorTab("responses");
             }
+            setEditorSessionId((prev) => prev + 1);
             setViewMode("monitor");
           }}
           onPreviewAssessment={(assessment) => {
@@ -3315,6 +3348,7 @@ ANSWER KEY
               setEditingExamId(assessment.id);
             }
             setShowPreview(true);
+            setEditorSessionId((prev) => prev + 1);
             setViewMode("edit");
           }}
           onDuplicateAssessment={(assessment) => {
@@ -3360,7 +3394,7 @@ ANSWER KEY
       {/* ============================================================== */}
       {(viewMode === "create" || viewMode === "edit" || viewMode === "monitor") && (
         <AssessmentEditor
-          key={`${viewMode}-${editingExamId || "new"}-${showPreview ? "preview" : "editor"}`}
+          key={`assessment-editor-${editorSessionId}`}
           initialExam={
             editingExamId
               ? existingExams.find((e) => e.id === editingExamId)
@@ -3391,7 +3425,6 @@ ANSWER KEY
           }}
           onSaveAssessment={async (assessmentData) => {
             await handleSaveWizardAssessment(assessmentData);
-            void loadExistingExams();
           }}
           examAttempts={examAttempts}
           onReleaseResult={async (attempt) => {

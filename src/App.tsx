@@ -48,6 +48,7 @@ const Blog = lazy(() => import("./pages/Blog"));
 const BlogPostDetails = lazy(() => import("./pages/BlogPostDetails"));
 
 const MagicParticles = lazy(() => import("./pages/MagicParticles"));
+const CodingLabPlaygroundPage = lazy(() => import("./pages/CodingLabPlaygroundPage"));
 const PortalLayout = lazy(() => import("./components/portal/PortalLayout"));
 const PortalHomeWithBilling = lazy(() => import("./pages/portal/PortalHomeWithBilling"));
 const BillingCenter = lazy(() => import("./pages/portal/BillingCenter"));
@@ -236,6 +237,7 @@ function AnimatedRoutes() {
         <Route path="/portfolio" element={<PageTransition><Portfolio /></PageTransition>} />
         <Route path="/magic-particles" element={<MagicParticles />} />
         <Route path="/kids-zone/magic" element={<MagicParticles />} />
+        <Route path="/coding-lab" element={<CodingLabPlaygroundPage />} />
         <Route path="/contact" element={<PageTransition><Contact /></PageTransition>} />
         <Route path="/support" element={<PageTransition><PortalSupport /></PageTransition>} />
         <Route path="/resources" element={<PageTransition><Resources /></PageTransition>} />
@@ -260,6 +262,7 @@ function AnimatedRoutes() {
           <Route path="schedules" element={<PortalCalendar />} />
           <Route path="courses" element={<PortalCourses />} />
           <Route path="edge-club" element={<StudentEdgeClub />} />
+          <Route path="coding-lab" element={<CodingLabPlaygroundPage />} />
           <Route path="assignments" element={<AssignmentCenter role="student" />} />
           <Route path="milestones" element={<MilestoneCenter role="student" />} />
           <Route path="assessments" element={<StudentExaminations />} />

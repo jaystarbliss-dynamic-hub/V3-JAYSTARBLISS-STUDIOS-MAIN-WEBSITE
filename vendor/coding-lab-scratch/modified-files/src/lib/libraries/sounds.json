@@ -1,0 +1,180 @@
+[
+  {
+    "name": "Pop",
+    "assetId": "e5175042f2e763993167ce992ff80090",
+    "md5ext": "e5175042f2e763993167ce992ff80090.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 1984,
+    "tags": [
+      "effects"
+    ]
+  },
+  {
+    "name": "Beep",
+    "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+    "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 3969,
+    "tags": [
+      "effects",
+      "notes"
+    ]
+  },
+  {
+    "name": "Laser Zap",
+    "assetId": "4b9eae9db84564f51368814c36f35ab6",
+    "md5ext": "4b9eae9db84564f51368814c36f35ab6.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 5733,
+    "tags": [
+      "effects",
+      "space"
+    ]
+  },
+  {
+    "name": "Coin Collect",
+    "assetId": "bb1f074639abfce05131800c8b9c24a0",
+    "md5ext": "bb1f074639abfce05131800c8b9c24a0.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 7056,
+    "tags": [
+      "effects",
+      "notes"
+    ]
+  },
+  {
+    "name": "Jump Up",
+    "assetId": "5ffc326fe264d9ce014ddd75930789b4",
+    "md5ext": "5ffc326fe264d9ce014ddd75930789b4.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 5292,
+    "tags": [
+      "effects",
+      "sports"
+    ]
+  },
+  {
+    "name": "Boing Bounce",
+    "assetId": "edafb27294c0115f2ca0ec5c4560d691",
+    "md5ext": "edafb27294c0115f2ca0ec5c4560d691.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 8379,
+    "tags": [
+      "effects",
+      "wacky"
+    ]
+  },
+  {
+    "name": "Victory Fanfare",
+    "assetId": "014d87e46df94905b3e00370603b9669",
+    "md5ext": "014d87e46df94905b3e00370603b9669.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 12127,
+    "tags": [
+      "notes",
+      "effects"
+    ]
+  },
+  {
+    "name": "Bell Chime",
+    "assetId": "a1faa5bfd5ab17b5fd4915950073375a",
+    "md5ext": "a1faa5bfd5ab17b5fd4915950073375a.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 12127,
+    "tags": [
+      "notes",
+      "percussion"
+    ]
+  },
+  {
+    "name": "Click Tick",
+    "assetId": "de280ecd71afb5f55857e7612762fd58",
+    "md5ext": "de280ecd71afb5f55857e7612762fd58.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 1102,
+    "tags": [
+      "effects",
+      "percussion"
+    ]
+  },
+  {
+    "name": "Power Up",
+    "assetId": "cab4d5cce51c39509023f20a187e4314",
+    "md5ext": "cab4d5cce51c39509023f20a187e4314.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 9261,
+    "tags": [
+      "effects",
+      "space"
+    ]
+  },
+  {
+    "name": "Drum Kick",
+    "assetId": "8de24527bbeed75201332bf3bf22d877",
+    "md5ext": "8de24527bbeed75201332bf3bf22d877.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 4851,
+    "tags": [
+      "percussion"
+    ]
+  },
+  {
+    "name": "Snare Hit",
+    "assetId": "e3cc9f337e896df1e87089922eed1f97",
+    "md5ext": "e3cc9f337e896df1e87089922eed1f97.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 3969,
+    "tags": [
+      "percussion"
+    ]
+  },
+  {
+    "name": "Alert Tone",
+    "assetId": "2b3df1181b3f2dd4713de27cc61b2a7c",
+    "md5ext": "2b3df1181b3f2dd4713de27cc61b2a7c.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 6615,
+    "tags": [
+      "effects"
+    ]
+  },
+  {
+    "name": "Whistle Slide",
+    "assetId": "6e93e8c19e26b261bff2b34b59c23fe1",
+    "md5ext": "6e93e8c19e26b261bff2b34b59c23fe1.wav",
+    "dataFormat": "wav",
+    "format": "",
+    "rate": 22050,
+    "sampleCount": 7497,
+    "tags": [
+      "effects",
+      "sports"
+    ]
+  }
+]

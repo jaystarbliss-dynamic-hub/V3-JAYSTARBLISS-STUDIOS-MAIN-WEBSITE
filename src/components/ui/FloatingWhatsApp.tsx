@@ -11,12 +11,29 @@ export const FloatingWhatsApp: React.FC = () => {
   const [phoneNumber, setPhoneNumber] = useState(VERIFIED_WHATSAPP_NUMBER);
   const [isIdle, setIsIdle] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [codingLabActive, setCodingLabActive] = useState<boolean>(
+    () => typeof document !== 'undefined' && document.body.dataset.codingLabActive === '1'
+  );
 
-  // Show ONLY on the main public website, never on login, portal, or admin dashboards.
+  useEffect(() => {
+    const syncCodingLabState = () => {
+      setCodingLabActive(
+        typeof document !== 'undefined' && document.body.dataset.codingLabActive === '1'
+      );
+    };
+    syncCodingLabState();
+    window.addEventListener('jdi-coding-lab-visibility', syncCodingLabState);
+    return () => window.removeEventListener('jdi-coding-lab-visibility', syncCodingLabState);
+  }, []);
+
+  // Show ONLY on the main public website, never on login, portal, admin dashboards, or Coding Lab.
   const isExcluded =
+    codingLabActive ||
     location.pathname === '/portal' ||
     location.pathname === '/login' ||
     location.pathname === '/register' ||
+    location.pathname === '/coding-lab' ||
+    location.pathname.startsWith('/coding-lab/') ||
     location.pathname.startsWith('/portal') ||
     location.pathname.startsWith('/admin');
 

@@ -33,6 +33,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 }) => {
   const { toast } = useToast();
   const [username, setUsername] = useState('');
+  const [initialUsername, setInitialUsername] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [needsReauth, setNeedsReauth] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -45,10 +46,14 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
   const effectiveAuth = getEffectiveAuth();
   const activeRole = (effectiveAuth.effectiveRole || 'student').toLowerCase();
   const isStudentRole = activeRole === 'student';
+  // Only prompt for a new username during forced first-time student onboarding when none exists yet.
+  // Normal password changes must NEVER force or block on username editing.
+  const canEditUsername = isForced && isStudentRole && !initialUsername;
 
   useEffect(() => {
     if (!isOpen) return;
     setUsername('');
+    setInitialUsername('');
     setError('');
     setNewPassword('');
     setConfirmPassword('');
@@ -65,7 +70,11 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
     if (!isMasquerading) {
       const cachedUsername = sessionStorage.getItem('studentUsername') || '';
-      if (cachedUsername) setUsername(normalizeUsername(cachedUsername));
+      if (cachedUsername) {
+        const normalized = normalizeUsername(cachedUsername);
+        setUsername(normalized);
+        setInitialUsername(normalized);
+      }
     }
 
     const loadCurrentUsername = async () => {
@@ -81,7 +90,9 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           for (const colName of ['individualStudents', 'students'] as const) {
             const sSnap = await getDoc(doc(db, colName, studentDocId)).catch(() => null);
             if (sSnap?.exists() && sSnap.data()?.username) {
-              setUsername(normalizeUsername(String(sSnap.data().username)));
+              const normalized = normalizeUsername(String(sSnap.data().username));
+              setUsername(normalized);
+              setInitialUsername(normalized);
               return;
             }
           }
@@ -91,7 +102,9 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         if (lookupUid && (!isMasquerading || lookupUid !== user?.uid)) {
           const uSnap = await getDoc(doc(db, 'users', lookupUid)).catch(() => null);
           if (uSnap?.exists() && uSnap.data()?.username && String(uSnap.data()?.role || '').toUpperCase().includes('STUDENT')) {
-            setUsername(normalizeUsername(String(uSnap.data().username)));
+            const normalized = normalizeUsername(String(uSnap.data().username));
+            setUsername(normalized);
+            setInitialUsername(normalized);
           }
         }
       } catch {
@@ -126,8 +139,9 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     e.preventDefault();
     setError('');
 
-    const cleanUsername = isStudentRole ? normalizeUsername(username) : '';
-    if (isStudentRole && cleanUsername && (cleanUsername.length < 3 || cleanUsername.length > 30)) {
+    const cleanUsername = canEditUsername ? normalizeUsername(username) : '';
+    const isUpdatingUsername = canEditUsername && Boolean(cleanUsername) && cleanUsername !== initialUsername;
+    if (isUpdatingUsername && (cleanUsername.length < 3 || cleanUsername.length > 30)) {
       setError('Username must be between 3 and 30 characters.');
       return;
     }
@@ -162,8 +176,11 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         const targetSchoolId = effectiveAuth.effectiveSchoolId;
         const targetStudentDocId = effectiveAuth.effectiveStudentDocId;
 
-        if (isStudentRole && cleanUsername) {
-          const check = await checkUsernameAvailability(cleanUsername, [targetUid, targetStudentDocId].filter(Boolean));
+        if (isUpdatingUsername) {
+          const check = await checkUsernameAvailability(
+            cleanUsername,
+            [targetUid, targetStudentDocId, targetSchoolId, effectiveAuth.effectiveEmail].filter(Boolean)
+          );
           if (!check.available) {
             setError(check.reason || `The username "${cleanUsername}" is already taken. Please pick another username.`);
             toast.error(`Username "${cleanUsername}" is already taken. Please pick another username.`);
@@ -173,7 +190,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         }
 
         const hashPatch: Record<string, any> = {
-          ...(isStudentRole && cleanUsername ? { username: cleanUsername } : {}),
+          ...(isUpdatingUsername ? { username: cleanUsername } : {}),
           passwordHash: sha256Hash,
           customPasswordHash: sha256Hash,
           accessCodeHash: upperSha256Hash,
@@ -215,7 +232,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
               }
             }
           }
-          if (cleanUsername) {
+          if (isUpdatingUsername) {
             await claimGlobalUsername(cleanUsername, {
               uid: targetUid || targetStudentDocId,
               docId: targetStudentDocId,
@@ -254,9 +271,12 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           ? sessionStorage.getItem('schoolId') || sessionStorage.getItem('schoolDocId') || ''
           : '';
 
-      // Enforce global username uniqueness across the entire portal (students only)
-      if (isStudentRole && cleanUsername) {
-        const check = await checkUsernameAvailability(cleanUsername, [user.uid, cachedStudentDocId, cachedSchoolId]);
+      // Only verify global username uniqueness if the user is actually setting a new username
+      if (isUpdatingUsername) {
+        const check = await checkUsernameAvailability(
+          cleanUsername,
+          [user.uid, effectiveAuth.effectiveUid, cachedStudentDocId, cachedSchoolId, user.email, effectiveAuth.effectiveEmail].filter(Boolean)
+        );
         if (!check.available) {
           setError(check.reason || `The username "${cleanUsername}" is already taken. Please pick another username.`);
           toast.error(`Username "${cleanUsername}" is already taken. Please pick another username.`);
@@ -292,7 +312,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
           },
-          body: JSON.stringify({ newPassword: cleanPassword, ...(isStudentRole && cleanUsername ? { username: cleanUsername } : {}) })
+          body: JSON.stringify({ newPassword: cleanPassword, ...(isUpdatingUsername ? { username: cleanUsername } : {}) })
         });
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.success && !data.fallback) {
@@ -312,7 +332,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       // 3. Direct client-side Firestore sync across primary and fallback databases
       // Never persist plaintext passwords on user records; clear single-use temp password flags on completion.
       const userPatch: Record<string, any> = {
-        ...(isStudentRole && cleanUsername ? { username: cleanUsername } : {}),
+        ...(isUpdatingUsername ? { username: cleanUsername } : {}),
         passwordHash: sha256Hash,
         customPasswordHash: sha256Hash,
         accessCodeHash: upperSha256Hash,
@@ -326,7 +346,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       };
 
       const studentPatch: Record<string, any> = {
-        ...(isStudentRole && cleanUsername ? { username: cleanUsername } : {}),
+        ...(isUpdatingUsername ? { username: cleanUsername } : {}),
         passwordHash: sha256Hash,
         customPasswordHash: sha256Hash,
         accessCodeHash: upperSha256Hash,
@@ -423,7 +443,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         }
       }
 
-      if (isStudentRole && cleanUsername) {
+      if (isUpdatingUsername) {
         sessionStorage.setItem('studentUsername', cleanUsername);
         await claimGlobalUsername(cleanUsername, {
           uid: user.uid,
@@ -438,7 +458,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       sessionStorage.setItem('mustResetPassword', 'false');
       setSuccess(true);
       toast.success(
-        isStudentRole
+        isUpdatingUsername
           ? 'Your password and unique username have been updated! You can now log in with your credentials.'
           : 'Your account password has been updated!'
       );
@@ -489,8 +509,6 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               {isForced 
                 ? 'Your account was initialized with temporary credentials. Please choose a new secure password to proceed.' 
-                : isStudentRole
-                ? 'Confirm your unique username and enter a strong, memorable password to secure your account.'
                 : `Enter a strong, memorable password to secure ${effectiveAuth.isMasquerading ? `${effectiveAuth.effectiveName}'s` : 'your'} account.`}
             </p>
           </div>
@@ -511,7 +529,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            {isStudentRole ? (
+            {canEditUsername ? (
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
                   Unique Portal Username
@@ -529,20 +547,25 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
                   />
                 </div>
                 <p className="mt-1 text-[10px] text-gray-500">
-                  No two accounts can share the same username. If your username is taken, pick another.
+                  Choose a unique username for signing into your student portal.
                 </p>
               </div>
             ) : (
               <div className="rounded-xl border border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/60 px-3.5 py-2.5">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-400">
-                  Target Account
+                  Account
                 </p>
                 <p className="text-xs font-bold text-gray-900 dark:text-white truncate mt-0.5">
-                  {effectiveAuth.effectiveName || 'Portal Account'}
+                  {effectiveAuth.effectiveName || auth.currentUser?.displayName || 'Portal Account'}
                 </p>
-                {effectiveAuth.effectiveEmail && (
+                {initialUsername && (
                   <p className="text-[11px] font-mono text-gray-500 dark:text-slate-400 truncate">
-                    {effectiveAuth.effectiveEmail}
+                    @{initialUsername}
+                  </p>
+                )}
+                {(effectiveAuth.effectiveEmail || auth.currentUser?.email) && (
+                  <p className="text-[11px] font-mono text-gray-500 dark:text-slate-400 truncate">
+                    {effectiveAuth.effectiveEmail || auth.currentUser?.email}
                   </p>
                 )}
               </div>

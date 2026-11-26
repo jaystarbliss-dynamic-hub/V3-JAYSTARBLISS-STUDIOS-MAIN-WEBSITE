@@ -2,9 +2,9 @@
 // Caches the app shell, compiled JS/CSS assets, fonts, and images using Stale-While-Revalidate
 // while strictly bypassing Vite dev paths, Firestore/Firebase Auth streams, and API routes.
 
-const APP_SHELL_CACHE = 'jaystar-pwa-shell-v3';
-const STATIC_ASSET_CACHE = 'jaystar-pwa-assets-v3';
-const FONT_CACHE = 'jaystar-pwa-fonts-v3';
+const APP_SHELL_CACHE = 'jaystar-pwa-shell-v5';
+const STATIC_ASSET_CACHE = 'jaystar-pwa-assets-v5';
+const FONT_CACHE = 'jaystar-pwa-fonts-v5';
 
 const PRECACHE_URLS = [
   '/',
@@ -74,7 +74,8 @@ function shouldBypassRequest(request, url) {
     pathname.startsWith('/@react-refresh') ||
     pathname.startsWith('/node_modules/') ||
     pathname.startsWith('/api/') ||
-    pathname.startsWith('/.netlify/')
+    pathname.startsWith('/.netlify/') ||
+    pathname.startsWith('/coding-lab-editor/')
   ) {
     return true;
   }

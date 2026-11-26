@@ -1,0 +1,1495 @@
+# MASTER IMPLEMENTATION PROMPT
+# BUILD AN INTEGRATED CODING LAB FOR JAYSTARBLISS DYNAMIC INSTITUTE
+
+## 1. PROJECT OBJECTIVE
+
+I want you to integrate a fully functional visual programming environment called **Coding Lab** into the existing Jaystarbliss Dynamic Institute Learning Management System (LMS).
+
+This must be a real integration using the open-source Scratch 3 editor codebase, not a link to the Scratch website, not a screenshot, not a mockup, and not a simplified imitation of the block-programming environment.
+
+Coding Lab must serve two purposes:
+
+1. A standalone programming environment accessible through the existing Projects and Showcase area of the main application.
+2. An integrated coding assessment environment that learners can access directly from coding assessments assigned to them through the LMS.
+
+Both experiences must use the same underlying editor and project engine. The difference between them must be determined by the operating mode.
+
+The entire implementation must fit into the existing application architecture, authentication, database, navigation, visual identity, assessment management and existing infrastructure.
+
+The intention is to give tutors the ability to create programming assignments, give learners actual coding tasks, inspect the programs they construct and automatically or manually assess their work.
+
+This must be implemented without upgrading Firebase, activating billing, introducing Firebase Storage or introducing another paid cloud-storage service.
+
+**This is a strict infrastructure requirement, not a recommendation.**
+
+---
+
+# 2. NON-NEGOTIABLE INFRASTRUCTURE REQUIREMENTS
+
+The application currently operates within the existing Firebase Spark/free-plan environment. Its available database resources are already shared with other LMS functionality.
+
+The implementation must respect these restrictions:
+
+### A. Firebase
+
+- Remain on the Firebase Spark plan.
+- Do not upgrade the project to Blaze.
+- Do not enable Google Cloud billing.
+- Do not introduce Firebase Storage.
+- Do not import or use `firebase/storage`.
+- Do not create Firebase Storage references or buckets.
+- Do not store entire project archives, images, sounds or arbitrary media files in Firestore.
+- Use the existing Firebase Authentication and Cloud Firestore configurations.
+- Do not create a second Firebase project or database for Coding Lab.
+- Do not disrupt existing school, student, parent, tutor or administrator data.
+
+### B. Cloudinary
+
+Cloudinary is already configured and used elsewhere in the application.
+
+Inspect the current implementation and reuse the existing Cloudinary configuration, environment variables, upload helpers and Netlify Functions where appropriate.
+
+Do not create another Cloudinary environment or duplicate its configuration.
+
+Use Cloudinary exclusively for the eligible custom image assets that must be retained for assessment projects.
+
+### C. Existing infrastructure
+
+Continue using the infrastructure already available:
+
+- React and TypeScript application.
+- Existing Firebase Authentication.
+- Existing Firestore database.
+- Existing Netlify Functions/backend patterns.
+- Existing Cloudinary integration.
+- Existing route and portal architecture.
+
+Do not introduce a paid storage provider or an additional backend platform.
+
+Do not make changes to subscription plans, payment configuration, billing information or deployment infrastructure.
+
+---
+
+# 3. FIRST: AUDIT THE EXISTING APPLICATION
+
+Do not start importing Scratch files blindly.
+
+Inspect the current V3 application before making modifications.
+
+Identify:
+
+1. The existing application framework and build configuration.
+2. The current route structure.
+3. The main Projects and Showcase section.
+4. Existing student, tutor and administrator navigation.
+5. Existing portal layouts and design components.
+6. The current authentication implementation.
+7. The current Firestore configuration and database access helpers.
+8. The Firestore security rules.
+9. Existing learner, tutor, school, class, programme and enrolment relationships.
+10. Existing assessment types and assessment data structures.
+11. Existing assessment creation and management components.
+12. Existing learner assessment-taking interface.
+13. Existing assessment submission and grading processes.
+14. Existing manual assessment status management.
+15. Existing Netlify Functions and their authentication patterns.
+16. Existing Cloudinary upload and media-delivery implementations.
+17. Existing notification, grading and report-history mechanisms.
+
+Pay particular attention to these previously identified components where they still exist:
+
+- `src/pages/portal/TutorExaminations.tsx`
+- `netlify/functions/jdi-exam-management.ts`
+- The existing assessment-related types and services.
+- The portal layout and navigation components.
+- Existing project/showcase routes and pages.
+- Firebase configuration and Firestore rules.
+- Existing Cloudinary helper modules.
+- Existing Netlify Functions responsible for media uploads.
+
+These paths are starting references, not permission to assume that every implementation detail remains unchanged.
+
+Inspect the actual current repository.
+
+**Important:** Do not create a separate assessment system for Coding Lab. Extend and integrate with the existing assessment architecture.
+
+Do not unnecessarily refactor existing examination functionality, especially because the application has scheduled examinations that must continue working reliably.
+
+---
+
+# 4. OBTAIN AND INTEGRATE THE ACTUAL SCRATCH 3 SOURCE CODE
+
+Use the official Scratch Foundation editor repository:
+
+https://github.com/scratchfoundation/scratch-editor
+
+Repository clone command:
+
+```bash
+git clone https://github.com/scratchfoundation/scratch-editor.git
+```
+
+This is the official Scratch editor monorepo.
+
+Inspect its:
+
+- `README.md`
+- `AGENTS.md`
+- `.nvmrc`
+- Root `package.json`
+- Root lockfile
+- `AGPL-3.0` licence file
+- `TRADEMARK` file
+- Individual package README files
+- Package dependencies and build requirements
+
+Inspect the available source packages, particularly:
+
+| Repository path | Purpose |
+|---|---|
+| `packages/scratch-gui` | Main Scratch visual programming editor and interface |
+| `packages/scratch-vm` | Scratch virtual machine that executes projects |
+| `packages/scratch-render` | Rendering sprites, backdrops and stage content |
+| `packages/scratch-storage` | Loading and managing project images and sounds |
+| `packages/scratch-paint` | Drawing and editing costumes and backdrops |
+| `packages/scratch-svg-renderer` | SVG rendering and processing |
+| `packages/scratch-media-lib-scripts` | Media library build and management |
+
+Use the latest suitable, verified source revision after inspecting its compatibility with the existing application.
+
+Do not simply depend on the moving `develop` branch in production. Pin the exact upstream commit or release revision used, retain its licence and document the source revision.
+
+Do not use archived standalone Scratch GUI or Scratch VM repositories as the primary source when their replacements are available in the current monorepo.
+
+Do not simply embed:
+
+`https://scratch.mit.edu/projects/editor/`
+
+The coding environment must run using source code integrated into and served by our own application.
+
+We need an application-hosted editor, not a remote website embedded in an iframe.
+
+### Integration strategy
+
+Inspect compatibility between the current React version, bundler, JavaScript tooling and the Scratch editor packages.
+
+Choose the most reliable integration method.
+
+Possible approaches include:
+
+- Integrating the compatible Scratch editor packages directly.
+- Building the Scratch editor source as a separately compiled local module.
+- Creating a self-hosted editor bundle served from the same application origin and connected through a controlled adapter.
+
+Choose the solution that avoids unnecessary dependency conflicts, excessive bundle size, global CSS conflicts and duplicated editor implementations.
+
+If the separate-bundle approach is necessary, it must still appear and function as an ordinary integrated page in our application. It must not depend on the official Scratch website at runtime.
+
+Use the actual Scratch GUI, VM, rendering and storage components. Do not recreate the programming blocks from scratch.
+
+Do not blindly install packages or copy source files without inspecting their dependencies and licence requirements.
+
+---
+
+# 5. LICENSING, ATTRIBUTION AND BRANDING COMPLIANCE
+
+The Scratch editor source code is released under the GNU Affero General Public License version 3 (AGPL-3.0).
+
+We must respect this licence.
+
+The Scratch Foundation's current trademark guidance is available here:
+
+https://mitscratch.freshdesk.com/en/support/solutions/articles/4000232107-scratch-trademark-guidelines
+
+The upstream source repository is:
+
+https://github.com/scratchfoundation/scratch-editor
+
+### A. Licence requirements
+
+- Retain the original AGPL licence.
+- Preserve original copyright and attribution notices.
+- Preserve applicable upstream source notices.
+- Clearly identify the files we modify.
+- Document our modifications.
+- Keep the covered editor modifications under the applicable AGPL terms.
+- Provide the corresponding modified editor source code to users interacting with the modified editor over the network.
+- Maintain an accurate record of the upstream source revision and our modifications.
+- Review all third-party dependencies and media asset licences separately.
+
+Do not claim that the entire LMS is automatically exempt from AGPL merely because the editor is integrated through a separate route, bundle or iframe.
+
+The exact legal boundary must not be assumed.
+
+### B. Product naming
+
+The feature name must simply be:
+
+**Coding Lab**
+
+Do not call the product:
+- Jaystarbliss Scratch.
+- ScratchPro.
+- Scratch Editor.
+- Jaystarbliss Coding Scratch.
+- Any other name suggesting it is the official Scratch product.
+
+Do not use the Scratch Cat, official Scratch logo or other Scratch trademarks as our own product branding.
+
+Use the existing Jaystarbliss Dynamic Institute design system for the surrounding application interface.
+
+### C. Required independent-product notice
+
+Include a visible acknowledgement in the Coding Lab About/Attributions area:
+
+"This is an independent coding environment based on the open-source Scratch editor. It is not an official Scratch product and is not affiliated with or endorsed by the Scratch Foundation."
+
+Preserve this required attribution line:
+
+"Scratch is developed by the Scratch Foundation and its partners and affiliates. See https://scratch.org/."
+
+Provide:
+- The AGPL licence text.
+- The actual upstream source link.
+- Our corresponding modified source repository or source-download location.
+- A record of the changes made to the upstream editor.
+- Appropriate third-party media and dependency acknowledgements.
+
+Do not publish a fake or placeholder source-code URL.
+
+If the corresponding modified editor source is not available at the time of public release, clearly identify that as an outstanding AGPL compliance blocker. Do not represent the editor as fully compliant when the required source offer has not been arranged.
+
+---
+
+# 6. THE CORE PRODUCT ARCHITECTURE: ONE EDITOR, TWO MODES
+
+This is one of the most important requirements.
+
+Do not build two different Scratch editors.
+
+Build one shared editor component with two operating modes:
+
+```ts
+type CodingLabMode = "playground" | "assessment";
+```
+
+The editor's underlying rendering, programming blocks, stage, sprites, VM, project import/export and asset handling must be shared.
+
+The mode determines how saving, submission and permissions work.
+
+## MODE A: PROJECT SHOWCASE / PLAYGROUND
+
+This is the ordinary programming environment accessible through the existing Projects and Showcase section of the application.
+
+The learner should be able to:
+
+- Open Coding Lab.
+- Create a new programming project.
+- Add and remove sprites.
+- Select characters.
+- Select backdrops.
+- Arrange programming blocks.
+- Use events, movement, looks, sound, control, sensing, operators and variables.
+- Draw and edit costumes.
+- Create animations and interactive programmes.
+- Run and stop the programme.
+- Import a previously downloaded `.sb3` project.
+- Export their work as a standard `.sb3` file.
+
+The learner should have access to the normal Scratch programming environment and its approved built-in libraries.
+
+### Saving behaviour
+
+This mode is strictly local.
+
+When the learner clicks **Save Project**, the application must generate and download a standard `.sb3` file directly to their computer.
+
+The file must contain:
+
+- The complete project JSON.
+- All block structures and connections.
+- All sprites.
+- All costumes.
+- All backdrops.
+- All project images.
+- All approved built-in sounds used by the project.
+- The necessary project assets and metadata.
+
+It must be a genuinely reusable project file that can be reopened in the Coding Lab editor or a compatible Scratch 3 editor.
+
+The normal Project Showcase mode must NOT:
+
+- Save project data to Firestore.
+- Upload custom images to Cloudinary.
+- Upload project ZIP files to any server.
+- Create assessment records.
+- Create cloud project histories.
+- Make unnecessary Firebase reads or writes.
+
+The only cloud operations permitted are those required by the existing application's normal authentication and navigation, not project saving.
+
+Use browser IndexedDB for local working recovery where appropriate.
+
+This means a learner can close the browser, return later on the same device and recover the locally cached working copy, subject to browser storage availability.
+
+However, IndexedDB must not be presented as a cloud backup or cross-device synchronisation system.
+
+### Import behaviour
+
+Allow learners to reopen a downloaded `.sb3` project from their computer.
+
+Validate the file before loading it.
+
+Protect the application against corrupted archives, excessively large files and malformed project JSON.
+
+Do not silently modify the project's block structures during import.
+
+---
+
+## MODE B: ASSESSMENT WORKSPACE
+
+This is the assessment-specific version of the same editor.
+
+Learners enter this mode by opening a Coding Lab assessment assigned to them through the existing LMS.
+
+The editor should open directly inside the assessment experience.
+
+The learner should not be redirected to another website or required to create a Scratch account.
+
+### Assessment workspace behaviour
+
+The workspace should contain:
+
+- Assessment title.
+- Instructions written by the tutor.
+- Maximum marks.
+- Time allowed, where configured.
+- Submission deadline, where configured.
+- Attempt information.
+- Starter project, where one has been provided.
+- The Scratch programming editor.
+- Live project stage.
+- Save Progress.
+- Submit Assessment.
+- Clear submission/save status.
+
+The learner must be able to construct the required project using the editor.
+
+### Saving behaviour
+
+Unlike Project Showcase mode, Assessment mode must save eligible project data to the LMS.
+
+Use this architecture:
+
+| Resource | Destination |
+|---|---|
+| Project programming JSON | Firestore |
+| Block structures and connections | Firestore |
+| Variables and project configuration | Firestore |
+| Sprite and costume metadata | Firestore |
+| Custom learner-created images | Cloudinary |
+| Approved original built-in sounds | Shared static asset library |
+| Working recovery copy | IndexedDB |
+| Assessment metadata and submission status | Existing LMS assessment system |
+| Final submitted project | Immutable submission record linked to its project data |
+
+Do not upload the complete `.sb3` archive to Firestore or Cloudinary merely to save an assessment.
+
+Extract and process the project in a controlled way.
+
+---
+
+# 7. PROJECT DATA AND FIRESTORE STORAGE ARCHITECTURE
+
+A Scratch `.sb3` file is a ZIP archive containing structured project data and separate media assets.
+
+The application must understand and process that structure.
+
+A typical project contains:
+- `project.json`
+- Image costume files.
+- Backdrop files.
+- Sound files.
+- Other necessary project assets.
+
+### A. Firestore stores the structured programming data
+
+Store the compressed project JSON and necessary metadata.
+
+The stored information should include:
+
+- Project ID.
+- Learner UID.
+- Assessment ID.
+- Attempt ID.
+- Project title.
+- Project format/version.
+- Project revision.
+- Last modified timestamp.
+- Project status.
+- Compressed project JSON.
+- Asset manifest.
+- Project integrity hash.
+- Relevant ownership and access references.
+
+The database must not contain image binary files, audio recordings or complete uncompressed `.sb3` archives.
+
+### B. Respect Firestore document limits
+
+A Firestore document has a maximum size of 1 MiB.
+
+Never assume that a complete project will fit inside one document.
+
+Use a hybrid storage strategy:
+
+1. Compress the project JSON before saving.
+2. Store it in one document if it safely fits within the chosen size threshold.
+3. If it exceeds the safe threshold, divide the compressed payload into manageable chunks.
+4. Store the chunks in a dedicated subcollection or another appropriate Firestore structure.
+5. Reconstruct the original compressed payload when loading the project.
+6. Verify the integrity hash before decoding and importing the project.
+
+Use a sensible safety threshold below 1 MiB, such as approximately 700 KiB for a single document, and smaller chunks such as 350 KiB where chunking is necessary.
+
+Adapt this to the actual Firebase SDK and Firestore serialization overhead.
+
+Prefer native binary/bytes representations supported by the existing Firebase SDK rather than unnecessarily expanding binary data into Base64 strings.
+
+Do not place large payload fields into indexes when they are not queried.
+
+### C. Suggested logical Firestore structure
+
+Adapt this to the existing database architecture rather than creating duplicate or conflicting collections.
+
+One possible arrangement:
+
+```text
+codingLabProjects/
+    {projectId}
+        ownerUid
+        assessmentId
+        attemptId
+        title
+        revision
+        payloadFormat
+        payloadCompression
+        payloadHash
+        payloadSize
+        assetManifest
+        status
+        createdAt
+        updatedAt
+
+        payloadChunks/
+            {chunkIndex}
+
+codingLabSubmissions/
+    {submissionId}
+        projectId
+        assessmentId
+        learnerUid
+        attemptId
+        projectRevision
+        submittedAt
+        submissionHash
+        gradingStatus
+        automaticScore
+        manualScore
+        finalScore
+        tutorFeedback
+```
+
+This is a conceptual structure. Reuse existing assessment collections, learner identifiers and grading relationships where possible.
+
+Do not duplicate learner profile information unnecessarily.
+
+### D. Submission immutability
+
+A submitted project must be preserved.
+
+After submission:
+- Mark the relevant project revision as submitted.
+- Prevent the learner from silently modifying the submitted snapshot.
+- Preserve the submitted data and asset references.
+- Create a separate working project for a new attempt or authorised resubmission.
+- Preserve earlier submissions and grades.
+
+Avoid creating unlimited copies of the same draft.
+
+Use one current editable draft per active attempt and a stable final submission record.
+
+---
+
+# 8. CONTROL FIRESTORE READS AND WRITES
+
+This is a critical requirement.
+
+The entire application shares the Firestore free-plan resource allowance. Coding Lab must not introduce excessive read/write activity.
+
+Avoid inefficient saving patterns.
+
+### A. Local-first editing
+
+While learners work, use IndexedDB for frequent local changes.
+
+Do not send every block movement to Firestore.
+
+Do not write every time:
+- A block moves.
+- A block is connected.
+- A sprite moves.
+- A costume is selected.
+- The stage changes.
+- A cursor moves.
+- The editor renders.
+- A learner opens a toolbox category.
+
+These are local editing activities, not database events.
+
+### B. Controlled cloud autosave
+
+In Assessment mode:
+
+- Save local changes to IndexedDB first.
+- Debounce cloud saving.
+- Use approximately 20–30 seconds of inactivity as an initial autosave interval.
+- Allow manual Save Progress.
+- Avoid multiple simultaneous save requests.
+- Coalesce pending changes into one save.
+- Do not save if the content hash has not changed.
+- Do not repeatedly overwrite unchanged asset manifests.
+- Ensure saving is idempotent where possible.
+
+The interval should be configurable centrally.
+
+### C. Save-state feedback
+
+The learner must be able to distinguish:
+
+- Saving locally.
+- Saved on this device.
+- Uploading assets.
+- Saving to the LMS.
+- Saved to the LMS.
+- Offline or cloud sync pending.
+- Save failed.
+
+Never display "Saved to LMS" merely because the project was saved locally.
+
+### D. Firestore query optimisation
+
+- Do not use constant polling.
+- Do not attach unnecessary real-time listeners to every project.
+- Load only the selected assessment and learner project.
+- Use one-time reads where live synchronisation is unnecessary.
+- Avoid reloading complete projects when only metadata is required.
+- Do not query every learner's project when a tutor opens one submission.
+- Retrieve only the data relevant to the selected learner and assessment.
+- Paginate project/submission lists.
+- Avoid repeated reads of static assessment configuration.
+- Cache suitable read-only metadata.
+- Avoid duplicate document writes.
+- Do not create unlimited draft revisions.
+
+Firestore write batches may be used for atomic consistency, but remember that batching does not make individual document writes free. Optimise the number of documents actually written.
+
+---
+
+# 9. CLOUDINARY IMAGE ASSET INTEGRATION
+
+The existing application already uses Cloudinary.
+
+Find and reuse the existing configuration and integration.
+
+Do not create an entirely new image-storage service.
+
+### A. What should be uploaded?
+
+In Assessment mode, upload eligible custom image assets created or imported by the learner.
+
+Examples:
+
+- Custom character costumes.
+- Learner-drawn images.
+- Custom backdrops.
+- Other supported image assets required by the project.
+
+Do not upload:
+- The entire `.sb3` archive.
+- The complete project JSON.
+- Block data.
+- Sound files.
+- Microphone recordings.
+- Unchanged built-in library media.
+- The same asset repeatedly.
+
+### B. Asset deduplication
+
+Calculate a stable content hash for each custom image asset.
+
+Use that hash to identify the asset and avoid repeatedly uploading identical images.
+
+A deterministic identifier such as:
+
+```text
+coding-lab/assets/{sha256}
+```
+
+may be used for Cloudinary public IDs or equivalent asset identifiers.
+
+Before uploading:
+- Check whether the asset is already known.
+- Reuse existing references where possible.
+- Do not perform one Firestore read for every programming block or unnecessary asset lookup.
+- Batch or cache asset metadata lookups where appropriate.
+
+Store only the necessary asset metadata in Firestore, including:
+- Original Scratch asset identifier.
+- Original filename and extension.
+- Content hash.
+- Cloudinary public/asset identifier.
+- Required delivery information.
+- Relevant format and size information.
+
+### C. Preserve Scratch asset integrity
+
+This is important.
+
+The Scratch project JSON refers to image assets through identifiers and filenames.
+
+Do not replace those references with arbitrary Cloudinary URLs and assume that Scratch will understand them.
+
+Create a controlled asset-manifest/adapter layer.
+
+When an assessment project is saved:
+
+1. Extract the custom image bytes.
+2. Calculate their hashes.
+3. Upload eligible image assets to Cloudinary.
+4. Record the relationship between the original Scratch asset identifier and Cloudinary asset identifier.
+5. Store the updated project metadata and manifest in Firestore.
+
+When the project is reopened:
+
+1. Retrieve the project JSON.
+2. Retrieve the asset manifest.
+3. Obtain access to the necessary image assets from Cloudinary.
+4. Reconstruct the required Scratch project asset structure.
+5. Load the resulting project through the actual Scratch storage/editor mechanisms.
+
+Preserve the source image bytes and required extensions.
+
+Do not apply image transformations that change the actual Scratch project source assets and invalidate the project asset identifiers.
+
+Optimised preview images may be generated separately where useful, but the original project assets must remain reconstructable.
+
+### D. Cloudinary upload security
+
+Never expose the Cloudinary API secret in client-side code.
+
+Inspect the existing signed-upload implementation and reuse it.
+
+If the current implementation does not provide an appropriately authenticated upload mechanism for learner-created content, extend the existing Netlify backend using the current conventions.
+
+The process must be:
+
+1. Authenticate the user with the existing Firebase authentication system.
+2. Verify that the user can save to the selected assessment.
+3. Authorise an image upload.
+4. Generate a short-lived Cloudinary upload signature through the backend.
+5. Restrict permitted resource types, folder and upload parameters.
+6. Upload the image.
+7. Validate and register the returned asset.
+8. Store its reference in the appropriate project manifest.
+
+Never trust arbitrary client-supplied Cloudinary public IDs or assume that an upload is authorised because a user knows a folder name.
+
+Where learner-created work is not meant to be publicly accessible, use authenticated/private asset delivery with appropriately signed access URLs. Do not silently expose confidential student work through public media URLs.
+
+Do not introduce a public upload endpoint that anyone can abuse.
+
+### E. Cloudinary resource protection
+
+The existing Cloudinary account is shared with other parts of the website.
+
+Implement centrally configurable limits to protect that shared allowance.
+
+Suggested initial safeguards:
+
+- A sensible maximum image file size, initially around 1 MiB per custom image.
+- A configurable maximum number of custom image assets per project.
+- A configurable aggregate image-size allowance per assessment project.
+- No unnecessary high-resolution uploads.
+- No repeated uploads of unchanged images.
+- No unnecessary transformation requests.
+- Reuse existing shared assets.
+- Monitor Coding Lab asset consumption separately in metadata or application logs.
+
+Do not promise unlimited custom uploads.
+
+### F. Asset privacy and cleanup
+
+Learner-created media should be associated with opaque learner/project identifiers, not personal names.
+
+Do not expose student email addresses, phone numbers or unnecessary profile details in Cloudinary metadata.
+
+Do not delete an image as soon as one project changes its costume.
+
+The same asset may be referenced by more than one project. Implement reference-aware cleanup and avoid deleting assets still used by submitted assessments.
+
+Do not depend on a paid Firestore TTL, backup or cleanup feature.
+
+---
+
+# 10. SOUND AND RECORDING RESTRICTIONS
+
+For the first implementation, there must be no microphone recording functionality.
+
+Do not implement:
+- Microphone recording.
+- Student voice recordings.
+- Custom audio uploads.
+- User-created sound uploads.
+- Audio asset uploads to Cloudinary.
+- Audio storage in Firestore.
+- Custom audio recording tools in assessments.
+
+The editor may continue to provide its approved original built-in sound library.
+
+Learners can select and use sounds already supplied through the approved editor library.
+
+These approved sounds must be available through self-hosted static application assets or the editor's bundled media library.
+
+Do not repeatedly upload built-in sound files.
+
+Do not depend on live requests to the official Scratch website for media assets.
+
+Ensure the sound library and associated files are reviewed for their individual redistribution licences.
+
+Disable or hide recording and custom audio import controls in the editor. Do not merely hide the button while leaving the recording/upload endpoint accessible.
+
+The resulting `.sb3` exported from Project Showcase must still contain the built-in sound files needed to reopen and run the learner's project.
+
+The assessment project must preserve references to its approved built-in sounds so the tutor can reopen and inspect it.
+
+---
+
+# 11. PROJECT AND SHOWCASE PAGE INTEGRATION
+
+Add Coding Lab to the existing Projects and Showcase area of the main application.
+
+Do not create an isolated section that feels unrelated to the rest of the website.
+
+Inspect the existing navigation and page structure first.
+
+The entry should be easy to discover without overcrowding the interface.
+
+When a learner opens Coding Lab from Projects and Showcase, launch the standalone Project Playground mode.
+
+Provide a clear interface for:
+- Creating a new project.
+- Opening an existing local `.sb3` project.
+- Downloading the completed project.
+- Returning to the Projects and Showcase area.
+- Accessing appropriate guidance or examples.
+
+Use the existing route and authentication approach for the Projects and Showcase section.
+
+Do not add assessment functionality to this standalone mode.
+
+Assessment mode must be launched from an actual assessment record and receive the verified assessment and learner context.
+
+---
+
+# 12. INTEGRATION WITH THE EXISTING ASSESSMENT SYSTEM
+
+Coding Lab must be a genuine assessment type in the existing LMS, not an unrelated application.
+
+Extend the existing assessment system to support a visual programming assessment category.
+
+Do not build a separate examination dashboard, separate student identity system or separate tutor account system.
+
+### A. Tutor assessment creation
+
+Tutors should be able to create a Coding Lab assessment using the existing assessment creation experience.
+
+Provide the relevant configuration fields:
+
+| Setting | Description |
+|---|---|
+| Assessment title | Name of the activity |
+| Instructions | Detailed learner task |
+| Assessment type | Coding Lab |
+| Programming environment | Scratch-based visual programming |
+| Starter project | Optional project provided by the tutor |
+| Subject/programme | Existing subject or programme |
+| Target class/learners | Existing assignment controls |
+| Duration | Optional assessment time limit |
+| Deadline | Existing scheduling mechanism |
+| Maximum marks | Total available marks |
+| Pass mark | Required passing score |
+| Attempt limit | Number of permitted attempts |
+| Grading method | Automatic, manual or hybrid |
+| Grading rubric | Requirements and allocation of marks |
+| Feedback settings | How results and tutor feedback are released |
+
+Reuse the existing assessment lifecycle, scheduling and notification mechanisms.
+
+### B. Starter projects
+
+Allow tutors to provide a prepared project as a starting point.
+
+Examples:
+- A character and backdrop already prepared.
+- A partially completed animation.
+- A game with sprites but missing scripts.
+- An incomplete block sequence.
+- A project in which learners must correct existing programming logic.
+
+The learner should be able to open the starter project directly in the assessment workspace.
+
+The original starter project must remain separate from the learner's editable attempt.
+
+### C. Learner assessment access
+
+The learner should see Coding Lab assessments in the existing assessment area.
+
+When the learner opens an eligible active assessment:
+
+1. Load the assessment instructions.
+2. Verify the learner's identity and eligibility.
+3. Load the assigned starter project if provided.
+4. Open the shared Coding Lab editor in assessment mode.
+5. Retrieve the current attempt where one exists.
+6. Allow the learner to continue working.
+7. Save progress using the controlled cloud-saving mechanism.
+8. Allow submission when permitted.
+
+Do not expose assessments belonging to unrelated learners.
+
+### D. Tutor and administrator permissions
+
+Administrators should be able to manage Coding Lab assessments across the platform according to existing administrative permissions.
+
+Tutors should be able to manage assessments they created or have explicitly been authorised to manage.
+
+Tutors must not be able to inspect or alter unrelated tutors' assessments or learners.
+
+Use the existing assignment and school/programme relationship checks.
+
+### E. Assessment opening and closing
+
+Integrate Coding Lab assessments with the existing manual assessment activation/closure functionality.
+
+From the existing assessment options menu:
+
+- When active, display Close Assessment.
+- When closed, display Activate Assessment or Reopen Assessment.
+
+This must work for:
+- Administrators managing authorised assessments.
+- Tutors managing their own assessments or those explicitly assigned to them.
+
+Use the existing backend lifecycle management, including `jdi-exam-management` where applicable.
+
+Do not create a second, conflicting status system.
+
+Do not reset previous learner submissions, attempts or scores when an assessment is closed and reopened.
+
+The backend must verify whether an assessment is open before accepting a submission.
+
+---
+
+# 13. AUTOMATIC AND MANUAL CODING GRADING
+
+Coding Lab must support three grading modes.
+
+## A. Automatic grading
+
+The system should inspect the learner's actual Scratch project structure.
+
+The grader must be able to inspect:
+
+- Required block opcodes.
+- Block presence.
+- Block counts.
+- Block input values.
+- Field values.
+- Script sequences.
+- Parent-child relationships.
+- Block connections.
+- Nested loops.
+- Conditional blocks.
+- Event blocks.
+- Sprite requirements.
+- Variables and lists.
+- Other relevant project structures.
+
+Examples of automatically gradable tasks:
+
+1. Add a green-flag event block.
+2. Make a character move 50 steps.
+3. Make a character turn 90 degrees.
+4. Repeat a movement four times.
+5. Use a particular variable.
+6. Connect two blocks in the correct execution order.
+7. Place a movement block inside a repeat loop.
+
+The grader should understand actual Scratch project relationships, not simply count blocks or inspect their screen coordinates.
+
+Two different visual arrangements can be logically equivalent. Do not fail a learner merely because a valid script appears at a different position on the workspace.
+
+### Partial marks
+
+Award marks according to tutor-defined criteria.
+
+Example:
+
+| Requirement | Marks |
+|---|---:|
+| Correct event block | 2 |
+| Correct movement block | 2 |
+| Correct movement value | 2 |
+| Correct sequence/connections | 2 |
+| Correct repeat-loop implementation | 2 |
+| Total | 10 |
+
+Do not make every task an all-or-nothing assessment.
+
+Store the criterion results and calculated score.
+
+### B. Manual grading
+
+Allow tutors to inspect submitted projects and assign marks manually.
+
+The tutor should be able to:
+
+- Open the complete project.
+- View the block arrangement.
+- Run the learner's project.
+- Inspect its sprites and costumes.
+- Review the assessment instructions.
+- Apply the marking rubric.
+- Enter marks.
+- Provide comments and feedback.
+- Save and release the grade through the existing assessment mechanism.
+
+Where possible, allow tutors to download the submitted `.sb3` file for further inspection.
+
+### C. Hybrid grading
+
+Combine objective automatic grading with tutor assessment.
+
+For example:
+- Automatic grading evaluates correct block usage and connections.
+- The tutor evaluates creativity, presentation, originality and overall project quality.
+
+The tutor should be able to review the automatically calculated result and override it where justified.
+
+Record manual overrides in the assessment history with the user, previous mark, new mark, reason/comment and timestamp.
+
+### D. Behavioural grading
+
+A future grading stage may execute learner projects in the Scratch VM and test expected programme behaviour.
+
+This can include:
+- Whether a programme starts correctly.
+- Whether a sprite moves as intended.
+- Whether loops execute the expected number of times.
+- Whether the correct messages are displayed.
+- Whether the project produces the intended result.
+
+However, untrusted learner projects must not be executed in a privileged backend context.
+
+Any behavioural grading must use a suitably isolated execution environment with:
+- Resource limits.
+- Execution timeouts.
+- Extension allowlists.
+- No arbitrary network access.
+- No privileged application credentials.
+- Controlled test conditions.
+
+Do not claim a project has passed behavioural verification merely because the learner clicked Run in their browser.
+
+Implement structural grading and manual grading reliably first. Enable behavioural grading only when it can be executed safely and verified.
+
+---
+
+# 14. SUBMISSION AND TUTOR REVIEW EXPERIENCE
+
+When a learner submits a coding assessment:
+
+1. Verify that the assessment is active and the learner is eligible.
+2. Ensure that the latest required cloud save has completed.
+3. Verify required image assets are available.
+4. Generate a final project integrity hash.
+5. Freeze the submitted project revision.
+6. Create the immutable submission record.
+7. Run the configured automatic grading rules, where enabled.
+8. Record the result and grading status.
+9. Notify the appropriate tutor through the existing notification system.
+10. Display the submission in the existing tutor assessment/review area.
+
+If cloud saving fails, do not claim that the assessment was successfully submitted.
+
+Give the learner a clear indication of what must be saved or retried.
+
+Tutors should be able to open the learner's submitted project using the same editor component in a read-only review mode.
+
+The tutor must not accidentally alter the submitted work while reviewing it.
+
+If an authorised tutor wants to correct or annotate something, that must be handled separately from the immutable submission.
+
+Preserve:
+- Project data.
+- Asset references.
+- Submission timestamp.
+- Attempt number.
+- Automatic grading results.
+- Tutor marks.
+- Feedback.
+- Final grade.
+- Assessment history.
+
+---
+
+# 15. PROFESSIONAL USER INTERFACE AND DESIGN
+
+Coding Lab must look and feel like part of the existing Jaystarbliss Dynamic Institute application.
+
+Inspect the actual interface and reuse its:
+- Theme system.
+- Typography.
+- Colour tokens.
+- Buttons.
+- Forms.
+- Navigation.
+- Dialogs.
+- Notifications.
+- Responsive layout.
+- Existing icon library.
+- Light/dark mode behaviour.
+
+Do not invent an entirely different design system.
+
+### A. Overall layout
+
+The Coding Lab interface should be clean, practical and easy to understand.
+
+Avoid an unnecessarily crowded screen.
+
+The main layout should prioritise:
+
+1. A compact editor toolbar.
+2. The Scratch programming workspace.
+3. The live project stage.
+4. Sprite and asset controls.
+5. Contextual project controls.
+6. A clear save/submission status.
+
+Do not surround the editor with dozens of unnecessary cards.
+
+The programming workspace itself should receive adequate space.
+
+### B. Assessment interface
+
+In assessment mode, show instructions and progress information in a well-organised panel.
+
+The learner should not have to leave the editor to remember what the tutor requested.
+
+Use a collapsible instruction panel if necessary to maximise programming space.
+
+### C. Responsive behaviour
+
+Support:
+- Desktop.
+- Laptop.
+- Tablet.
+- Mobile.
+
+The Scratch editor is a complex workspace, so test its actual usability on smaller screens.
+
+Do not merely shrink the desktop interface.
+
+Use appropriate scrolling, responsive panels and usable touch controls.
+
+### D. Existing product appearance
+
+The editor can retain its familiar block-programming appearance, but its surrounding shell should use the existing portal design.
+
+Do not use protected Scratch branding as the application's identity.
+
+### E. Performance
+
+Load the Coding Lab editor only when the learner or tutor opens the feature.
+
+Use lazy loading and code splitting.
+
+Do not add the entire Scratch editor bundle to the initial application bundle or load it on every dashboard.
+
+Avoid unnecessary rerenders of the editor when unrelated portal state changes.
+
+---
+
+# 16. SECURITY AND DATA PROTECTION
+
+This feature will be used by children and school learners.
+
+Security must be considered throughout the implementation.
+
+### Firebase permissions
+
+Extend existing Firestore security rules appropriately.
+
+Ensure:
+- Learners can save only their own authorised assessment attempts.
+- Learners cannot access other learners' project data.
+- Tutors can access only learners and assessments they are authorised to manage.
+- School administrators remain scoped to their school.
+- Main administrators retain existing administrative authority.
+- Submitted project snapshots cannot be modified by the learner.
+- Assessment results cannot be fabricated by simply manipulating browser state.
+
+Do not rely on hiding controls in the interface.
+
+Enforce permissions at the database and backend layers.
+
+### Server-side verification
+
+Where a Netlify Function handles save, submit, grading, upload authorisation or asset delivery:
+- Verify Firebase authentication.
+- Verify role and assignment permissions.
+- Validate the assessment's status.
+- Validate the learner's attempt.
+- Validate request payloads.
+- Reject oversized payloads.
+- Verify project integrity where necessary.
+
+Never trust client-supplied marks as the final grading result.
+
+### Project import security
+
+Validate uploaded `.sb3` files.
+
+Protect against:
+- Corrupt archives.
+- ZIP bombs.
+- Excessive file counts.
+- Excessive uncompressed file sizes.
+- Malformed JSON.
+- Invalid asset references.
+- Unsafe SVG content.
+- Unsupported asset formats.
+- Unexpected executable content.
+
+Do not allow arbitrary Scratch extensions or external scripts to execute inside the application.
+
+### Privacy
+
+Do not send project content or personal learner information to third-party AI services or unrelated external platforms.
+
+Do not introduce unnecessary analytics or tracking.
+
+Use only the information necessary for project management, assessment and tutor review.
+
+---
+
+# 17. FEATURE FLAGS AND PROTECTION OF EXISTING EXAMINATIONS
+
+Existing school examinations are an immediate priority.
+
+Coding Lab must not interrupt them.
+
+Keep this feature modular and isolated.
+
+If appropriate, introduce a feature flag so the new Coding Lab functionality can be enabled for controlled testing without exposing an incomplete feature to every learner.
+
+The feature flag must not disable or alter existing examination functionality.
+
+Do not:
+- Rewrite the existing examination engine.
+- Replace the current submission system.
+- Change ordinary multiple-choice or written examinations.
+- Change existing student authentication.
+- Change school or parent relationships.
+- Change existing assessment data structures unnecessarily.
+- Change payment or billing functionality.
+- Introduce unrelated dashboard redesigns.
+
+Normal assessments must continue to operate exactly as before.
+
+---
+
+# 18. TESTING AND ACCEPTANCE CRITERIA
+
+Do not consider the task complete simply because a Coding Lab page appears.
+
+Run actual tests.
+
+## A. Editor tests
+
+- Coding Lab loads from the LMS.
+- The actual Scratch block editor renders.
+- Blocks can be dragged and connected.
+- Sprites can be added.
+- Costumes can be changed.
+- Backdrops can be selected.
+- Projects execute correctly.
+- The stage renders correctly.
+- The approved built-in sound library works.
+- Microphone recording is unavailable.
+- Custom audio upload is unavailable.
+
+## B. Project Showcase tests
+
+- A learner can create a project.
+- A learner can save a project to their computer.
+- The `.sb3` file downloads successfully.
+- The downloaded file can be reopened.
+- Project data is preserved.
+- Custom drawings and costumes are preserved.
+- Built-in sounds are preserved.
+- No project data is written to Firestore.
+- No image assets are uploaded to Cloudinary.
+- The editor does not create assessment records.
+
+## C. Assessment tests
+
+- A tutor can create a Coding Lab assessment.
+- An administrator can manage an assessment.
+- A tutor can assign an assessment to authorised learners.
+- A starter project can be provided.
+- An eligible learner can open the assessment.
+- The correct project loads.
+- Local recovery works.
+- Cloud autosaving works.
+- The save status is accurate.
+- A learner can submit.
+- The submission becomes immutable.
+- A tutor can retrieve and inspect the project.
+- The tutor can grade manually.
+- Automatic structural grading produces accurate results.
+- Existing attempts are preserved.
+
+## D. Storage tests
+
+- No Firebase Storage SDK is used.
+- No Firebase Storage bucket is created.
+- No Blaze upgrade or billing activation is required.
+- Custom images are uploaded to the existing Cloudinary configuration.
+- Project JSON is saved to Firestore.
+- Built-in sounds are not uploaded repeatedly.
+- Images are not stored in Firestore.
+- Duplicate images are not unnecessarily uploaded.
+- Oversized projects are safely chunked.
+- Firestore payloads remain below the maximum document size.
+- Asset references remain valid after a project is reopened.
+- `.sb3` export reconstructs a valid project.
+
+## E. Performance tests
+
+- No Firestore write occurs for every block movement.
+- No unnecessary realtime listeners are created.
+- No constant polling occurs.
+- Unchanged content does not generate repeated cloud saves.
+- Cloud saving is debounced.
+- Only relevant assessment and learner records are retrieved.
+- The editor is lazy-loaded.
+- Existing dashboard loading performance is not materially degraded.
+
+## F. Existing LMS regression tests
+
+Verify that:
+- Normal examinations still open.
+- Normal assessment submissions still work.
+- Tutor assessment creation remains operational.
+- Administrator assessment management remains operational.
+- Manual assessment activation and closure still work.
+- Learner dashboards remain operational.
+- Parent and school portals remain operational.
+- Existing notifications are not disrupted.
+- Existing results and grades remain intact.
+
+## G. Licence tests
+
+- The original AGPL licence is retained.
+- Original attribution is present.
+- Changed editor files are documented.
+- The independent-product notice is visible.
+- The corresponding source-code offer points to an actual source location.
+- The Scratch trademark/logo is not misused.
+- Third-party media licences have been reviewed.
+
+---
+
+# 19. IMPLEMENTATION ORDER
+
+Work in the following sequence.
+
+### PHASE 1 — Source audit and editor integration
+
+- Inspect the current V3 codebase.
+- Retrieve the official Scratch editor monorepo.
+- Inspect relevant package dependencies.
+- Integrate the real Scratch GUI, VM and rendering components.
+- Create the reusable CodingLabEditorHost.
+- Make the editor available locally through the application.
+
+### PHASE 2 — Project Showcase mode
+
+- Add the Coding Lab entry to Projects and Showcase.
+- Build the standalone project workspace.
+- Implement local IndexedDB recovery.
+- Implement `.sb3` import and export.
+- Verify that Project Showcase mode makes no Firestore project writes and no Cloudinary uploads.
+
+### PHASE 3 — Assessment mode
+
+- Connect Coding Lab to the existing assessment architecture.
+- Implement assessment launch context.
+- Reuse existing authentication and learner permissions.
+- Implement the project data model.
+- Implement controlled Firestore saving.
+- Implement Cloudinary image persistence.
+- Disable custom audio uploads and microphone recording.
+
+### PHASE 4 — Submission and tutor review
+
+- Implement immutable project submissions.
+- Integrate tutor review.
+- Implement project reopening for authorised tutors.
+- Implement manual marking.
+- Implement automatic structural grading.
+
+### PHASE 5 — Security, testing and refinement
+
+- Complete Firestore security rules.
+- Complete backend checks.
+- Verify Cloudinary security.
+- Test all acceptance criteria.
+- Run the existing production build and relevant regression tests.
+- Resolve problems without introducing unrelated changes.
+
+Behavioural grading may be implemented after the structural and manual grading foundations are stable and a safe isolated execution environment is available.
+
+---
+
+# 20. IMPLEMENTATION DISCIPLINE
+
+This is an implementation task, not just a planning exercise.
+
+Do not stop after producing an architecture diagram or a list of recommendations.
+
+Inspect the actual source code and implement the feature.
+
+However:
+
+1. Do not overwrite existing working files without understanding their purpose.
+2. Do not delete existing functionality.
+3. Do not duplicate existing components or database services unnecessarily.
+4. Do not introduce Firebase Storage.
+5. Do not enable paid billing.
+6. Do not introduce another storage provider.
+7. Do not expose Cloudinary credentials.
+8. Do not embed the official Scratch website.
+9. Do not use protected Scratch branding.
+10. Do not fake project saving or grading.
+11. Do not mark tests as passed unless they were actually executed.
+12. Do not claim that a feature is complete when it is only a UI mockup.
+13. Do not commit, push or deploy changes unless explicitly authorised.
+
+Keep Coding Lab modular, maintainable and consistent with the rest of the LMS.
+
+Use clear service boundaries so that the editor, project persistence, asset management, grading and assessment integration are not scattered across unrelated files.
+
+Prefer dedicated, reusable modules such as:
+
+- `CodingLabEditorHost`
+- `CodingLabProjectService`
+- `CodingLabLocalStorage`
+- `CodingLabAssessmentService`
+- `CodingLabSubmissionService`
+- `CodingLabAssetService`
+- `CodingLabGradingService`
+- `ScratchProjectAdapter`
+
+These are suggested responsibilities, not mandatory filenames. Follow the existing folder and naming conventions.
+
+---
+
+# 21. FINAL DELIVERY REPORT
+
+When implementation is complete, provide a clear technical report containing:
+
+### A. What was implemented
+
+Identify the actual features completed in Project Showcase and Assessment modes.
+
+### B. Source-code integration
+
+List:
+- Upstream Scratch repository.
+- Exact commit or release used.
+- Packages integrated.
+- Any forked or modified files.
+- Licensing and source-distribution arrangements.
+
+### C. Files changed
+
+List the important new and modified files with their responsibilities.
+
+### D. Storage architecture
+
+Explain exactly:
+- What is saved locally.
+- What is saved to Firestore.
+- What is uploaded to Cloudinary.
+- How sounds are handled.
+- How project reconstruction works.
+- How large projects are chunked.
+- How duplicate assets are prevented from being uploaded repeatedly.
+
+### E. Firestore usage protection
+
+Explain the implemented mechanisms that reduce unnecessary reads and writes.
+
+Identify any remaining operations that could consume significant free-plan resources.
+
+### F. Assessment integration
+
+Explain how tutors create coding assessments, learners complete them, submissions are stored and tutors grade them.
+
+### G. Testing
+
+Provide the actual results of the editor, import/export, saving, Cloudinary, grading, security, build and regression tests.
+
+Identify tests that could not be performed.
+
+### H. Outstanding issues
+
+Separate:
+- Critical blockers.
+- Incomplete features.
+- Licensing requirements.
+- Configuration requirements.
+- Future enhancements.
+
+Do not hide incomplete work behind a general success statement.
+
+## FINAL PRODUCT STANDARD
+
+The finished Coding Lab should feel like a natural part of the Jaystarbliss Dynamic Institute LMS.
+
+A learner should be able to open the ordinary Coding Lab page, create a project and download it to their computer without consuming cloud storage.
+
+The same learner should be able to open a coding assessment, work in the same editor, save progress to the LMS, submit the project and receive an automatic grade or tutor feedback.
+
+A tutor should be able to create programming tasks, provide starter projects, define marking criteria, inspect submissions and grade learners.
+
+An administrator should be able to manage the feature through the existing LMS permissions.
+
+All of this must work within the existing Firebase Spark infrastructure, with Firestore handling structured project data and the already-configured Cloudinary account handling eligible custom image assets.
+
+**No Firebase Storage. No paid billing. No second editor. No external Scratch website dependency. No unnecessary database traffic. No disruption to existing examinations.**
+
+Build Coding Lab as one cohesive, properly integrated feature.

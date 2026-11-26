@@ -62,6 +62,11 @@ export async function checkUsernameAvailability(
       .map((id) => String(id || '').trim())
       .filter(Boolean)
   );
+  const excludedEmails = new Set(
+    excludeIds
+      .map((id) => String(id || '').trim().toLowerCase())
+      .filter((val) => val.includes('@'))
+  );
 
   const isExcludedDoc = (docId: string, data: Record<string, any> = {}): boolean => {
     if (excludedSet.has(docId)) return true;
@@ -72,11 +77,25 @@ export async function checkUsernameAvailability(
       data.studentDocId,
       data.studentId,
       data.ownerId,
+      data.docId,
+      data.schoolId,
+      data.tutorId,
+      data.staffId,
+      data.adminId,
       data.id,
     ]
       .map((v) => String(v || '').trim())
       .filter(Boolean);
-    return candidateIds.some((cid) => excludedSet.has(cid));
+    if (candidateIds.some((cid) => excludedSet.has(cid))) return true;
+
+    if (excludedEmails.size > 0) {
+      const candidateEmails = [data.email, data.contactEmail, data.studentEmail]
+        .map((v) => String(v || '').trim().toLowerCase())
+        .filter(Boolean);
+      if (candidateEmails.some((em) => excludedEmails.has(em))) return true;
+    }
+
+    return false;
   };
 
   const variants = Array.from(

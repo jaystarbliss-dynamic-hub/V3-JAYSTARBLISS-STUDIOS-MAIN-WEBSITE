@@ -317,7 +317,7 @@ export function gradeAnswers(
 export function normalizeDeliveryMode(
   input: unknown,
   fallbackExam?: Record<string, any> | null
-): 'NATIVE' | 'EXTERNAL_LINK' {
+): 'NATIVE' | 'EXTERNAL_LINK' | 'CODING_LAB' {
   return sharedNormalizeDeliveryMode(input, fallbackExam);
 }
 

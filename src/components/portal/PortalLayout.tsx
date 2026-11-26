@@ -7,8 +7,9 @@ import {
   Library, SlidersHorizontal, WalletCards, ExternalLink, Award, Headphones,
   HelpCircle, Keyboard, ChevronDown, PanelLeftClose, FileText, History,
   ChartNoAxesColumn, UserRoundCog, Wallet, Headset, Settings, Menu, Lock, Loader2,
-  Pin, PinOff
+  Pin, PinOff, Code2
 } from 'lucide-react';
+import { CODING_LAB_CONFIG } from '../../config/codingLabConfig';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../../lib/firebase';
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
@@ -102,6 +103,7 @@ function resolvePortalPageTitle(pathname: string, role: string, navGroups: NavGr
   if (clean.endsWith('/courses') || clean.endsWith('/learning-tracks')) return 'Learning & Tracks';
   if (clean.endsWith('/achievements')) return 'Achievements';
   if (clean.endsWith('/edge-club')) return 'Ed Club';
+  if (clean.endsWith('/coding-lab')) return 'Coding Lab';
   if (clean.endsWith('/roster')) return 'Learners Roster';
   if (clean.endsWith('/learner-progress')) return 'Learner Progress';
   if (clean.endsWith('/links')) return 'Class Links';
@@ -727,6 +729,9 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
       ];
       if (studentFeatures.edClub) {
         academicItems.push({ name: 'Ed Club', path: '/portal/student/edge-club', icon: <Keyboard size={19} />, desc: 'Keyboarding & speed typing portal' });
+      }
+      if (CODING_LAB_CONFIG.enabled) {
+        academicItems.push({ name: 'Coding Lab', path: '/coding-lab', icon: <Code2 size={19} />, desc: 'Visual block coding sandbox' });
       }
 
       const scheduleItems: NavItem[] = [];

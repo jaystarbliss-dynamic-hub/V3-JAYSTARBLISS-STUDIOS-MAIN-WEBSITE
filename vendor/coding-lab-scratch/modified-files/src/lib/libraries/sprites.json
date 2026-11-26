@@ -1,0 +1,925 @@
+[
+  {
+    "name": "Robo",
+    "tags": [
+      "technology",
+      "people",
+      "fantasy"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "robo-idle",
+        "assetId": "e81fc6db1d209ac5bb8cf4e025f30dc7",
+        "md5ext": "e81fc6db1d209ac5bb8cf4e025f30dc7.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 48,
+        "rotationCenterY": 56,
+        "tags": [
+          "technology",
+          "people",
+          "fantasy"
+        ]
+      },
+      {
+        "name": "robo-wave",
+        "assetId": "511f0dbdf6ee052c96c14f1c95694114",
+        "md5ext": "511f0dbdf6ee052c96c14f1c95694114.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 48,
+        "rotationCenterY": 56,
+        "tags": [
+          "technology",
+          "people",
+          "fantasy"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Rocket",
+    "tags": [
+      "space",
+      "vehicles"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "rocket-idle",
+        "assetId": "6fd83523255ace85f5a2c04f752936a3",
+        "md5ext": "6fd83523255ace85f5a2c04f752936a3.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 44,
+        "rotationCenterY": 54,
+        "tags": [
+          "space",
+          "vehicles"
+        ]
+      },
+      {
+        "name": "rocket-boost",
+        "assetId": "9a963b434e5814439a564858a119bdd7",
+        "md5ext": "9a963b434e5814439a564858a119bdd7.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 44,
+        "rotationCenterY": 54,
+        "tags": [
+          "space",
+          "vehicles"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Star Gem",
+    "tags": [
+      "fantasy",
+      "things"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "star-gold",
+        "assetId": "3e8545d85fa4bdebac9dad3835b64897",
+        "md5ext": "3e8545d85fa4bdebac9dad3835b64897.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 40,
+        "rotationCenterY": 40,
+        "tags": [
+          "fantasy",
+          "things"
+        ]
+      },
+      {
+        "name": "star-cyan",
+        "assetId": "54d51fe7b9abeed2981045293a60fdd6",
+        "md5ext": "54d51fe7b9abeed2981045293a60fdd6.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 40,
+        "rotationCenterY": 40,
+        "tags": [
+          "fantasy",
+          "things"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Soccer Ball",
+    "tags": [
+      "sports",
+      "things"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "soccer-ball",
+        "assetId": "5ba1260d49586d892ba6c7097cfa57fd",
+        "md5ext": "5ba1260d49586d892ba6c7097cfa57fd.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 36,
+        "rotationCenterY": 36,
+        "tags": [
+          "sports",
+          "things"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Basketball",
+    "tags": [
+      "sports",
+      "things"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "basketball",
+        "assetId": "c90c0ba00efb1c58abcbfba253916edb",
+        "md5ext": "c90c0ba00efb1c58abcbfba253916edb.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 36,
+        "rotationCenterY": 36,
+        "tags": [
+          "sports",
+          "things"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Owl",
+    "tags": [
+      "animals"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "owl-perch",
+        "assetId": "020e9dd71e308c57a2a7ffbc2a388c16",
+        "md5ext": "020e9dd71e308c57a2a7ffbc2a388c16.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 46,
+        "rotationCenterY": 48,
+        "tags": [
+          "animals"
+        ]
+      },
+      {
+        "name": "owl-fly",
+        "assetId": "3c393bc907a3d0fe339585cc434cc14c",
+        "md5ext": "3c393bc907a3d0fe339585cc434cc14c.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 46,
+        "rotationCenterY": 48,
+        "tags": [
+          "animals"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Sea Turtle",
+    "tags": [
+      "animals"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "turtle-swim",
+        "assetId": "693f5acd559784d4dae87b2a68627bc3",
+        "md5ext": "693f5acd559784d4dae87b2a68627bc3.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 50,
+        "rotationCenterY": 36,
+        "tags": [
+          "animals"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Butterfly",
+    "tags": [
+      "animals"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "butterfly-open",
+        "assetId": "0b002b14f707d1ab910ccf2fe32be918",
+        "md5ext": "0b002b14f707d1ab910ccf2fe32be918.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 46,
+        "rotationCenterY": 38,
+        "tags": [
+          "animals"
+        ]
+      },
+      {
+        "name": "butterfly-flap",
+        "assetId": "83b63ad5e6272b72d86a025c8274d580",
+        "md5ext": "83b63ad5e6272b72d86a025c8274d580.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 46,
+        "rotationCenterY": 38,
+        "tags": [
+          "animals"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Race Car",
+    "tags": [
+      "vehicles",
+      "sports"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "race-car",
+        "assetId": "c9067b3e0b5b530bd1a50cb86b1b80f5",
+        "md5ext": "c9067b3e0b5b530bd1a50cb86b1b80f5.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 56,
+        "rotationCenterY": 28,
+        "tags": [
+          "vehicles",
+          "sports"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Airplane",
+    "tags": [
+      "vehicles"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "airplane",
+        "assetId": "b494325e204dcb8cb8e4d72c288bc8de",
+        "md5ext": "b494325e204dcb8cb8e4d72c288bc8de.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 56,
+        "rotationCenterY": 32,
+        "tags": [
+          "vehicles"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Treasure Chest",
+    "tags": [
+      "fantasy",
+      "things"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "chest-closed",
+        "assetId": "645dcb9ea2459a7ad6b4a28d47cadbc7",
+        "md5ext": "645dcb9ea2459a7ad6b4a28d47cadbc7.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 44,
+        "rotationCenterY": 36,
+        "tags": [
+          "fantasy",
+          "things"
+        ]
+      },
+      {
+        "name": "chest-open",
+        "assetId": "1ba1d9b61003c99d60ba5983eb7374ca",
+        "md5ext": "1ba1d9b61003c99d60ba5983eb7374ca.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 44,
+        "rotationCenterY": 36,
+        "tags": [
+          "fantasy",
+          "things"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Red Button",
+    "tags": [
+      "things"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "button-up",
+        "assetId": "9c919d9578a6197ff4fd655ca2a6035a",
+        "md5ext": "9c919d9578a6197ff4fd655ca2a6035a.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 40,
+        "rotationCenterY": 30,
+        "tags": [
+          "things"
+        ]
+      },
+      {
+        "name": "button-pressed",
+        "assetId": "12c45052dd78514a09fedbd4e3ae61f1",
+        "md5ext": "12c45052dd78514a09fedbd4e3ae61f1.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 40,
+        "rotationCenterY": 30,
+        "tags": [
+          "things"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Apple",
+    "tags": [
+      "food"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "apple",
+        "assetId": "4fb3f81cd971999e7770cc7cd8666904",
+        "md5ext": "4fb3f81cd971999e7770cc7cd8666904.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 34,
+        "rotationCenterY": 38,
+        "tags": [
+          "food"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Music Note",
+    "tags": [
+      "music",
+      "things"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "music-note",
+        "assetId": "65d42fcb036f7e793d04656073a03ab5",
+        "md5ext": "65d42fcb036f7e793d04656073a03ab5.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 34,
+        "rotationCenterY": 40,
+        "tags": [
+          "music",
+          "things"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Arrow",
+    "tags": [
+      "things"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "arrow-right",
+        "assetId": "cb001c67d5a065de3bf78cb26ba0a1d8",
+        "md5ext": "cb001c67d5a065de3bf78cb26ba0a1d8.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 40,
+        "rotationCenterY": 28,
+        "tags": [
+          "things"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  },
+  {
+    "name": "Wizard Hat",
+    "tags": [
+      "fantasy"
+    ],
+    "isStage": false,
+    "variables": {},
+    "lists": {},
+    "broadcasts": {},
+    "comments": {},
+    "currentCostume": 0,
+    "costumes": [
+      {
+        "name": "wizard-hat",
+        "assetId": "504a20fa6b3507b674212bc86f15386b",
+        "md5ext": "504a20fa6b3507b674212bc86f15386b.svg",
+        "dataFormat": "svg",
+        "bitmapResolution": 1,
+        "rotationCenterX": 44,
+        "rotationCenterY": 44,
+        "tags": [
+          "fantasy"
+        ]
+      }
+    ],
+    "sounds": [
+      {
+        "name": "Beep",
+        "assetId": "1450ec8ca9e8f1321f5aee6c93a97512",
+        "md5ext": "1450ec8ca9e8f1321f5aee6c93a97512.wav",
+        "dataFormat": "wav",
+        "format": "",
+        "rate": 22050,
+        "sampleCount": 3969,
+        "tags": [
+          "effects",
+          "notes"
+        ]
+      }
+    ],
+    "blocks": {},
+    "volume": 100,
+    "visible": true,
+    "x": 0,
+    "y": 0,
+    "size": 100,
+    "direction": 90,
+    "draggable": false,
+    "rotationStyle": "all around",
+    "layerOrder": 1
+  }
+]

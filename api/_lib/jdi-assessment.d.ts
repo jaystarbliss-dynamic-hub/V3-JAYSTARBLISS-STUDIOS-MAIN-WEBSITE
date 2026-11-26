@@ -81,7 +81,7 @@ export function normalizeQuestions(
 export function normalizeDeliveryMode(
   input: unknown,
   fallbackExam?: Record<string, any> | null
-): "NATIVE" | "EXTERNAL_LINK";
+): "NATIVE" | "EXTERNAL_LINK" | "CODING_LAB";
 
 export function validateExternalExamUrl(
   input: unknown
@@ -92,7 +92,7 @@ export function validateExamCreationPayload(
   existingDoc?: Record<string, any> | null
 ):
   | {
-      deliveryMode: "NATIVE" | "EXTERNAL_LINK";
+      deliveryMode: "NATIVE" | "EXTERNAL_LINK" | "CODING_LAB";
       title: string;
       subject: string;
       description: string;
@@ -101,8 +101,9 @@ export function validateExamCreationPayload(
       questions: NormalizedQuestion[];
       questionCount: number;
       maxScore: number;
-      durationMinutes: number;
+      durationMinutes: number | null;
       gradingMode: "automatic" | "manual";
+      codingLabConfig?: Record<string, any> | null;
       status: string;
       error?: never;
     }
@@ -317,5 +318,20 @@ export function isExamPastEffectiveDeadline(
   exam?: Record<string, any> | null,
   nowMs?: number
 ): boolean;
+
+export type CanonicalExamStatus = "draft" | "scheduled" | "active" | "completed" | "archived";
+
+export function resolveCanonicalExamStatus(
+  exam?: Record<string, any> | null,
+  nowMs?: number
+): CanonicalExamStatus;
+
+export function mergeExamRecordByPrecedence(
+  existing?: Record<string, any> | null,
+  incoming?: Record<string, any> | null,
+  incomingSource?: "jdiExams" | "schoolExams" | "exams",
+  nowMs?: number
+): Record<string, any>;
+
 
 

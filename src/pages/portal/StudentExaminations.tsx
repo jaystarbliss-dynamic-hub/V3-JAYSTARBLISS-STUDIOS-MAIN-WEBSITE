@@ -15,6 +15,7 @@ import {
   Lock,
   Play,
   RotateCcw,
+  Code2,
 } from "lucide-react";
 import { ReleasedOfficialReportsSection } from "../../components/academic-reporting/ReleasedOfficialReportsSection";
 import { auth, db, getAllClientDatabases } from "../../lib/firebase";
@@ -61,7 +62,7 @@ type ExamCard = {
   workType?: WorkType;
   dueDate?: string;
   isUngradedActivity?: boolean;
-  deliveryMode?: "EXTERNAL_LINK" | "NATIVE";
+  deliveryMode?: "EXTERNAL_LINK" | "NATIVE" | "CODING_LAB";
   externalUrl?: string;
   resourceUrl?: string;
   videoUrl?: string;
@@ -1281,6 +1282,7 @@ export default function StudentExaminations() {
           <div className="grid gap-4">
             {filtered.map((exam) => {
               const isExternal = exam.deliveryMode === "EXTERNAL_LINK";
+              const isCodingLab = exam.deliveryMode === "CODING_LAB";
               const maxScore = computeExamMaxScore(exam);
               const isReleased = Boolean(exam.releasedAt || exam.resultReleased);
               const pct =
@@ -1300,7 +1302,13 @@ export default function StudentExaminations() {
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                     <div className="rounded-2xl bg-slate-100 dark:bg-slate-800 p-3 text-[#1E293B] dark:text-slate-200 shrink-0 self-start">
-                      {isExternal ? <ExternalLink size={26} /> : <BookOpenCheck size={26} />}
+                      {isCodingLab ? (
+                        <Code2 size={26} />
+                      ) : isExternal ? (
+                        <ExternalLink size={26} />
+                      ) : (
+                        <BookOpenCheck size={26} />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
@@ -1319,6 +1327,14 @@ export default function StudentExaminations() {
                         >
                           {exam.status}
                         </span>
+                        {isCodingLab && (
+                          <>
+                            <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                            <span className="font-semibold text-[#1E293B] dark:text-slate-200">
+                              Coding Lab
+                            </span>
+                          </>
+                        )}
                         {isExternal && (
                           <>
                             <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>

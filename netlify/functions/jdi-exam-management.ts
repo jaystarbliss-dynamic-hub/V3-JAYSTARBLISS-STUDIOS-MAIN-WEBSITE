@@ -729,6 +729,8 @@ export const handler: Handler = async event => {
             audienceType: e.audienceType || "school",
             studentIds: e.studentIds || [],
             maxScore,
+            deliveryMode: e.deliveryMode || "NATIVE",
+            ...(e.codingLabConfig ? { codingLabConfig: e.codingLabConfig } : {}),
             questionCount: Array.isArray(e.questions) ? e.questions.length : Number(e.questionCount || 0),
             passcode: e.passcode || undefined, // Authorised school admin, owning tutor, and admin can see passcode to distribute to students
             createdBy: e.createdBy || e.tutorId || "",
@@ -968,7 +970,10 @@ export const handler: Handler = async event => {
             .digest("hex");
         }
 
-        if (updates.questions !== undefined) {
+        if (updates.codingLabConfig !== undefined && updates.codingLabConfig && typeof updates.codingLabConfig === "object") {
+          patch.codingLabConfig = updates.codingLabConfig;
+        }
+        if (updates.questions !== undefined && String(exam.deliveryMode || "NATIVE") !== "CODING_LAB") {
           const mode = String(updates.gradingMode || exam.gradingMode || "automatic");
           const normalized = normalizeQuestions(updates.questions, mode);
           if (normalized.error) return json(400, { error: normalized.error });

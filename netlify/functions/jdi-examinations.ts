@@ -812,7 +812,7 @@ export const handler: Handler = async event => {
           legacy.studentUid === c.uid &&
           (!legacy.deadlineAt || new Date(legacy.deadlineAt).getTime() > now)
         ) {
-          return json(200, { attemptId: legacyAttemptId, resumed: true, deliveryMode: "NATIVE" });
+          return json(200, { attemptId: legacyAttemptId, resumed: true, deliveryMode: resolvedDeliveryMode });
         }
       }
       const legacyData = legacyAttempt.exists ? legacyAttempt.data() || {} : {};
@@ -880,6 +880,7 @@ export const handler: Handler = async event => {
         schoolId: schoolId || String(exam.schoolId || ""),
         schoolName: resolvedSchoolName,
         status: "in_progress",
+        deliveryMode: resolvedDeliveryMode,
         maxScore,
         questionsSnapshot: questions,
         startedAt: FieldValue.serverTimestamp(),
@@ -1175,6 +1176,7 @@ export const handler: Handler = async event => {
         maxScore: computedMaxScore,
         durationMinutes,
         gradingMode,
+        codingLabConfig: validatedCodingLabConfig,
       } = validatedExam as Exclude<typeof validatedExam, { error: string }> & Record<string, any>;
 
       const resolvedLimitOneAttempt =
@@ -1290,8 +1292,11 @@ export const handler: Handler = async event => {
         seriesName,
         courseName,
         learningVideoUrl: learningVideoUrl || null,
-        questions: deliveryMode === "EXTERNAL_LINK" ? [] : normalizedQuestions,
-        questionCount: deliveryMode === "EXTERNAL_LINK" ? 0 : questionCount,
+        questions: deliveryMode === "NATIVE" ? normalizedQuestions : [],
+        questionCount: deliveryMode === "NATIVE" ? questionCount : 0,
+        ...(deliveryMode === "CODING_LAB" && validatedCodingLabConfig
+          ? { codingLabConfig: validatedCodingLabConfig }
+          : {}),
         maxScore,
         hasTimeLimit: Boolean(validatedHasTimeLimit),
         durationMinutes,
@@ -1348,8 +1353,11 @@ export const handler: Handler = async event => {
           schoolName: resolvedSchoolName,
           classIds: normalizedClassIds,
           durationMinutes,
-          questionCount: deliveryMode === "EXTERNAL_LINK" ? 0 : questionCount,
+          questionCount: deliveryMode === "NATIVE" ? questionCount : 0,
           maxScore,
+          ...(deliveryMode === "CODING_LAB" && validatedCodingLabConfig
+            ? { codingLabConfig: validatedCodingLabConfig }
+            : {}),
         },
         passcode,
       });

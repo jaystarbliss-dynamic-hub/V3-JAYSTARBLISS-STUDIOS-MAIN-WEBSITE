@@ -133,7 +133,7 @@ export interface UnifiedAssignmentRecord {
   resourceTitle: string | null;
   resourceUrl: string | null;
   passcode?: string;
-  deliveryMode?: 'NATIVE' | 'EXTERNAL_LINK';
+  deliveryMode?: 'NATIVE' | 'EXTERNAL_LINK' | 'CODING_LAB';
   externalUrl?: string;
   eligibleStudentCount?: number;
   submissionCount?: number;
@@ -164,7 +164,7 @@ export interface UnifiedAssessmentQuizRecord {
   tutorName: string;
   workType: 'ASSIGNMENT' | 'ACTIVITY' | 'TEST' | 'EXAMINATION' | 'QUIZ';
   workTypeLabel: string;
-  deliveryMode: 'NATIVE' | 'EXTERNAL_LINK';
+  deliveryMode: 'NATIVE' | 'EXTERNAL_LINK' | 'CODING_LAB';
   externalUrl?: string;
   resourceUrl?: string;
   assignedDate: string | null;

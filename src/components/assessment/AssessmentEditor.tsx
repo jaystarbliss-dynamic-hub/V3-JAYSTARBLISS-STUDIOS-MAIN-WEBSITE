@@ -34,6 +34,7 @@ import {
   BookOpen,
   Play,
   RotateCcw,
+  Code2,
 } from 'lucide-react';
 import {
   type AcademicWorkType,
@@ -57,6 +58,10 @@ import {
   resolveRecipientEnrolledPrograms,
   resolveProgramSubjectsAndModules,
 } from '../../lib/programHierarchy';
+import { CODING_LAB_CONFIG } from '../../config/codingLabConfig';
+import type { CodingLabAssessmentConfig } from '../../types/codingLab';
+import { CodingLabAssessmentConfigPanel } from '../coding-lab/CodingLabAssessmentConfigPanel';
+import { CodingLabSubmissionReviewModal } from '../coding-lab/CodingLabSubmissionReviewModal';
 
 const generateAccessCode = () =>
   Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -65,6 +70,22 @@ const makeId = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
     : 'q-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+
+const NON_MCQ_QUESTION_TYPES = new Set([
+  'short_answer',
+  'long_answer',
+  'essay',
+  'link_submission',
+  'file_submission',
+  'image_submission',
+  'learning_resource',
+  'practical_task',
+]);
+
+const isMcqQuestion = (q: Pick<NativeQuestionData, 'type'>): boolean => {
+  const normalizedType = String(q.type || 'multiple_choice').trim().toLowerCase();
+  return !NON_MCQ_QUESTION_TYPES.has(normalizedType);
+};
 
 const TUTOR_REMARK_PRESETS = [
   { id: '1', label: 'Distinction', text: 'Exceptional work. Demonstrated outstanding mastery of all concepts.' },
@@ -147,6 +168,11 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveBannerMessage, setSaveBannerMessage] = useState<string>('');
   const [saveErrorMessage, setSaveErrorMessage] = useState<string>('');
+  const [publishPopup, setPublishPopup] = useState<{
+    title: string;
+    subtitle: string;
+    status: 'active' | 'scheduled';
+  } | null>(null);
 
   // -------------------------------------------------------------
   // Assessment Core State
@@ -154,9 +180,31 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   const [workType, setWorkType] = useState<AcademicWorkType>(
     initialExam ? normalizeWorkType(initialExam.workType, initialExam) : 'ASSIGNMENT'
   );
-  const [deliveryMode, setDeliveryMode] = useState<'NATIVE' | 'EXTERNAL_LINK'>(
-    initialExam?.deliveryMode === 'EXTERNAL_LINK' ? 'EXTERNAL_LINK' : 'NATIVE'
+  const [deliveryMode, setDeliveryMode] = useState<'NATIVE' | 'EXTERNAL_LINK' | 'CODING_LAB'>(
+    initialExam?.deliveryMode === 'CODING_LAB'
+      ? 'CODING_LAB'
+      : initialExam?.deliveryMode === 'EXTERNAL_LINK'
+      ? 'EXTERNAL_LINK'
+      : 'NATIVE'
   );
+  const [codingLabConfig, setCodingLabConfig] = useState<CodingLabAssessmentConfig>(() => {
+    const existing = initialExam?.codingLabConfig;
+    return {
+      programmingEnvironment: 'scratch-3-visual',
+      gradingMethod: existing?.gradingMethod || 'hybrid',
+      rubricCriteria: Array.isArray(existing?.rubricCriteria) ? existing.rubricCriteria : [],
+      manualRubricMaxMarks: existing?.manualRubricMaxMarks ?? 0,
+      passMark: existing?.passMark ?? Math.round((Number(initialExam?.maxScore) || 20) * 0.5),
+      starterProject: existing?.starterProject || null,
+      allowSb3Import: existing?.allowSb3Import !== false,
+      disableCustomAudio: true,
+      disableMicrophoneRecording: true,
+    };
+  });
+  const [codingLabMaxScore, setCodingLabMaxScore] = useState<number>(
+    Number(initialExam?.maxScore) > 0 ? Number(initialExam.maxScore) : 20
+  );
+  const [reviewCodingAttempt, setReviewCodingAttempt] = useState<any | null>(null);
   const [title, setTitle] = useState<string>(initialExam?.title || '');
   const [description, setDescription] = useState<string>(
     initialExam?.description || initialExam?.instructions || ''
@@ -291,6 +339,13 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   const [defaultPointValue, setDefaultPointValue] = useState<number>(
     Number(initialExam?.defaultPointValue || 2)
   );
+  const [uniformMcqPointsEnabled, setUniformMcqPointsEnabled] = useState<boolean>(
+    Boolean(initialExam?.uniformMcqPointsEnabled)
+  );
+  const [uniformMcqInput, setUniformMcqInput] = useState<string>(
+    String(Number(initialExam?.defaultPointValue || 2))
+  );
+  const [uniformMcqFeedback, setUniformMcqFeedback] = useState<string>('');
   const isPasscodeMandatory = workType === 'TEST' || workType === 'EXAMINATION';
   const [hasPasscode, setHasPasscode] = useState<boolean>(
     workType === 'TEST' || workType === 'EXAMINATION'
@@ -461,11 +516,19 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
     if (!isDirty) setIsDirty(true);
   };
 
-  // Total possible score computed from questions
+  // Total possible score computed from questions or Coding Lab configuration
   const totalMarks = useMemo(() => {
     if (deliveryMode === 'EXTERNAL_LINK') return initialExam?.maxScore || 100;
+    if (deliveryMode === 'CODING_LAB') {
+      const rubricTotal = (codingLabConfig.rubricCriteria || []).reduce(
+        (sum, c) => sum + (Number(c.marks) || 0),
+        0
+      );
+      const manualPart = Number(codingLabConfig.manualRubricMaxMarks || 0);
+      return Math.max(codingLabMaxScore || 0, rubricTotal + manualPart, 1);
+    }
     return questions.reduce((acc, q) => acc + (Number(q.points) || 0), 0);
-  }, [questions, deliveryMode, initialExam]);
+  }, [questions, deliveryMode, initialExam, codingLabConfig, codingLabMaxScore]);
 
   // Recipient names summary
   const recipientSummary = useMemo(() => {
@@ -680,22 +743,84 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
     setQuestions(updated);
   };
 
+  const mcqCount = useMemo(
+    () => questions.filter((q) => isMcqQuestion(q)).length,
+    [questions]
+  );
+
+  const parseValidPointValue = (raw: string | number): number | null => {
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return Math.min(100, Math.max(0.5, parsed));
+  };
+
+  const applyUniformMcqPoints = (explicitValue?: number) => {
+    const parsed =
+      explicitValue !== undefined
+        ? parseValidPointValue(explicitValue)
+        : parseValidPointValue(uniformMcqInput);
+    const normalized = parsed ?? Math.min(100, Math.max(0.5, defaultPointValue || 1));
+    setDefaultPointValue(normalized);
+    setUniformMcqInput(String(normalized));
+    setQuestions((prev) =>
+      prev.map((q) => (isMcqQuestion(q) ? { ...q, points: normalized } : q))
+    );
+    markDirty();
+    const unitLabel = normalized === 1 ? 'pt' : 'pts';
+    setUniformMcqFeedback(
+      mcqCount > 0
+        ? `Updated all ${mcqCount} MCQ question${mcqCount === 1 ? '' : 's'} to ${normalized} ${unitLabel} each.`
+        : `Uniform MCQ value set to ${normalized} ${unitLabel} for new MCQs.`
+    );
+    setTimeout(() => setUniformMcqFeedback(''), 4000);
+  };
+
+  const handleUniformMcqInputChange = (raw: string) => {
+    setUniformMcqInput(raw);
+    const parsed = parseValidPointValue(raw);
+    if (parsed !== null) {
+      setDefaultPointValue(parsed);
+      if (uniformMcqPointsEnabled) {
+        setQuestions((prev) =>
+          prev.map((q) => (isMcqQuestion(q) ? { ...q, points: parsed } : q))
+        );
+      }
+      markDirty();
+    }
+  };
+
+  const handleToggleUniformMcq = (enabled: boolean) => {
+    setUniformMcqPointsEnabled(enabled);
+    if (enabled) {
+      applyUniformMcqPoints();
+    } else {
+      markDirty();
+    }
+  };
+
   const handleImportBatchQuestions = (importedList: any[]) => {
     markDirty();
-    const formatted: NativeQuestionData[] = importedList.map((item) => ({
-      id: item.id || makeId(),
-      prompt: item.prompt || '',
-      type: item.type || 'multiple_choice',
-      points: Number(item.points || defaultPointValue),
-      required: item.required !== false,
-      options: item.options || [
-        { id: 'A', text: 'Option A' },
-        { id: 'B', text: 'Option B' },
-      ],
-      correctOptionIds: item.correctOptionIds || ['A'],
-      acceptedAnswers: item.acceptedAnswers || [],
-      deliverableInstructions: item.deliverableInstructions || '',
-    }));
+    const formatted: NativeQuestionData[] = importedList.map((item) => {
+      const resolvedType = item.type || 'multiple_choice';
+      const itemIsMcq = isMcqQuestion({ type: resolvedType });
+      return {
+        id: item.id || makeId(),
+        prompt: item.prompt || '',
+        type: resolvedType,
+        points:
+          uniformMcqPointsEnabled && itemIsMcq
+            ? defaultPointValue
+            : Number(item.points || defaultPointValue),
+        required: item.required !== false,
+        options: item.options || [
+          { id: 'A', text: 'Option A' },
+          { id: 'B', text: 'Option B' },
+        ],
+        correctOptionIds: item.correctOptionIds || ['A'],
+        acceptedAnswers: item.acceptedAnswers || [],
+        deliverableInstructions: item.deliverableInstructions || '',
+      };
+    });
 
     setQuestions((prev) => [...prev, ...formatted]);
     setShowImportModal(false);
@@ -719,6 +844,19 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         setActiveTab('questions');
         return;
       }
+    }
+
+    if (
+      deliveryMode === 'CODING_LAB' &&
+      codingLabConfig.gradingMethod === 'automatic' &&
+      (targetStatus || status) !== 'draft' &&
+      (!Array.isArray(codingLabConfig.rubricCriteria) || codingLabConfig.rubricCriteria.length === 0)
+    ) {
+      setSaveErrorMessage(
+        'Automatic Coding Lab grading requires at least one structural rubric criterion before publishing.'
+      );
+      setActiveTab('questions');
+      return;
     }
 
     if (targetSchoolIds.length === 0 && targetStudentIds.length === 0) {
@@ -817,14 +955,28 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         targetSchoolIds,
         targetStudentIds,
         questions: deliveryMode === 'NATIVE' ? questions : [],
+        ...(deliveryMode === 'CODING_LAB' ? { codingLabConfig } : {}),
         // Settings
         makeQuiz,
-        gradingMode,
-        releaseGradesPolicy: gradingMode === 'automatic' ? releaseGradesPolicy : 'manual',
+        gradingMode:
+          deliveryMode === 'CODING_LAB'
+            ? codingLabConfig.gradingMethod === 'automatic'
+              ? 'automatic'
+              : 'manual'
+            : gradingMode,
+        releaseGradesPolicy:
+          deliveryMode === 'CODING_LAB'
+            ? codingLabConfig.gradingMethod === 'automatic'
+              ? releaseGradesPolicy
+              : 'manual'
+            : gradingMode === 'automatic'
+            ? releaseGradesPolicy
+            : 'manual',
         showMissedQuestions,
         showCorrectAnswers,
         showPointValues,
         defaultPointValue,
+        uniformMcqPointsEnabled,
         hasPasscode: effectiveHasPasscode,
         passcode: effectivePasscode,
         hasTimeLimit,
@@ -848,15 +1000,27 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
       await onSaveAssessment(payload);
       setStatus(resolvedStatus);
       setIsDirty(false);
-      setSaveBannerMessage(
-        resolvedStatus === 'active'
-          ? 'Assessment published and active for students!'
-          : resolvedStatus === 'scheduled'
-          ? `Assessment scheduled! It will automatically activate on ${new Date(
-              availableFrom
-            ).toLocaleString()}.`
-          : 'Assessment draft saved successfully.'
-      );
+      if (resolvedStatus === 'active') {
+        setPublishPopup({
+          title: 'Successfully published assessment.',
+          subtitle: `"${title.trim()}" is now live for assigned students. You will remain on this assessment until you choose to close it.`,
+          status: 'active',
+        });
+        setSaveBannerMessage('Successfully published assessment.');
+      } else if (resolvedStatus === 'scheduled') {
+        setPublishPopup({
+          title: 'Successfully scheduled assessment.',
+          subtitle: `"${title.trim()}" will automatically activate on ${new Date(
+            availableFrom
+          ).toLocaleString()}. You will remain on this assessment until you choose to close it.`,
+          status: 'scheduled',
+        });
+        setSaveBannerMessage(
+          `Assessment scheduled for ${new Date(availableFrom).toLocaleString()}.`
+        );
+      } else {
+        setSaveBannerMessage('Assessment draft saved successfully.');
+      }
       setTimeout(() => setSaveBannerMessage(''), 5000);
     } catch (err) {
       setSaveErrorMessage(err instanceof Error ? err.message : 'Failed to save assessment.');
@@ -1030,6 +1194,36 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       </span>
                     </div>
                   </label>
+
+                  {CODING_LAB_CONFIG.enabled && (
+                    <label
+                      onClick={() => setDeliveryMode('CODING_LAB')}
+                      className={`p-4 rounded-2xl border flex items-start gap-3.5 cursor-pointer transition-all ${
+                        deliveryMode === 'CODING_LAB'
+                          ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-2 ring-[#1E293B]/15 dark:ring-white/15'
+                          : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900/40'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="initFormat"
+                        checked={deliveryMode === 'CODING_LAB'}
+                        onChange={() => setDeliveryMode('CODING_LAB')}
+                        className="mt-1 w-4 h-4 accent-[#B91C1C]"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <Code2 size={16} className="text-[#B91C1C] dark:text-red-400" />
+                          <span className="font-bold text-sm text-slate-900 dark:text-white">
+                            Option C: Integrated Coding Lab (Visual Block Coding)
+                          </span>
+                        </div>
+                        <span className="text-xs text-slate-500 mt-1 block leading-relaxed">
+                          Interactive Scratch 3 visual programming workspace with starter .sb3 templates, automatic structural grading rules, manual/hybrid review, and cloud autosave.
+                        </span>
+                      </div>
+                    </label>
+                  )}
                 </div>
               )}
 
@@ -1862,6 +2056,65 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   </div>
                 </div>
 
+                {/* Uniform MCQ Point Value Quick Bar */}
+                <div className="rounded-2xl bg-white dark:bg-[#121620] border border-slate-200/90 dark:border-slate-800 p-3 shadow-2xs space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs font-bold text-[#1E293B] dark:text-white">
+                        Uniform MCQ Points
+                      </span>
+                      <span className="text-[11px] text-slate-500 tabular-nums">
+                        ({mcqCount} MCQ{mcqCount === 1 ? '' : 's'})
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={uniformMcqPointsEnabled}
+                          onChange={(e) => handleToggleUniformMcq(e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#B91C1C] rounded cursor-pointer"
+                        />
+                        <span>Keep uniform</span>
+                      </label>
+
+                      <div className="flex items-center gap-1.5 tabular-nums">
+                        <input
+                          type="number"
+                          min={0.5}
+                          max={100}
+                          step="0.5"
+                          value={uniformMcqInput}
+                          onChange={(e) => handleUniformMcqInputChange(e.target.value)}
+                          onBlur={() => {
+                            if (parseValidPointValue(uniformMcqInput) === null) {
+                              setUniformMcqInput(String(defaultPointValue));
+                            }
+                          }}
+                          aria-label="Uniform MCQ point value"
+                          className="w-16 h-8 rounded-lg border border-slate-200 dark:border-slate-700 text-center text-xs font-bold bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white tabular-nums focus:border-[#1E293B] focus:outline-none"
+                        />
+                        <span className="text-[11px] font-semibold text-slate-500">pts</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => applyUniformMcqPoints()}
+                        className="px-3 py-1.5 rounded-lg bg-[#1E293B] hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-[11px] font-bold transition-colors whitespace-nowrap"
+                      >
+                        Apply to All MCQs
+                      </button>
+                    </div>
+                  </div>
+                  {uniformMcqFeedback && (
+                    <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 size={13} className="shrink-0" />
+                      <span>{uniformMcqFeedback}</span>
+                    </p>
+                  )}
+                </div>
+
                 {/* Question Cards */}
                 {questions.map((q, idx) => (
                   <NativeQuestionCard
@@ -1892,6 +2145,19 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   </button>
                 </div>
               </div>
+            ) : deliveryMode === 'CODING_LAB' ? (
+              <CodingLabAssessmentConfigPanel
+                assessmentId={initialExam?.id}
+                config={codingLabConfig}
+                maxScore={totalMarks}
+                onChange={(nextConfig, suggestedMax) => {
+                  setCodingLabConfig(nextConfig);
+                  if (typeof suggestedMax === 'number' && Number.isFinite(suggestedMax) && suggestedMax > 0) {
+                    setCodingLabMaxScore(suggestedMax);
+                  }
+                  markDirty();
+                }}
+              />
             ) : (
               <div className="p-8 text-center border border-dashed rounded-2xl border-slate-300 dark:border-slate-700 text-xs text-slate-500">
                 Native question builder is disabled because this assessment uses an <strong>External Link</strong>.
@@ -2118,7 +2384,11 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                                 )}
                               </td>
                               <td className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
-                                {answeredCount} / {questions.length} answered
+                                {deliveryMode === 'CODING_LAB'
+                                  ? isSubmitted
+                                    ? 'Project Submitted'
+                                    : 'Working in Coding Lab'
+                                  : `${answeredCount} / ${questions.length} answered`}
                               </td>
                               <td className="px-4 py-3 font-bold tabular-nums">
                                 {isSubmitted
@@ -2127,6 +2397,16 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="inline-flex items-center justify-end gap-2">
+                                  {deliveryMode === 'CODING_LAB' && isSubmitted && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setReviewCodingAttempt(at)}
+                                      className="px-3 py-1 rounded-lg bg-[#1E293B] hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+                                    >
+                                      <Code2 size={13} />
+                                      Inspect &amp; Grade
+                                    </button>
+                                  )}
                                   {isSubmitted && onReleaseResult && (
                                     <button
                                       type="button"
@@ -2811,28 +3091,66 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 </div>
               </div>
 
-              {/* Default Points */}
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 text-xs font-semibold">
-                <div>
-                  <p>Default question point value</p>
-                  <p className="text-[11px] text-slate-500 font-normal">
-                    Initial point value allocated to newly added questions.
-                  </p>
+              {/* Default & Uniform MCQ Points */}
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3 text-xs font-semibold">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-slate-900 dark:text-white font-bold">
+                      Uniform MCQ Point Value
+                    </p>
+                    <p className="text-[11px] text-slate-500 font-normal">
+                      Set one consistent point value for all Multiple Choice questions (existing and newly added).
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 tabular-nums">
+                    <input
+                      type="number"
+                      min={0.5}
+                      max={100}
+                      step="0.5"
+                      value={uniformMcqInput}
+                      onChange={(e) => handleUniformMcqInputChange(e.target.value)}
+                      onBlur={() => {
+                        if (parseValidPointValue(uniformMcqInput) === null) {
+                          setUniformMcqInput(String(defaultPointValue));
+                        }
+                      }}
+                      className="w-16 h-9 rounded-xl border border-slate-200 dark:border-slate-700 text-center font-bold bg-white dark:bg-slate-900 tabular-nums focus:border-[#1E293B] focus:outline-none"
+                    />
+                    <span>points</span>
+                    <button
+                      type="button"
+                      onClick={() => applyUniformMcqPoints()}
+                      className="px-3 py-2 rounded-xl bg-[#1E293B] hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold transition-colors whitespace-nowrap"
+                    >
+                      Apply to All MCQs ({mcqCount})
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0 tabular-nums">
+
+                <label className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 px-3.5 py-2.5 cursor-pointer">
+                  <div>
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Automatically keep all MCQs uniform
+                    </p>
+                    <p className="text-[11px] text-slate-500 font-normal">
+                      When enabled, changing the point value above updates every MCQ question right away.
+                    </p>
+                  </div>
                   <input
-                    type="number"
-                    min={0.5}
-                    max={100}
-                    value={defaultPointValue}
-                    onChange={(e) => {
-                      setDefaultPointValue(Math.max(0.5, Number(e.target.value) || 2));
-                      markDirty();
-                    }}
-                    className="w-16 h-9 rounded-xl border border-slate-200 dark:border-slate-700 text-center font-bold bg-white dark:bg-slate-900 tabular-nums focus:border-[#1E293B] focus:outline-none"
+                    type="checkbox"
+                    checked={uniformMcqPointsEnabled}
+                    onChange={(e) => handleToggleUniformMcq(e.target.checked)}
+                    className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer shrink-0"
                   />
-                  <span>points</span>
-                </div>
+                </label>
+
+                {uniformMcqFeedback && (
+                  <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 size={14} className="shrink-0" />
+                    <span>{uniformMcqFeedback}</span>
+                  </p>
+                )}
               </div>
             </div>
 
@@ -3626,6 +3944,86 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* On-Screen Pop-Up Notification on Successful Publish / Schedule */}
+      {publishPopup && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-slate-950/65 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="assessment-publish-popup-title"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#121620] border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <CheckCircle2 size={24} />
+                </div>
+                <div>
+                  <h3
+                    id="assessment-publish-popup-title"
+                    className="text-base font-black text-slate-900 dark:text-white"
+                  >
+                    {publishPopup.title}
+                  </h3>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mt-0.5">
+                    {publishPopup.status === 'active' ? 'Published & Active' : 'Scheduled'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPublishPopup(null)}
+                aria-label="Dismiss notification"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              {publishPopup.subtitle}
+            </p>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPublishPopup(null);
+                  onBackToOverview();
+                }}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                Close Assessment
+              </button>
+              <button
+                type="button"
+                onClick={() => setPublishPopup(null)}
+                className="px-4 py-2 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white text-xs font-bold transition-colors"
+              >
+                Stay on Assessment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reviewCodingAttempt && (
+        <CodingLabSubmissionReviewModal
+          open={Boolean(reviewCodingAttempt)}
+          assessmentId={initialExam?.id || ''}
+          assessmentTitle={title || initialExam?.title || 'Coding Lab Assessment'}
+          attempt={reviewCodingAttempt}
+          maxScore={totalMarks}
+          canGrade={true}
+          actorRole={isTutor ? 'TUTOR' : 'ADMIN'}
+          onClose={() => setReviewCodingAttempt(null)}
+          onGraded={() => {
+            setSaveBannerMessage('Coding Lab grade and feedback saved.');
+            setTimeout(() => setSaveBannerMessage(''), 4000);
+          }}
+        />
       )}
     </div>
   );

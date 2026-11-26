@@ -32,7 +32,7 @@ export interface AssessmentListItem {
   title: string;
   subject: string;
   workType?: AcademicWorkType;
-  deliveryMode: 'NATIVE' | 'EXTERNAL_LINK';
+  deliveryMode: 'NATIVE' | 'EXTERNAL_LINK' | 'CODING_LAB';
   externalUrl?: string;
   status: string; // 'active' | 'draft' | 'scheduled' | 'completed' | 'archived'
   schoolId?: string;

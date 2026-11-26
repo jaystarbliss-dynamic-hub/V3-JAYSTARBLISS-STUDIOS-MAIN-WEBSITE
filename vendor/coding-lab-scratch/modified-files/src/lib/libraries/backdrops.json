@@ -1,0 +1,126 @@
+[
+  {
+    "name": "Blank Canvas",
+    "assetId": "e13791391a2b30a11a5d166bc80e82fb",
+    "md5ext": "e13791391a2b30a11a5d166bc80e82fb.svg",
+    "dataFormat": "svg",
+    "bitmapResolution": 1,
+    "rotationCenterX": 240,
+    "rotationCenterY": 180,
+    "tags": [
+      "patterns"
+    ]
+  },
+  {
+    "name": "XY Coordinate Grid",
+    "assetId": "359cff8ada5fa63a7b9b27de1e1b0794",
+    "md5ext": "359cff8ada5fa63a7b9b27de1e1b0794.svg",
+    "dataFormat": "svg",
+    "bitmapResolution": 1,
+    "rotationCenterX": 240,
+    "rotationCenterY": 180,
+    "tags": [
+      "patterns",
+      "indoors"
+    ]
+  },
+  {
+    "name": "Sunny Meadow",
+    "assetId": "97840cb9f9326ed187e858fbb1e6740b",
+    "md5ext": "97840cb9f9326ed187e858fbb1e6740b.svg",
+    "dataFormat": "svg",
+    "bitmapResolution": 1,
+    "rotationCenterX": 240,
+    "rotationCenterY": 180,
+    "tags": [
+      "outdoors"
+    ]
+  },
+  {
+    "name": "Outer Space",
+    "assetId": "ff285b122c9feb2ae356d1fb57457a27",
+    "md5ext": "ff285b122c9feb2ae356d1fb57457a27.svg",
+    "dataFormat": "svg",
+    "bitmapResolution": 1,
+    "rotationCenterX": 240,
+    "rotationCenterY": 180,
+    "tags": [
+      "space"
+    ]
+  },
+  {
+    "name": "Underwater Ocean",
+    "assetId": "8b730ea898d4b5ae3d23e0c2bd2ce59b",
+    "md5ext": "8b730ea898d4b5ae3d23e0c2bd2ce59b.svg",
+    "dataFormat": "svg",
+    "bitmapResolution": 1,
+    "rotationCenterX": 240,
+    "rotationCenterY": 180,
+    "tags": [
+      "underwater",
+      "outdoors"
+    ]
+  },
+  {
+    "name": "City Skyline",
+    "assetId": "1884f158b0196f0e543182ea8c9c6ee6",
+    "md5ext": "1884f158b0196f0e543182ea8c9c6ee6.svg",
+    "dataFormat": "svg",
+    "bitmapResolution": 1,
+    "rotationCenterX": 240,
+    "rotationCenterY": 180,
+    "tags": [
+      "outdoors"
+    ]
+  },
+  {
+    "name": "Classroom Board",
+    "assetId": "3e36937b74cddc417467ec9674f05fc0",
+    "md5ext": "3e36937b74cddc417467ec9674f05fc0.svg",
+    "dataFormat": "svg",
+    "bitmapResolution": 1,
+    "rotationCenterX": 240,
+    "rotationCenterY": 180,
+    "tags": [
+      "indoors"
+    ]
+  },
+  {
+    "name": "Basketball Court",
+    "assetId": "3e5551c40e602c47407881c12710a78b",
+    "md5ext": "3e5551c40e602c47407881c12710a78b.svg",
+    "dataFormat": "svg",
+    "bitmapResolution": 1,
+    "rotationCenterX": 240,
+    "rotationCenterY": 180,
+    "tags": [
+      "sports",
+      "indoors"
+    ]
+  },
+  {
+    "name": "Sunset Desert",
+    "assetId": "3fe375292a9424e7fda574eec34386e3",
+    "md5ext": "3fe375292a9424e7fda574eec34386e3.svg",
+    "dataFormat": "svg",
+    "bitmapResolution": 1,
+    "rotationCenterX": 240,
+    "rotationCenterY": 180,
+    "tags": [
+      "outdoors"
+    ]
+  },
+  {
+    "name": "Neon Maze Grid",
+    "assetId": "880c94dd604b572301b7e1f72e81f5ad",
+    "md5ext": "880c94dd604b572301b7e1f72e81f5ad.svg",
+    "dataFormat": "svg",
+    "bitmapResolution": 1,
+    "rotationCenterX": 240,
+    "rotationCenterY": 180,
+    "tags": [
+      "patterns",
+      "space"
+    ]
+  }
+]

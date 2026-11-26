@@ -1,0 +1,37 @@
+html, body, .app {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #f8fafc;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+/* Ensure touch-friendly scrolling on smaller screens without collapsing Scratch layout */
+@media (max-width: 1023px) {
+    .app {
+        min-width: 920px;
+        min-height: 600px;
+    }
+}
+
+/* Tutor Read-Only Review Mode: allow Green Flag / Stop / Stage / Tab & Sprite inspection, block workspace mutations */
+body.coding-lab-readonly .blocklyToolboxDiv,
+body.coding-lab-readonly .blocklyFlyout,
+body.coding-lab-readonly [class*="action-menu_menu-container"],
+body.coding-lab-readonly [class*="delete-button_delete-button"],
+body.coding-lab-readonly [class*="extension-button_extension-button-container"] {
+    display: none !important;
+    pointer-events: none !important;
+}
+
+body.coding-lab-readonly .blocklyBlockCanvas,
+body.coding-lab-readonly [class*="paint-editor_editor-container"],
+body.coding-lab-readonly [class*="sound-editor_editor-container"] button[class*="effect"] {
+    pointer-events: none !important;
+}

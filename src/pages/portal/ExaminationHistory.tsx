@@ -173,7 +173,7 @@ type Exam = {
   subject: string;
   status: string;
   workType?: WorkType;
-  deliveryMode?: "NATIVE" | "EXTERNAL_LINK";
+  deliveryMode?: "NATIVE" | "EXTERNAL_LINK" | "CODING_LAB";
   externalUrl?: string;
   durationMinutes: number;
   schoolId?: string;

@@ -1,7 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { auth, db, getAllClientDatabases } from "../../lib/firebase";
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import type { CodingLabAssessmentConfig, CodingLabSubmissionRecord } from "../../types/codingLab";
+import {
+  downloadSubmittedCodingLabSb3,
+  loadCodingLabSubmissionForReview,
+} from "../../services/codingLab/CodingLabSubmissionService";
+const CodingLabEditorHost = lazy(() => import("../../components/coding-lab/CodingLabEditorHost"));
 import {
   gradeAnswers,
   resolveAttemptQuestions,
@@ -47,6 +53,7 @@ import {
   List,
   CheckCircle,
   RotateCcw,
+  Code2,
 } from "lucide-react";
 
 type Q = {
@@ -116,7 +123,9 @@ type D = {
     title: string;
     subject: string;
     workType?: string;
-    deliveryMode?: "EXTERNAL_LINK" | "NATIVE";
+    deliveryMode?: "EXTERNAL_LINK" | "NATIVE" | "CODING_LAB";
+    codingLabConfig?: CodingLabAssessmentConfig;
+    tutorId?: string;
     externalUrl?: string;
     resourceTitle?: string;
     resourceUrl?: string;
@@ -491,6 +500,8 @@ export default function StudentExamAttempt() {
             subject: examData.subject || "General",
             workType: normalizeWorkType(examData.workType, examData),
             deliveryMode: normalizeDeliveryMode(examData),
+            codingLabConfig: examData.codingLabConfig || undefined,
+            tutorId: String(examData.tutorId || examData.createdBy || ""),
             externalUrl: String(examData.externalUrl || "").trim(),
             resourceTitle: String(examData.resourceTitle || "").trim(),
             resourceUrl: String(examData.resourceUrl || examData.videoUrl || examData.learningVideoUrl || "").trim(),
@@ -1340,6 +1351,79 @@ export default function StudentExamAttempt() {
           </div>
         </section>
       </main>
+    );
+  }
+
+  // Handle Integrated Coding Lab Assessment Workspace
+  if (data.exam.deliveryMode === "CODING_LAB") {
+    const isCodingClosed = data.attempt.status !== "in_progress";
+    const codingReleased = isAttemptResultReleased(data.attempt, data.exam);
+
+    if (!isCodingClosed) {
+      return (
+        <Suspense
+          fallback={
+            <div className="flex min-h-[70vh] items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">
+              Loading Coding Lab workspace...
+            </div>
+          }
+        >
+          <CodingLabEditorHost
+            mode="assessment"
+            assessmentContext={{
+              assessmentId: data.exam.id || data.attempt.examId,
+              attemptId: attemptId || "",
+              ownerUid: auth.currentUser?.uid || sessionStorage.getItem("userId") || "",
+              learnerName:
+                data.attempt.studentName ||
+                sessionStorage.getItem("userName") ||
+                auth.currentUser?.displayName ||
+                "Student",
+              schoolId: data.attempt.schoolId || data.exam.schoolId || "",
+              tutorId: data.exam.tutorId || "",
+              title: data.exam.title,
+              subject: data.exam.subject,
+              instructions: data.exam.instructions,
+              maxScore: data.exam.maxScore || data.attempt.maxScore || 20,
+              durationMinutes: data.exam.durationMinutes ?? null,
+              deadlineAt: data.attempt.deadlineAt ?? null,
+              releaseGradesPolicy: data.exam.releaseGradesPolicy,
+              codingConfig: data.exam.codingLabConfig,
+            }}
+            exitLabel="Back to Assessments"
+            onExit={() => nav("/portal/student/exams")}
+            onSubmitted={(submission: CodingLabSubmissionRecord) => {
+              setData((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      attempt: {
+                        ...prev.attempt,
+                        status: submission.gradingStatus === "graded" ? "graded" : "submitted",
+                        submittedAt: submission.submittedAt,
+                        score: (submission.finalScore ?? submission.automaticScore) ?? undefined,
+                        maxScore: submission.maxScore,
+                        percentage: submission.percentage ?? undefined,
+                        resultReleased: submission.resultReleased,
+                        releasedAt: submission.releasedAt ?? undefined,
+                        feedback: submission.tutorFeedback,
+                      },
+                    }
+                  : prev
+              );
+            }}
+          />
+        </Suspense>
+      );
+    }
+
+    return (
+      <CodingLabSubmittedView
+        attemptId={attemptId || ""}
+        data={data}
+        isReleased={codingReleased}
+        onBack={() => nav("/portal/student/exams")}
+      />
     );
   }
 
@@ -3059,3 +3143,202 @@ export default function StudentExamAttempt() {
     </main>
   );
 }
+
+function CodingLabSubmittedView({
+  attemptId,
+  data,
+  isReleased,
+  onBack,
+}: {
+  attemptId: string;
+  data: D;
+  isReleased: boolean;
+  onBack: () => void;
+}) {
+  const [submission, setSubmission] = useState<CodingLabSubmissionRecord | null>(null);
+  const [sb3Buffer, setSb3Buffer] = useState<ArrayBuffer | null>(null);
+  const [loadingSub, setLoadingSub] = useState(true);
+  const [showReadOnlyEditor, setShowReadOnlyEditor] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoadingSub(true);
+      try {
+        const res = await loadCodingLabSubmissionForReview({
+          submissionId: `clsub_${attemptId}`,
+          attemptId,
+        });
+        if (!cancelled) {
+          setSubmission(res.submission);
+          setSb3Buffer(res.sb3Buffer);
+        }
+      } catch {
+        // Fallback to attempt metadata
+      } finally {
+        if (!cancelled) setLoadingSub(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [attemptId, data.exam.id, data.attempt.examId]);
+
+  const effectiveScore =
+    submission?.finalScore ?? submission?.automaticScore ?? data.attempt.score;
+  const effectiveMax = submission?.maxScore ?? data.attempt.maxScore ?? data.exam.maxScore ?? 20;
+  const effectivePct =
+    effectiveScore !== undefined && effectiveScore !== null
+      ? calculateScorePercentage(effectiveScore, effectiveMax)
+      : data.attempt.percentage;
+  const criterionResults = submission?.criterionResults || [];
+
+  if (showReadOnlyEditor && sb3Buffer) {
+    return (
+      <Suspense
+        fallback={
+          <div className="flex min-h-[70vh] items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">
+            Opening read-only Coding Lab project...
+          </div>
+        }
+      >
+        <CodingLabEditorHost
+          mode="assessment"
+          readOnly={true}
+          initialTitle={data.exam.title}
+          initialSb3Buffer={sb3Buffer}
+          assessmentContext={{
+            assessmentId: data.exam.id || data.attempt.examId,
+            attemptId,
+            ownerUid: auth.currentUser?.uid || "",
+            learnerName: data.attempt.studentName || "Student",
+            title: data.exam.title,
+            subject: data.exam.subject,
+            instructions: data.exam.instructions,
+            maxScore: effectiveMax,
+            codingConfig: data.exam.codingLabConfig,
+          }}
+          exitLabel="Back to Receipt"
+          onExit={() => setShowReadOnlyEditor(false)}
+        />
+      </Suspense>
+    );
+  }
+
+  return (
+    <main className="mx-auto max-w-3xl space-y-5 p-4 sm:p-8">
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-12 w-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-100 flex items-center justify-center">
+              <Code2 size={24} />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
+                Coding Lab Submission
+              </p>
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+                {data.exam.title}
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {data.exam.subject}
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+            <CheckCircle2 size={14} /> Submitted
+          </span>
+        </div>
+
+        {isReleased && effectiveScore !== undefined && effectiveScore !== null ? (
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Released Score
+              </span>
+              <span className="text-xl font-black text-slate-900 dark:text-white tabular-nums">
+                {effectiveScore} / {effectiveMax} ({effectivePct ?? 0}%)
+              </span>
+            </div>
+            {(submission?.tutorFeedback || data.attempt.feedback) && (
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Tutor Feedback
+                </p>
+                <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
+                  {submission?.tutorFeedback || data.attempt.feedback}
+                </p>
+              </div>
+            )}
+            {criterionResults.length > 0 && (
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Structural Rubric Breakdown
+                </p>
+                <div className="divide-y divide-slate-200 dark:divide-slate-800 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                  {criterionResults.map((cr) => (
+                    <div key={cr.criterionId} className="px-3 py-2 flex items-center justify-between gap-2 text-xs">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-800 dark:text-slate-200">{cr.label}</p>
+                        <p className="text-[11px] text-slate-500">{cr.feedback}</p>
+                      </div>
+                      <span
+                        className={`font-bold tabular-nums shrink-0 ${
+                          cr.passed ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500"
+                        }`}
+                      >
+                        {cr.awardedMarks} / {cr.maxMarks}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-4 text-sm text-slate-600 dark:text-slate-300">
+            Your Coding Lab project has been locked and submitted. Results and tutor feedback will appear here once released by your tutor.
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <button
+            type="button"
+            disabled={loadingSub || !sb3Buffer}
+            onClick={() => setShowReadOnlyEditor(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#1E293B] hover:bg-slate-800 text-white px-4 py-2.5 text-xs font-bold disabled:opacity-50"
+          >
+            <Code2 size={15} />
+            {loadingSub ? "Loading Project..." : "Inspect Submitted Project (Read-Only)"}
+          </button>
+          {sb3Buffer && (
+            <button
+              type="button"
+              onClick={() =>
+                downloadSubmittedCodingLabSb3({
+                  sb3Buffer,
+                  learnerName: data.attempt.studentName || "Student",
+                  assessmentTitle: data.exam.title,
+                })
+              }
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+            >
+              <Download size={15} />
+              Download .sb3
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+          >
+            <ArrowLeft size={15} />
+            Back to Assessments
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+

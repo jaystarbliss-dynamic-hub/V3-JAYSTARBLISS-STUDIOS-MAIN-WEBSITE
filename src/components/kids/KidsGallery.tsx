@@ -13,12 +13,14 @@ import {
   Award,
   Maximize2,
   Share2,
-  Rocket
+  Rocket,
+  Code2
 } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { Card, CardContent } from '../ui/Card';
 import { CardSkeleton } from '../ui/Skeleton';
 import EmptyState from '../ui/EmptyState';
+import { CODING_LAB_CONFIG } from '../../config/codingLabConfig';
 
 export interface KidsProjectItem {
   id: string;
@@ -43,6 +45,7 @@ export interface KidsProjectItem {
 
 interface KidsGalleryProps {
   showHeroBanner?: boolean;
+  onOpenCodingLab?: () => void;
 }
 
 function normalizeKidsProject(id: string, raw: Record<string, any>): KidsProjectItem {
@@ -64,7 +67,7 @@ function normalizeKidsProject(id: string, raw: Record<string, any>): KidsProject
   };
 }
 
-const KidsGallery: React.FC<KidsGalleryProps> = ({ showHeroBanner = true }) => {
+const KidsGallery: React.FC<KidsGalleryProps> = ({ showHeroBanner = true, onOpenCodingLab }) => {
   const [projects, setProjects] = useState<KidsProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -174,6 +177,26 @@ const KidsGallery: React.FC<KidsGalleryProps> = ({ showHeroBanner = true }) => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {CODING_LAB_CONFIG.enabled && (
+              onOpenCodingLab ? (
+                <button
+                  type="button"
+                  onClick={onOpenCodingLab}
+                  id="coding-lab-gallery-btn"
+                  className="px-6 py-3.5 bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 font-black text-sm rounded-xl shadow-lg flex items-center gap-2 transition-all"
+                >
+                  <Code2 size={16} /> Open Coding Lab
+                </button>
+              ) : (
+                <Link
+                  to="/coding-lab"
+                  id="coding-lab-gallery-btn"
+                  className="px-6 py-3.5 bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 font-black text-sm rounded-xl shadow-lg flex items-center gap-2 transition-all"
+                >
+                  <Code2 size={16} /> Open Coding Lab
+                </Link>
+              )
+            )}
             <Link
               to="/magic-particles"
               id="magic-particles-gallery-btn"
