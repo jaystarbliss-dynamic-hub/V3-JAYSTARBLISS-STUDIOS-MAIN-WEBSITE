@@ -120,6 +120,22 @@ export function gradeAnswers(
   questionResults: Array<Record<string, any>>;
 };
 
+export interface RecalculatedAttemptResult {
+  skipped: boolean;
+  changed: boolean;
+  isSubmitted: boolean;
+  score?: number;
+  maxScore?: number;
+  percentage?: number;
+  questionResults?: Array<Record<string, any>>;
+  questionsSnapshot?: Array<Record<string, any>>;
+}
+
+export function recalculateAttemptForUpdatedExam(
+  exam: Record<string, any>,
+  attempt: Record<string, any>
+): RecalculatedAttemptResult;
+
 export function schoolSafeQuestion(question: Record<string, any>): {
   id: string;
   prompt: string;

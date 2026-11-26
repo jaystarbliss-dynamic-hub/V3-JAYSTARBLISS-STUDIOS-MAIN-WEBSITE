@@ -22,6 +22,7 @@ import {
   resolveCanonicalExamStatus,
   mergeExamRecordByPrecedence,
   normalizeWorkType,
+  recalculateAttemptForUpdatedExam,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -1242,32 +1243,6 @@ export const handler: Handler = async event => {
           : adminDb.collection("jdiExams").doc().id;
       const targetRef = adminDb.collection("jdiExams").doc(targetDocId);
 
-      // If updating an existing exam that already has attempts, preserve a snapshot of the previous questions/maxScore on those attempts
-      if (existingDoc) {
-        const existingAttempts = await adminDb
-          .collection("jdiExamAttempts")
-          .where("examId", "==", targetDocId)
-          .limit(200)
-          .get();
-        if (!existingAttempts.empty) {
-          const priorQuestions = Array.isArray(existingDoc.questions) ? existingDoc.questions : [];
-          const priorMaxScore = computeExamMaxScore(existingDoc);
-          const batch = adminDb.batch();
-          let needsCommit = false;
-          existingAttempts.docs.forEach(aDoc => {
-            const aData = aDoc.data() || {};
-            if (!Array.isArray(aData.questionsSnapshot) || !aData.questionsSnapshot.length) {
-              batch.update(aDoc.ref, {
-                questionsSnapshot: priorQuestions,
-                maxScore: aData.maxScore || priorMaxScore,
-              });
-              needsCommit = true;
-            }
-          });
-          if (needsCommit) await batch.commit().catch(() => undefined);
-        }
-      }
-
       const payload: Record<string, any> = {
         schoolId,
         schoolName: resolvedSchoolName,
@@ -1334,6 +1309,53 @@ export const handler: Handler = async event => {
           .catch(() => undefined);
       }
 
+      // Automatically recalculate all existing student attempts whenever an exam is updated
+      // (whether active, completed/inactive, scheduled, archived, or draft).
+      let recalculatedAttemptsCount = 0;
+      const existingAttemptsSnap = await adminDb
+        .collection("jdiExamAttempts")
+        .where("examId", "==", targetDocId)
+        .get()
+        .catch(() => null);
+      if (existingAttemptsSnap && !existingAttemptsSnap.empty) {
+        const pendingUpdates: Array<{ ref: any; data: Record<string, any> }> = [];
+        for (const aDoc of existingAttemptsSnap.docs) {
+          const aData = aDoc.data() || {};
+          const recalc = recalculateAttemptForUpdatedExam(payload, aData);
+          if (recalc.skipped || !recalc.changed) continue;
+          if (recalc.isSubmitted) {
+            recalculatedAttemptsCount += 1;
+            pendingUpdates.push({
+              ref: aDoc.ref,
+              data: {
+                score: recalc.score,
+                maxScore: recalc.maxScore,
+                percentage: recalc.percentage,
+                ...(recalc.questionResults ? { questionResults: recalc.questionResults } : {}),
+                ...(recalc.questionsSnapshot ? { questionsSnapshot: recalc.questionsSnapshot } : {}),
+                regradedAt: FieldValue.serverTimestamp(),
+                regradedBy: c.uid,
+                updatedAt: FieldValue.serverTimestamp(),
+              },
+            });
+          } else {
+            pendingUpdates.push({
+              ref: aDoc.ref,
+              data: {
+                maxScore: recalc.maxScore,
+                ...(recalc.questionsSnapshot ? { questionsSnapshot: recalc.questionsSnapshot } : {}),
+                updatedAt: FieldValue.serverTimestamp(),
+              },
+            });
+          }
+        }
+        for (let i = 0; i < pendingUpdates.length; i += 400) {
+          const batch = adminDb.batch();
+          pendingUpdates.slice(i, i + 400).forEach(u => batch.update(u.ref, u.data));
+          await batch.commit().catch(err => console.warn("Server attempt recalculation batch warning:", err));
+        }
+      }
+
       if (status === "scheduled" || status === "active") {
         await notifyStudentsOfPublishedExam(targetDocId, payload).catch(err =>
           console.warn("Student exam notification warning:", err)
@@ -1342,6 +1364,7 @@ export const handler: Handler = async event => {
 
       return json(existingDoc ? 200 : 201, {
         updated: Boolean(existingDoc),
+        recalculatedAttemptsCount,
         exam: {
           id: targetDocId,
           title,

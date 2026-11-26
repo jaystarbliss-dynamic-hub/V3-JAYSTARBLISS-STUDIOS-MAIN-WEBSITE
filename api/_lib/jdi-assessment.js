@@ -1118,6 +1118,307 @@ export function gradeAnswers(exam, answers = {}) {
   return { score: finalScore, maxScore: finalMaxScore, percentage, autoGraded, questionResults };
 }
 
+function buildSyncedQuestionsSnapshot(updatedQuestions, existingSnapshot) {
+  if (!Array.isArray(updatedQuestions) || !updatedQuestions.length) return [];
+  const byId = new Map();
+  for (const q of updatedQuestions) {
+    if (q && q.id !== undefined) byId.set(String(q.id), q);
+  }
+  if (!Array.isArray(existingSnapshot) || !existingSnapshot.length) {
+    return updatedQuestions.map(q => ({ ...q }));
+  }
+  const seen = new Set();
+  const synced = [];
+  for (const prevQ of existingSnapshot) {
+    const qId = String(prevQ?.id ?? "");
+    const nextQ = byId.get(qId);
+    if (nextQ) {
+      synced.push({ ...prevQ, ...nextQ });
+      seen.add(qId);
+    }
+  }
+  for (const q of updatedQuestions) {
+    const qId = String(q?.id ?? "");
+    if (!seen.has(qId)) {
+      synced.push({ ...q });
+      seen.add(qId);
+    }
+  }
+  return synced;
+}
+
+function questionResultsDiffer(prevList, nextList) {
+  const prev = Array.isArray(prevList) ? prevList : [];
+  const next = Array.isArray(nextList) ? nextList : [];
+  if (prev.length !== next.length) return true;
+  for (let i = 0; i < next.length; i += 1) {
+    const a = prev[i] || {};
+    const b = next[i] || {};
+    if (
+      String(a.questionId ?? "") !== String(b.questionId ?? "") ||
+      Number(a.pointsAwarded ?? 0) !== Number(b.pointsAwarded ?? 0) ||
+      Number(a.maxPoints ?? 0) !== Number(b.maxPoints ?? 0) ||
+      Boolean(a.manualReview) !== Boolean(b.manualReview) ||
+      (typeof a.correct === "boolean" || typeof b.correct === "boolean"
+        ? Boolean(a.correct) !== Boolean(b.correct)
+        : false)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function questionsSnapshotDiffers(prevSnap, nextSnap) {
+  const prev = Array.isArray(prevSnap) ? prevSnap : [];
+  const next = Array.isArray(nextSnap) ? nextSnap : [];
+  if (prev.length !== next.length) return true;
+  for (let i = 0; i < next.length; i += 1) {
+    const a = prev[i] || {};
+    const b = next[i] || {};
+    if (
+      String(a.id ?? "") !== String(b.id ?? "") ||
+      Number(a.points ?? 0) !== Number(b.points ?? 0) ||
+      String(a.type ?? "") !== String(b.type ?? "")
+    ) {
+      return true;
+    }
+    const aOpts = Array.isArray(a.correctOptionIds) ? [...a.correctOptionIds].map(String).sort().join(",") : "";
+    const bOpts = Array.isArray(b.correctOptionIds) ? [...b.correctOptionIds].map(String).sort().join(",") : "";
+    if (aOpts !== bOpts) return true;
+    const aAcc = Array.isArray(a.acceptedAnswers) ? [...a.acceptedAnswers].map(String).sort().join(",") : "";
+    const bAcc = Array.isArray(b.acceptedAnswers) ? [...b.acceptedAnswers].map(String).sort().join(",") : "";
+    if (aAcc !== bAcc) return true;
+  }
+  return false;
+}
+
+/**
+ * Automatically recalculates an existing student attempt's score, maxScore, percentage,
+ * questionResults, and questionsSnapshot whenever an assessment's point values or answer keys
+ * are updated — whether the assessment is active, completed/inactive, scheduled, or draft.
+ *
+ * - Objective / auto-gradable questions are re-scored against the updated question `points` & keys.
+ * - Manually graded questions preserve tutor-awarded marks (proportionally rescaled only if that
+ *   question's max points changed, and always clamped to `[0, newMaxPoints]`).
+ * - Unsubmitted `in_progress` attempts never have their score fabricated; only their
+ *   `questionsSnapshot` & `maxScore` are synced so submission uses the updated point values.
+ */
+export function recalculateAttemptForUpdatedExam(exam, attempt) {
+  if (!attempt || typeof attempt !== "object") {
+    return { skipped: true, changed: false, isSubmitted: false };
+  }
+
+  const status = String(attempt.status || "").trim().toLowerCase();
+  const isSubmitted =
+    status === "submitted" ||
+    status === "graded" ||
+    status === "completed" ||
+    status === "expired" ||
+    status === "released" ||
+    (status !== "in_progress" && Boolean(attempt.submittedAt));
+
+  const updatedQuestions = Array.isArray(exam?.questions) ? exam.questions : [];
+  const hasExistingSnapshot = Array.isArray(attempt.questionsSnapshot) && attempt.questionsSnapshot.length > 0;
+  const syncedSnapshot = updatedQuestions.length
+    ? buildSyncedQuestionsSnapshot(updatedQuestions, hasExistingSnapshot ? attempt.questionsSnapshot : null)
+    : undefined;
+
+  if (!isSubmitted) {
+    if (status === "in_progress" && updatedQuestions.length > 0) {
+      const nextMaxScore = Number(
+        updatedQuestions
+          .reduce(
+            (sum, q) => sum + (String(q?.type || "") === "learning_resource" ? 0 : Math.max(0, Math.min(1000, Number(q?.points ?? 1) || 0))),
+            0
+          )
+          .toFixed(2)
+      );
+      const prevMax = Number(attempt.maxScore ?? 0);
+      const snapChanged = hasExistingSnapshot && questionsSnapshotDiffers(attempt.questionsSnapshot, syncedSnapshot);
+      const maxChanged = nextMaxScore !== prevMax;
+      if (snapChanged || maxChanged) {
+        return {
+          skipped: false,
+          changed: true,
+          isSubmitted: false,
+          maxScore: nextMaxScore,
+          ...(hasExistingSnapshot ? { questionsSnapshot: syncedSnapshot } : {}),
+        };
+      }
+    }
+    return { skipped: true, changed: false, isSubmitted: false };
+  }
+
+  // Handle non-question assessments (e.g., CODING_LAB / EXTERNAL_LINK / deliverable-only)
+  if (updatedQuestions.length === 0) {
+    const newMaxScore = Number((computeExamMaxScore(exam) || Number(exam?.maxScore || 0)).toFixed(2));
+    const prevMaxScore = Number(attempt.maxScore ?? 0);
+    const prevScore = typeof attempt.score === "number" && Number.isFinite(attempt.score) ? attempt.score : null;
+    if (newMaxScore > 0 && prevScore !== null && prevMaxScore > 0 && prevMaxScore !== newMaxScore) {
+      const rescaledScore = Math.max(
+        0,
+        Math.min(newMaxScore, Number(((prevScore / prevMaxScore) * newMaxScore).toFixed(2)))
+      );
+      const nextPercentage = calculateScorePercentage(rescaledScore, newMaxScore);
+      return {
+        skipped: false,
+        changed: true,
+        isSubmitted: true,
+        score: rescaledScore,
+        maxScore: newMaxScore,
+        percentage: nextPercentage,
+      };
+    }
+    return {
+      skipped: false,
+      changed: false,
+      isSubmitted: true,
+      score: prevScore ?? 0,
+      maxScore: prevMaxScore,
+      percentage: Number(attempt.percentage ?? 0),
+    };
+  }
+
+  const answers = attempt.answers && typeof attempt.answers === "object" ? attempt.answers : {};
+  const prevResults = Array.isArray(attempt.questionResults) ? attempt.questionResults : [];
+  const prevById = new Map();
+  for (const res of prevResults) {
+    if (res && res.questionId !== undefined) {
+      prevById.set(String(res.questionId), res);
+    }
+  }
+
+  let totalScore = 0;
+  let totalMaxScore = 0;
+  const nextQuestionResults = [];
+
+  for (const question of updatedQuestions) {
+    const qId = String(question?.id ?? "");
+    const qType = String(question?.type || "single_choice");
+    const prevRes = prevById.get(qId);
+    const hasOwnAnswerKey = Object.prototype.hasOwnProperty.call(answers, qId);
+    const rawAnswer = hasOwnAnswerKey ? answers[qId] : prevRes?.answer;
+
+    if (qType === "learning_resource") {
+      nextQuestionResults.push({
+        ...(prevRes || {}),
+        questionId: qId,
+        ...(rawAnswer === undefined ? {} : { answer: rawAnswer }),
+        manualReview: false,
+        pointsAwarded: 0,
+        maxPoints: 0,
+      });
+      continue;
+    }
+
+    const maxPoints = Math.max(0, Math.min(1000, Number(question?.points ?? 1) || 0));
+    totalMaxScore += maxPoints;
+
+    const isObjectiveOption =
+      OBJECTIVE.has(qType) && Array.isArray(question?.correctOptionIds) && question.correctOptionIds.length > 0;
+    const isAutoShortAnswer =
+      qType === "short_answer" && Array.isArray(question?.acceptedAnswers) && question.acceptedAnswers.length > 0;
+
+    if (isObjectiveOption || isAutoShortAnswer) {
+      const hasRawAnswer =
+        rawAnswer !== undefined &&
+        rawAnswer !== null &&
+        !(Array.isArray(rawAnswer) && rawAnswer.length === 0) &&
+        String(rawAnswer).trim() !== "";
+
+      let correct = false;
+      if (isObjectiveOption) {
+        if (hasRawAnswer) {
+          const expected = [...new Set(question.correctOptionIds.map(String))].sort();
+          const actual = [
+            ...new Set((Array.isArray(rawAnswer) ? rawAnswer : [String(rawAnswer)]).map(String).filter(Boolean)),
+          ].sort();
+          correct = expected.length === actual.length && expected.every((val, idx) => val === actual[idx]);
+        } else if (!hasOwnAnswerKey && prevRes && typeof prevRes.correct === "boolean") {
+          correct = prevRes.correct;
+        }
+      } else {
+        if (hasRawAnswer) {
+          const norm = value => String(value ?? "").trim().toLocaleLowerCase();
+          correct = question.acceptedAnswers.some(value => norm(value) === norm(rawAnswer));
+        } else if (!hasOwnAnswerKey && prevRes && typeof prevRes.correct === "boolean") {
+          correct = prevRes.correct;
+        }
+      }
+
+      const prevMax = Math.max(0, Number(prevRes?.maxPoints ?? 0) || 0);
+      const prevAwarded = Math.max(0, Number(prevRes?.pointsAwarded ?? 0) || 0);
+      const hadCustomTutorOverride =
+        Boolean(prevRes?.gradedByTutor) &&
+        prevMax > 0 &&
+        ((prevAwarded > 0 && prevAwarded < prevMax) || (prevRes?.correct === false && prevAwarded > 0));
+
+      const pointsAwarded = hadCustomTutorOverride
+        ? Math.max(0, Math.min(maxPoints, Number(((prevAwarded / prevMax) * maxPoints).toFixed(2))))
+        : correct
+          ? maxPoints
+          : 0;
+
+      totalScore += pointsAwarded;
+      nextQuestionResults.push({
+        ...(prevRes || {}),
+        questionId: qId,
+        ...(rawAnswer === undefined ? {} : { answer: rawAnswer }),
+        correct,
+        manualReview: false,
+        pointsAwarded: Number(pointsAwarded.toFixed(2)),
+        maxPoints,
+      });
+    } else {
+      const prevMax = Math.max(0, Number(prevRes?.maxPoints ?? 0) || 0);
+      const prevAwarded = Math.max(0, Number(prevRes?.pointsAwarded ?? 0) || 0);
+      let pointsAwarded = prevAwarded;
+      if (prevRes && prevMax > 0 && prevMax !== maxPoints) {
+        pointsAwarded = (prevAwarded / prevMax) * maxPoints;
+      }
+      pointsAwarded = Math.max(0, Math.min(maxPoints, Number(pointsAwarded.toFixed(2))));
+      const stillNeedsManualReview = prevRes ? Boolean(prevRes.manualReview) && !prevRes.gradedByTutor : true;
+
+      totalScore += pointsAwarded;
+      nextQuestionResults.push({
+        ...(prevRes || {}),
+        questionId: qId,
+        ...(rawAnswer === undefined ? {} : { answer: rawAnswer }),
+        manualReview: stillNeedsManualReview,
+        pointsAwarded,
+        maxPoints,
+      });
+    }
+  }
+
+  const finalScore = Number(totalScore.toFixed(2));
+  const finalMaxScore = Number(totalMaxScore.toFixed(2));
+  const finalPercentage = calculateScorePercentage(finalScore, finalMaxScore);
+
+  const prevScoreNum = Number(attempt.score ?? NaN);
+  const prevMaxNum = Number(attempt.maxScore ?? NaN);
+  const prevPctNum = Number(attempt.percentage ?? NaN);
+
+  const changed =
+    prevScoreNum !== finalScore ||
+    prevMaxNum !== finalMaxScore ||
+    prevPctNum !== finalPercentage ||
+    questionResultsDiffer(prevResults, nextQuestionResults) ||
+    (hasExistingSnapshot && questionsSnapshotDiffers(attempt.questionsSnapshot, syncedSnapshot));
+
+  return {
+    skipped: false,
+    changed,
+    isSubmitted: true,
+    score: finalScore,
+    maxScore: finalMaxScore,
+    percentage: finalPercentage,
+    questionResults: nextQuestionResults,
+    ...(hasExistingSnapshot ? { questionsSnapshot: syncedSnapshot } : {}),
+  };
+}
+
 /** Safe projections for school-level and student-attempt delivery; never include answer keys. */
 export function schoolSafeQuestion(question) {
   return {

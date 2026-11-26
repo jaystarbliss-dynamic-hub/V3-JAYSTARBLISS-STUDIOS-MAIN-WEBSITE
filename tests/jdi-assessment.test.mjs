@@ -17,6 +17,7 @@ import {
   formatScoreSummary,
   normalizeQuestions,
   gradeAnswers,
+  recalculateAttemptForUpdatedExam,
   schoolSafeQuestion,
   schoolSafeQuestionResult,
   attemptBelongsToLinkedChild,
@@ -1175,6 +1176,202 @@ test("mergeExamRecordByPrecedence enforces jdiExams > schoolExams > exams so sta
     false
   );
 });
+
+test("recalculateAttemptForUpdatedExam automatically updates submitted scores, maxScore, percentage, and questionsSnapshot when point values change (active or inactive)", () => {
+  const initialQuestions = [
+    objective({ id: "q1", points: 2, correctOptionIds: ["a"] }),
+    objective({ id: "q2", points: 2, correctOptionIds: ["b"] }),
+    objective({ id: "q3", points: 2, correctOptionIds: ["a"] }),
+    objective({ id: "q4", points: 2, correctOptionIds: ["b"] }),
+  ];
+
+  // Student got 3 of 4 right when each MCQ was 2 pts -> 6/8 (75%)
+  const initialGrading = gradeAnswers({ gradingMode: "automatic", questions: initialQuestions }, {
+    q1: "a",
+    q2: "b",
+    q3: "b", // wrong
+    q4: "b",
+  });
+  assert.equal(initialGrading.score, 6);
+  assert.equal(initialGrading.maxScore, 8);
+  assert.equal(initialGrading.percentage, 75);
+
+  const submittedAttempt = {
+    id: "att-1",
+    status: "submitted",
+    submittedAt: "2026-11-20T10:00:00.000Z",
+    answers: { q1: "a", q2: "b", q3: "b", q4: "b" },
+    score: initialGrading.score,
+    maxScore: initialGrading.maxScore,
+    percentage: initialGrading.percentage,
+    questionResults: initialGrading.questionResults,
+    questionsSnapshot: initialQuestions,
+  };
+
+  // Tutor updates an INACTIVE ("completed") exam: sets uniform MCQ points from 2 -> 1
+  const updatedInactiveExam = {
+    id: "exam-1",
+    status: "completed",
+    gradingMode: "automatic",
+    questions: initialQuestions.map(q => ({ ...q, points: 1 })),
+  };
+
+  const recalcUniform = recalculateAttemptForUpdatedExam(updatedInactiveExam, submittedAttempt);
+  assert.equal(recalcUniform.skipped, false);
+  assert.equal(recalcUniform.changed, true);
+  assert.equal(recalcUniform.isSubmitted, true);
+  assert.equal(recalcUniform.score, 3);
+  assert.equal(recalcUniform.maxScore, 4);
+  assert.equal(recalcUniform.percentage, 75);
+  assert.deepEqual(
+    recalcUniform.questionResults.map(r => [r.questionId, r.pointsAwarded, r.maxPoints]),
+    [
+      ["q1", 1, 1],
+      ["q2", 1, 1],
+      ["q3", 0, 1],
+      ["q4", 1, 1],
+    ]
+  );
+  // questionsSnapshot must also be updated so computeExamMaxScore agrees with the new denominator
+  assert.equal(computeExamMaxScore(updatedInactiveExam, recalcUniform), 4);
+
+  // Idempotent when re-run against the already-updated attempt
+  const secondPass = recalculateAttemptForUpdatedExam(updatedInactiveExam, {
+    ...submittedAttempt,
+    score: recalcUniform.score,
+    maxScore: recalcUniform.maxScore,
+    percentage: recalcUniform.percentage,
+    questionResults: recalcUniform.questionResults,
+    questionsSnapshot: recalcUniform.questionsSnapshot,
+  });
+  assert.equal(secondPass.changed, false);
+
+  // Changing individual question weight (q1 -> 5 pts, q3 -> 1 pt) changes percentage accurately
+  const weightedExam = {
+    id: "exam-1",
+    status: "active",
+    gradingMode: "automatic",
+    questions: [
+      objective({ id: "q1", points: 5, correctOptionIds: ["a"] }),
+      objective({ id: "q2", points: 1, correctOptionIds: ["b"] }),
+      objective({ id: "q3", points: 1, correctOptionIds: ["a"] }),
+      objective({ id: "q4", points: 3, correctOptionIds: ["b"] }),
+    ],
+  };
+  const recalcWeighted = recalculateAttemptForUpdatedExam(weightedExam, submittedAttempt);
+  assert.equal(recalcWeighted.changed, true);
+  assert.equal(recalcWeighted.score, 9); // 5 + 1 + 0 + 3
+  assert.equal(recalcWeighted.maxScore, 10);
+  assert.equal(recalcWeighted.percentage, 90);
+});
+
+test("recalculateAttemptForUpdatedExam preserves manual essay grades on mixed exams, handles legacy attempts without raw answers, and syncs in-progress snapshots without fabricating scores", () => {
+  const mixedExamUpdated = {
+    id: "exam-mixed",
+    status: "completed",
+    gradingMode: "manual", // forced manual because of the essay
+    questions: [
+      objective({ id: "mcq1", points: 1, correctOptionIds: ["a"] }),
+      objective({ id: "mcq2", points: 1, correctOptionIds: ["b"] }),
+      { id: "essay1", type: "essay", prompt: "Explain loops", points: 10 },
+    ],
+  };
+
+  // Previously MCQs were 2 pts each (student got mcq1 right = 2/2, mcq2 wrong = 0/2) and tutor graded essay 8/10 -> 10/14
+  const mixedAttempt = {
+    id: "att-mixed",
+    status: "graded",
+    submittedAt: "2026-11-20T11:00:00.000Z",
+    answers: { mcq1: "a", mcq2: "a", essay1: "Loops repeat instructions." },
+    score: 10,
+    maxScore: 14,
+    percentage: 71.43,
+    questionResults: [
+      { questionId: "mcq1", correct: true, manualReview: false, pointsAwarded: 2, maxPoints: 2, gradedByTutor: true },
+      { questionId: "mcq2", correct: false, manualReview: false, pointsAwarded: 0, maxPoints: 2, gradedByTutor: true },
+      { questionId: "essay1", manualReview: false, pointsAwarded: 8, maxPoints: 10, gradedByTutor: true },
+    ],
+  };
+
+  const recalcMixed = recalculateAttemptForUpdatedExam(mixedExamUpdated, mixedAttempt);
+  assert.equal(recalcMixed.changed, true);
+  assert.equal(recalcMixed.score, 9); // 1 + 0 + 8 (essay untouched)
+  assert.equal(recalcMixed.maxScore, 12); // 1 + 1 + 10
+  assert.equal(recalcMixed.percentage, 75);
+
+  // If the essay's max points is lowered from 10 -> 5, essay 8/10 scales proportionally to 4/5 (never exceeds max)
+  const loweredEssayExam = {
+    ...mixedExamUpdated,
+    questions: [
+      objective({ id: "mcq1", points: 1, correctOptionIds: ["a"] }),
+      objective({ id: "mcq2", points: 1, correctOptionIds: ["b"] }),
+      { id: "essay1", type: "essay", prompt: "Explain loops", points: 5 },
+    ],
+  };
+  const recalcLoweredEssay = recalculateAttemptForUpdatedExam(loweredEssayExam, mixedAttempt);
+  assert.equal(recalcLoweredEssay.score, 5); // 1 + 0 + 4
+  assert.equal(recalcLoweredEssay.maxScore, 7); // 1 + 1 + 5
+  assert.equal(recalcLoweredEssay.questionResults[2].pointsAwarded, 4);
+  assert.equal(recalcLoweredEssay.questionResults[2].maxPoints, 5);
+
+  // Legacy attempt missing raw `answers` map still rescales using prevRes.correct
+  const legacyAttempt = {
+    id: "att-legacy",
+    status: "submitted",
+    submittedAt: "2026-10-01T09:00:00.000Z",
+    answers: {},
+    score: 4,
+    maxScore: 4,
+    percentage: 100,
+    questionResults: [
+      { questionId: "mcq1", correct: true, manualReview: false, pointsAwarded: 2, maxPoints: 2 },
+      { questionId: "mcq2", correct: true, manualReview: false, pointsAwarded: 2, maxPoints: 2 },
+    ],
+  };
+  const legacyRecalc = recalculateAttemptForUpdatedExam(
+    {
+      id: "exam-legacy",
+      gradingMode: "automatic",
+      questions: [
+        objective({ id: "mcq1", points: 5, correctOptionIds: ["a"] }),
+        objective({ id: "mcq2", points: 5, correctOptionIds: ["b"] }),
+      ],
+    },
+    legacyAttempt
+  );
+  assert.equal(legacyRecalc.changed, true);
+  assert.equal(legacyRecalc.score, 10);
+  assert.equal(legacyRecalc.maxScore, 10);
+  assert.equal(legacyRecalc.percentage, 100);
+
+  // In-progress attempt should sync maxScore/questionsSnapshot ONLY and never set score/percentage
+  const inProgressAttempt = {
+    id: "att-ip",
+    status: "in_progress",
+    maxScore: 4,
+    questionsSnapshot: [
+      objective({ id: "mcq1", points: 2, correctOptionIds: ["a"] }),
+      objective({ id: "mcq2", points: 2, correctOptionIds: ["b"] }),
+    ],
+  };
+  const ipRecalc = recalculateAttemptForUpdatedExam(
+    {
+      id: "exam-ip",
+      gradingMode: "automatic",
+      questions: [
+        objective({ id: "mcq1", points: 1, correctOptionIds: ["a"] }),
+        objective({ id: "mcq2", points: 1, correctOptionIds: ["b"] }),
+      ],
+    },
+    inProgressAttempt
+  );
+  assert.equal(ipRecalc.isSubmitted, false);
+  assert.equal(ipRecalc.changed, true);
+  assert.equal(ipRecalc.maxScore, 2);
+  assert.equal(ipRecalc.score, undefined);
+  assert.equal(ipRecalc.questionsSnapshot[0].points, 1);
+});
+
 
 
 

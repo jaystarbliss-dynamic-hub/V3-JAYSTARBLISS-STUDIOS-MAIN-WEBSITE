@@ -16,6 +16,8 @@ import {
   resolvePartnerSchoolName as sharedResolvePartnerSchoolName,
   resolveAttemptQuestions as sharedResolveAttemptQuestions,
   gradeAnswers as sharedGradeAnswers,
+  recalculateAttemptForUpdatedExam as sharedRecalculateAttemptForUpdatedExam,
+  type RecalculatedAttemptResult,
   normalizeDeliveryMode as sharedNormalizeDeliveryMode,
   validateExternalExamUrl as sharedValidateExternalExamUrl,
   validateExamCreationPayload as sharedValidateExamCreationPayload,
@@ -313,6 +315,15 @@ export function gradeAnswers(
 ) {
   return sharedGradeAnswers(exam, answers);
 }
+
+export function recalculateAttemptForUpdatedExam(
+  exam: Record<string, any>,
+  attempt: Record<string, any>
+): RecalculatedAttemptResult {
+  return sharedRecalculateAttemptForUpdatedExam(exam, attempt);
+}
+
+export type { RecalculatedAttemptResult };
 
 export function normalizeDeliveryMode(
   input: unknown,

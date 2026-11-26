@@ -32,6 +32,7 @@ import {
   normalizeDeliveryMode,
   validateExternalExamUrl,
   isAttemptResultReleased,
+  recalculateAttemptForUpdatedExam,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -846,27 +847,7 @@ export const handler: Handler = async event => {
         const attemptsSnap = await adminDb
           .collection("jdiExamAttempts")
           .where("examId", "==", examId)
-          .limit(200)
           .get();
-
-        // Preserve historical attempts with a snapshot before applying structural updates
-        if (!attemptsSnap.empty && updates.questions !== undefined) {
-          const priorQuestions = Array.isArray(exam.questions) ? exam.questions : [];
-          const priorMaxScore = computeExamMaxScore(exam);
-          const batch = adminDb.batch();
-          let hasUpdates = false;
-          attemptsSnap.docs.forEach(aDoc => {
-            const aData = aDoc.data() || {};
-            if (!Array.isArray(aData.questionsSnapshot) || !aData.questionsSnapshot.length) {
-              batch.update(aDoc.ref, {
-                questionsSnapshot: priorQuestions,
-                maxScore: aData.maxScore || priorMaxScore,
-              });
-              hasUpdates = true;
-            }
-          });
-          if (hasUpdates) await batch.commit().catch(() => undefined);
-        }
 
         const patch: any = { updatedAt: FieldValue.serverTimestamp(), updatedBy: c.uid };
         if (updates.title !== undefined) {
@@ -985,6 +966,68 @@ export const handler: Handler = async event => {
         await ref.update(patch);
 
         const mergedExam = { ...exam, ...patch };
+        await adminDb
+          .collection("schoolExams")
+          .doc(examId)
+          .set(
+            {
+              ...(patch.title !== undefined ? { title: patch.title } : {}),
+              ...(patch.subject !== undefined ? { subject: patch.subject } : {}),
+              ...(patch.status !== undefined ? { status: patch.status } : {}),
+              ...(patch.questions !== undefined ? { questions: patch.questions, questionCount: patch.questionCount } : {}),
+              ...(patch.maxScore !== undefined ? { maxScore: patch.maxScore } : {}),
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          )
+          .catch(() => undefined);
+
+        let recalculatedAttemptsCount = 0;
+        if (
+          !attemptsSnap.empty &&
+          (updates.questions !== undefined ||
+            updates.gradingMode !== undefined ||
+            updates.codingLabConfig !== undefined ||
+            updates.maxScore !== undefined)
+        ) {
+          const pendingUpdates: Array<{ ref: any; data: Record<string, any> }> = [];
+          for (const aDoc of attemptsSnap.docs) {
+            const aData = aDoc.data() || {};
+            const recalc = recalculateAttemptForUpdatedExam(mergedExam, aData);
+            if (recalc.skipped || !recalc.changed) continue;
+            if (recalc.isSubmitted) {
+              recalculatedAttemptsCount += 1;
+              pendingUpdates.push({
+                ref: aDoc.ref,
+                data: {
+                  score: recalc.score,
+                  maxScore: recalc.maxScore,
+                  percentage: recalc.percentage,
+                  ...(recalc.questionResults ? { questionResults: recalc.questionResults } : {}),
+                  ...(recalc.questionsSnapshot ? { questionsSnapshot: recalc.questionsSnapshot } : {}),
+                  regradedAt: FieldValue.serverTimestamp(),
+                  regradedBy: c.uid,
+                  updatedAt: FieldValue.serverTimestamp(),
+                },
+              });
+            } else {
+              pendingUpdates.push({
+                ref: aDoc.ref,
+                data: {
+                  maxScore: recalc.maxScore,
+                  ...(recalc.questionsSnapshot ? { questionsSnapshot: recalc.questionsSnapshot } : {}),
+                  updatedAt: FieldValue.serverTimestamp(),
+                },
+              });
+            }
+          }
+          for (let i = 0; i < pendingUpdates.length; i += 400) {
+            const batch = adminDb.batch();
+            pendingUpdates.slice(i, i + 400).forEach(u => batch.update(u.ref, u.data));
+            await batch.commit().catch(err => console.warn("Exam update attempt recalculation warning:", err));
+          }
+        }
+
         if (mergedExam.status === "scheduled" || mergedExam.status === "active") {
           const recipients = await collectEligibleExamRecipients(mergedExam);
           const classLabel = Array.isArray(mergedExam.classIds) && mergedExam.classIds.length
@@ -1005,6 +1048,7 @@ export const handler: Handler = async event => {
         return json(200, {
           ok: true,
           examId,
+          recalculatedAttemptsCount,
           updatedFields: Object.keys(patch).filter(k => !["updatedAt", "updatedBy"].includes(k)),
         });
       }

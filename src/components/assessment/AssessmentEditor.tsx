@@ -105,7 +105,7 @@ export interface AssessmentEditorProps {
   currentUserRole: string;
   isTutor?: boolean;
   onBackToOverview: () => void;
-  onSaveAssessment: (payload: any) => Promise<void>;
+  onSaveAssessment: (payload: any) => Promise<{ recalculatedCount?: number } | void>;
   // Response management props
   examAttempts?: any[];
   onReleaseResult?: (attempt: any) => Promise<void>;
@@ -171,7 +171,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   const [publishPopup, setPublishPopup] = useState<{
     title: string;
     subtitle: string;
-    status: 'active' | 'scheduled';
+    status: 'active' | 'scheduled' | 'completed' | 'archived';
   } | null>(null);
 
   // -------------------------------------------------------------
@@ -829,7 +829,9 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   };
 
   // Save / Publish Pipeline
-  const handleSaveWorkspace = async (targetStatus?: 'draft' | 'active' | 'scheduled') => {
+  const handleSaveWorkspace = async (
+    targetStatus?: 'draft' | 'active' | 'scheduled' | 'completed' | 'archived'
+  ) => {
     setSaveErrorMessage('');
     if (!title.trim()) {
       setSaveErrorMessage('Please enter an assessment title before saving.');
@@ -997,31 +999,54 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         maxScore: totalMarks,
       };
 
-      await onSaveAssessment(payload);
+      const saveResult = await onSaveAssessment(payload);
+      const recalculatedCount = Number(
+        saveResult && typeof saveResult === 'object' ? saveResult.recalculatedCount || 0 : 0
+      );
+      const recalcSentence =
+        recalculatedCount > 0
+          ? ` Automatically updated scores for ${recalculatedCount} existing student submission${
+              recalculatedCount === 1 ? '' : 's'
+            }.`
+          : '';
+      const wasAlreadyActive = status === 'active';
       setStatus(resolvedStatus);
       setIsDirty(false);
       if (resolvedStatus === 'active') {
+        const heading = wasAlreadyActive
+          ? 'Assessment updated successfully.'
+          : 'Successfully published assessment.';
         setPublishPopup({
-          title: 'Successfully published assessment.',
-          subtitle: `"${title.trim()}" is now live for assigned students. You will remain on this assessment until you choose to close it.`,
+          title: heading,
+          subtitle: wasAlreadyActive
+            ? `Your changes to "${title.trim()}" have been saved.${recalcSentence} You will remain on this assessment until you choose to close it.`
+            : `"${title.trim()}" is now live for assigned students.${recalcSentence} You will remain on this assessment until you choose to close it.`,
           status: 'active',
         });
-        setSaveBannerMessage('Successfully published assessment.');
+        setSaveBannerMessage(`${heading}${recalcSentence}`);
       } else if (resolvedStatus === 'scheduled') {
         setPublishPopup({
           title: 'Successfully scheduled assessment.',
           subtitle: `"${title.trim()}" will automatically activate on ${new Date(
             availableFrom
-          ).toLocaleString()}. You will remain on this assessment until you choose to close it.`,
+          ).toLocaleString()}.${recalcSentence} You will remain on this assessment until you choose to close it.`,
           status: 'scheduled',
         });
         setSaveBannerMessage(
-          `Assessment scheduled for ${new Date(availableFrom).toLocaleString()}.`
+          `Assessment scheduled for ${new Date(availableFrom).toLocaleString()}.${recalcSentence}`
         );
+      } else if (resolvedStatus === 'completed' || resolvedStatus === 'archived') {
+        const closedLabel = resolvedStatus === 'completed' ? 'Closed (Inactive)' : 'Archived';
+        setPublishPopup({
+          title: 'Assessment updated successfully.',
+          subtitle: `Your updates to "${title.trim()}" were saved while keeping the assessment ${closedLabel}.${recalcSentence}`,
+          status: resolvedStatus,
+        });
+        setSaveBannerMessage(`Assessment updated (${closedLabel}).${recalcSentence}`);
       } else {
-        setSaveBannerMessage('Assessment draft saved successfully.');
+        setSaveBannerMessage(`Assessment draft saved successfully.${recalcSentence}`);
       }
-      setTimeout(() => setSaveBannerMessage(''), 5000);
+      setTimeout(() => setSaveBannerMessage(''), 6000);
     } catch (err) {
       setSaveErrorMessage(err instanceof Error ? err.message : 'Failed to save assessment.');
     } finally {
@@ -1458,41 +1483,51 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 <span className="hidden sm:inline">Preview</span>
               </button>
 
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={() => void handleSaveWorkspace('draft')}
-                className="p-1 sm:px-2.5 sm:py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap shrink-0"
-                title="Save as Draft"
-              >
-                <Save size={11} className="shrink-0" />
-                <span className="hidden sm:inline">Save</span>
-              </button>
+              {(isCreatingNew || status === 'draft' || status === 'scheduled') && (
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => void handleSaveWorkspace('draft')}
+                  className="p-1 sm:px-2.5 sm:py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                  title="Save as Draft"
+                >
+                  <Save size={11} className="shrink-0" />
+                  <span className="hidden sm:inline">Save</span>
+                </button>
+              )}
 
               <button
                 type="button"
                 disabled={isSaving}
                 onClick={() =>
                   void handleSaveWorkspace(
-                    activationMode === 'scheduled' ? 'scheduled' : 'active'
+                    status === 'completed' || status === 'archived'
+                      ? status
+                      : activationMode === 'scheduled'
+                      ? 'scheduled'
+                      : 'active'
                   )
                 }
                 className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 shadow-xs disabled:opacity-50 whitespace-nowrap shrink-0 transition-colors"
                 title={
-                  activationMode === 'scheduled'
+                  status === 'completed' || status === 'archived'
+                    ? 'Save Changes & Recalculate Existing Student Scores (Keeps Assessment Inactive)'
+                    : activationMode === 'scheduled'
                     ? 'Schedule Assessment for Later'
                     : status === 'active'
-                    ? 'Update Active Assessment'
+                    ? 'Update Active Assessment & Recalculate Student Scores'
                     : 'Publish & Activate Assessment Now'
                 }
               >
-                {activationMode === 'scheduled' ? (
+                {status !== 'completed' && status !== 'archived' && activationMode === 'scheduled' ? (
                   <Calendar size={12} className="shrink-0" />
                 ) : (
                   <CheckCircle2 size={12} className="shrink-0" />
                 )}
                 <span className="whitespace-nowrap">
-                  {activationMode === 'scheduled'
+                  {status === 'completed' || status === 'archived'
+                    ? 'Update'
+                    : activationMode === 'scheduled'
                     ? status === 'scheduled'
                       ? 'Update Schedule'
                       : 'Schedule'
@@ -3968,7 +4003,13 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     {publishPopup.title}
                   </h3>
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mt-0.5">
-                    {publishPopup.status === 'active' ? 'Published & Active' : 'Scheduled'}
+                    {publishPopup.status === 'active'
+                      ? 'Published & Active'
+                      : publishPopup.status === 'scheduled'
+                      ? 'Scheduled'
+                      : publishPopup.status === 'completed'
+                      ? 'Closed (Inactive) • Scores Synced'
+                      : 'Archived • Scores Synced'}
                   </p>
                 </div>
               </div>

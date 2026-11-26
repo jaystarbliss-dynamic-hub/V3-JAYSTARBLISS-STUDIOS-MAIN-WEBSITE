@@ -38,6 +38,7 @@ import {
   resolveCanonicalExamStatus,
   mergeExamRecordByPrecedence,
   gradeAnswers,
+  recalculateAttemptForUpdatedExam,
   classesMatch,
 } from "../../lib/classes";
 import {
@@ -1674,7 +1675,7 @@ ANSWER KEY
   // Validate native questions before publishing (or synthesize a Practical Deliverable block when submissionFormat === "DELIVERABLE")
   const prepareNativeQuestionsForSave = (
     rawList: any[],
-    targetStatus: "draft" | "scheduled" | "active"
+    targetStatus: "draft" | "scheduled" | "active" | "completed" | "archived"
   ) => {
     if (rawList.length === 0) {
       if (submissionFormat === "DELIVERABLE") {
@@ -1757,8 +1758,95 @@ ANSWER KEY
     });
   };
 
+  // Automatically recalculate existing student attempts whenever an assessment is updated
+  // (whether active, completed/inactive, scheduled, or draft) so scores & percentages stay accurate.
+  const recalculateExistingAttemptsForExam = async (
+    targetExamId: string,
+    updatedExamPayload: Record<string, any>,
+    actorUid?: string
+  ): Promise<{ recalculatedSubmittedCount: number; syncedInProgressCount: number }> => {
+    const recalculatedSubmittedIds = new Set<string>();
+    const syncedInProgressIds = new Set<string>();
+    const localPatchedById = new Map<string, Record<string, any>>();
+
+    for (const dbInstance of getAllClientDatabases()) {
+      try {
+        const snap = await getDocs(
+          query(collection(dbInstance, "jdiExamAttempts"), where("examId", "==", targetExamId))
+        );
+        if (snap.empty) continue;
+
+        for (const aDoc of snap.docs) {
+          const aData = aDoc.data() || {};
+          const recalc = recalculateAttemptForUpdatedExam(updatedExamPayload, aData);
+          if (recalc.skipped || !recalc.changed) continue;
+
+          const writePatch: Record<string, any> = recalc.isSubmitted
+            ? {
+                score: recalc.score,
+                maxScore: recalc.maxScore,
+                percentage: recalc.percentage,
+                ...(recalc.questionResults ? { questionResults: recalc.questionResults } : {}),
+                ...(recalc.questionsSnapshot ? { questionsSnapshot: recalc.questionsSnapshot } : {}),
+                regradedAt: serverTimestamp(),
+                ...(actorUid ? { regradedBy: actorUid } : {}),
+                updatedAt: serverTimestamp(),
+              }
+            : {
+                maxScore: recalc.maxScore,
+                ...(recalc.questionsSnapshot ? { questionsSnapshot: recalc.questionsSnapshot } : {}),
+                updatedAt: serverTimestamp(),
+              };
+
+          try {
+            await updateDoc(doc(dbInstance, "jdiExamAttempts", aDoc.id), writePatch);
+          } catch {
+            await setDoc(doc(dbInstance, "jdiExamAttempts", aDoc.id), writePatch, { merge: true }).catch(
+              () => undefined
+            );
+          }
+
+          if (recalc.isSubmitted) {
+            recalculatedSubmittedIds.add(aDoc.id);
+            localPatchedById.set(aDoc.id, {
+              score: recalc.score,
+              maxScore: recalc.maxScore,
+              percentage: recalc.percentage,
+              ...(recalc.questionResults ? { questionResults: recalc.questionResults } : {}),
+              ...(recalc.questionsSnapshot ? { questionsSnapshot: recalc.questionsSnapshot } : {}),
+            });
+          } else {
+            syncedInProgressIds.add(aDoc.id);
+            localPatchedById.set(aDoc.id, {
+              maxScore: recalc.maxScore,
+              ...(recalc.questionsSnapshot ? { questionsSnapshot: recalc.questionsSnapshot } : {}),
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Attempt score recalculation warning:", err);
+      }
+    }
+
+    if (localPatchedById.size > 0) {
+      setExamAttempts((prev) =>
+        prev.map((at) => {
+          const patch = localPatchedById.get(at.id);
+          return patch ? { ...at, ...patch } : at;
+        })
+      );
+    }
+
+    return {
+      recalculatedSubmittedCount: recalculatedSubmittedIds.size,
+      syncedInProgressCount: syncedInProgressIds.size,
+    };
+  };
+
   // Save / Publish / Update Assessment (Idempotent — never duplicates on type switch or re-save)
-  const handleSaveOrPublish = async (overrideStatus?: "draft" | "scheduled" | "active") => {
+  const handleSaveOrPublish = async (
+    overrideStatus?: "draft" | "scheduled" | "active" | "completed" | "archived"
+  ) => {
     setBusy(true);
     setMessage("");
     setErrorMessage("");
@@ -1910,9 +1998,10 @@ ANSWER KEY
       };
 
       // Try server endpoint first so passcode hash & notifications are persisted, with direct Firestore sync
+      let serverRecalculatedCount = 0;
       try {
         const token = await currentUser.getIdToken();
-        await fetch("/.netlify/functions/tutor-examinations", {
+        const serverRes = await fetch("/.netlify/functions/tutor-examinations", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -1923,6 +2012,12 @@ ANSWER KEY
             examId: targetExamId,
           }),
         });
+        if (serverRes.ok) {
+          const parsed = await serverRes.json().catch(() => null);
+          if (parsed && typeof parsed.recalculatedAttemptsCount === "number") {
+            serverRecalculatedCount = parsed.recalculatedAttemptsCount;
+          }
+        }
       } catch {
         // Direct client write below ensures persistence
       }
@@ -1966,21 +2061,36 @@ ANSWER KEY
         }
       }
 
+      const { recalculatedSubmittedCount } = await recalculateExistingAttemptsForExam(
+        targetExamId,
+        examPayload,
+        currentUser.uid
+      );
+      const totalRecalculatedCount = Math.max(serverRecalculatedCount, recalculatedSubmittedCount);
+
       setEditingExamId(targetExamId);
       setCustomPasscode(finalPasscode);
       setGeneratedPasscode(finalPasscode);
-      setStatus(targetStatus);
+      setStatus(targetStatus === "completed" || targetStatus === "archived" ? status : targetStatus);
       if (deliveryMode === "NATIVE" && preparedQuestions.length > 0 && submissionFormat !== "DELIVERABLE") {
         setQuestions(preparedQuestions);
       }
 
       const workLabel = workType.charAt(0) + workType.slice(1).toLowerCase();
+      const recalcSuffix =
+        totalRecalculatedCount > 0
+          ? ` • Recalculated scores for ${totalRecalculatedCount} existing submission${
+              totalRecalculatedCount === 1 ? "" : "s"
+            }.`
+          : "";
       setMessage(
         targetStatus === "draft"
-          ? `${workLabel} "${title.trim()}" saved as draft.`
+          ? `${workLabel} "${title.trim()}" saved as draft.${recalcSuffix}`
+          : targetStatus === "completed" || targetStatus === "archived"
+          ? `${workLabel} "${title.trim()}" updated.${recalcSuffix}`
           : `${workLabel} "${title.trim()}" published (${
               deliveryMode === "EXTERNAL_LINK" ? "External Link" : "Native Editor"
-            })${requiresPasscode ? ` • Access Code: ${finalPasscode}` : ""}`
+            })${requiresPasscode ? ` • Access Code: ${finalPasscode}` : ""}${recalcSuffix}`
       );
       void loadExistingExams();
     } catch (e) {
@@ -2097,12 +2207,16 @@ ANSWER KEY
         ? Number(payload.durationMinutes)
         : null;
 
-    // Determine effective status ("draft" | "scheduled" | "active")
-    let resolvedStatus: "draft" | "scheduled" | "active" =
+    // Determine effective status ("draft" | "scheduled" | "active" | "completed" | "archived")
+    let resolvedStatus: "draft" | "scheduled" | "active" | "completed" | "archived" =
       payload.status === "scheduled"
         ? "scheduled"
         : payload.status === "active"
         ? "active"
+        : payload.status === "completed"
+        ? "completed"
+        : payload.status === "archived"
+        ? "archived"
         : "draft";
     if (resolvedStatus === "scheduled" && payload.availableFrom) {
       const fromMs = new Date(payload.availableFrom).getTime();
@@ -2193,7 +2307,7 @@ ANSWER KEY
       await setDoc(doc(dbInstance, "schoolExams", targetExamId), examPayload, { merge: true });
       if (
         (resolvedWorkType === "ASSIGNMENT" || resolvedWorkType === "ACTIVITY") &&
-        resolvedStatus === "active"
+        (resolvedStatus === "active" || resolvedStatus === "completed")
       ) {
         const assignmentMirrorPayload: Record<string, any> = {
           id: targetExamId,
@@ -2230,7 +2344,7 @@ ANSWER KEY
           resourceTitle: examPayload.resourceTitle || null,
           resourceUrl: examPayload.resourceUrl || null,
           learningResources: cleanResources,
-          status: "PUBLISHED",
+          status: resolvedStatus === "completed" ? "COMPLETED" : "PUBLISHED",
           updatedAt: serverTimestamp(),
         };
         await setDoc(doc(dbInstance, "assignments", targetExamId), assignmentMirrorPayload, {
@@ -2240,9 +2354,10 @@ ANSWER KEY
     }
 
     // Mirror to server endpoint
+    let serverRecalculatedCount = 0;
     try {
       const token = await currentUser.getIdToken();
-      await fetch("/.netlify/functions/tutor-examinations", {
+      const serverRes = await fetch("/.netlify/functions/tutor-examinations", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2253,7 +2368,22 @@ ANSWER KEY
           examId: targetExamId,
         }),
       });
+      if (serverRes.ok) {
+        const parsed = await serverRes.json().catch(() => null);
+        if (parsed && typeof parsed.recalculatedAttemptsCount === "number") {
+          serverRecalculatedCount = parsed.recalculatedAttemptsCount;
+        }
+      }
     } catch {}
+
+    // Automatically recalculate all existing student submissions whenever point values or keys change
+    // (applies to active, completed/inactive, scheduled, archived, and draft assessments alike).
+    const { recalculatedSubmittedCount } = await recalculateExistingAttemptsForExam(
+      targetExamId,
+      examPayload,
+      currentUser.uid
+    );
+    const totalRecalculatedCount = Math.max(serverRecalculatedCount, recalculatedSubmittedCount);
 
     if (resolvedStatus === "active") {
       await notifyEligibleStudentsForExam(examPayload);
@@ -2262,17 +2392,28 @@ ANSWER KEY
     setEditingExamId(targetExamId);
     setViewMode((prev) => (prev === "create" ? "edit" : prev));
     await loadExistingExams();
+    const recalcNotice =
+      totalRecalculatedCount > 0
+        ? ` Recalculated scores for ${totalRecalculatedCount} existing submission${
+            totalRecalculatedCount === 1 ? "" : "s"
+          }.`
+        : "";
     setMessage(
       resolvedStatus === "draft"
-        ? `Assessment "${examPayload.title}" saved as draft.`
+        ? `Assessment "${examPayload.title}" saved as draft.${recalcNotice}`
+        : resolvedStatus === "completed" || resolvedStatus === "archived"
+        ? `Assessment "${examPayload.title}" updated (kept ${
+            resolvedStatus === "completed" ? "closed" : "archived"
+          }).${recalcNotice}`
         : resolvedStatus === "scheduled"
         ? `Assessment "${examPayload.title}" scheduled for ${
             examPayload.availableFrom
               ? new Date(examPayload.availableFrom).toLocaleString()
               : "later activation"
-          }.`
-        : `Assessment "${examPayload.title}" published and activated successfully.`
+          }.${recalcNotice}`
+        : `Assessment "${examPayload.title}" published and activated successfully.${recalcNotice}`
     );
+    return { recalculatedCount: totalRecalculatedCount };
   };
 
   // Edit / Republish Assessment — populates exact saved fields without injecting demo questions
@@ -3424,7 +3565,7 @@ ANSWER KEY
             void loadExistingExams();
           }}
           onSaveAssessment={async (assessmentData) => {
-            await handleSaveWizardAssessment(assessmentData);
+            return await handleSaveWizardAssessment(assessmentData);
           }}
           examAttempts={examAttempts}
           onReleaseResult={async (attempt) => {
