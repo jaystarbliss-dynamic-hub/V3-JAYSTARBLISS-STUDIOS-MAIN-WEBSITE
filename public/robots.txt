@@ -1,4 +1,4 @@
-# Robots.txt for Jaystarbliss Studios (https://jaystarbliss-studios.name.ng)
+# Robots.txt for Jaystarbliss Studios (https://jaystarblissstudios.com)
 # Allow search engines and Googlebot/Googlebot-Image to index public pages and favicons
 
 User-agent: *
@@ -66,4 +66,4 @@ Allow: /*.css$
 Allow: /*.js$
 
 # Sitemap declaration
-Sitemap: https://jaystarbliss-studios.name.ng/sitemap.xml
+Sitemap: https://jaystarblissstudios.com/sitemap.xml
