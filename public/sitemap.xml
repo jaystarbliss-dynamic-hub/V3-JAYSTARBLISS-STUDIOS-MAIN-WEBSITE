@@ -6,23 +6,23 @@
         http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
   <!-- Homepage -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/</loc>
+    <loc>https://jaystarblissstudios.com/</loc>
     <lastmod>2026-08-23</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
     <image:image>
-      <image:loc>https://jaystarbliss-studios.name.ng/logo.png</image:loc>
+      <image:loc>https://jaystarblissstudios.com/logo.png</image:loc>
       <image:title>Jaystarbliss Studios Official Logo</image:title>
     </image:image>
     <image:image>
-      <image:loc>https://jaystarbliss-studios.name.ng/favicon.png</image:loc>
+      <image:loc>https://jaystarblissstudios.com/favicon.png</image:loc>
       <image:title>Jaystarbliss Studios App Icon</image:title>
     </image:image>
   </url>
 
   <!-- About Us -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/about</loc>
+    <loc>https://jaystarblissstudios.com/about</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
@@ -30,7 +30,7 @@
 
   <!-- Programs & Academies -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/programs</loc>
+    <loc>https://jaystarblissstudios.com/programs</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.95</priority>
@@ -38,7 +38,7 @@
 
   <!-- Services & Digital Engineering -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/services</loc>
+    <loc>https://jaystarblissstudios.com/services</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.95</priority>
@@ -46,7 +46,7 @@
 
   <!-- Portfolio & Showcase -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/portfolio</loc>
+    <loc>https://jaystarblissstudios.com/portfolio</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
@@ -54,7 +54,7 @@
 
   <!-- Blog & Insights -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/blog</loc>
+    <loc>https://jaystarblissstudios.com/blog</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
@@ -62,7 +62,7 @@
 
   <!-- Free & Premium Resources -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/resources</loc>
+    <loc>https://jaystarblissstudios.com/resources</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
@@ -70,7 +70,7 @@
 
   <!-- School Partnership Inquiries -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/school-partnership</loc>
+    <loc>https://jaystarblissstudios.com/school-partnership</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
@@ -78,7 +78,7 @@
 
   <!-- Tutor & Mentor Application -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/tutor-application</loc>
+    <loc>https://jaystarblissstudios.com/tutor-application</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
@@ -86,7 +86,7 @@
 
   <!-- Custom Project Request -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/project-request</loc>
+    <loc>https://jaystarblissstudios.com/project-request</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
@@ -94,13 +94,13 @@
 
   <!-- Magic Particles Interactive Kids Zone -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/magic-particles</loc>
+    <loc>https://jaystarblissstudios.com/magic-particles</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/kids-zone/magic</loc>
+    <loc>https://jaystarblissstudios.com/kids-zone/magic</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
@@ -108,7 +108,7 @@
 
   <!-- Frequently Asked Questions -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/faq</loc>
+    <loc>https://jaystarblissstudios.com/faq</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.75</priority>
@@ -116,7 +116,7 @@
 
   <!-- Contact & Location -->
   <url>
-    <loc>https://jaystarbliss-studios.name.ng/contact</loc>
+    <loc>https://jaystarblissstudios.com/contact</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
