@@ -2,14 +2,20 @@ export type CodingLabMode = 'playground' | 'assessment';
 
 export type CodingLabGradingMethod = 'automatic' | 'manual' | 'hybrid';
 
+export type CodingLabEngine = 'scratch' | 'turbowarp';
+
+export type CodingLabThemeMode = 'light' | 'dark' | 'glass';
+
 export type CodingLabSaveState =
   | 'idle'
+  | 'dirty'
   | 'saving_local'
   | 'saved_local'
   | 'uploading_assets'
   | 'saving_lms'
   | 'saved_lms'
   | 'offline_pending'
+  | 'submitted_locked'
   | 'error';
 
 export type CodingLabCriterionType =
@@ -133,6 +139,8 @@ export interface CodingLabProjectRecord {
   payloadCompression: 'gzip' | 'none';
   payloadStorageMode: 'inline' | 'chunked';
   payloadHash: string;
+  compositeHash?: string;
+  chunkHashes?: string[];
   payloadSize: number;
   chunkCount: number;
   assetManifest: CodingLabAssetManifestEntry[];

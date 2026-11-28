@@ -48,3 +48,12 @@ export function splitPayloadForFirestore(
 export function reassemblePayloadChunks(
   chunks: Array<{ index: number; bytes: Uint8Array }>
 ): Uint8Array;
+export function diffPayloadChunks(
+  chunks: Array<{ index: number; bytes: Uint8Array; sizeBytes: number }>,
+  previousChunkHashes?: string[]
+): Promise<{
+  nextChunkHashes: string[];
+  changedChunks: Array<{ index: number; bytes: Uint8Array; sizeBytes: number; chunkHash: string }>;
+  obsoleteChunkIndices: number[];
+}>;
+

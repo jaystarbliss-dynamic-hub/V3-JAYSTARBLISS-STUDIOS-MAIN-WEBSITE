@@ -35,13 +35,18 @@ import {
   Play,
   RotateCcw,
   Code2,
+  List,
+  ChevronRight,
 } from 'lucide-react';
 import {
   type AcademicWorkType,
+  type AssessmentLayout,
   WORK_TYPES,
   normalizeWorkType,
   validateExternalExamUrl,
   CANONICAL_CLASSES,
+  resolveAssessmentLayout,
+  buildQuestionContextMap,
 } from '../../lib/classes';
 import {
   RecipientSelectorModal,
@@ -49,6 +54,12 @@ import {
   type RecipientPrivateStudent,
 } from './RecipientSelectorModal';
 import { NativeQuestionCard, type NativeQuestionData, type QuestionTypeChoice } from './NativeQuestionCard';
+import { AssessmentLayoutBuilder } from './AssessmentLayoutBuilder';
+import {
+  SectionBanner,
+  ContentBlockCard,
+  ComprehensionPassagePanel,
+} from './AssessmentContentBlocks';
 import { ImportQuestionsModal, type QuestionBankItem } from './ImportQuestionsModal';
 import { AssessmentProgramPicker, type SelectedProgramPathway } from './AssessmentProgramPicker';
 import EmbeddedLearningMedia from '../portal/EmbeddedLearningMedia';
@@ -313,8 +324,24 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
       },
     ];
   });
+  const [assessmentLayout, setAssessmentLayout] = useState<AssessmentLayout>(() =>
+    resolveAssessmentLayout(initialExam || null, questions)
+  );
   const [activeQuestionId, setActiveQuestionId] = useState<string>(questions[0]?.id || '');
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [previewViewMode, setPreviewViewMode] = useState<'all' | 'focused'>('all');
+  const [previewFocusedIdx, setPreviewFocusedIdx] = useState<number>(0);
+  const [openSettingsGroups, setOpenSettingsGroups] = useState<{
+    access: boolean;
+    timing: boolean;
+    randomization: boolean;
+    grading: boolean;
+  }>({
+    access: true,
+    timing: true,
+    randomization: true,
+    grading: true,
+  });
 
   // -------------------------------------------------------------
   // Settings State
@@ -667,80 +694,145 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   }, [examAttempts, questions]);
 
   // Question Management Callbacks
-  const handleAddQuestion = (index?: number) => {
+  const createBlankQuestion = (): NativeQuestionData => ({
+    id: makeId(),
+    prompt: '',
+    type: 'multiple_choice',
+    points: defaultPointValue,
+    required: true,
+    options: [
+      { id: 'A', text: 'Option 1' },
+      { id: 'B', text: 'Option 2' },
+      { id: 'C', text: 'Option 3' },
+      { id: 'D', text: 'Option 4' },
+    ],
+    correctOptionIds: ['A'],
+  });
+
+  const handleLayoutAndQuestionsChange = (
+    nextLayout: AssessmentLayout,
+    nextQuestions: NativeQuestionData[]
+  ) => {
     markDirty();
-    const newQ: NativeQuestionData = {
-      id: makeId(),
-      prompt: '',
-      type: 'multiple_choice',
-      points: defaultPointValue,
-      required: true,
-      options: [
-        { id: 'A', text: 'Option 1' },
-        { id: 'B', text: 'Option 2' },
-        { id: 'C', text: 'Option 3' },
-        { id: 'D', text: 'Option 4' },
-      ],
-      correctOptionIds: ['A'],
+    setAssessmentLayout(nextLayout);
+    setQuestions(nextQuestions);
+  };
+
+  const handleAddQuestion = () => {
+    const newQ = createBlankQuestion();
+    const nextQuestions = [...questions, newQ];
+    const currentSections =
+      assessmentLayout.sections && assessmentLayout.sections.length > 0
+        ? assessmentLayout.sections
+        : [{ id: 'sec_1', title: '', items: [] }];
+    const lastIdx = currentSections.length - 1;
+    const nextLayout: AssessmentLayout = {
+      version: 1,
+      sections: currentSections.map((sec, idx) =>
+        idx === lastIdx
+          ? {
+              ...sec,
+              items: [
+                ...sec.items,
+                { id: `item_${newQ.id}`, kind: 'question' as const, questionId: newQ.id },
+              ],
+            }
+          : sec
+      ),
     };
-
-    if (index !== undefined && index >= 0) {
-      const updated = [...questions];
-      updated.splice(index + 1, 0, newQ);
-      setQuestions(updated);
-      setActiveQuestionId(newQ.id);
-    } else {
-      setQuestions((prev) => [...prev, newQ]);
-      setActiveQuestionId(newQ.id);
-    }
+    handleLayoutAndQuestionsChange(nextLayout, nextQuestions);
+    setActiveQuestionId(newQ.id);
   };
 
-  const handleUpdateQuestion = (index: number, updatedQ: NativeQuestionData) => {
+  const handleUpdateQuestionById = (questionId: string, updatedQ: NativeQuestionData) => {
     markDirty();
-    setQuestions((prev) => {
-      const copy = [...prev];
-      copy[index] = updatedQ;
-      return copy;
-    });
+    setQuestions((prev) => prev.map((q) => (q.id === questionId ? updatedQ : q)));
   };
 
-  const handleDuplicateQuestion = (index: number) => {
+  const handleDuplicateQuestionInLayout = (
+    questionId: string,
+    sectionId: string,
+    comprehensionId?: string
+  ) => {
+    const sourceIdx = questions.findIndex((q) => q.id === questionId);
+    if (sourceIdx === -1) return;
     markDirty();
-    const source = questions[index];
+    const source = questions[sourceIdx];
     const duplicated: NativeQuestionData = {
       ...source,
       id: makeId(),
       prompt: source.prompt ? `${source.prompt} (Copy)` : 'Copy of Question',
       options: source.options ? source.options.map((opt) => ({ ...opt, id: opt.id })) : undefined,
     };
-    const updated = [...questions];
-    updated.splice(index + 1, 0, duplicated);
-    setQuestions(updated);
+    const nextQuestions = [...questions];
+    nextQuestions.splice(sourceIdx + 1, 0, duplicated);
+
+    const nextLayout: AssessmentLayout = {
+      ...assessmentLayout,
+      sections: assessmentLayout.sections.map((sec) => {
+        if (sec.id !== sectionId) return sec;
+        if (comprehensionId) {
+          return {
+            ...sec,
+            items: sec.items.map((it) => {
+              if (it.kind !== 'comprehension' || it.id !== comprehensionId) return it;
+              const idx = it.questionIds.indexOf(questionId);
+              const nextIds = [...it.questionIds];
+              nextIds.splice(idx >= 0 ? idx + 1 : nextIds.length, 0, duplicated.id);
+              return { ...it, questionIds: nextIds };
+            }),
+          };
+        }
+        const idx = sec.items.findIndex(
+          (it) => it.kind === 'question' && it.questionId === questionId
+        );
+        const nextItems = [...sec.items];
+        nextItems.splice(idx >= 0 ? idx + 1 : nextItems.length, 0, {
+          id: `qref-${makeId().slice(0, 8)}`,
+          kind: 'question',
+          questionId: duplicated.id,
+        });
+        return { ...sec, items: nextItems };
+      }),
+    };
+
+    setQuestions(nextQuestions);
+    setAssessmentLayout(nextLayout);
     setActiveQuestionId(duplicated.id);
   };
 
-  const handleDeleteQuestion = (index: number) => {
-    markDirty();
+  const handleDeleteQuestionById = (questionId: string) => {
     if (questions.length <= 1) {
-      alert('An assessment must have at least one question.');
+      setSaveErrorMessage('An assessment must have at least one question.');
+      setTimeout(() => setSaveErrorMessage(''), 4000);
       return;
     }
-    const updated = questions.filter((_, idx) => idx !== index);
-    setQuestions(updated);
-    if (activeQuestionId === questions[index]?.id) {
-      setActiveQuestionId(updated[Math.max(0, index - 1)]?.id || '');
-    }
-  };
-
-  const handleMoveQuestion = (index: number, direction: 'up' | 'down') => {
-    if (direction === 'up' && index === 0) return;
-    if (direction === 'down' && index === questions.length - 1) return;
     markDirty();
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    const updated = [...questions];
-    const [moved] = updated.splice(index, 1);
-    updated.splice(targetIndex, 0, moved);
-    setQuestions(updated);
+    const idx = questions.findIndex((q) => q.id === questionId);
+    const updatedQuestions = questions.filter((q) => q.id !== questionId);
+    const nextLayout: AssessmentLayout = {
+      ...assessmentLayout,
+      sections: assessmentLayout.sections.map((sec) => ({
+        ...sec,
+        items: sec.items
+          .map((it) => {
+            if (it.kind === 'question' && it.questionId === questionId) return null;
+            if (it.kind === 'comprehension') {
+              return {
+                ...it,
+                questionIds: it.questionIds.filter((qid) => qid !== questionId),
+              };
+            }
+            return it;
+          })
+          .filter(Boolean) as AssessmentLayout['sections'][number]['items'],
+      })),
+    };
+    setQuestions(updatedQuestions);
+    setAssessmentLayout(nextLayout);
+    if (activeQuestionId === questionId) {
+      setActiveQuestionId(updatedQuestions[Math.max(0, idx - 1)]?.id || '');
+    }
   };
 
   const mcqCount = useMemo(
@@ -823,6 +915,21 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
     });
 
     setQuestions((prev) => [...prev, ...formatted]);
+    setAssessmentLayout((prev) => {
+      const sections =
+        prev.sections.length > 0
+          ? prev.sections.map((s) => ({ ...s, items: [...s.items] }))
+          : [{ id: 'sec-1', title: 'Section 1', description: '', items: [] }];
+      const last = sections[sections.length - 1];
+      formatted.forEach((q) => {
+        last.items.push({
+          id: `qref-${makeId().slice(0, 8)}`,
+          kind: 'question',
+          questionId: q.id,
+        });
+      });
+      return { version: 1, sections };
+    });
     setShowImportModal(false);
     setSaveBannerMessage(`Imported ${formatted.length} question(s) successfully.`);
     setTimeout(() => setSaveBannerMessage(''), 4000);
@@ -957,6 +1064,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         targetSchoolIds,
         targetStudentIds,
         questions: deliveryMode === 'NATIVE' ? questions : [],
+        assessmentLayout: deliveryMode === 'NATIVE' ? assessmentLayout : null,
         ...(deliveryMode === 'CODING_LAB' ? { codingLabConfig } : {}),
         // Settings
         makeQuiz,
@@ -1361,108 +1469,54 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
       )}
 
       {/* ============================================================== */}
-      {/* GOOGLE FORMS-INSPIRED TOP HEADER BAR (3 TABS: Qs, Responses, Settings) */}
+      {/* CLEAN TWO-ROW STICKY WORKSPACE HEADER                          */}
+      {/* Row 1: Back, Assessment Identity & Primary Actions             */}
+      {/* Row 2: Workspace Navigation Tabs (Questions / Responses / Settings) */}
       {/* ============================================================== */}
-      <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#121620]/95 backdrop-blur-md border-b border-slate-200/90 dark:border-slate-800 shadow-2xs">
-        <div className="max-w-[1440px] mx-auto px-1.5 sm:px-4 lg:px-6">
-          <div className="h-12 sm:h-14 md:h-16 flex items-center justify-between gap-1 sm:gap-3">
-            {/* Left: Back Arrow, Title Input, Badges */}
-            <div className="flex items-center gap-1 sm:gap-2 min-w-0 max-w-[26%] sm:max-w-[30%] md:max-w-md shrink">
+      <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#121620]/95 backdrop-blur-md border-b border-slate-200/90 dark:border-slate-800">
+        <div className="max-w-5xl mx-auto px-3 sm:px-6">
+          {/* Row 1: Back, Static Title Summary & Actions */}
+          <div className="h-14 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
               <button
                 type="button"
                 onClick={handleBackSafe}
-                className="p-1 sm:p-2 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
                 title="Return to Assessment Overview"
               >
-                <ArrowLeft size={13} className="sm:w-4 sm:h-4" />
+                <ArrowLeft size={16} />
               </button>
 
-              <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1">
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    markDirty();
-                  }}
-                  placeholder="Untitled Assessment"
-                  className="font-black text-[11px] sm:text-xs md:text-sm text-slate-900 dark:text-white bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-[#1E293B] dark:focus:border-slate-300 focus:outline-none transition-colors truncate w-full py-0.5"
-                />
-                <span className="hidden md:inline-block text-[10px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400 whitespace-nowrap shrink-0">
-                  {workType}
-                </span>
-                {isDirty && (
-                  <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] text-[#B91C1C] dark:text-red-400 font-bold whitespace-nowrap shrink-0">
-                    <span aria-hidden="true">·</span>
-                    <span>Unsaved</span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  <span className="font-semibold text-[#B91C1C] dark:text-red-400 whitespace-nowrap">
+                    {workType.charAt(0) + workType.slice(1).toLowerCase()}
                   </span>
-                )}
+                  <span aria-hidden="true">·</span>
+                  <span className="capitalize whitespace-nowrap">{status}</span>
+                  {isDirty && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="text-amber-700 dark:text-amber-400 font-semibold whitespace-nowrap">
+                        Unsaved changes
+                      </span>
+                    </>
+                  )}
+                </div>
+                <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[200px] sm:max-w-md">
+                  {title.trim() || 'Untitled Assessment'}
+                </p>
               </div>
             </div>
 
-            {/* Center: 3 Tabs (Questions | Responses | Settings) */}
-            <nav className="flex items-center justify-center gap-0.5 sm:gap-1.5 md:gap-3 shrink-0">
-              <button
-                type="button"
-                onClick={() => setActiveTab('questions')}
-                className={`relative px-1.5 sm:px-3 py-2 sm:py-3 text-[10px] sm:text-xs md:text-sm font-bold transition-colors whitespace-nowrap shrink-0 ${
-                  activeTab === 'questions'
-                    ? 'text-[#1E293B] dark:text-white'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                Questions
-                {activeTab === 'questions' && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 sm:h-0.75 bg-[#B91C1C] rounded-t-full" />
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('responses')}
-                className={`relative px-1.5 sm:px-3 py-2 sm:py-3 text-[10px] sm:text-xs md:text-sm font-bold transition-colors inline-flex items-center gap-1 sm:gap-1.5 whitespace-nowrap shrink-0 ${
-                  activeTab === 'responses'
-                    ? 'text-[#1E293B] dark:text-white'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                <span>Responses</span>
-                {examAttempts.length > 0 && (
-                  <span className="text-[9px] sm:text-xs font-black text-[#B91C1C] dark:text-red-400 tabular-nums">
-                    ({examAttempts.length})
-                  </span>
-                )}
-                {activeTab === 'responses' && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 sm:h-0.75 bg-[#B91C1C] rounded-t-full" />
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('settings')}
-                className={`relative px-1.5 sm:px-3 py-2 sm:py-3 text-[10px] sm:text-xs md:text-sm font-bold transition-colors inline-flex items-center gap-1 sm:gap-1.5 whitespace-nowrap shrink-0 ${
-                  activeTab === 'settings'
-                    ? 'text-[#1E293B] dark:text-white'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                <SettingsIcon size={12} className="hidden sm:inline shrink-0" />
-                <span>Settings</span>
-                {activeTab === 'settings' && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 sm:h-0.75 bg-[#B91C1C] rounded-t-full" />
-                )}
-              </button>
-            </nav>
-
-            {/* Right: Actions (Recipients, Preview, Save Draft, Publish) */}
-            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowRecipientModal(true)}
-                className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap shrink-0 tabular-nums"
+                className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap shrink-0 tabular-nums"
                 title="Target Cohort Configuration"
               >
-                <Users size={12} className="text-[#1E293B] dark:text-slate-300 shrink-0" />
+                <Users size={13} className="text-slate-500 dark:text-slate-400 shrink-0" />
                 <span>{recipientSummary.totalCount} Cohorts</span>
               </button>
 
@@ -1471,15 +1525,16 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 onClick={() => {
                   setPreviewAnswers({});
                   setPreviewSubmitted(false);
+                  setPreviewFocusedIdx(0);
                   setShowPreviewModal(true);
                   if (onPreviewStudent) {
                     onPreviewStudent({ title, questions, passcode, workType });
                   }
                 }}
-                className="p-1 sm:px-2.5 sm:py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[#1E293B] dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                className="px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
                 title="Interactive Student Preview"
               >
-                <Eye size={12} className="shrink-0 text-[#B91C1C] dark:text-red-400" />
+                <Eye size={13} className="shrink-0 text-[#B91C1C] dark:text-red-400" />
                 <span className="hidden sm:inline">Preview</span>
               </button>
 
@@ -1488,11 +1543,11 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   type="button"
                   disabled={isSaving}
                   onClick={() => void handleSaveWorkspace('draft')}
-                  className="p-1 sm:px-2.5 sm:py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                  className="px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
                   title="Save as Draft"
                 >
-                  <Save size={11} className="shrink-0" />
-                  <span className="hidden sm:inline">Save</span>
+                  <Save size={13} className="shrink-0" />
+                  <span className="hidden sm:inline">Save Draft</span>
                 </button>
               )}
 
@@ -1508,7 +1563,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       : 'active'
                   )
                 }
-                className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 shadow-xs disabled:opacity-50 whitespace-nowrap shrink-0 transition-colors"
+                className="px-3 sm:px-4 py-1.5 rounded-lg bg-[#B91C1C] hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 shadow-xs disabled:opacity-50 whitespace-nowrap shrink-0 transition-colors"
                 title={
                   status === 'completed' || status === 'archived'
                     ? 'Save Changes & Recalculate Existing Student Scores (Keeps Assessment Inactive)'
@@ -1520,9 +1575,9 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 }
               >
                 {status !== 'completed' && status !== 'archived' && activationMode === 'scheduled' ? (
-                  <Calendar size={12} className="shrink-0" />
+                  <Calendar size={13} className="shrink-0" />
                 ) : (
-                  <CheckCircle2 size={12} className="shrink-0" />
+                  <CheckCircle2 size={13} className="shrink-0" />
                 )}
                 <span className="whitespace-nowrap">
                   {status === 'completed' || status === 'archived'
@@ -1533,7 +1588,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                       : 'Schedule'
                     : status === 'active'
                     ? 'Update'
-                    : 'Publish Now'}
+                    : 'Publish'}
                 </span>
               </button>
 
@@ -1545,10 +1600,10 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     const next: 'active' | 'completed' = status === 'active' ? 'completed' : 'active';
                     setPendingHeaderStatusChange(next);
                   }}
-                  className={`px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border text-[10px] sm:text-xs font-bold inline-flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors disabled:opacity-50 ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors disabled:opacity-50 ${
                     status === 'active'
-                      ? 'border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-[#991B1B] dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/60'
-                      : 'border-emerald-300 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950/60'
+                      ? 'border-red-200 dark:border-red-900 bg-red-50/70 dark:bg-red-950/30 text-[#991B1B] dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/50'
+                      : 'border-emerald-200 dark:border-emerald-900 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950/50'
                   }`}
                   title={
                     status === 'active'
@@ -1559,25 +1614,82 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   }
                 >
                   {status === 'active' ? (
-                    <Lock size={12} className="shrink-0" />
+                    <Lock size={13} className="shrink-0" />
                   ) : status === 'completed' ? (
-                    <RotateCcw size={12} className="shrink-0" />
+                    <RotateCcw size={13} className="shrink-0" />
                   ) : (
-                    <Play size={12} className="shrink-0" />
+                    <Play size={13} className="shrink-0" />
                   )}
-                  <span className="hidden md:inline">
+                  <span className="hidden lg:inline">
                     {manualStatusBusy
                       ? 'Updating...'
                       : status === 'active'
-                      ? 'Close Assessment'
+                      ? 'Close'
                       : status === 'completed'
-                      ? 'Reopen Assessment'
-                      : 'Activate Assessment'}
+                      ? 'Reopen'
+                      : 'Activate'}
                   </span>
                 </button>
               )}
             </div>
           </div>
+
+          {/* Row 2: Clean Workspace Navigation Tabs */}
+          <nav
+            aria-label="Assessment workspace sections"
+            className="flex items-center gap-6 border-t border-slate-100 dark:border-slate-800/80"
+          >
+            <button
+              type="button"
+              onClick={() => setActiveTab('questions')}
+              className={`relative py-2.5 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                activeTab === 'questions'
+                  ? 'text-slate-900 dark:text-white'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              Questions
+              {activeTab === 'questions' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#B91C1C]" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('responses')}
+              className={`relative py-2.5 text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                activeTab === 'responses'
+                  ? 'text-slate-900 dark:text-white'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              <span>Responses</span>
+              {examAttempts.length > 0 && (
+                <span className="text-xs font-bold text-[#B91C1C] dark:text-red-400 tabular-nums">
+                  ({examAttempts.length})
+                </span>
+              )}
+              {activeTab === 'responses' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#B91C1C]" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('settings')}
+              className={`relative py-2.5 text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                activeTab === 'settings'
+                  ? 'text-slate-900 dark:text-white'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              <SettingsIcon size={13} className="shrink-0" />
+              <span>Settings</span>
+              {activeTab === 'settings' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#B91C1C]" />
+              )}
+            </button>
+          </nav>
         </div>
       </header>
 
@@ -2150,35 +2262,19 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   )}
                 </div>
 
-                {/* Question Cards */}
-                {questions.map((q, idx) => (
-                  <NativeQuestionCard
-                    key={q.id}
-                    question={q}
-                    index={idx}
-                    totalQuestions={questions.length}
-                    isActive={activeQuestionId === q.id}
-                    onFocus={() => setActiveQuestionId(q.id)}
-                    onChange={(updated) => handleUpdateQuestion(idx, updated)}
-                    onDuplicate={() => handleDuplicateQuestion(idx)}
-                    onDelete={() => handleDeleteQuestion(idx)}
-                    onMoveUp={() => handleMoveQuestion(idx, 'up')}
-                    onMoveDown={() => handleMoveQuestion(idx, 'down')}
-                    onAddAbove={() => handleAddQuestion(idx - 1)}
-                    onAddBelow={() => handleAddQuestion(idx)}
-                  />
-                ))}
-
-                {/* Bottom Add Bar */}
-                <div className="pt-2 text-center">
-                  <button
-                    type="button"
-                    onClick={() => handleAddQuestion()}
-                    className="px-5 py-2.5 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-[#B91C1C] text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-[#B91C1C] dark:hover:text-red-400 transition-colors inline-flex items-center gap-2"
-                  >
-                    <Plus size={15} /> Add Another Question
-                  </button>
-                </div>
+                {/* Structured Sections, Comprehension Passages, Content Blocks & Question Cards */}
+                <AssessmentLayoutBuilder
+                  layout={assessmentLayout}
+                  questions={questions}
+                  activeQuestionId={activeQuestionId}
+                  defaultPointValue={defaultPointValue}
+                  onSelectQuestion={setActiveQuestionId}
+                  onChangeLayoutAndQuestions={handleLayoutAndQuestionsChange}
+                  onUpdateQuestion={handleUpdateQuestionById}
+                  onDuplicateQuestion={handleDuplicateQuestionInLayout}
+                  onDeleteQuestion={handleDeleteQuestionById}
+                  createBlankQuestion={createBlankQuestion}
+                />
               </div>
             ) : deliveryMode === 'CODING_LAB' ? (
               <CodingLabAssessmentConfigPanel
@@ -2930,561 +3026,686 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 3: SETTINGS                                                */}
+        {/* TAB 3: SETTINGS (Grouped Collapsible Academic Categories)       */}
         {/* ============================================================== */}
         {activeTab === 'settings' && (
-          <div className="space-y-5">
-            {/* SECTION A: Quiz & Grading Configuration */}
-            <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#121620] p-5 sm:p-7 shadow-xs space-y-6">
-              <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="space-y-4">
+            {/* GROUP 1: Assessment Access & Scheduling */}
+            <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#121620] overflow-hidden shadow-2xs">
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenSettingsGroups((prev) => ({ ...prev, access: !prev.access }))
+                }
+                className="w-full px-5 py-4 sm:px-6 flex items-center justify-between gap-3 text-left hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
+              >
                 <div>
-                  <h4 className="font-bold text-base text-slate-900 dark:text-white">
-                    Quiz &amp; Grading Configuration
+                  <h4 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                    Assessment Access &amp; Availability
                   </h4>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Assign points, enable automatic objective scoring, and set grade release rules.
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Passcode gate, target cohorts, activation mode, and closing schedule.
                   </p>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={makeQuiz}
-                  onChange={(e) => {
-                    setMakeQuiz(e.target.checked);
-                    markDirty();
-                  }}
-                  className="w-5 h-5 accent-[#B91C1C] rounded cursor-pointer"
-                />
-              </div>
-
-              {/* Grading Mode: Automatic vs Manual */}
-              <div className="space-y-3">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                  Grading Mode
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label
-                    onClick={() => {
-                      setGradingMode('automatic');
-                      setReleaseGradesPolicy('immediate');
-                      markDirty();
-                    }}
-                    className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
-                      gradingMode === 'automatic'
-                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-1 ring-[#1E293B]/20 dark:ring-white/15'
-                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="settingsGradingMode"
-                      checked={gradingMode === 'automatic'}
-                      onChange={() => {
-                        setGradingMode('automatic');
-                        setReleaseGradesPolicy('immediate');
-                      }}
-                      className="mt-1 accent-[#B91C1C]"
-                    />
-                    <div>
-                      <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
-                        Automatic Objective Grading (Show Score Immediately)
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Automatically evaluate responses on submission and show students their score immediately after finishing.
-                      </p>
-                    </div>
-                  </label>
-
-                  <label
-                    onClick={() => {
-                      setGradingMode('manual');
-                      setReleaseGradesPolicy('manual');
-                      markDirty();
-                    }}
-                    className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
-                      gradingMode === 'manual'
-                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-1 ring-[#1E293B]/20 dark:ring-white/15'
-                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="settingsGradingMode"
-                      checked={gradingMode === 'manual'}
-                      onChange={() => {
-                        setGradingMode('manual');
-                        setReleaseGradesPolicy('manual');
-                      }}
-                      className="mt-1 accent-[#B91C1C]"
-                    />
-                    <div>
-                      <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
-                        Manual Tutor Review
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Hold all submissions for tutor marking before scores and remarks are finalised.
-                      </p>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Release Grades Policy */}
-              <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                  Release Grades Policy
-                </span>
-                <div className="space-y-2 text-xs">
-                  <label className="flex items-center gap-2.5 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="releasePolicy"
-                      checked={releaseGradesPolicy === 'immediate'}
-                      onChange={() => {
-                        setReleaseGradesPolicy('immediate');
-                        setGradingMode('automatic');
-                        markDirty();
-                      }}
-                      className="accent-[#B91C1C]"
-                    />
-                    <span>Immediately after each student submission (Automatic Grading)</span>
-                  </label>
-                  <label className="flex items-center gap-2.5 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="releasePolicy"
-                      checked={releaseGradesPolicy === 'manual'}
-                      onChange={() => {
-                        setReleaseGradesPolicy('manual');
-                        markDirty();
-                      }}
-                      className="accent-[#B91C1C]"
-                    />
-                    <span>Later, after manual review (requires explicit tutor result release)</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Respondent Visibility Options */}
-              <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                  Respondent Visibility
-                </span>
-                <div className="space-y-3">
-                  <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
-                    <div>
-                      <p>Missed questions</p>
-                      <p className="text-[11px] text-slate-500 font-normal">
-                        Candidates can see which questions were answered incorrectly.
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={showMissedQuestions}
-                      onChange={(e) => {
-                        setShowMissedQuestions(e.target.checked);
-                        markDirty();
-                      }}
-                      className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
-                    <div>
-                      <p>Correct answers</p>
-                      <p className="text-[11px] text-slate-500 font-normal">
-                        Candidates can view correct answer keys after grades are released.
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={showCorrectAnswers}
-                      onChange={(e) => {
-                        setShowCorrectAnswers(e.target.checked);
-                        markDirty();
-                      }}
-                      className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
-                    <div>
-                      <p>Point values</p>
-                      <p className="text-[11px] text-slate-500 font-normal">
-                        Candidates can view total points and points received for each question.
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={showPointValues}
-                      onChange={(e) => {
-                        setShowPointValues(e.target.checked);
-                        markDirty();
-                      }}
-                      className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* Default & Uniform MCQ Points */}
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3 text-xs font-semibold">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-slate-900 dark:text-white font-bold">
-                      Uniform MCQ Point Value
-                    </p>
-                    <p className="text-[11px] text-slate-500 font-normal">
-                      Set one consistent point value for all Multiple Choice questions (existing and newly added).
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 shrink-0 tabular-nums">
-                    <input
-                      type="number"
-                      min={0.5}
-                      max={100}
-                      step="0.5"
-                      value={uniformMcqInput}
-                      onChange={(e) => handleUniformMcqInputChange(e.target.value)}
-                      onBlur={() => {
-                        if (parseValidPointValue(uniformMcqInput) === null) {
-                          setUniformMcqInput(String(defaultPointValue));
-                        }
-                      }}
-                      className="w-16 h-9 rounded-xl border border-slate-200 dark:border-slate-700 text-center font-bold bg-white dark:bg-slate-900 tabular-nums focus:border-[#1E293B] focus:outline-none"
-                    />
-                    <span>points</span>
-                    <button
-                      type="button"
-                      onClick={() => applyUniformMcqPoints()}
-                      className="px-3 py-2 rounded-xl bg-[#1E293B] hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold transition-colors whitespace-nowrap"
-                    >
-                      Apply to All MCQs ({mcqCount})
-                    </button>
-                  </div>
-                </div>
-
-                <label className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 px-3.5 py-2.5 cursor-pointer">
-                  <div>
-                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                      Automatically keep all MCQs uniform
-                    </p>
-                    <p className="text-[11px] text-slate-500 font-normal">
-                      When enabled, changing the point value above updates every MCQ question right away.
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={uniformMcqPointsEnabled}
-                    onChange={(e) => handleToggleUniformMcq(e.target.checked)}
-                    className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer shrink-0"
-                  />
-                </label>
-
-                {uniformMcqFeedback && (
-                  <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
-                    <CheckCircle2 size={14} className="shrink-0" />
-                    <span>{uniformMcqFeedback}</span>
-                  </p>
+                {openSettingsGroups.access ? (
+                  <ChevronDown size={18} className="text-slate-400 shrink-0" />
+                ) : (
+                  <ChevronRight size={18} className="text-slate-400 shrink-0" />
                 )}
-              </div>
-            </div>
+              </button>
 
-            {/* SECTION B: Access Security, Attempts & Schedule */}
-            <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#121620] p-5 sm:p-7 shadow-xs space-y-6">
-              <h4 className="font-bold text-base text-slate-900 dark:text-white">
-                Access Security, Attempts &amp; Timing
-              </h4>
-
-              {/* Passcode Protection */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        Passcode Protection
-                      </span>
-                      {isPasscodeMandatory && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
-                          <span aria-hidden="true">·</span>
-                          <Lock size={10} /> Mandatory for {workType === 'TEST' ? 'Tests' : 'Examinations'}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      {isPasscodeMandatory
-                        ? `Passcode protection is required for all ${
-                            workType === 'TEST' ? 'Tests' : 'Examinations'
-                          } and cannot be unchecked. Students will receive this passcode when the assessment becomes active.`
-                        : 'Optional for Assignments and Activities. Require students to enter an access code before beginning.'}
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={isPasscodeMandatory ? true : hasPasscode}
-                    disabled={isPasscodeMandatory}
-                    onChange={(e) => {
-                      if (isPasscodeMandatory) return;
-                      setHasPasscode(e.target.checked);
-                      markDirty();
-                    }}
-                    className={`w-4 h-4 accent-[#B91C1C] rounded ${
-                      isPasscodeMandatory ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                    }`}
-                  />
-                </div>
-
-                {(isPasscodeMandatory || hasPasscode) && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="text"
-                      value={passcode}
-                      onChange={(e) => {
-                        setPasscode(e.target.value.toUpperCase());
-                        markDirty();
-                      }}
-                      className="h-10 flex-1 max-w-xs rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-mono font-bold uppercase bg-white dark:bg-slate-900 focus:border-[#1E293B] focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPasscode(generateAccessCode());
-                        markDirty();
-                      }}
-                      className="px-3 h-10 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800"
-                    >
-                      Generate New
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(passcode);
-                        setSaveBannerMessage('Passcode copied to clipboard.');
-                        setTimeout(() => setSaveBannerMessage(''), 3000);
-                      }}
-                      className="px-3 h-10 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Optional Time Limit */}
-              <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                      Set a Time Limit (Optional)
-                    </span>
-                    <p className="text-[11px] text-slate-500 tabular-nums">
-                      {hasTimeLimit
-                        ? `Students will see a ${durationMinutes}-minute countdown timer and the assessment will auto-submit when time expires.`
-                        : 'No time limit is set. No countdown timer will be shown to students.'}
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={hasTimeLimit}
-                    onChange={(e) => {
-                      setHasTimeLimit(e.target.checked);
-                      markDirty();
-                    }}
-                    className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
-                  />
-                </div>
-
-                {hasTimeLimit && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="number"
-                      min={1}
-                      max={525600}
-                      value={durationMinutes}
-                      onChange={(e) => {
-                        setDurationMinutes(Math.max(1, Number(e.target.value) || 30));
-                        markDirty();
-                      }}
-                      className="w-28 h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold text-center bg-white dark:bg-slate-900 tabular-nums focus:border-[#1E293B] focus:outline-none"
-                    />
-                    <span className="text-xs font-semibold text-slate-500">minutes</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Activation & Scheduling Options (Activate Now vs Schedule for Later) */}
-              <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                  Assessment Availability &amp; Scheduling
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label
-                    onClick={() => {
-                      setActivationMode('now');
-                      markDirty();
-                    }}
-                    className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
-                      activationMode === 'now'
-                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-1 ring-[#1E293B]/20 dark:ring-white/15'
-                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="settingsActivationMode"
-                      checked={activationMode === 'now'}
-                      onChange={() => setActivationMode('now')}
-                      className="mt-1 accent-[#B91C1C]"
-                    />
-                    <div>
-                      <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
-                        Option A: Activate Now
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Make this assessment active immediately upon publishing and notify eligible students right away.
-                      </p>
-                    </div>
-                  </label>
-
-                  <label
-                    onClick={() => {
-                      setActivationMode('scheduled');
-                      markDirty();
-                    }}
-                    className={`p-4 rounded-2xl border cursor-pointer flex items-start gap-3 transition-all ${
-                      activationMode === 'scheduled'
-                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 ring-1 ring-[#1E293B]/20 dark:ring-white/15'
-                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="settingsActivationMode"
-                      checked={activationMode === 'scheduled'}
-                      onChange={() => setActivationMode('scheduled')}
-                      className="mt-1 accent-[#B91C1C]"
-                    />
-                    <div>
-                      <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
-                        Option B: Schedule for Later
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Keep the assessment locked until the scheduled date &amp; time, then automatically activate and send the passcode to students.
-                      </p>
-                    </div>
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                  {activationMode === 'scheduled' && (
-                    <label className="block">
-                      <span className="text-[11px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
-                        Scheduled Activation Date &amp; Time *
-                      </span>
+              {openSettingsGroups.access && (
+                <div className="px-5 pb-6 sm:px-6 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-6">
+                  {/* Passcode Protection */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                            Passcode Protection
+                          </span>
+                          {isPasscodeMandatory && (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#B91C1C] dark:text-red-400">
+                              <span aria-hidden="true">·</span>
+                              <Lock size={11} /> Mandatory for {workType === 'TEST' ? 'Tests' : 'Examinations'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {isPasscodeMandatory
+                            ? `Passcode protection is required for all ${
+                                workType === 'TEST' ? 'Tests' : 'Examinations'
+                              } and cannot be unchecked. Students will receive this passcode when the assessment becomes active.`
+                            : 'Optional for Assignments and Activities. Require students to enter an access code before beginning.'}
+                        </p>
+                      </div>
                       <input
-                        type="datetime-local"
-                        value={availableFrom}
+                        type="checkbox"
+                        checked={isPasscodeMandatory ? true : hasPasscode}
+                        disabled={isPasscodeMandatory}
                         onChange={(e) => {
-                          setAvailableFrom(e.target.value);
+                          if (isPasscodeMandatory) return;
+                          setHasPasscode(e.target.checked);
                           markDirty();
                         }}
-                        className="w-full mt-1 h-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold tabular-nums focus:border-[#1E293B] focus:outline-none"
+                        className={`w-4 h-4 accent-[#B91C1C] rounded ${
+                          isPasscodeMandatory ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                        }`}
                       />
-                    </label>
-                  )}
+                    </div>
 
-                  <label className="block">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                      Available Until / Closing Deadline (Optional)
+                    {(isPasscodeMandatory || hasPasscode) && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <input
+                          type="text"
+                          value={passcode}
+                          onChange={(e) => {
+                            setPasscode(e.target.value.toUpperCase());
+                            markDirty();
+                          }}
+                          className="h-10 flex-1 max-w-xs rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-mono font-bold uppercase bg-white dark:bg-slate-900 focus:border-[#1E293B] focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPasscode(generateAccessCode());
+                            markDirty();
+                          }}
+                          className="px-3 h-10 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800"
+                        >
+                          Generate New
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(passcode);
+                            setSaveBannerMessage('Passcode copied to clipboard.');
+                            setTimeout(() => setSaveBannerMessage(''), 3000);
+                          }}
+                          className="px-3 h-10 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Activation & Scheduling Options */}
+                  <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Assessment Availability &amp; Scheduling
                     </span>
-                    <input
-                      type="datetime-local"
-                      value={availableUntil}
-                      onChange={(e) => {
-                        setAvailableUntil(e.target.value);
-                        markDirty();
-                      }}
-                      className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs tabular-nums focus:border-[#1E293B] focus:outline-none"
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* Attempt Limits & Shuffle */}
-              <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
-                <label className="flex items-center justify-between gap-3 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p>Limit to 1 attempt</p>
-                      <span
-                        className={`text-[10px] font-black uppercase tracking-wider ${
-                          limitOneAttempt
-                            ? 'text-slate-500 dark:text-slate-400'
-                            : 'text-[#B91C1C] dark:text-red-400'
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label
+                        onClick={() => {
+                          setActivationMode('now');
+                          markDirty();
+                        }}
+                        className={`p-4 rounded-xl border cursor-pointer flex items-start gap-3 transition-all ${
+                          activationMode === 'now'
+                            ? 'border-[#1E293B] dark:border-slate-300 bg-slate-50 dark:bg-slate-800/70'
+                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
                         }`}
                       >
-                        <span aria-hidden="true">· </span>
-                        {limitOneAttempt ? '1 Attempt Only' : 'Retakes Enabled'}
-                      </span>
+                        <input
+                          type="radio"
+                          name="settingsActivationMode"
+                          checked={activationMode === 'now'}
+                          onChange={() => setActivationMode('now')}
+                          className="mt-1 accent-[#B91C1C]"
+                        />
+                        <div>
+                          <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                            Activate Now
+                          </p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Make active immediately upon publishing and notify eligible students right away.
+                          </p>
+                        </div>
+                      </label>
+
+                      <label
+                        onClick={() => {
+                          setActivationMode('scheduled');
+                          markDirty();
+                        }}
+                        className={`p-4 rounded-xl border cursor-pointer flex items-start gap-3 transition-all ${
+                          activationMode === 'scheduled'
+                            ? 'border-[#1E293B] dark:border-slate-300 bg-slate-50 dark:bg-slate-800/70'
+                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="settingsActivationMode"
+                          checked={activationMode === 'scheduled'}
+                          onChange={() => setActivationMode('scheduled')}
+                          className="mt-1 accent-[#B91C1C]"
+                        />
+                        <div>
+                          <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                            Schedule for Later
+                          </p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Keep locked until the scheduled date &amp; time, then automatically activate.
+                          </p>
+                        </div>
+                      </label>
                     </div>
-                    <p className="text-[11px] text-slate-500 font-normal mt-0.5">
-                      {limitOneAttempt
-                        ? 'Students can only submit once per student record. Uncheck this box to allow students to retake this assessment.'
-                        : 'Unchecked — Students will see a "Retake" button after submitting and under their Completed Assessments so they can retake this assessment.'}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      {activationMode === 'scheduled' && (
+                        <label className="block">
+                          <span className="text-xs font-semibold text-[#B91C1C] dark:text-red-400">
+                            Scheduled Activation Date &amp; Time *
+                          </span>
+                          <input
+                            type="datetime-local"
+                            value={availableFrom}
+                            onChange={(e) => {
+                              setAvailableFrom(e.target.value);
+                              markDirty();
+                            }}
+                            className="w-full mt-1 h-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold tabular-nums focus:border-[#1E293B] focus:outline-none"
+                          />
+                        </label>
+                      )}
+
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          Available Until / Closing Deadline (Optional)
+                        </span>
+                        <input
+                          type="datetime-local"
+                          value={availableUntil}
+                          onChange={(e) => {
+                            setAvailableUntil(e.target.value);
+                            markDirty();
+                          }}
+                          className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs tabular-nums focus:border-[#1E293B] focus:outline-none"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* GROUP 2: Timing & Attempts */}
+            <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#121620] overflow-hidden shadow-2xs">
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenSettingsGroups((prev) => ({ ...prev, timing: !prev.timing }))
+                }
+                className="w-full px-5 py-4 sm:px-6 flex items-center justify-between gap-3 text-left hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
+              >
+                <div>
+                  <h4 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                    Timing &amp; Attempts
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Countdown duration, pause behavior by work type, and retake policy.
+                  </p>
+                </div>
+                {openSettingsGroups.timing ? (
+                  <ChevronDown size={18} className="text-slate-400 shrink-0" />
+                ) : (
+                  <ChevronRight size={18} className="text-slate-400 shrink-0" />
+                )}
+              </button>
+
+              {openSettingsGroups.timing && (
+                <div className="px-5 pb-6 sm:px-6 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-5">
+                  {/* Optional Time Limit */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          Set a Time Limit (Optional)
+                        </span>
+                        <p className="text-[11px] text-slate-500 tabular-nums mt-0.5">
+                          {hasTimeLimit
+                            ? `Students will see a ${durationMinutes}-minute floating countdown timer and the assessment will auto-submit when time expires.`
+                            : 'No time limit is set. No countdown timer will be shown to students.'}
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={hasTimeLimit}
+                        onChange={(e) => {
+                          setHasTimeLimit(e.target.checked);
+                          markDirty();
+                        }}
+                        className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
+                      />
+                    </div>
+
+                    {hasTimeLimit && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="number"
+                          min={1}
+                          max={525600}
+                          value={durationMinutes}
+                          onChange={(e) => {
+                            setDurationMinutes(Math.max(1, Number(e.target.value) || 30));
+                            markDirty();
+                          }}
+                          className="w-28 h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs font-bold text-center bg-white dark:bg-slate-900 tabular-nums focus:border-[#1E293B] focus:outline-none"
+                        />
+                        <span className="text-xs font-semibold text-slate-500">minutes</span>
+                      </div>
+                    )}
+
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 px-3.5 py-2.5">
+                      {workType === 'ASSIGNMENT' || workType === 'ACTIVITY'
+                        ? `${workType === 'ASSIGNMENT' ? 'Assignments' : 'Activities'} support Save & Pause so students can save progress and resume later from their remaining time.`
+                        : `${workType === 'TEST' ? 'Tests' : 'Examinations'} enforce strict continuous timing — students cannot pause once started.`}
                     </p>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={limitOneAttempt}
-                    onChange={(e) => {
-                      setLimitOneAttempt(e.target.checked);
-                      markDirty();
-                    }}
-                    className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
-                  />
-                </label>
 
-                <label className="flex items-center justify-between gap-3 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
-                  <span>Shuffle question order for each candidate</span>
-                  <input
-                    type="checkbox"
-                    checked={shuffleQuestions}
-                    onChange={(e) => {
-                      setShuffleQuestions(e.target.checked);
-                      markDirty();
-                    }}
-                    className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between gap-3 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
-                  <span>Shuffle option choices for multiple choice questions</span>
-                  <input
-                    type="checkbox"
-                    checked={shuffleOptions}
-                    onChange={(e) => {
-                      setShuffleOptions(e.target.checked);
-                      markDirty();
-                    }}
-                    className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
-                  />
-                </label>
-
-                <div className="pt-2">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                    Submission Confirmation Message
-                  </span>
-                  <input
-                    type="text"
-                    value={confirmationMessage}
-                    onChange={(e) => {
-                      setConfirmationMessage(e.target.value);
-                      markDirty();
-                    }}
-                    placeholder="e.g. Your response has been recorded. Good job!"
-                    className="w-full mt-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs bg-white dark:bg-slate-900 focus:border-[#1E293B] focus:outline-none"
-                  />
+                  {/* Attempt Limits */}
+                  <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-xs">
+                    <label className="flex items-center justify-between gap-3 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p>Limit to 1 attempt</p>
+                          <span
+                            className={`text-xs font-semibold ${
+                              limitOneAttempt
+                                ? 'text-slate-500 dark:text-slate-400'
+                                : 'text-[#B91C1C] dark:text-red-400'
+                            }`}
+                          >
+                            <span aria-hidden="true">· </span>
+                            {limitOneAttempt ? '1 Attempt Only' : 'Retakes Enabled'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-normal mt-0.5">
+                          {limitOneAttempt
+                            ? 'Students can only submit once per student record. Uncheck to allow retakes.'
+                            : 'Unchecked — Students will see a "Retake" option after submitting.'}
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={limitOneAttempt}
+                        onChange={(e) => {
+                          setLimitOneAttempt(e.target.checked);
+                          markDirty();
+                        }}
+                        className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
+                      />
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
+            </div>
+
+            {/* GROUP 3: Question Randomization & Completion */}
+            <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#121620] overflow-hidden shadow-2xs">
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenSettingsGroups((prev) => ({
+                    ...prev,
+                    randomization: !prev.randomization,
+                  }))
+                }
+                className="w-full px-5 py-4 sm:px-6 flex items-center justify-between gap-3 text-left hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
+              >
+                <div>
+                  <h4 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                    Question Randomization &amp; Submission Message
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Comprehension-aware question shuffling, option randomization, and confirmation note.
+                  </p>
+                </div>
+                {openSettingsGroups.randomization ? (
+                  <ChevronDown size={18} className="text-slate-400 shrink-0" />
+                ) : (
+                  <ChevronRight size={18} className="text-slate-400 shrink-0" />
+                )}
+              </button>
+
+              {openSettingsGroups.randomization && (
+                <div className="px-5 pb-6 sm:px-6 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4 text-xs">
+                  <label className="flex items-start justify-between gap-3 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
+                    <div>
+                      <span>Shuffle question order for each candidate</span>
+                      <p className="text-[11px] text-slate-500 font-normal mt-0.5">
+                        Comprehension passages stay intact — linked questions shuffle only inside their passage group, and standalone questions never cross section or instruction boundaries.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={shuffleQuestions}
+                      onChange={(e) => {
+                        setShuffleQuestions(e.target.checked);
+                        markDirty();
+                      }}
+                      className="w-4 h-4 mt-0.5 accent-[#B91C1C] rounded cursor-pointer shrink-0"
+                    />
+                  </label>
+
+                  <label className="flex items-start justify-between gap-3 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <div>
+                      <span>Shuffle option choices for multiple choice questions</span>
+                      <p className="text-[11px] text-slate-500 font-normal mt-0.5">
+                        Randomizes answer choice order per attempt while preserving exact grading keys.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={shuffleOptions}
+                      onChange={(e) => {
+                        setShuffleOptions(e.target.checked);
+                        markDirty();
+                      }}
+                      className="w-4 h-4 mt-0.5 accent-[#B91C1C] rounded cursor-pointer shrink-0"
+                    />
+                  </label>
+
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Submission Confirmation Message
+                    </span>
+                    <input
+                      type="text"
+                      value={confirmationMessage}
+                      onChange={(e) => {
+                        setConfirmationMessage(e.target.value);
+                        markDirty();
+                      }}
+                      placeholder="e.g. Your response has been recorded. Good job!"
+                      className="w-full mt-1.5 h-10 rounded-xl border border-slate-200 dark:border-slate-700 px-3 text-xs bg-white dark:bg-slate-900 focus:border-[#1E293B] focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* GROUP 4: Grading & Results */}
+            <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#121620] overflow-hidden shadow-2xs">
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenSettingsGroups((prev) => ({ ...prev, grading: !prev.grading }))
+                }
+                className="w-full px-5 py-4 sm:px-6 flex items-center justify-between gap-3 text-left hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
+              >
+                <div>
+                  <h4 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                    Grading &amp; Results
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Automatic vs manual review, grade release policy, visibility rules, and uniform MCQ points.
+                  </p>
+                </div>
+                {openSettingsGroups.grading ? (
+                  <ChevronDown size={18} className="text-slate-400 shrink-0" />
+                ) : (
+                  <ChevronRight size={18} className="text-slate-400 shrink-0" />
+                )}
+              </button>
+
+              {openSettingsGroups.grading && (
+                <div className="px-5 pb-6 sm:px-6 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold text-slate-900 dark:text-white">
+                        Enable Graded Quiz Scoring
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Assign points and compute percentage scores for this assessment.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={makeQuiz}
+                      onChange={(e) => {
+                        setMakeQuiz(e.target.checked);
+                        markDirty();
+                      }}
+                      className="w-5 h-5 accent-[#B91C1C] rounded cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Grading Mode */}
+                  <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Grading Mode
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label
+                        onClick={() => {
+                          setGradingMode('automatic');
+                          setReleaseGradesPolicy('immediate');
+                          markDirty();
+                        }}
+                        className={`p-4 rounded-xl border cursor-pointer flex items-start gap-3 transition-all ${
+                          gradingMode === 'automatic'
+                            ? 'border-[#1E293B] dark:border-slate-300 bg-slate-50 dark:bg-slate-800/70'
+                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="settingsGradingMode"
+                          checked={gradingMode === 'automatic'}
+                          onChange={() => {
+                            setGradingMode('automatic');
+                            setReleaseGradesPolicy('immediate');
+                          }}
+                          className="mt-1 accent-[#B91C1C]"
+                        />
+                        <div>
+                          <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                            Automatic Objective Grading
+                          </p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Automatically score objective responses and show results immediately.
+                          </p>
+                        </div>
+                      </label>
+
+                      <label
+                        onClick={() => {
+                          setGradingMode('manual');
+                          setReleaseGradesPolicy('manual');
+                          markDirty();
+                        }}
+                        className={`p-4 rounded-xl border cursor-pointer flex items-start gap-3 transition-all ${
+                          gradingMode === 'manual'
+                            ? 'border-[#1E293B] dark:border-slate-300 bg-slate-50 dark:bg-slate-800/70'
+                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="settingsGradingMode"
+                          checked={gradingMode === 'manual'}
+                          onChange={() => {
+                            setGradingMode('manual');
+                            setReleaseGradesPolicy('manual');
+                          }}
+                          className="mt-1 accent-[#B91C1C]"
+                        />
+                        <div>
+                          <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                            Manual Tutor Review
+                          </p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Hold submissions for tutor marking before releasing grades.
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Release Grades Policy */}
+                  <div className="space-y-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Release Grades Policy
+                    </span>
+                    <div className="space-y-2 text-xs">
+                      <label className="flex items-center gap-2.5 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="releasePolicy"
+                          checked={releaseGradesPolicy === 'immediate'}
+                          onChange={() => {
+                            setReleaseGradesPolicy('immediate');
+                            setGradingMode('automatic');
+                            markDirty();
+                          }}
+                          className="accent-[#B91C1C]"
+                        />
+                        <span>Immediately after each student submission (Automatic Grading)</span>
+                      </label>
+                      <label className="flex items-center gap-2.5 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="releasePolicy"
+                          checked={releaseGradesPolicy === 'manual'}
+                          onChange={() => {
+                            setReleaseGradesPolicy('manual');
+                            markDirty();
+                          }}
+                          className="accent-[#B91C1C]"
+                        />
+                        <span>Later, after manual review (requires explicit tutor result release)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Respondent Visibility */}
+                  <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Respondent Visibility
+                    </span>
+                    <div className="space-y-3">
+                      <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
+                        <div>
+                          <p>Missed questions</p>
+                          <p className="text-[11px] text-slate-500 font-normal">
+                            Candidates can see which questions were answered incorrectly.
+                          </p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={showMissedQuestions}
+                          onChange={(e) => {
+                            setShowMissedQuestions(e.target.checked);
+                            markDirty();
+                          }}
+                          className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
+                        <div>
+                          <p>Correct answers</p>
+                          <p className="text-[11px] text-slate-500 font-normal">
+                            Candidates can view correct answer keys after grades are released.
+                          </p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={showCorrectAnswers}
+                          onChange={(e) => {
+                            setShowCorrectAnswers(e.target.checked);
+                            markDirty();
+                          }}
+                          className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
+                        <div>
+                          <p>Point values</p>
+                          <p className="text-[11px] text-slate-500 font-normal">
+                            Candidates can view total points and points received for each question.
+                          </p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={showPointValues}
+                          onChange={(e) => {
+                            setShowPointValues(e.target.checked);
+                            markDirty();
+                          }}
+                          className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Uniform MCQ Points */}
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3 text-xs font-semibold">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-slate-900 dark:text-white font-bold">
+                          Uniform MCQ Point Value
+                        </p>
+                        <p className="text-[11px] text-slate-500 font-normal">
+                          Set one consistent point value for all Multiple Choice questions.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 shrink-0 tabular-nums">
+                        <input
+                          type="number"
+                          min={0.5}
+                          max={100}
+                          step="0.5"
+                          value={uniformMcqInput}
+                          onChange={(e) => handleUniformMcqInputChange(e.target.value)}
+                          onBlur={() => {
+                            if (parseValidPointValue(uniformMcqInput) === null) {
+                              setUniformMcqInput(String(defaultPointValue));
+                            }
+                          }}
+                          className="w-16 h-9 rounded-xl border border-slate-200 dark:border-slate-700 text-center font-bold bg-white dark:bg-slate-900 tabular-nums focus:border-[#1E293B] focus:outline-none"
+                        />
+                        <span>points</span>
+                        <button
+                          type="button"
+                          onClick={() => applyUniformMcqPoints()}
+                          className="px-3 py-2 rounded-xl bg-[#1E293B] hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold transition-colors whitespace-nowrap"
+                        >
+                          Apply to All MCQs ({mcqCount})
+                        </button>
+                      </div>
+                    </div>
+
+                    <label className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 px-3.5 py-2.5 cursor-pointer">
+                      <div>
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          Automatically keep all MCQs uniform
+                        </p>
+                        <p className="text-[11px] text-slate-500 font-normal">
+                          When enabled, changing the point value above updates every MCQ question right away.
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={uniformMcqPointsEnabled}
+                        onChange={(e) => handleToggleUniformMcq(e.target.checked)}
+                        className="w-4 h-4 accent-[#B91C1C] rounded cursor-pointer shrink-0"
+                      />
+                    </label>
+
+                    {uniformMcqFeedback && (
+                      <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                        <CheckCircle2 size={14} className="shrink-0" />
+                        <span>{uniformMcqFeedback}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -3715,101 +3936,241 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     </div>
                   )}
 
-                  {questions.map((q, qIdx) => {
-                    const selectedVal = previewAnswers[q.id];
-                    const correctIds = Array.isArray(q.correctOptionIds) ? q.correctOptionIds : [];
-                    return (
-                      <div
-                        key={q.id || qIdx}
-                        className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-3 shadow-2xs"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
-                            <span className="text-[#B91C1C] dark:text-red-400 mr-1.5 tabular-nums">
-                              Q{qIdx + 1}.
-                            </span>
-                            {q.prompt || <span className="italic text-slate-400">Untitled question prompt</span>}
-                          </h4>
-                          {showPointValues && (
-                            <span className="shrink-0 text-[11px] font-bold text-slate-500 dark:text-slate-400 tabular-nums">
-                              {q.points} {q.points === 1 ? 'mark' : 'marks'}
-                            </span>
+                  {/* Preview Viewing Mode Switcher (All questions vs One at a time) */}
+                  {questions.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2.5">
+                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
+                        {questions.length} answerable {questions.length === 1 ? 'question' : 'questions'}
+                      </span>
+                      <div className="inline-flex items-center p-1 rounded-lg bg-slate-100 dark:bg-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewViewMode('all')}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                            previewViewMode === 'all'
+                              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <List size={13} /> All questions
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewViewMode('focused');
+                            setPreviewFocusedIdx((idx) => Math.min(idx, Math.max(0, questions.length - 1)));
+                          }}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                            previewViewMode === 'focused'
+                              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <Layers size={13} /> One at a time
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {(() => {
+                    const previewLayout = resolveAssessmentLayout({ assessmentLayout }, questions);
+                    const qMap = new Map<string, { q: NativeQuestionData; idx: number }>();
+                    questions.forEach((q, idx) => qMap.set(q.id, { q, idx }));
+                    const contextMap = buildQuestionContextMap(previewLayout);
+
+                    const renderPreviewQuestion = (q: NativeQuestionData, qIdx: number) => {
+                      const selectedVal = previewAnswers[q.id];
+                      const correctIds = Array.isArray(q.correctOptionIds) ? q.correctOptionIds : [];
+                      return (
+                        <div
+                          key={q.id || qIdx}
+                          className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-3 shadow-2xs"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white whitespace-pre-line leading-relaxed">
+                              <span className="text-[#B91C1C] dark:text-red-400 mr-1.5 tabular-nums">
+                                Q{qIdx + 1}.
+                              </span>
+                              {q.prompt || <span className="italic text-slate-400">Untitled question prompt</span>}
+                            </h4>
+                            {showPointValues && (
+                              <span className="shrink-0 text-[11px] font-bold text-slate-500 dark:text-slate-400 tabular-nums">
+                                {q.points} {q.points === 1 ? 'mark' : 'marks'}
+                              </span>
+                            )}
+                          </div>
+
+                          {Array.isArray(q.options) &&
+                          q.options.length > 0 &&
+                          ['multiple_choice', 'single_choice', 'true_false', 'checkboxes', 'dropdown'].includes(
+                            q.type
+                          ) ? (
+                            <div className="space-y-2 pt-1">
+                              {q.options.map((opt) => {
+                                const isSelected =
+                                  Array.isArray(selectedVal)
+                                    ? selectedVal.includes(opt.id)
+                                    : String(selectedVal || '') === String(opt.id);
+                                const isCorrectOpt = correctIds.includes(opt.id);
+                                return (
+                                  <label
+                                    key={opt.id}
+                                    onClick={() => {
+                                      if (previewSubmitted) return;
+                                      if (q.type === 'checkboxes') {
+                                        const prevArr = Array.isArray(selectedVal) ? selectedVal : [];
+                                        const nextArr = prevArr.includes(opt.id)
+                                          ? prevArr.filter((i: string) => i !== opt.id)
+                                          : [...prevArr, opt.id];
+                                        setPreviewAnswers((p) => ({ ...p, [q.id]: nextArr }));
+                                      } else {
+                                        setPreviewAnswers((p) => ({ ...p, [q.id]: opt.id }));
+                                      }
+                                    }}
+                                    className={`flex items-center justify-between gap-3 p-3 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                                      isSelected
+                                        ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 text-[#1E293B] dark:text-white'
+                                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-black text-slate-700 dark:text-slate-300">
+                                        {opt.id}
+                                      </span>
+                                      <span>{opt.text}</span>
+                                    </div>
+                                    {(previewShowKey || (previewSubmitted && showCorrectAnswers)) &&
+                                      isCorrectOpt && (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
+                                          <Check size={11} /> Correct Key
+                                        </span>
+                                      )}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="pt-1 space-y-2">
+                              <textarea
+                                rows={2}
+                                disabled={previewSubmitted}
+                                value={String(selectedVal || '')}
+                                onChange={(e) =>
+                                  setPreviewAnswers((p) => ({ ...p, [q.id]: e.target.value }))
+                                }
+                                placeholder="Student types response or pastes deliverable link here..."
+                                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 text-xs focus:border-[#1E293B] focus:outline-none"
+                              />
+                              {(previewShowKey || (previewSubmitted && showCorrectAnswers)) &&
+                                Array.isArray(q.acceptedAnswers) &&
+                                q.acceptedAnswers.length > 0 && (
+                                  <p className="text-[11px] font-bold text-[#1E293B] dark:text-white">
+                                    Accepted Answer Key: {q.acceptedAnswers.join(', ')}
+                                  </p>
+                                )}
+                            </div>
                           )}
                         </div>
+                      );
+                    };
 
-                        {Array.isArray(q.options) &&
-                        q.options.length > 0 &&
-                        ['multiple_choice', 'single_choice', 'true_false', 'checkboxes', 'dropdown'].includes(
-                          q.type
-                        ) ? (
-                          <div className="space-y-2 pt-1">
-                            {q.options.map((opt) => {
-                              const isSelected =
-                                Array.isArray(selectedVal)
-                                  ? selectedVal.includes(opt.id)
-                                  : String(selectedVal || '') === String(opt.id);
-                              const isCorrectOpt = correctIds.includes(opt.id);
-                              return (
-                                <label
-                                  key={opt.id}
-                                  onClick={() => {
-                                    if (previewSubmitted) return;
-                                    if (q.type === 'checkboxes') {
-                                      const prevArr = Array.isArray(selectedVal) ? selectedVal : [];
-                                      const nextArr = prevArr.includes(opt.id)
-                                        ? prevArr.filter((i: string) => i !== opt.id)
-                                        : [...prevArr, opt.id];
-                                      setPreviewAnswers((p) => ({ ...p, [q.id]: nextArr }));
-                                    } else {
-                                      setPreviewAnswers((p) => ({ ...p, [q.id]: opt.id }));
-                                    }
-                                  }}
-                                  className={`flex items-center justify-between gap-3 p-3 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
-                                    isSelected
-                                      ? 'border-[#1E293B] dark:border-slate-300 bg-slate-100/80 dark:bg-slate-800/70 text-[#1E293B] dark:text-white'
-                                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2.5">
-                                    <span className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-black text-slate-700 dark:text-slate-300">
-                                      {opt.id}
-                                    </span>
-                                    <span>{opt.text}</span>
+                    if (previewViewMode === 'focused' && questions.length > 0) {
+                      const safeIdx = Math.min(previewFocusedIdx, questions.length - 1);
+                      const currentQ = questions[safeIdx];
+                      const ctx = contextMap[currentQ.id];
+                      const secObj = ctx?.section || previewLayout.sections[ctx?.sectionIndex ?? 0];
+                      return (
+                        <div className="space-y-4">
+                          {secObj && (
+                            <SectionBanner
+                              section={secObj}
+                              sectionIndex={ctx?.sectionIndex ?? 0}
+                              totalSections={previewLayout.sections.length}
+                              compact
+                            />
+                          )}
+                          {ctx?.comprehension && (
+                            <ComprehensionPassagePanel
+                              comprehension={ctx.comprehension}
+                              questionRangeLabel={`Question ${safeIdx + 1} of ${questions.length}`}
+                            />
+                          )}
+                          {renderPreviewQuestion(currentQ, safeIdx)}
+                          <div className="flex items-center justify-between gap-2 pt-1">
+                            <button
+                              type="button"
+                              disabled={safeIdx === 0}
+                              onClick={() => setPreviewFocusedIdx((i) => Math.max(0, i - 1))}
+                              className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-40"
+                            >
+                              Previous
+                            </button>
+                            <span className="text-xs font-semibold text-slate-500 tabular-nums">
+                              Question {safeIdx + 1} of {questions.length}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={safeIdx >= questions.length - 1}
+                              onClick={() =>
+                                setPreviewFocusedIdx((i) => Math.min(questions.length - 1, i + 1))
+                              }
+                              className="px-3.5 py-2 rounded-xl bg-[#1E293B] text-white text-xs font-semibold disabled:opacity-40"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // All questions mode with full sections, content blocks, and comprehension passages
+                    return (
+                      <div className="space-y-6">
+                        {previewLayout.sections.map((section, secIdx) => (
+                          <div key={section.id} className="space-y-4">
+                            <SectionBanner
+                              section={section}
+                              sectionIndex={secIdx}
+                              totalSections={previewLayout.sections.length}
+                            />
+                            {section.items.map((item) => {
+                              if (item.kind === 'content') {
+                                return <ContentBlockCard key={item.id} block={item} />;
+                              }
+                              if (item.kind === 'comprehension') {
+                                const childEntries = item.questionIds
+                                  .map((qid) => qMap.get(qid))
+                                  .filter(Boolean) as Array<{ q: NativeQuestionData; idx: number }>;
+                                const rangeLabel =
+                                  childEntries.length === 1
+                                    ? `Question ${childEntries[0].idx + 1}`
+                                    : childEntries.length > 1
+                                    ? `Questions ${childEntries[0].idx + 1}–${childEntries[childEntries.length - 1].idx + 1}`
+                                    : undefined;
+                                return (
+                                  <div key={item.id} className="space-y-3">
+                                    <ComprehensionPassagePanel
+                                      comprehension={item}
+                                      questionRangeLabel={rangeLabel}
+                                    />
+                                    <div className="space-y-3">
+                                      {childEntries.map(({ q, idx }) => renderPreviewQuestion(q, idx))}
+                                    </div>
                                   </div>
-                                  {(previewShowKey || (previewSubmitted && showCorrectAnswers)) &&
-                                    isCorrectOpt && (
-                                      <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
-                                        <Check size={11} /> Correct Key
-                                      </span>
-                                    )}
-                                </label>
-                              );
+                                );
+                              }
+                              if (item.kind === 'question') {
+                                const entry = qMap.get(item.questionId);
+                                if (!entry) return null;
+                                return renderPreviewQuestion(entry.q, entry.idx);
+                              }
+                              return null;
                             })}
                           </div>
-                        ) : (
-                          <div className="pt-1 space-y-2">
-                            <textarea
-                              rows={2}
-                              disabled={previewSubmitted}
-                              value={String(selectedVal || '')}
-                              onChange={(e) =>
-                                setPreviewAnswers((p) => ({ ...p, [q.id]: e.target.value }))
-                              }
-                              placeholder="Student types response or pastes deliverable link here..."
-                              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 text-xs focus:border-[#1E293B] focus:outline-none"
-                            />
-                            {(previewShowKey || (previewSubmitted && showCorrectAnswers)) &&
-                              Array.isArray(q.acceptedAnswers) &&
-                              q.acceptedAnswers.length > 0 && (
-                                <p className="text-[11px] font-bold text-[#1E293B] dark:text-white">
-                                  Accepted Answer Key: {q.acceptedAnswers.join(', ')}
-                                </p>
-                              )}
-                          </div>
-                        )}
+                        ))}
                       </div>
                     );
-                  })}
+                  })()}
                 </div>
               )}
             </div>

@@ -1007,7 +1007,12 @@ service cloud.firestore {
           request.resource.data.get('payloadHash', '') is string &&
           request.resource.data.get('payloadHash', '').size() == 64
         );
-        allow delete: if isSuperAdmin();
+        allow delete: if isSuperAdmin() || (
+          isAuth() &&
+          chunkIndex.matches('^[0-9]{1,2}$') &&
+          get(/databases/$(database)/documents/codingLabProjects/$(projectId)).data.get('ownerUid', '') == request.auth.uid &&
+          get(/databases/$(database)/documents/codingLabProjects/$(projectId)).data.get('status', 'draft') != 'submitted'
+        );
       }
     }
 
@@ -1020,19 +1025,8 @@ service cloud.firestore {
         isStaffOrTutor() ||
         (isAuth() && resource.data.get('learnerUid', '') == request.auth.uid) ||
         (isSchoolUser() && resource.data.get('schoolId', '') != '' && isSameSchool(resource.data.get('schoolId', '')));
-      // Learner may create their own immutable submission snapshot once (client fallback when serverless endpoint is offline);
-      // learner CANNOT forge tutor manual grading/overrides or mutate/delete after creation.
-      allow create: if isAnyAdmin() || (
-        isAuth() &&
-        submissionId.matches('^[a-zA-Z0-9_-]{4,140}$') &&
-        request.resource.data.get('learnerUid', '') == request.auth.uid &&
-        request.resource.data.get('immutable', false) == true &&
-        request.resource.data.get('payloadHash', '') is string &&
-        request.resource.data.get('payloadHash', '').size() == 64 &&
-        !('manualScore' in request.resource.data) &&
-        !('tutorFeedback' in request.resource.data) &&
-        !('gradeOverrides' in request.resource.data)
-      );
+      // Authoritative submissions are written server-side by the verified assessment function (Admin SDK).
+      allow create: if isAnyAdmin();
       allow update: if isAnyAdmin() || (
         isStaffOrTutor() &&
         request.resource.data.get('learnerUid', '') == resource.data.get('learnerUid', '') &&
@@ -1051,17 +1045,14 @@ service cloud.firestore {
     match /codingLabAssets/{assetHash} {
       allow get: if isAuth();
       allow list: if isAnyAdmin() || isStaffOrTutor();
-      allow create, update: if isAnyAdmin() || (
-        isAuth() &&
-        assetHash.matches('^[a-f0-9]{64}$') &&
-        request.resource.data.get('contentHash', '') == assetHash &&
-        request.resource.data.get('assetCategory', '') == 'custom_image' &&
-        request.resource.data.get('mimeType', '') in ['image/png', 'image/jpeg', 'image/svg+xml'] &&
-        request.resource.data.get('sizeBytes', 0) is int &&
-        request.resource.data.get('sizeBytes', 0) > 0 &&
-        request.resource.data.get('sizeBytes', 0) <= 1048576
-      );
+      // Asset registry writes are strictly server-authoritative via coding-lab-media (Admin SDK).
+      allow create, update: if isAnyAdmin();
       allow delete: if isSuperAdmin();
+
+      match /references/{assessmentId} {
+        allow read: if isAnyAdmin() || isStaffOrTutor();
+        allow write: if isAnyAdmin();
+      }
     }
 
     match /{document=**} { allow read, write: if false; }

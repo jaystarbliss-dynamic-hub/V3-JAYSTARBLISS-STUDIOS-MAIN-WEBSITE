@@ -15,7 +15,7 @@ import DOMPurify from 'dompurify';
 import Badge from '../components/ui/Badge';
 import { CardSkeleton } from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import KidsGallery from '../components/kids/KidsGallery';
 import { CODING_LAB_CONFIG } from '../config/codingLabConfig';
 import { pageHeaderImages, stockImages } from '../lib/stockImages';
@@ -77,12 +77,10 @@ const SHOWCASE_CARDS: ShowcaseCardItem[] = [
 ];
 
 const Portfolio: React.FC = () => {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTabParam = (searchParams.get('tab') || '').toUpperCase();
   const resolveInitialTab = (): ShowcaseTabId => {
-    if (initialTabParam === 'CODING_LAB' || initialTabParam === 'CODING-LAB') {
-      return CODING_LAB_CONFIG.enabled ? 'CODING_LAB' : 'KIDS_CORNER';
-    }
     if (initialTabParam === 'ORGANISATION') return 'ORGANISATION';
     if (initialTabParam === 'MAGIC_PARTICLES') return 'MAGIC_PARTICLES';
     return 'KIDS_CORNER';
@@ -92,7 +90,18 @@ const Portfolio: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [orgSearchQuery, setOrgSearchQuery] = useState('');
 
+  // Open Coding Lab immediately in full-viewport mode if accessed via ?tab=coding_lab
+  useEffect(() => {
+    if ((initialTabParam === 'CODING_LAB' || initialTabParam === 'CODING-LAB') && CODING_LAB_CONFIG.enabled) {
+      navigate('/coding-lab', { replace: true });
+    }
+  }, [initialTabParam, navigate]);
+
   const setActiveTab = (tab: ShowcaseTabId, shouldScroll = false) => {
+    if (tab === 'CODING_LAB' && CODING_LAB_CONFIG.enabled) {
+      navigate('/coding-lab');
+      return;
+    }
     setActiveTabState(tab);
     const next = new URLSearchParams(searchParams);
     if (tab === 'KIDS_CORNER') {
@@ -343,28 +352,16 @@ const Portfolio: React.FC = () => {
             <KidsGallery
               showHeroBanner={false}
               onOpenCodingLab={
-                CODING_LAB_CONFIG.enabled ? () => setActiveTab('CODING_LAB', true) : undefined
+                CODING_LAB_CONFIG.enabled ? () => navigate('/coding-lab') : undefined
               }
             />
           )}
 
-          {/* TAB 2: INLINE CODING LAB PLAYGROUND (Directly Embedded — No Page Hop) */}
-          {activeTab === 'CODING_LAB' && CODING_LAB_CONFIG.enabled && (
-            <div className="w-full h-[calc(100vh-120px)] min-h-[680px] flex">
-              <Suspense
-                fallback={
-                  <div className="w-full h-full min-h-[640px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col items-center justify-center gap-3 text-slate-600 dark:text-slate-300">
-                    <Loader2 size={28} className="animate-spin text-[#B91C1C]" />
-                    <span className="text-sm font-semibold">Loading Coding Lab...</span>
-                  </div>
-                }
-              >
-                <CodingLabEditorHost
-                  mode="playground"
-                  fullscreenUrl="/coding-lab"
-                />
-              </Suspense>
-            </div>
+          {/* Fallback Coding Lab reference kept tree-shaken cleanly */}
+          {false && (
+            <Suspense fallback={null}>
+              <CodingLabEditorHost mode="playground" fullViewport />
+            </Suspense>
           )}
 
           {/* TAB 3: MAGIC 3D PARTICLES SHOWCASE — Jaystarbliss Brand Slate & Crimson */}

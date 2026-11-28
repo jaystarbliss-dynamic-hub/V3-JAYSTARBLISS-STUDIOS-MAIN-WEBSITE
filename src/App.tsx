@@ -49,6 +49,7 @@ const BlogPostDetails = lazy(() => import("./pages/BlogPostDetails"));
 
 const MagicParticles = lazy(() => import("./pages/MagicParticles"));
 const CodingLabPlaygroundPage = lazy(() => import("./pages/CodingLabPlaygroundPage"));
+const CodingLabAssessmentPage = lazy(() => import("./pages/CodingLabAssessmentPage"));
 const PortalLayout = lazy(() => import("./components/portal/PortalLayout"));
 const PortalHomeWithBilling = lazy(() => import("./pages/portal/PortalHomeWithBilling"));
 const BillingCenter = lazy(() => import("./pages/portal/BillingCenter"));
@@ -238,6 +239,17 @@ function AnimatedRoutes() {
         <Route path="/magic-particles" element={<MagicParticles />} />
         <Route path="/kids-zone/magic" element={<MagicParticles />} />
         <Route path="/coding-lab" element={<CodingLabPlaygroundPage />} />
+        <Route
+          path="/coding-lab/assessment/:attemptId"
+          element={
+            <ProtectedRoute
+              allowedRoles={['STUDENT', 'INDIVIDUAL_STUDENT', 'INDIVIDUALSTUDENT']}
+              redirectPath="/portal"
+            >
+              <CodingLabAssessmentPage />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/contact" element={<PageTransition><Contact /></PageTransition>} />
         <Route path="/support" element={<PageTransition><PortalSupport /></PageTransition>} />
         <Route path="/resources" element={<PageTransition><Resources /></PageTransition>} />
@@ -252,6 +264,18 @@ function AnimatedRoutes() {
         <Route path="/portal" element={<PageTransition><SecurePortalLogin /></PageTransition>} />
         <Route path="/register" element={<PageTransition><Register /></PageTransition>} />
 
+        <Route
+          path="/portal/student/exams/:attemptId"
+          element={
+            <ProtectedRoute
+              allowedRoles={['STUDENT', 'INDIVIDUAL_STUDENT', 'INDIVIDUALSTUDENT']}
+              redirectPath="/portal"
+            >
+              <StudentExamAttempt />
+            </ProtectedRoute>
+          }
+        />
+
         <Route path="/portal/student" element={<ProtectedRoute allowedRoles={['STUDENT', 'INDIVIDUAL_STUDENT', 'INDIVIDUALSTUDENT']} redirectPath="/portal"><PortalLayout /></ProtectedRoute>}>
           <Route index element={<PortalHomeWithBilling role="student" />} />
           <Route path="resources" element={<ResourceLibrary role="student" />} />
@@ -262,12 +286,11 @@ function AnimatedRoutes() {
           <Route path="schedules" element={<PortalCalendar />} />
           <Route path="courses" element={<PortalCourses />} />
           <Route path="edge-club" element={<StudentEdgeClub />} />
-          <Route path="coding-lab" element={<CodingLabPlaygroundPage />} />
+          <Route path="coding-lab" element={<Navigate to="/coding-lab" replace />} />
           <Route path="assignments" element={<AssignmentCenter role="student" />} />
           <Route path="milestones" element={<MilestoneCenter role="student" />} />
           <Route path="assessments" element={<StudentExaminations />} />
           <Route path="exams" element={<StudentExaminations />} />
-          <Route path="exams/:attemptId" element={<StudentExamAttempt />} />
           <Route path="payments" element={<StudentBillingGate />} />
           <Route path="support" element={<PortalSupport />} />
           <Route path="settings" element={<PortalSettings />} />
@@ -386,19 +409,25 @@ function AnimatedRoutes() {
 
 function AppContent() {
   const isStandalone = useStandalonePWA();
+  const location = useLocation();
+  const isCodingLabRoute =
+    location.pathname === "/coding-lab" || location.pathname.startsWith("/coding-lab/");
+  const isStudentAssessmentRoute = location.pathname.startsWith("/portal/student/exams/");
+  const isDistractionFreeRoute = isCodingLabRoute || isStudentAssessmentRoute;
+
   return (
     <>
       <AdminImpersonationBanner />
       <PageLoader />
       <ScrollToTop />
-      <GlassRippleListener />
+      {!isDistractionFreeRoute && <GlassRippleListener />}
       <HorizontalWheelScrollListener />
       <AuditActivityTracker />
       <AnimatedRoutes />
-      <NotificationDrawer />
-      {!isStandalone && <FirstVisitPromoPopup />}
-      {!isStandalone && <MarqueeBanner />}
-      {!isStandalone && <FloatingWhatsApp />}
+      {!isDistractionFreeRoute && <NotificationDrawer />}
+      {!isStandalone && !isDistractionFreeRoute && <FirstVisitPromoPopup />}
+      {!isStandalone && !isDistractionFreeRoute && <MarqueeBanner />}
+      {!isStandalone && !isDistractionFreeRoute && <FloatingWhatsApp />}
     </>
   );
 }

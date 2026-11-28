@@ -1,5 +1,5 @@
 import type { Handler } from "@netlify/functions";
-import { adminAuth, adminDb } from "../../api/_lib/firebase-admin";
+import { adminAuth, adminDb, hasAdminAuth, hasAdminDb } from "../../api/_lib/firebase-admin";
 import {
   getPaymentConfig,
   getUserRecord,
@@ -54,6 +54,9 @@ const response = (statusCode: number, body: Record<string, unknown>) => ({
 
 export const handler: Handler = async event => {
   if (event.httpMethod !== "POST") return response(405, { error: "Method Not Allowed" });
+  if (!hasAdminAuth() || !hasAdminDb()) {
+    return response(200, { fallback: true, reason: "ADMIN_SDK_UNAVAILABLE" });
+  }
   try {
     const token = tokenFromEvent(event);
     if (!token) return response(401, { error: "Authentication required." });
@@ -251,15 +254,18 @@ export const handler: Handler = async event => {
 
       const nowIso = new Date().toISOString();
 
+      const billingPatch: Record<string, unknown> = {
+        lastReminderSentAt: nowIso,
+        ...(body.nextDueDate ? { nextDueDate: String(body.nextDueDate) } : {})
+      };
+
       if (targetType === "SCHOOL") {
         await adminDb.collection("schools").doc(targetId).set({
-          "billing.lastReminderSentAt": nowIso,
-          ...(body.nextDueDate ? { "billing.nextDueDate": String(body.nextDueDate) } : {})
+          billing: billingPatch
         }, { merge: true });
       } else {
         await adminDb.collection("users").doc(targetId).set({
-          "billing.lastReminderSentAt": nowIso,
-          ...(body.nextDueDate ? { "billing.nextDueDate": String(body.nextDueDate) } : {})
+          billing: billingPatch
         }, { merge: true });
       }
 
@@ -1402,12 +1408,12 @@ export const handler: Handler = async event => {
         restrictionsSnap,
         restrictionAuditSnap,
       ] = await Promise.all([
-        adminDb.collection("billingSubscriptions").limit(1000).get(),
-        adminDb.collection("schools").limit(500).get(),
-        adminDb.collection("users").limit(1000).get(),
-        adminDb.collection("programme_enrollments").where("billingResponsibility", "==", "STUDENT_SELF_FUNDED").limit(500).get(),
-        adminDb.collection("subscriptionReminders").limit(150).get(),
-        adminDb.collection("adminAuditLogs").limit(150).get(),
+        adminDb.collection("billingSubscriptions").limit(1000).get().catch(() => ({ docs: [] } as any)),
+        adminDb.collection("schools").limit(500).get().catch(() => ({ docs: [] } as any)),
+        adminDb.collection("users").limit(1000).get().catch(() => ({ docs: [] } as any)),
+        adminDb.collection("programme_enrollments").where("billingResponsibility", "==", "STUDENT_SELF_FUNDED").limit(500).get().catch(() => ({ docs: [] } as any)),
+        adminDb.collection("subscriptionReminders").limit(150).get().catch(() => ({ docs: [] } as any)),
+        adminDb.collection("adminAuditLogs").limit(150).get().catch(() => ({ docs: [] } as any)),
         adminDb.collection("accountRestrictions").limit(500).get().catch(() => ({ docs: [] } as any)),
         adminDb.collection("restrictionAuditLogs").limit(200).get().catch(() => ({ docs: [] } as any)),
       ]);
@@ -2041,6 +2047,19 @@ export const handler: Handler = async event => {
       return response(409, { error: "Cannot reassign tutor wallet allocation because the previous tutor has already withdrawn those funds." });
     }
     console.error("Billing administrator action failed:", error);
+    const errText = `${code} ${String((error as any)?.code || "")}`.toLowerCase();
+    const isAdminInfrastructureFailure =
+      errText.includes("firebase admin sdk is not initialized") ||
+      errText.includes("could not load the default credentials") ||
+      errText.includes("invalid_grant") ||
+      errText.includes("decoder routines") ||
+      errText.includes("app/no-app") ||
+      errText.includes("auth/invalid-credential") ||
+      errText.includes("unavailable") ||
+      errText.includes("deadline_exceeded");
+    if (isAdminInfrastructureFailure) {
+      return response(200, { fallback: true, reason: "ADMIN_BACKEND_UNAVAILABLE" });
+    }
     return response(500, { error: "Unable to complete this billing administration request." });
   }
 };

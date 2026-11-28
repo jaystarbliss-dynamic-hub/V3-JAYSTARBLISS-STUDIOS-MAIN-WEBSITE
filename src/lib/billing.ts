@@ -598,6 +598,17 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
   let apiSuccess = false;
   let apiResult: any = null;
   let serverErrorMessage: string | null = null;
+  let server5xxErrorMessage: string | null = null;
+  const isStrictGatewayEndpoint =
+    path === 'paystack-initialize' ||
+    path === 'paystack-verify' ||
+    path === 'wallet-withdraw' ||
+    action === 'initialize_payment';
+  const supportsAdminFirestoreFallback =
+    path === 'billing-admin' ||
+    path.includes('billing-admin') ||
+    path === 'admin-financial-reset';
+
   try {
     const token = await user.getIdToken();
     const controller = new AbortController();
@@ -621,8 +632,15 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
           apiSuccess = true;
         }
       } else if (parsedBody && typeof parsedBody.error === 'string' && parsedBody.error.trim()) {
-        // Explicit server validation / gateway error — never swallow or bypass!
-        serverErrorMessage = parsedBody.error.trim();
+        const msg = parsedBody.error.trim();
+        // Always surface 4xx validation/auth/RBAC/conflict errors and all Paystack/payout errors immediately.
+        if (response.status < 500 || isStrictGatewayEndpoint || !supportsAdminFirestoreFallback) {
+          serverErrorMessage = msg;
+        } else {
+          // HTTP 5xx on admin billing routes: allow authenticated Firestore admin fallback to recover seamlessly.
+          server5xxErrorMessage = msg;
+          console.warn(`[billingPost] ${path} (${action || 'post'}) returned HTTP ${response.status}; using authenticated Firestore fallback.`);
+        }
       }
     }
   } catch {
@@ -909,7 +927,7 @@ export const billingPost = async <T>(path: string, body: Record<string, unknown>
     }
   }
 
-  throw new Error('The billing service could not complete this request right now.');
+  throw new Error(server5xxErrorMessage || 'The billing service could not complete this request right now.');
 };
 
 const CLIENT_SUCCESSFUL_STATUSES = new Set([

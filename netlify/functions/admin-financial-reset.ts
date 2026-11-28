@@ -1,5 +1,5 @@
 import type { Handler } from "@netlify/functions";
-import { adminAuth, adminDb, getAdminApp } from "../../api/_lib/firebase-admin";
+import { adminAuth, adminDb, getAdminApp, hasAdminAuth, hasAdminDb } from "../../api/_lib/firebase-admin";
 import { getUserRecord, normaliseRole } from "../../api/_lib/billing";
 import {
   DERIVED_BALANCE_COLLECTIONS,
@@ -291,6 +291,9 @@ async function writeBackupChunks(params: {
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return json(405, { error: "Method Not Allowed" });
+  }
+  if (!hasAdminAuth() || !hasAdminDb()) {
+    return json(200, { fallback: true, reason: "ADMIN_SDK_UNAVAILABLE" });
   }
 
   try {

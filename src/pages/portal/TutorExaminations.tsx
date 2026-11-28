@@ -41,6 +41,7 @@ import {
   recalculateAttemptForUpdatedExam,
   classesMatch,
 } from "../../lib/classes";
+import { sortAssessments } from "../../lib/assessmentOrdering";
 import {
   KeyRound,
   Check,
@@ -1111,6 +1112,8 @@ export default function TutorExaminations() {
           tutorId: data.tutorId || "",
           createdAt: data.createdAt || null,
           updatedAt: data.updatedAt || data.createdAt || null,
+          ...(data.publishedAt ? { publishedAt: data.publishedAt } : {}),
+          ...(data.manuallyClosedAt ? { manuallyClosedAt: data.manuallyClosedAt } : {}),
           ...(data.gradeTargetMode ? { gradeTargetMode: data.gradeTargetMode } : {}),
           ...(data.gradeRange ? { gradeRange: data.gradeRange } : {}),
           ...(Array.isArray(data.targetProgramIds) ? { targetProgramIds: data.targetProgramIds } : {}),
@@ -1119,7 +1122,7 @@ export default function TutorExaminations() {
         });
       });
 
-      setExistingExams(Array.from(map.values()));
+      setExistingExams(sortAssessments(Array.from(map.values()), "newest", { mode: "general" }));
 
       if (legacyExternalCompletions.length > 0) {
         legacyExternalCompletions.forEach((completedId) => {
@@ -2292,6 +2295,9 @@ ANSWER KEY
       availableUntil: payload.availableUntil || null,
       questions: payload.deliveryMode === "NATIVE" ? preparedQuestions : [],
       questionCount: payload.deliveryMode === "NATIVE" ? preparedQuestions.length : 0,
+      ...(payload.deliveryMode === "NATIVE" && payload.assessmentLayout
+        ? { assessmentLayout: payload.assessmentLayout }
+        : {}),
       ...(payload.deliveryMode === "CODING_LAB" && payload.codingLabConfig
         ? { codingLabConfig: payload.codingLabConfig }
         : {}),

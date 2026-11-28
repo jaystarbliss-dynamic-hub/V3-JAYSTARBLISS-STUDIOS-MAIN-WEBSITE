@@ -38,10 +38,13 @@ export const FloatingWhatsApp: React.FC = () => {
     location.pathname.startsWith('/admin');
 
   useEffect(() => {
+    if (isExcluded) return;
+    let active = true;
     const fetchNumber = async () => {
       try {
         const docRef = doc(db, 'settings', 'global');
         const snap = await getDoc(docRef);
+        if (!active) return;
         if (snap.exists()) {
           const data = snap.data();
           const raw = data.whatsappNumber || data.contactPhone || VERIFIED_WHATSAPP_NUMBER;
@@ -53,11 +56,14 @@ export const FloatingWhatsApp: React.FC = () => {
           }
         }
       } catch {
-        setPhoneNumber(VERIFIED_WHATSAPP_NUMBER);
+        if (active) setPhoneNumber(VERIFIED_WHATSAPP_NUMBER);
       }
     };
     void fetchNumber();
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [isExcluded]);
 
   // Collapse after ten seconds without page activity. Any normal page interaction
   // restores the full button and starts a fresh inactivity window.

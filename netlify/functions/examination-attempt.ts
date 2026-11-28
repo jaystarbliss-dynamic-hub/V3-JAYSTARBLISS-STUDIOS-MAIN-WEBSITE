@@ -25,6 +25,8 @@ import {
   normalizeClassName,
   isAttemptResultReleased,
   shouldAutoReleaseAttemptResult,
+  resolveAssessmentLayout,
+  canPauseAssessmentWorkType,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -353,7 +355,8 @@ export const handler: Handler = async event => {
       );
       const className = normalizeClassName(rawClass) || rawClass;
 
-      const hasDeadline = Boolean(a.deadlineAt);
+      const isAttemptPaused = Boolean(a.isPaused) && canPauseAssessmentWorkType(exam.workType);
+      const hasDeadline = Boolean(a.deadlineAt) && !isAttemptPaused;
       const deadline = hasDeadline ? new Date(a.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
       if (a.status === "in_progress" && hasDeadline && Number.isFinite(deadline) && Date.now() >= deadline) {
         const expiry = await adminDb.runTransaction(async tx => {
@@ -490,6 +493,14 @@ export const handler: Handler = async event => {
         : a.releasedAt || (released ? (a.updatedAt?.toDate ? a.updatedAt.toDate().toISOString() : a.updatedAt || new Date().toISOString()) : undefined);
       const submittedAtIso = a.submittedAt?.toDate ? a.submittedAt.toDate().toISOString() : a.submittedAt || undefined;
 
+      const resolvedAssessmentLayout = resolveAssessmentLayout(
+        {
+          assessmentLayoutSnapshot: a.assessmentLayoutSnapshot,
+          assessmentLayout: exam.assessmentLayout,
+        },
+        released ? resultQuestions : displayedQuestions
+      );
+
       return json(200, {
         attempt: {
           id,
@@ -500,7 +511,13 @@ export const handler: Handler = async event => {
           schoolId,
           schoolName,
           status: a.status,
-          deadlineAt: a.deadlineAt,
+          deadlineAt: isAttemptPaused ? null : a.deadlineAt,
+          isPaused: isAttemptPaused,
+          pausedAt: isAttemptPaused ? a.pausedAt || null : null,
+          remainingSecondsAtPause:
+            isAttemptPaused && typeof a.remainingSecondsAtPause === "number"
+              ? a.remainingSecondsAtPause
+              : null,
           submittedAt: submittedAtIso,
           answers: released ? a.answers || {} : submitted ? undefined : a.answers || {},
           score: released ? a.score : undefined,
@@ -526,6 +543,7 @@ export const handler: Handler = async event => {
           learningResources: Array.isArray(exam.learningResources) ? exam.learningResources : [],
           resourceUrl: exam.resourceUrl || exam.videoUrl || exam.learningVideoUrl || "",
           videoUrl: exam.videoUrl || exam.learningVideoUrl || "",
+          assessmentLayout: resolvedAssessmentLayout,
           hasTimeLimit:
             exam.hasTimeLimit !== undefined
               ? Boolean(exam.hasTimeLimit)
@@ -582,25 +600,145 @@ export const handler: Handler = async event => {
       if (a.status !== "in_progress") {
         return json(409, { error: "This assessment attempt is no longer editable." });
       }
-      const hasDeadline = Boolean(a.deadlineAt);
-      const deadline = hasDeadline ? new Date(a.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
-      const isExpired = hasDeadline && Number.isFinite(deadline) && Date.now() >= deadline;
-
       let examSnap = await adminDb.collection("jdiExams").doc(String(a.examId)).get();
       if (!examSnap.exists) {
         examSnap = await adminDb.collection("schoolExams").doc(String(a.examId)).get();
       }
       if (!examSnap.exists) return json(404, { error: "Assessment not found." });
       const exam = examSnap.data() || {};
+      const canPause = canPauseAssessmentWorkType(exam.workType);
+      const isAttemptPaused = Boolean(a.isPaused) && canPause;
+      const hasDeadline = Boolean(a.deadlineAt) && !isAttemptPaused;
+      const deadline = hasDeadline ? new Date(a.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
+      const isExpired = hasDeadline && Number.isFinite(deadline) && Date.now() >= deadline;
+
       const examStatusNorm = String(exam.status || "active").trim().toLowerCase();
       const isManuallyClosedAndLocked =
         (examStatusNorm === "completed" || examStatusNorm === "closed" || examStatusNorm === "archived") &&
         exam.allowInProgressFinish !== true;
 
-      if (isManuallyClosedAndLocked && (action === "save" || action === "submit")) {
+      if (isManuallyClosedAndLocked && (action === "save" || action === "submit" || action === "pause" || action === "resume")) {
         return json(409, {
           error: "This assessment has been closed and is no longer accepting responses.",
           status: "closed",
+        });
+      }
+
+      // Server-authoritative Pause (strictly ASSIGNMENT & ACTIVITY only — Tests & Examinations rejected with 403)
+      if (action === "pause") {
+        if (!canPause) {
+          return json(403, { error: "Tests and examinations cannot be paused." });
+        }
+        let cleanAnswers: Record<string, string | string[]> | null = null;
+        if (body.answers && typeof body.answers === "object" && !Array.isArray(body.answers)) {
+          if (Object.keys(body.answers).length > 200) {
+            return json(400, { error: "Invalid answers." });
+          }
+          const qs = resolveAttemptQuestions(exam, a);
+          const allowedIds = new Set(qs.map((q: any) => String(q.id)));
+          if (Object.keys(body.answers).some((k) => !allowedIds.has(k))) {
+            return json(400, { error: "Answers contain an unknown question ID." });
+          }
+          cleanAnswers = {};
+          for (const [k, v] of Object.entries(body.answers)) {
+            if (typeof v === "string") cleanAnswers[k] = v.slice(0, 10000);
+            else if (Array.isArray(v) && v.length <= 20 && v.every((item) => typeof item === "string")) {
+              cleanAnswers[k] = v.map((item) => item.slice(0, 500));
+            } else {
+              return json(400, { error: "Invalid answer format." });
+            }
+          }
+        }
+        const pauseResult = await adminDb.runTransaction(async (tx) => {
+          const currentSnap = await tx.get(ref);
+          if (!currentSnap.exists) return { kind: "missing" as const };
+          const current = currentSnap.data() || {};
+          if (current.studentUid !== c.uid && (!student || current.studentId !== student.id)) {
+            return { kind: "owner" as const };
+          }
+          if (current.status !== "in_progress") return { kind: "closed" as const };
+          if (current.isPaused === true) {
+            if (cleanAnswers) {
+              tx.update(ref, { answers: cleanAnswers, updatedAt: FieldValue.serverTimestamp() });
+            }
+            return {
+              kind: "ok" as const,
+              pausedAt: String(current.pausedAt || new Date().toISOString()),
+              remainingSecondsAtPause:
+                typeof current.remainingSecondsAtPause === "number" ? current.remainingSecondsAtPause : null,
+            };
+          }
+          let remainingSec: number | null = null;
+          if (current.deadlineAt) {
+            const dl = new Date(current.deadlineAt).getTime();
+            if (Number.isFinite(dl)) {
+              const diffSec = Math.floor((dl - Date.now()) / 1000);
+              if (diffSec <= 0) return { kind: "expired" as const };
+              remainingSec = diffSec;
+            }
+          }
+          const pausedAtIso = new Date().toISOString();
+          tx.update(ref, {
+            ...(cleanAnswers ? { answers: cleanAnswers } : {}),
+            isPaused: true,
+            pausedAt: pausedAtIso,
+            remainingSecondsAtPause: remainingSec,
+            deadlineAt: FieldValue.delete(),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          return { kind: "ok" as const, pausedAt: pausedAtIso, remainingSecondsAtPause: remainingSec };
+        });
+        if (pauseResult.kind === "missing") return json(404, { error: "Attempt not found." });
+        if (pauseResult.kind === "owner") return json(403, { error: "Not authorised." });
+        if (pauseResult.kind === "closed") return json(409, { error: "This assessment attempt is already closed." });
+        if (pauseResult.kind === "expired") {
+          return json(409, { error: "Time has already expired for this attempt.", status: "expired" });
+        }
+        return json(200, {
+          ok: true,
+          isPaused: true,
+          pausedAt: pauseResult.pausedAt,
+          remainingSecondsAtPause: pauseResult.remainingSecondsAtPause,
+        });
+      }
+
+      // Server-authoritative Resume (strictly ASSIGNMENT & ACTIVITY only — resumes exact remaining time)
+      if (action === "resume") {
+        if (!canPause) {
+          return json(403, { error: "Tests and examinations cannot be paused or resumed." });
+        }
+        const resumeResult = await adminDb.runTransaction(async (tx) => {
+          const currentSnap = await tx.get(ref);
+          if (!currentSnap.exists) return { kind: "missing" as const };
+          const current = currentSnap.data() || {};
+          if (current.studentUid !== c.uid && (!student || current.studentId !== student.id)) {
+            return { kind: "owner" as const };
+          }
+          if (current.status !== "in_progress") return { kind: "closed" as const };
+          if (!current.isPaused) {
+            return { kind: "ok" as const, deadlineAt: current.deadlineAt || null };
+          }
+          const remSec = Number(current.remainingSecondsAtPause || 0);
+          const nextDeadline =
+            Number.isFinite(remSec) && remSec > 0
+              ? new Date(Date.now() + remSec * 1000).toISOString()
+              : null;
+          tx.update(ref, {
+            isPaused: false,
+            pausedAt: FieldValue.delete(),
+            remainingSecondsAtPause: FieldValue.delete(),
+            deadlineAt: nextDeadline ? nextDeadline : FieldValue.delete(),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          return { kind: "ok" as const, deadlineAt: nextDeadline };
+        });
+        if (resumeResult.kind === "missing") return json(404, { error: "Attempt not found." });
+        if (resumeResult.kind === "owner") return json(403, { error: "Not authorised." });
+        if (resumeResult.kind === "closed") return json(409, { error: "This assessment attempt is already closed." });
+        return json(200, {
+          ok: true,
+          isPaused: false,
+          deadlineAt: resumeResult.deadlineAt,
         });
       }
 
@@ -761,6 +899,9 @@ export const handler: Handler = async event => {
             answers: finalAnswers,
             ...grading,
             status: finalStatus,
+            isPaused: false,
+            pausedAt: FieldValue.delete(),
+            remainingSecondsAtPause: FieldValue.delete(),
             ...(autoReleaseNow ? { resultReleased: true, releasedAt: FieldValue.serverTimestamp() } : {}),
             deadlineAt: FieldValue.delete(),
             submittedAt: FieldValue.serverTimestamp(),

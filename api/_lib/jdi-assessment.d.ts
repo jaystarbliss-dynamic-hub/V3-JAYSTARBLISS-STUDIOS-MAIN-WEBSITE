@@ -101,6 +101,7 @@ export function validateExamCreationPayload(
       questions: NormalizedQuestion[];
       questionCount: number;
       maxScore: number;
+      assessmentLayout?: AssessmentLayout;
       durationMinutes: number | null;
       gradingMode: "automatic" | "manual";
       codingLabConfig?: Record<string, any> | null;
@@ -348,6 +349,89 @@ export function mergeExamRecordByPrecedence(
   incomingSource?: "jdiExams" | "schoolExams" | "exams",
   nowMs?: number
 ): Record<string, any>;
+
+export type AssessmentContentBlockType = "instruction" | "text";
+
+export interface AssessmentQuestionRefItem {
+  id: string;
+  kind: "question";
+  questionId: string;
+}
+
+export interface AssessmentContentBlockItem {
+  id: string;
+  kind: "content";
+  blockType: AssessmentContentBlockType;
+  title?: string;
+  body: string;
+}
+
+export interface AssessmentComprehensionItem {
+  id: string;
+  kind: "comprehension";
+  title?: string;
+  body: string;
+  questionIds: string[];
+}
+
+export type AssessmentSectionItem =
+  | AssessmentQuestionRefItem
+  | AssessmentContentBlockItem
+  | AssessmentComprehensionItem;
+
+export interface AssessmentSection {
+  id: string;
+  title: string;
+  description?: string;
+  items: AssessmentSectionItem[];
+}
+
+export interface AssessmentLayout {
+  version: 1;
+  sections: AssessmentSection[];
+}
+
+export interface QuestionContextEntry {
+  section: AssessmentSection;
+  sectionIndex: number;
+  comprehension: AssessmentComprehensionItem | null;
+  comprehensionQuestionIndex: number;
+  comprehensionQuestionTotal: number;
+  precedingContentBlocks: AssessmentContentBlockItem[];
+}
+
+export function buildDefaultAssessmentLayout(questions?: Array<Record<string, any>>): AssessmentLayout;
+
+export function normalizeAssessmentLayout(
+  rawLayout: unknown,
+  questions?: Array<Record<string, any>>,
+  options?: { dropUnknownQuestions?: boolean }
+): { layout: AssessmentLayout; error?: never } | { error: string; layout?: never };
+
+export function resolveAssessmentLayout(
+  examOrAttempt?: Record<string, any> | null,
+  questions?: Array<Record<string, any>>
+): AssessmentLayout;
+
+export function shuffleArrayWithRng<T>(items: T[], rng?: () => number): T[];
+
+export function generateAttemptOrdering(
+  exam?: Record<string, any> | null,
+  questions?: Array<Record<string, any>>,
+  rng?: () => number
+): {
+  questionOrder: string[];
+  optionOrderMap: Record<string, string[]>;
+  assessmentLayoutSnapshot: AssessmentLayout;
+  questionOrderByGroup: Record<string, string[]>;
+};
+
+export function buildQuestionContextMap(
+  layout?: AssessmentLayout | null
+): Record<string, QuestionContextEntry>;
+
+export function canPauseAssessmentWorkType(workType?: unknown): boolean;
+
 
 
 

@@ -2,16 +2,16 @@
  * Server-verified Coding Lab assessment submission, structural auto-grading,
  * and tutor manual/hybrid grading + override audit trail endpoint.
  *
- * Security guarantees:
+ * Security & data-integrity guarantees:
  * - Verifies Firebase ID token on every request.
- * - Verifies assessment is active before accepting learner submission.
+ * - Requires a pre-existing `jdiExamAttempts/{attemptId}` owned by the caller for `assessmentId`.
+ * - Verifies `codingLabProjects/{projectId}` ownership AND assessmentId/attemptId binding.
  * - Reads compressed project JSON directly from Firestore (`codingLabProjects/{projectId}` + chunks),
  *   verifies SHA-256 hash, decompresses server-side, and computes automatic structural grade
  *   exclusively on the server (NEVER trusts client-supplied scores).
- * - Freezes the submitted project revision (`status: 'submitted'`) and creates an immutable
- *   `codingLabSubmissions/{submissionId}` record linked to `jdiExamAttempts/{attemptId}`.
- * - Enforces tutor/admin authorization via `canManageExamRecord` before recording manual grades
- *   or overrides, logging full override history.
+ * - Uses an atomic Firestore transaction (`adminDb.runTransaction`) with idempotent duplicate
+ *   submission handling (identical hash returns existing authoritative record; conflicting revision
+ *   returns 409 Conflict).
  */
 
 import zlib from 'node:zlib';
@@ -100,7 +100,7 @@ async function resolveCallerProfile(uid: string) {
     ? String(adminSnap.data()?.role || 'ADMIN')
     : String(uData.role || 'student');
   const name = String(uData.fullName || uData.name || uData.displayName || 'User');
-  const schoolId = String(uData.schoolId || '').trim();
+  const schoolId = String(uData.schoolId || uData.school_id || '').trim();
   return { role, name, schoolId };
 }
 
@@ -145,12 +145,13 @@ export const handler: Handler = async (event) => {
   const caller = await resolveCallerProfile(uid);
 
   // =========================================================================
-  // ACTION 1: LEARNER SUBMITS CODING LAB ASSESSMENT (IMMUTABLE SNAPSHOT)
+  // ACTION 1: LEARNER SUBMITS CODING LAB ASSESSMENT (TRANSACTIONAL + IDEMPOTENT)
   // =========================================================================
   if (action === 'submit_coding_assessment') {
     const assessmentId = String(body.assessmentId || '').trim();
     const attemptId = String(body.attemptId || '').trim();
     const projectId = String(body.projectId || '').trim();
+    const expectedPayloadHash = String(body.expectedPayloadHash || '').trim().toLowerCase();
 
     if (!assessmentId || !attemptId || !projectId) {
       return {
@@ -160,48 +161,45 @@ export const handler: Handler = async (event) => {
       };
     }
 
-    const [examSnap, attemptSnap] = await Promise.all([
-      adminDb.collection('jdiExams').doc(assessmentId).get(),
-      adminDb.collection('jdiExamAttempts').doc(attemptId).get(),
-    ]);
+    const examRef = adminDb.collection('jdiExams').doc(assessmentId);
+    const attemptRef = adminDb.collection('jdiExamAttempts').doc(attemptId);
+    const submissionId = `clsub_${attemptId}`;
+    const submissionRef = adminDb.collection('codingLabSubmissions').doc(submissionId);
+
+    const [examSnap, initialAttemptSnap] = await Promise.all([examRef.get(), attemptRef.get()]);
 
     if (!examSnap.exists) {
       return { statusCode: 404, headers: HEADERS, body: JSON.stringify({ error: 'Assessment not found.' }) };
     }
-    const exam = examSnap.data() as Record<string, any>;
-
-    // Server-side verification that assessment is open/active
-    const examStatus = String(exam.status || '').toLowerCase();
-    const allowFinish = Boolean(exam.allowInProgressFinish);
-    if (examStatus !== 'active' && !(examStatus === 'completed' && allowFinish && attemptSnap.exists)) {
+    if (!initialAttemptSnap.exists) {
       return {
-        statusCode: 403,
+        statusCode: 404,
         headers: HEADERS,
-        body: JSON.stringify({
-          error: 'This assessment is currently closed and cannot accept new submissions.',
-        }),
+        body: JSON.stringify({ error: 'Assessment attempt not found. Please relaunch from your portal.' }),
       };
     }
 
-    const attemptData = attemptSnap.exists ? (attemptSnap.data() as Record<string, any>) : null;
-    if (attemptData) {
-      const attemptOwner = String(attemptData.studentUid || attemptData.userId || '');
-      if (attemptOwner && attemptOwner !== uid) {
-        return {
-          statusCode: 403,
-          headers: HEADERS,
-          body: JSON.stringify({ error: 'You cannot submit another learner’s attempt.' }),
-        };
-      }
-      if (['submitted', 'graded', 'released'].includes(String(attemptData.status || '').toLowerCase())) {
-        return {
-          statusCode: 409,
-          headers: HEADERS,
-          body: JSON.stringify({ error: 'This attempt has already been submitted.' }),
-        };
-      }
+    const exam = examSnap.data() as Record<string, any>;
+    const initialAttempt = initialAttemptSnap.data() as Record<string, any>;
+
+    // Ownership & binding checks
+    const attemptOwner = String(initialAttempt.studentUid || initialAttempt.userId || '');
+    if (attemptOwner !== uid) {
+      return {
+        statusCode: 403,
+        headers: HEADERS,
+        body: JSON.stringify({ error: 'You cannot submit another learner’s attempt.' }),
+      };
+    }
+    if (String(initialAttempt.examId || '') !== assessmentId) {
+      return {
+        statusCode: 403,
+        headers: HEADERS,
+        body: JSON.stringify({ error: 'Attempt does not match the specified assessment.' }),
+      };
     }
 
+    // Load & SHA-256 verify project payload outside transaction (chunks subcollection read)
     let loaded;
     try {
       loaded = await loadAndVerifyProjectJsonServer(projectId);
@@ -220,14 +218,29 @@ export const handler: Handler = async (event) => {
         body: JSON.stringify({ error: 'Project ownership verification failed.' }),
       };
     }
-    if (String(loaded.projectData.status || '') === 'submitted') {
+    if (
+      String(loaded.projectData.assessmentId || '') !== assessmentId ||
+      String(loaded.projectData.attemptId || '') !== attemptId
+    ) {
       return {
-        statusCode: 409,
+        statusCode: 403,
         headers: HEADERS,
-        body: JSON.stringify({ error: 'This coding project revision has already been submitted.' }),
+        body: JSON.stringify({ error: 'Project does not belong to this assessment attempt.' }),
       };
     }
 
+    const candidateHash = expectedPayloadHash || loaded.verifiedHash;
+    if (expectedPayloadHash && expectedPayloadHash !== loaded.verifiedHash) {
+      return {
+        statusCode: 409,
+        headers: HEADERS,
+        body: JSON.stringify({
+          error: 'Saved project hash did not match expected revision. Please save progress and retry.',
+        }),
+      };
+    }
+
+    // Server-side structural rubric grading
     const codingConfig = exam.codingLabConfig || {};
     const gradingMethod: 'automatic' | 'manual' | 'hybrid' =
       codingConfig.gradingMethod === 'manual'
@@ -257,89 +270,152 @@ export const handler: Handler = async (event) => {
     const releaseImmediately =
       isAutoOnly && String(exam.releaseGradesPolicy || 'immediate').toLowerCase() !== 'manual';
 
-    const submittedIso = new Date().toISOString();
-    const submissionId = `clsub_${attemptId}`;
+    const examStatus = String(exam.status || '').toLowerCase();
+    const allowFinish = Boolean(exam.allowInProgressFinish);
 
-    const batch = adminDb.batch();
+    try {
+      const txResult = await adminDb.runTransaction(async (tx) => {
+        const [txAttemptSnap, txProjectSnap, txSubSnap] = await Promise.all([
+          tx.get(attemptRef),
+          tx.get(loaded.projectRef),
+          tx.get(submissionRef),
+        ]);
 
-    // 1. Freeze the project snapshot as immutable submitted revision
-    batch.update(loaded.projectRef, {
-      status: 'submitted',
-      submittedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+        if (!txAttemptSnap.exists || !txProjectSnap.exists) {
+          return { status: 404, error: 'Assessment attempt or project record no longer exists.' };
+        }
 
-    // 2. Write immutable submission record
-    const submissionDoc = {
-      id: submissionId,
-      projectId,
-      assessmentId,
-      learnerUid: uid,
-      learnerName: String(attemptData?.studentName || caller.name || 'Learner'),
-      schoolId: String(attemptData?.schoolId || exam.schoolId || caller.schoolId || ''),
-      attemptId,
-      attemptNumber: Number(attemptData?.attemptNumber || 1),
-      projectRevision: Number(loaded.projectData.revision || 1),
-      submittedAt: submittedIso,
-      submissionHash: loaded.verifiedHash,
-      gradingMethod,
-      gradingStatus: isAutoOnly ? 'auto_graded' : 'pending_manual_review',
-      automaticScore,
-      maxAutomaticScore: autoResult?.maxAutomaticScore ?? 0,
-      manualScore: null,
-      finalScore,
-      maxScore,
-      percentage,
-      criterionResults: autoResult?.criterionResults || [],
-      summaryMetrics: autoResult?.summaryMetrics || null,
-      tutorFeedback: '',
-      gradeOverrides: [],
-      resultReleased: releaseImmediately,
-      releasedAt: releaseImmediately ? submittedIso : null,
-      assetManifest: Array.isArray(loaded.projectData.assetManifest) ? loaded.projectData.assetManifest : [],
-      createdAt: FieldValue.serverTimestamp(),
-    };
-    batch.set(adminDb.collection('codingLabSubmissions').doc(submissionId), submissionDoc);
+        const txAttempt = txAttemptSnap.data() as Record<string, any>;
+        const txProject = txProjectSnap.data() as Record<string, any>;
 
-    // 3. Synchronize with existing jdiExamAttempts record so Tutor/School/Parent views stay unified
-    const attemptStatus = releaseImmediately ? 'released' : isAutoOnly ? 'graded' : 'submitted';
-    batch.set(
-      adminDb.collection('jdiExamAttempts').doc(attemptId),
-      {
-        examId: assessmentId,
-        studentUid: uid,
-        studentName: String(attemptData?.studentName || caller.name || 'Learner'),
-        schoolId: String(attemptData?.schoolId || exam.schoolId || caller.schoolId || ''),
-        deliveryMode: 'CODING_LAB',
-        codingLabProjectId: projectId,
-        codingLabSubmissionId: submissionId,
-        codingLabSubmissionHash: loaded.verifiedHash,
-        codingLabGradingMethod: gradingMethod,
-        codingLabAutoScore: automaticScore,
-        codingLabCriterionResults: autoResult?.criterionResults || [],
-        status: attemptStatus,
-        score: finalScore,
-        maxScore,
-        percentage,
-        autoGraded: isAutoOnly,
-        resultReleased: releaseImmediately,
-        releasedAt: releaseImmediately ? FieldValue.serverTimestamp() : null,
-        submittedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+        // Idempotent duplicate submission handling
+        if (txSubSnap.exists) {
+          const existingSub = txSubSnap.data() as Record<string, any>;
+          if (
+            String(existingSub.learnerUid || '') === uid &&
+            String(existingSub.submissionHash || '') === candidateHash
+          ) {
+            return { status: 200, submission: existingSub, idempotent: true };
+          }
+          return {
+            status: 409,
+            error: 'This assessment attempt has already been submitted with a different revision.',
+          };
+        }
 
-    await batch.commit();
+        if (['submitted', 'graded', 'released'].includes(String(txAttempt.status || '').toLowerCase())) {
+          return { status: 409, error: 'This attempt has already been submitted.' };
+        }
+        if (String(txProject.status || '') === 'submitted') {
+          return { status: 409, error: 'This coding project revision has already been submitted.' };
+        }
 
-    return {
-      statusCode: 200,
-      headers: HEADERS,
-      body: JSON.stringify({
-        ok: true,
-        submission: submissionDoc,
-      }),
-    };
+        if (examStatus !== 'active' && !(examStatus === 'completed' && allowFinish)) {
+          return {
+            status: 403,
+            error: 'This assessment is currently closed and cannot accept new submissions.',
+          };
+        }
+
+        const submittedIso = new Date().toISOString();
+        const submissionDoc = {
+          id: submissionId,
+          projectId,
+          assessmentId,
+          learnerUid: uid,
+          learnerName: String(txAttempt.studentName || caller.name || 'Learner'),
+          schoolId: String(txAttempt.schoolId || exam.schoolId || caller.schoolId || ''),
+          attemptId,
+          attemptNumber: Number(txAttempt.attemptNumber || 1),
+          projectRevision: Number(txProject.revision || 1),
+          submittedAt: submittedIso,
+          submissionHash: loaded.verifiedHash,
+          payloadHash: loaded.verifiedHash,
+          immutable: true,
+          gradingMethod,
+          gradingStatus: isAutoOnly ? 'auto_graded' : 'pending_manual_review',
+          automaticScore,
+          maxAutomaticScore: autoResult?.maxAutomaticScore ?? 0,
+          manualScore: null,
+          finalScore,
+          maxScore,
+          percentage,
+          criterionResults: autoResult?.criterionResults || [],
+          summaryMetrics: autoResult?.summaryMetrics || null,
+          tutorFeedback: '',
+          gradeOverrides: [],
+          resultReleased: releaseImmediately,
+          releasedAt: releaseImmediately ? submittedIso : null,
+          assetManifest: Array.isArray(txProject.assetManifest) ? txProject.assetManifest : [],
+          expiredAutoSubmit: Boolean(body.expiredAutoSubmit),
+          createdAt: FieldValue.serverTimestamp(),
+        };
+
+        tx.update(loaded.projectRef, {
+          status: 'submitted',
+          submittedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+
+        tx.set(submissionRef, submissionDoc);
+
+        const attemptStatus = releaseImmediately ? 'released' : isAutoOnly ? 'graded' : 'submitted';
+        tx.set(
+          attemptRef,
+          {
+            examId: assessmentId,
+            studentUid: uid,
+            studentName: String(txAttempt.studentName || caller.name || 'Learner'),
+            schoolId: String(txAttempt.schoolId || exam.schoolId || caller.schoolId || ''),
+            deliveryMode: 'CODING_LAB',
+            codingLabProjectId: projectId,
+            codingLabSubmissionId: submissionId,
+            codingLabSubmissionHash: loaded.verifiedHash,
+            codingLabGradingMethod: gradingMethod,
+            codingLabAutoScore: automaticScore,
+            codingLabCriterionResults: autoResult?.criterionResults || [],
+            status: attemptStatus,
+            score: finalScore,
+            maxScore,
+            percentage,
+            autoGraded: isAutoOnly,
+            resultReleased: releaseImmediately,
+            releasedAt: releaseImmediately ? FieldValue.serverTimestamp() : null,
+            submittedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        return { status: 200, submission: submissionDoc, idempotent: false };
+      });
+
+      if (txResult.status !== 200) {
+        return {
+          statusCode: txResult.status,
+          headers: HEADERS,
+          body: JSON.stringify({ error: txResult.error || 'Submission failed.' }),
+        };
+      }
+
+      return {
+        statusCode: 200,
+        headers: HEADERS,
+        body: JSON.stringify({
+          ok: true,
+          idempotent: Boolean(txResult.idempotent),
+          submission: txResult.submission,
+        }),
+      };
+    } catch (err) {
+      return {
+        statusCode: 500,
+        headers: HEADERS,
+        body: JSON.stringify({
+          error: err instanceof Error ? err.message : 'Transaction failed during submission.',
+        }),
+      };
+    }
   }
 
   // =========================================================================
@@ -456,7 +532,7 @@ export const handler: Handler = async (event) => {
           feedback: tutorFeedback,
           status: releaseResult || existingSub.resultReleased ? 'released' : 'graded',
           resultReleased: releaseResult || Boolean(existingSub.resultReleased),
-          releasedAt: releaseResult ? FieldValue.serverTimestamp() : undefined,
+          ...(releaseResult ? { releasedAt: FieldValue.serverTimestamp() } : {}),
           gradedByUid: uid,
           gradedByName: caller.name,
           updatedAt: FieldValue.serverTimestamp(),

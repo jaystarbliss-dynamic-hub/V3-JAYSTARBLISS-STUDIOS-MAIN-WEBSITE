@@ -9,7 +9,7 @@ export const SB3_LIMITS = {
   maxUncompressedBytes: 50 * 1024 * 1024, // 50 MiB
   maxFileCount: 250,
   maxProjectJsonBytes: 5 * 1024 * 1024, // 5 MiB
-  firestoreSingleDocThresholdBytes: 700 * 1024, // 700 KiB
+  firestoreSingleDocThresholdBytes: 550 * 1024, // 550 KiB (safe headroom for metadata + assetManifest under 1 MiB)
   firestoreChunkSizeBytes: 350 * 1024, // 350 KiB
   maxCustomImageBytes: 1024 * 1024, // 1 MiB
   maxCustomImagesPerProject: 20,
@@ -243,3 +243,33 @@ export function reassemblePayloadChunks(chunks) {
   }
   return combined;
 }
+
+/**
+ * Computes per-chunk SHA-256 hashes and identifies only changed/added chunks
+ * compared against previously persisted chunkHashes so unchanged chunks are never rewritten.
+ */
+export async function diffPayloadChunks(chunks, previousChunkHashes = []) {
+  const prevList = Array.isArray(previousChunkHashes) ? previousChunkHashes : [];
+  const nextChunkHashes = [];
+  const changedChunks = [];
+
+  for (const chunk of chunks) {
+    const hash = await sha256Hex(chunk.bytes);
+    nextChunkHashes.push(hash);
+    if (prevList[chunk.index] !== hash) {
+      changedChunks.push({ ...chunk, chunkHash: hash });
+    }
+  }
+
+  const obsoleteChunkIndices = [];
+  for (let i = chunks.length; i < prevList.length; i += 1) {
+    obsoleteChunkIndices.push(i);
+  }
+
+  return {
+    nextChunkHashes,
+    changedChunks,
+    obsoleteChunkIndices,
+  };
+}
+

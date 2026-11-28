@@ -1,5 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="68" height="80" viewBox="0 0 68 80">
-          <path d="M26 56 L26 16 L58 10 L58 48" fill="none" stroke="#4F46E5" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="68" height="80" viewBox="0 0 68 80" xmlns:xlink="http://www.w3.org/1999/xlink"><g data-paper-data="{&quot;isPaintingLayer&quot;:true}" fill-rule="nonzero" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" style="mix-blend-mode: normal"><path d="M26 56 L26 16 L58 10 L58 48" fill="none" stroke="#4F46E5" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
           <ellipse cx="18" cy="58" rx="11" ry="8" transform="rotate(-15 18 58)" fill="#6366F1" stroke="#312E81" stroke-width="2.5"/>
-          <ellipse cx="50" cy="50" rx="11" ry="8" transform="rotate(-15 50 50)" fill="#6366F1" stroke="#312E81" stroke-width="2.5"/>
-        </svg>
+          <ellipse cx="50" cy="50" rx="11" ry="8" transform="rotate(-15 50 50)" fill="#6366F1" stroke="#312E81" stroke-width="2.5"/></g></svg>

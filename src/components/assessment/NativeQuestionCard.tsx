@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   GripVertical,
   Trash2,
@@ -16,6 +16,7 @@ import {
   CheckSquare,
   HelpCircle,
   MoreVertical,
+  Unlink,
 } from 'lucide-react';
 
 export type QuestionTypeChoice =
@@ -53,6 +54,10 @@ interface NativeQuestionCardProps {
   onAddBelow: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  groupContextLabel?: string;
+  onUnlinkFromGroup?: () => void;
 }
 
 export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
@@ -68,8 +73,22 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
   onAddBelow,
   onMoveUp,
   onMoveDown,
+  canMoveUp,
+  canMoveDown,
+  groupContextLabel,
+  onUnlinkFromGroup,
 }) => {
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Auto-grow multiline question prompt vertically while keeping a generous 12-line minimum height
+  useEffect(() => {
+    const el = promptRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const minHeightPx = 288; // ~12 comfortable lines of text
+    el.style.height = `${Math.max(minHeightPx, el.scrollHeight)}px`;
+  }, [question.prompt]);
 
   // Normalize question type to one of the 5 canonical UI types
   const resolvedType: QuestionTypeChoice =
@@ -162,19 +181,38 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
       }`}
     >
       {/* Top Handle & Card Header */}
-      <div className="pt-2 px-4 flex items-center justify-between text-slate-400">
-        <div className="flex items-center gap-2">
-          <GripVertical size={16} className="cursor-grab text-slate-400 hover:text-slate-600" />
-          <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+      <div className="pt-2.5 px-4 flex flex-wrap items-center justify-between gap-2 text-slate-400">
+        <div className="flex items-center gap-2 min-w-0">
+          <GripVertical size={16} className="cursor-grab text-slate-400 hover:text-slate-600 shrink-0" />
+          <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
             Question {index + 1} of {totalQuestions}
           </span>
+          {groupContextLabel && (
+            <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800/60 px-2 py-0.5 rounded-md truncate">
+              {groupContextLabel}
+            </span>
+          )}
         </div>
 
-        {/* Quick Position Controls */}
-        <div className="flex items-center gap-1">
+        {/* Quick Position & Type Controls */}
+        <div className="flex items-center gap-1.5">
+          {onUnlinkFromGroup && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onUnlinkFromGroup();
+              }}
+              title="Move question out of comprehension passage"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <Unlink size={12} />
+              <span>Unlink</span>
+            </button>
+          )}
           <button
             type="button"
-            disabled={index === 0}
+            disabled={canMoveUp !== undefined ? !canMoveUp : index === 0}
             onClick={(e) => {
               e.stopPropagation();
               onMoveUp();
@@ -186,7 +224,7 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
           </button>
           <button
             type="button"
-            disabled={index === totalQuestions - 1}
+            disabled={canMoveDown !== undefined ? !canMoveDown : index === totalQuestions - 1}
             onClick={(e) => {
               e.stopPropagation();
               onMoveDown();
@@ -200,23 +238,20 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
       </div>
 
       <div className="p-4 sm:p-5 space-y-4">
-        {/* Row 1: Prompt Input + Question Type Selector */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          <div className="flex-1 w-full">
-            <input
-              type="text"
-              value={question.prompt}
-              onChange={(e) => onChange({ ...question, prompt: e.target.value })}
-              placeholder="Question title or prompt..."
-              className="w-full text-sm sm:text-base font-bold text-slate-900 dark:text-white bg-slate-50/70 dark:bg-slate-900/60 hover:bg-slate-100/70 dark:hover:bg-slate-900/90 focus:bg-white dark:focus:bg-slate-900 px-3.5 py-2.5 rounded-xl border border-transparent focus:border-[#1E293B] dark:focus:border-slate-400 focus:outline-none transition-all placeholder:text-slate-400"
-            />
-          </div>
-
-          <div className="w-full sm:w-auto shrink-0">
+        {/* Row 1: Multiline 12-line Auto-Expanding Prompt Editor + Question Type Selector */}
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label
+              htmlFor={`question-prompt-${question.id}`}
+              className="text-xs font-bold text-slate-600 dark:text-slate-300"
+            >
+              Question Prompt
+            </label>
             <select
               value={resolvedType}
               onChange={(e) => handleTypeChange(e.target.value as QuestionTypeChoice)}
-              className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#1E293B]/20 focus:border-[#1E293B] cursor-pointer"
+              aria-label="Question type"
+              className="w-full sm:w-auto px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#1E293B]/20 focus:border-[#1E293B] cursor-pointer"
             >
               <option value="multiple_choice">● Multiple Choice</option>
               <option value="short_answer">▬ Short Answer</option>
@@ -224,6 +259,24 @@ export const NativeQuestionCard: React.FC<NativeQuestionCardProps> = ({
               <option value="link_submission">🔗 Link Submission</option>
               <option value="image_submission">📷 Image Submission</option>
             </select>
+          </div>
+
+          <div className="w-full">
+            <textarea
+              id={`question-prompt-${question.id}`}
+              ref={promptRef}
+              rows={12}
+              value={question.prompt}
+              onChange={(e) => onChange({ ...question, prompt: e.target.value })}
+              onKeyDown={(e) => {
+                // Allow Enter to insert natural line breaks; never trigger parent form submission
+                if (e.key === 'Enter') {
+                  e.stopPropagation();
+                }
+              }}
+              placeholder="Write your question prompt here... Press Enter for paragraphs, scenarios, code snippets, or multi-step instructions."
+              className="w-full min-h-[288px] text-sm sm:text-base font-medium leading-relaxed text-slate-900 dark:text-slate-100 bg-slate-50/80 dark:bg-slate-900/70 hover:bg-slate-100/70 dark:hover:bg-slate-900/90 focus:bg-white dark:focus:bg-slate-900 px-4 py-3 rounded-xl border border-slate-200/90 dark:border-slate-700/80 focus:border-[#1E293B] dark:focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1E293B]/10 dark:focus:ring-white/10 transition-colors resize-none overflow-hidden placeholder:text-slate-400"
+            />
           </div>
         </div>
 

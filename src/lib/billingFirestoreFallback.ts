@@ -319,6 +319,9 @@ async function resolveCurrentAdminActor(): Promise<{
     SUPER_ADMIN_EMAILS.has(email) ||
     role === 'superadmin' ||
     String(uData?.role || '').toUpperCase() === 'SUPER_ADMIN';
+  if (!isSuperAdmin && role !== 'admin') {
+    throw new Error('Administrator privileges are required.');
+  }
   const name = String(uData?.fullName || uData?.name || user.displayName || email || 'Administrator');
   return { uid: user.uid, email, name, isSuperAdmin };
 }

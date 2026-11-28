@@ -5,8 +5,8 @@ import CodingLabEditorHost from '../components/coding-lab/CodingLabEditorHost';
 import { CODING_LAB_CONFIG } from '../config/codingLabConfig';
 
 /**
- * Standalone Coding Lab — Project Showcase / Playground Mode.
- * Strictly local (.sb3 download/import + IndexedDB device recovery).
+ * Dedicated Full-Screen Coding Lab — Project Playground Mode.
+ * Strictly local (.sb3 download/import + bounded IndexedDB device recovery).
  * Never writes project data to Firestore or uploads images to Cloudinary.
  */
 const CodingLabPlaygroundPage: React.FC = () => {
@@ -23,7 +23,7 @@ const CodingLabPlaygroundPage: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/portfolio')}
-            className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold"
+            className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold cursor-pointer"
           >
             Return to Projects &amp; Showcase
           </button>
@@ -33,18 +33,17 @@ const CodingLabPlaygroundPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen lg:h-screen w-full flex flex-col bg-slate-100 dark:bg-slate-950 p-1 sm:p-2 overflow-auto lg:overflow-hidden">
+    <div className="h-[100dvh] w-full flex flex-col overflow-hidden bg-slate-100">
       <SEO
         title="Coding Lab | Jaystarbliss Dynamic Institute"
         description="Build interactive visual programming projects in Coding Lab and save standard .sb3 project files directly to your computer."
       />
-      <div className="flex-1 min-h-[680px] lg:min-h-0 flex">
-        <CodingLabEditorHost
-          mode="playground"
-          onExit={() => navigate('/portfolio')}
-          exitLabel="Projects & Showcase"
-        />
-      </div>
+      <CodingLabEditorHost
+        mode="playground"
+        fullViewport
+        onExit={() => navigate('/portfolio')}
+        exitLabel="Projects & Showcase"
+      />
     </div>
   );
 };

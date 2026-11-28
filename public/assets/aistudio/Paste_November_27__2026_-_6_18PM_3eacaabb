@@ -1,0 +1,1427 @@
+# MASTER IMPLEMENTATION PROMPT: ASSESSMENT BUILDER, COMPREHENSION GROUPS, SECTION-BASED ASSESSMENTS & STUDENT EXAMINATION EXPERIENCE REFINEMENT
+
+## PROJECT
+
+**Repository:** `jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE`
+
+**Branch:** `main`
+
+**Platform:** Jaystarbliss Studios / Jaystarbliss Dynamic Institute
+
+**Technology:** React, TypeScript, Vite, Firebase Authentication, Cloud Firestore, Netlify Serverless Functions and Tailwind CSS.
+
+---
+
+# 1. YOUR ROLE AND PRIMARY OBJECTIVE
+
+Act as a senior full-stack engineer, software architect, UX engineer and QA specialist working directly within the existing Jaystarbliss Studios repository.
+
+Your assignment is to comprehensively improve the assessment creation, assessment structure, question randomization, and student assessment-taking experience.
+
+This is not a request to build a new assessment application.
+
+It is an improvement to the existing assessment infrastructure. You must understand the existing architecture, inspect how the different components interact, and extend the current implementation without compromising existing functionality.
+
+The target experience should combine the flexibility of Google Forms with a more refined, professional academic examination platform.
+
+We need to introduce:
+
+1. Non-answer content blocks.
+2. Comprehension passages with linked questions.
+3. Organised assessment sections.
+4. Section-aware question randomization.
+5. A better multiline question editor.
+6. A much cleaner tutor assessment workspace.
+7. A distraction-free, full-screen student assessment interface.
+8. A compact, continuously visible examination timer.
+9. Better presentation of the existing focused and all-questions viewing modes.
+10. Proper light-mode and dark-mode support.
+
+**Do not stop after inspecting the repository or producing an implementation plan. Complete the investigation, implement the changes, run the available quality checks and report the outcome.**
+
+Do not commit, push, merge or deploy changes. Work within the repository workspace only.
+
+---
+
+# 2. FIRST: CONDUCT A TARGETED REPOSITORY AUDIT
+
+Before editing anything, inspect the relevant implementation and understand the existing data flow.
+
+Start with these files:
+
+### Tutor assessment authoring
+
+- `src/pages/portal/TutorExaminations.tsx`
+- `src/components/assessment/AssessmentEditor.tsx`
+- `src/components/assessment/NativeQuestionCard.tsx`
+- `src/components/assessment/AssessmentWizard.tsx`
+- `src/components/assessment/ImportQuestionsModal.tsx`
+- `src/components/assessment/AssessmentOverview.tsx`
+
+Verify which assessment editor is actually rendered by the current tutor workflow. Avoid introducing two competing assessment implementations.
+
+The main existing workspace is the `AssessmentEditor`, rendered from `TutorExaminations.tsx`.
+
+### Student assessment experience
+
+- `src/pages/portal/StudentExaminations.tsx`
+- `src/pages/portal/StudentExamAttempt.tsx`
+- `src/App.tsx`
+- `src/components/portal/PortalLayout.tsx`
+
+### Assessment backend and domain logic
+
+- `api/_lib/jdi-assessment.js`
+- `api/_lib/jdi-assessment.d.ts`
+- `netlify/functions/jdi-examinations.ts`
+- `netlify/functions/examination-attempt.ts`
+- `netlify/functions/examination-passcode.ts`
+
+### Domain types and tests
+
+- `src/modules/examinations/types.ts`
+- `tests/jdi-assessment.test.mjs`
+- `.github/workflows/assessment-quality.yml`
+- `package.json`
+
+Inspect relevant Firestore security rules, indexes, existing assessment projections and any shared assessment utilities as necessary.
+
+Trace the complete lifecycle:
+
+Tutor creates assessment → assessment is normalized and saved → student receives assessment → student starts attempt → individual question and option orders are generated → attempt data is loaded → answers are saved → assessment is submitted → results are graded and released.
+
+Understand this before changing the implementation.
+
+Do not assume that adding a field to the React component automatically makes it persist correctly. The current server-side validation and normalization deliberately restrict the question schema.
+
+---
+
+# 3. INTRODUCE A PROPER ASSESSMENT CONTENT-BLOCK SYSTEM
+
+## The problem
+
+At the moment, the assessment builder is primarily designed around conventional questions.
+
+However, tutors frequently need to provide material that students must read or study before answering subsequent questions.
+
+For example:
+
+A tutor may want to create:
+
+**COMPREHENSION PASSAGE**
+
+Read the following passage carefully.
+
+[Several paragraphs of reading material appear here.]
+
+**QUESTIONS**
+
+1. What is the central idea of the passage?
+2. Why did the character leave the village?
+3. Which statement best describes the author's intention?
+4. Identify two lessons that can be learnt from the passage.
+
+The passage is not a question.
+
+It does not have marks, an answer field, a correct option or a required response.
+
+It is simply content belonging to the assessment.
+
+We need to support this properly.
+
+## A. Add an assessment content-block system
+
+Introduce a clear way for tutors to insert different content elements into an assessment.
+
+The Add control should offer a simple, understandable menu containing:
+
+- Add Question
+- Add Comprehension Passage
+- Add Text / Instructions
+- Add Section
+
+These elements should have distinctly different purposes.
+
+### 1. Question
+
+This remains an existing answerable assessment question.
+
+It should retain all the current question types, marking options, point values, required settings and grading capabilities.
+
+### 2. Comprehension Passage
+
+This creates a non-answerable reading passage.
+
+A tutor should be able to enter:
+
+- Passage title or heading.
+- Full passage content.
+- Multiple paragraphs.
+- Line breaks.
+- Long-form text.
+
+The passage must not carry marks or appear as a response item.
+
+Most importantly, the tutor must be able to associate subsequent questions with that passage.
+
+Provide a clear grouping interface that makes it obvious which questions belong to a particular comprehension.
+
+For example:
+
+COMPREHENSION 1
+
+[Editable passage]
+
+Questions associated with this passage:
+
+- Question 1
+- Question 2
+- Question 3
+- Question 4
+
+The tutor should be able to:
+
+- Add a question directly to the comprehension group.
+- Remove a question from the group.
+- Move a question within the group.
+- Reorder the comprehension group as a unit.
+- Edit the passage without losing its associated questions.
+- Add another comprehension group elsewhere in the assessment.
+
+A comprehension group and its passage must remain logically connected.
+
+If a tutor deletes a comprehension passage that has questions attached to it, show an appropriate confirmation and explain what will happen to those questions. Never silently delete student-facing question content.
+
+### 3. Text / Instructions
+
+This is a general-purpose content block.
+
+Examples include:
+
+- Read the following instructions before continuing.
+- Study the table below.
+- Refer to the information provided.
+- Use the diagram above to answer Questions 5–8.
+- Section introduction.
+- Additional learning material.
+
+This block does not require a student response and does not contribute to the assessment score.
+
+### 4. Section
+
+Introduce a way for tutors to divide an assessment into meaningful sections.
+
+Examples:
+
+Section A – Comprehension
+
+Section B – Multiple Choice
+
+Section C – Short Answer Questions
+
+Section D – Essay
+
+Each section can contain ordinary questions, content blocks and comprehension groups.
+
+This should make the system flexible enough to create different assessment formats, including survey-style forms and structured questionnaires, without creating an entirely separate assessment engine.
+
+Do not assume surveys must be anonymous. Preserve the existing student identity, submission and response-tracking architecture unless a separate anonymous-survey feature is explicitly designed later.
+
+---
+
+# 4. DATA MODEL: DESIGN THIS CAREFULLY
+
+This is one of the most important parts of the implementation.
+
+The current assessment system stores answerable questions in a flat `questions[]` array.
+
+The existing marking, grading, result calculations, manual grading and question snapshots depend on this structure.
+
+**Do not simply insert comprehension passages or generic text blocks into the existing questions array and treat them as questions.**
+
+That would risk breaking:
+
+- Question validation.
+- Mark calculations.
+- Total assessment scores.
+- Automated grading.
+- Manual grading.
+- Required-question validation.
+- Response counts.
+- Result reports.
+- Question navigation.
+- Existing student attempts.
+
+Instead, introduce a separate, versioned assessment-layout structure.
+
+A suggested conceptual model is:
+
+```ts
+assessmentLayout: {
+  version: 1,
+  sections: [
+    {
+      id: "section_1",
+      title: "Section A",
+      description: "Comprehension",
+      items: [
+        {
+          id: "content_1",
+          kind: "content",
+          contentType: "instruction",
+          title: "Instructions",
+          body: "Read the passage carefully."
+        },
+        {
+          id: "comprehension_1",
+          kind: "comprehension",
+          passage: {
+            id: "passage_1",
+            title: "The Village by the River",
+            body: "Full passage..."
+          },
+          questionIds: [
+            "question_1",
+            "question_2",
+            "question_3"
+          ]
+        },
+        {
+          id: "question_item_1",
+          kind: "question",
+          questionId: "question_4"
+        }
+      ]
+    }
+  ]
+}
+```
+
+This is a conceptual starting point. Adapt it to the existing codebase and its conventions.
+
+The critical rules are:
+
+1. Actual answerable questions remain in `questions[]`.
+2. Content blocks are stored separately in `assessmentLayout`.
+3. Comprehension groups reference existing question IDs.
+4. Every answerable question should appear exactly once in the assessment layout.
+5. A question must not accidentally become part of multiple comprehension groups.
+6. Every content block and question must have stable IDs.
+7. Reordering the assessment should not regenerate IDs.
+8. Content blocks should never contribute marks.
+9. Layout data must be validated and safely persisted by the backend.
+
+Update the required TypeScript interfaces and declarations.
+
+Pay special attention to `normalizeQuestions()` and `validateExamCreationPayload()` in `api/_lib/jdi-assessment.js`.
+
+The current normalization logic explicitly constructs normalized question objects. Additional fields can be discarded unless they are deliberately supported.
+
+You must ensure that:
+
+- Existing question validation remains intact.
+- Layout data is independently validated.
+- Invalid question references are rejected.
+- Duplicate layout references are prevented.
+- Passage content has reasonable size limits.
+- Unsupported block types are rejected.
+- Missing layout data is handled safely.
+
+Update the tutor-safe and student-safe projections as appropriate.
+
+Relevant locations include `tutorSafe()` in `netlify/functions/jdi-examinations.ts` and the response construction in `netlify/functions/examination-attempt.ts`.
+
+Do not expose correct answers, accepted answers, marking explanations or other restricted information in student-facing content projections.
+
+---
+
+# 5. BACKWARD COMPATIBILITY IS MANDATORY
+
+There are already assessments in the database.
+
+Some contain ordinary questions only. Others may use legacy fields or older question types.
+
+Do not make existing assessments unreadable because they lack `assessmentLayout`.
+
+When an assessment has questions but no layout:
+
+- Generate an in-memory default layout.
+- Preserve the original question order.
+- Place existing questions in a default section.
+- Do not modify the stored assessment unnecessarily just to construct the display.
+- Allow tutors to edit and save the assessment using the new layout structure.
+
+Existing attempts must continue to load using their original snapshots.
+
+Do not perform a destructive migration.
+
+Do not reset question IDs, answer records or student attempt histories.
+
+---
+
+# 6. IMPROVE THE QUESTION WRITING EXPERIENCE
+
+## Current problem
+
+`src/components/assessment/NativeQuestionCard.tsx` currently uses a single-line text input for the question prompt.
+
+This is inadequate for tutors writing:
+
+- Long questions.
+- Mathematical explanations.
+- Detailed scenarios.
+- Multi-line instructions.
+- Questions containing several paragraphs.
+- Complex examination questions.
+
+## Required improvement
+
+Replace the single-line prompt input with an expandable multiline textarea.
+
+Requirements:
+
+1. It must initially show approximately 10–12 visible lines.
+2. Prefer 12 visible lines as the starting size.
+3. Pressing Enter must create a new line.
+4. It must expand vertically as the tutor types.
+5. It must not force tutors to scroll inside a tiny input box.
+6. It must preserve paragraph breaks and line breaks.
+7. It must work properly on desktop, tablet and mobile.
+8. It must have appropriate focus, hover and border states.
+9. It should feel like a proper writing area rather than a small form input.
+
+Implement a reliable auto-resize mechanism using the existing React conventions.
+
+Do not use a fixed height that cuts off content.
+
+Do not prevent Enter from creating a newline.
+
+Do not accidentally submit the assessment form when Enter is pressed inside the textarea.
+
+Apply appropriate multiline editing behaviour to the new comprehension passage and text/instruction editors as well.
+
+The text should render with preserved line breaks on the student side.
+
+Avoid introducing unnecessary editor dependencies unless the existing dependencies genuinely cannot support the required experience.
+
+A simple, well-designed textarea is perfectly acceptable for the first implementation.
+
+If a rich-text editor is considered, ensure that it is secure, compatible with existing dependencies, mobile-friendly and safe to render.
+
+---
+
+# 7. IMPLEMENT COMPREHENSION-AWARE QUESTION RANDOMIZATION
+
+This is a critical functional requirement.
+
+The existing system already supports:
+
+- `shuffleQuestions`
+- `shuffleOptions`
+
+The server-side attempt creation currently generates:
+
+- `questionOrder`
+- `optionOrderMap`
+- `questionsSnapshot`
+
+However, question randomization currently operates on the entire flat list of questions.
+
+That means questions associated with a comprehension passage can be separated from their passage.
+
+We must correct this.
+
+## A. Preserve comprehension relationships
+
+A comprehension passage must always remain with its associated questions.
+
+For example:
+
+Comprehension passage:
+
+"The Lost Treasure"
+
+Associated questions:
+
+Q1. Where was the treasure discovered?
+
+Q2. Who discovered it?
+
+Q3. What happened after the discovery?
+
+Q4. Which statement is correct?
+
+When `shuffleQuestions` is enabled, the student might receive:
+
+The Lost Treasure
+
+Q3
+
+Q1
+
+Q4
+
+Q2
+
+This is acceptable.
+
+But the student must never receive:
+
+Q3
+
+Q1
+
+Q4
+
+Another unrelated question
+
+The comprehension passage much later in the assessment
+
+That is not acceptable.
+
+## B. Implement group-aware shuffling
+
+Update the server-side question-order generation logic.
+
+Instead of blindly shuffling every question ID globally:
+
+1. Identify the assessment sections and their ordered content blocks.
+2. Identify all comprehension groups.
+3. Keep each comprehension passage attached to its question group.
+4. When question shuffling is enabled, shuffle the child questions within their own comprehension group.
+5. Preserve the passage as the introductory content for that group.
+6. Never move a comprehension question outside its parent group.
+7. Preserve the overall section and content-block relationships.
+8. Do not shuffle questions across unrelated comprehension passages.
+
+For ordinary standalone questions, allow randomization within safe boundaries, such as a run of ordinary questions within a section, without crossing a content or comprehension boundary.
+
+The objective is to randomize questions without destroying the educational context in which they appear.
+
+## C. Option randomization
+
+Option randomization should continue working independently.
+
+When `shuffleOptions` is enabled:
+
+- Randomize the options of eligible multiple-choice questions.
+- Use stable option IDs.
+- Preserve the correct-option references.
+- Do not accidentally change the correct answer because an option moved from position A to B.
+- Do not shuffle essay or short-answer response fields.
+
+The current `optionOrderMap` approach should be retained and extended as necessary.
+
+## D. Store a consistent attempt snapshot
+
+Each student attempt must capture the assessment structure that applies to that attempt.
+
+Continue using the existing immutable `questionsSnapshot`.
+
+Introduce a corresponding immutable layout/content snapshot, such as:
+
+`assessmentLayoutSnapshot`
+
+Also persist the group-aware question order, preferably using an explicit structure such as:
+
+`questionOrderByGroup`
+
+You may use another name if it better fits the existing architecture.
+
+The important requirement is that the student always receives the exact assessment structure and randomization assigned when the attempt started.
+
+If a tutor later edits the assessment, existing in-progress attempts must not unexpectedly lose their original passage or question-group structure.
+
+Keep the current attempt ownership, access checks, attempt limits and deadline logic.
+
+## E. Fix all attempt-creation paths
+
+Inspect both:
+
+- The main server-side attempt-creation flow in `netlify/functions/jdi-examinations.ts`.
+- The direct Firestore fallback in `src/pages/portal/StudentExaminations.tsx`.
+
+The fallback currently creates attempts without the same `questionOrder` and `optionOrderMap` used by the server-side path.
+
+This must not remain inconsistent.
+
+Prefer one authoritative server-side attempt-creation process.
+
+If a fallback remains necessary, it must preserve the same access control, attempt limits, stable IDs, group-aware question ordering, option ordering and immutable snapshots.
+
+Do not introduce a client-side randomization workaround that bypasses server-side attempt controls.
+
+Also inspect the attempt-reading flow in `netlify/functions/examination-attempt.ts` and `src/pages/portal/StudentExamAttempt.tsx`.
+
+Ensure the displayed order is reconstructed correctly from stable IDs and the saved layout snapshot.
+
+Legacy attempts without group-aware metadata must continue using their existing saved `questionOrder` or original question sequence.
+
+---
+
+# 8. REFINE THE TUTOR ASSESSMENT WORKSPACE
+
+The current three-tab workspace is:
+
+- Questions
+- Responses
+- Settings
+
+We should keep these tabs.
+
+The issue is not that the workspace has too many capabilities. The issue is that the presentation of those capabilities is crowded and lacks proper visual hierarchy.
+
+We need to refine the experience without removing useful functionality.
+
+## A. Assessment title
+
+The assessment title currently appears in a very small input in the top toolbar and is also editable in the Questions tab.
+
+This makes it look like a minor field rather than the main identity of the assessment.
+
+Improve this.
+
+The assessment title should be treated as the primary page heading.
+
+Requirements:
+
+- Use a visibly larger, proper heading treatment.
+- Give it enough horizontal space.
+- Make it easy to edit.
+- Ensure long assessment titles do not disappear through excessive truncation.
+- Retain the existing title state and save logic.
+- Avoid having two visually competing title fields.
+- Keep a compact document/status indicator in the upper toolbar if required.
+
+The title area should resemble a professional document editor.
+
+## B. Refine the toolbar
+
+The current sticky toolbar attempts to display:
+
+- Back navigation.
+- Title.
+- Assessment status.
+- Three tabs.
+- Recipient count.
+- Preview.
+- Save.
+- Publish.
+- Additional status controls.
+
+This becomes cramped, especially at smaller widths.
+
+Reorganize it with a clearer hierarchy.
+
+Suggested arrangement:
+
+**Top row**
+- Back to assessments.
+- Compact assessment identity/status.
+- Save or Publish actions.
+
+**Second row**
+- Questions.
+- Responses.
+- Settings.
+
+On smaller screens, controls must wrap or reorganize intelligently.
+
+No overlapping controls, tiny text, clipped buttons or horizontal overflow.
+
+Maintain the functionality of all existing actions.
+
+## C. Questions workspace
+
+The Questions workspace contains several options that are necessary, but they currently compete for attention.
+
+Improve the visual organization.
+
+Use logically separated areas:
+
+1. Assessment identity and instructions.
+2. Assessment configuration and recipient information.
+3. Assessment content and sections.
+4. Question/content insertion controls.
+5. Question-specific editing.
+
+Avoid stacking excessive nested cards inside other cards.
+
+Use appropriate spacing, section labels and consistent alignment.
+
+The question count and total marks should remain visible without dominating the page.
+
+## D. Settings workspace
+
+Do not remove important settings simply to make the design cleaner.
+
+The existing settings include:
+
+- Time limits.
+- Passcode configuration.
+- Attempt limits.
+- Question randomization.
+- Option randomization.
+- Grading settings.
+- Result-release settings.
+- Availability dates.
+- Submission confirmation.
+- Other existing configuration options.
+
+Retain these capabilities.
+
+Group related controls into clear, collapsible settings categories where appropriate.
+
+For example:
+
+**Assessment Access**
+- Passcode
+- Availability
+
+**Timing and Attempts**
+- Duration
+- Attempt limits
+
+**Question Randomization**
+- Shuffle questions
+- Shuffle answer options
+
+**Grading and Results**
+- Grading mode
+- Result release policy
+- Feedback options
+
+Do not hide critical options in confusing menus.
+
+Keep their labels, explanatory text and current functionality.
+
+## E. Responses workspace
+
+Preserve all current response management, grading, review, export and result-release functionality.
+
+The visual refinement must not break:
+
+- Student response retrieval.
+- Manual grading.
+- Tutor remarks.
+- Result release.
+- CSV export.
+- Student attempt history.
+- Recalculation of marks after assessment edits.
+
+---
+
+# 9. CREATE A CLEAN, FULL-SCREEN STUDENT ASSESSMENT EXPERIENCE
+
+This is another major requirement.
+
+## Current problem
+
+In `src/App.tsx`, the student's assessment attempt route is nested inside the protected student route that renders `PortalLayout`.
+
+As a result, students can still receive portal navigation elements and sidebars when opening an assessment.
+
+We want the assessment itself to be the entire experience.
+
+## A. Standalone assessment route
+
+When a student opens an assessment attempt:
+
+- Open the assessment in a dedicated full-screen page.
+- Do not display the normal portal sidebar.
+- Do not display the portal's normal navigation menu.
+- Do not display unrelated dashboard cards or navigation.
+- Do not waste screen space with portal elements.
+- Give the assessment its own clean content layout.
+
+Maintain the existing assessment URL where possible.
+
+Modify the routing architecture carefully so that the attempt page is rendered outside the normal `PortalLayout`.
+
+However, this is important:
+
+**Do not remove the existing authentication or student-role protection.**
+
+The new standalone route must still use the appropriate `ProtectedRoute` or equivalent authentication and authorization checks.
+
+Ensure the route is not accidentally matched twice.
+
+Do not weaken access control merely to achieve a full-screen design.
+
+The full-screen assessment interface should be isolated from the dashboard presentation, not isolated from security.
+
+---
+
+# 10. REDESIGN THE STUDENT ASSESSMENT HEADER
+
+The existing student assessment header is a large, sticky navy-blue panel containing:
+
+- Assessment name.
+- Subject.
+- Answered count.
+- Viewing-mode controls.
+- Timer.
+
+It occupies too much vertical space.
+
+This makes it difficult for students to see the actual assessment questions, particularly on mobile devices.
+
+We need a substantially more streamlined design.
+
+## A. Assessment title should scroll away naturally
+
+At the beginning of the assessment, display:
+
+- Assessment title.
+- Subject.
+- Assessment instructions, where appropriate.
+- Relevant introductory information.
+
+This should appear as normal page content, not a permanently sticky header.
+
+When the student scrolls down, the title and introductory content should naturally scroll out of view.
+
+Do not keep the entire assessment title panel fixed on the screen.
+
+## B. Timer must remain visible
+
+The timer should be separate from the assessment title.
+
+Position it as a compact, persistent timer near the top-right corner of the screen.
+
+Requirements:
+
+- Remain visible while students scroll.
+- Consume as little screen space as possible.
+- Use clear numerical typography.
+- Display the countdown accurately.
+- Have an appropriate warning state when time is running low.
+- Have an appropriate expired state.
+- Work on desktop and mobile.
+- Respect screen safe areas where necessary.
+
+The timer should be a small, independent floating or sticky component rather than part of a giant blue header.
+
+Do not let it cover questions, answer options, buttons or other essential controls.
+
+Do not sacrifice mobile usability to maintain a fixed position.
+
+## C. Preserve the existing timer logic
+
+The existing page uses the persisted attempt `deadlineAt`, calculates remaining time and expires attempts when the deadline is genuinely reached.
+
+Preserve this architecture.
+
+The timer must:
+
+- Continue counting accurately.
+- Recalculate from the actual deadline after reload.
+- Remain consistent after navigation.
+- Not reset just because a student closes and reopens the page.
+- Continue running for timed Tests and Examinations.
+- Trigger the existing automatic submission/expiry mechanism appropriately.
+
+Do not replace the server-authoritative deadline with a browser-only countdown.
+
+---
+
+# 11. REMOVE ALL FLAMES AND FIRE VISUALS
+
+There are multiple flame-related visuals in `StudentExamAttempt.tsx`.
+
+These include:
+
+- The `Flame` icon beside the focused quiz player.
+- The large "Quiz Time" heading with glowing flames.
+- Associated flame styling and effects.
+
+Remove all of them.
+
+We do not want:
+
+- Fire icons.
+- Flame icons.
+- Glowing fire effects.
+- Pulsating flames.
+- Fire-related decorative branding.
+
+Also remove the flame-themed visual identity of the current focused quiz mode.
+
+Replace it with a calm, professional examination interface.
+
+Use appropriate neutral interface icons where necessary.
+
+The assessment should feel like a proper academic platform, not a game or entertainment interface.
+
+---
+
+# 12. PRESERVE AND IMPROVE THE TWO EXISTING ASSESSMENT VIEWING MODES
+
+The student assessment page already has two viewing modes:
+
+1. `focused`
+2. `all`
+
+They must remain.
+
+Do not remove either mode or introduce a third mode unnecessarily.
+
+## Mode 1: One question at a time
+
+The focused mode should present one answerable question at a time.
+
+Use a clean layout:
+
+- Question number.
+- Question prompt.
+- Passage/content context where applicable.
+- Answer options or response field.
+- Navigation controls.
+- Progress indicator.
+
+For a comprehension question, the associated passage must remain available.
+
+Do not display a comprehension question without its passage context.
+
+The passage can be shown immediately above the question, in a clear reading panel, or through another equally usable presentation.
+
+The student must be able to understand the passage while answering each question.
+
+The passage must not become a fake question or appear in the answer review as an unanswered item.
+
+When moving from one question to the next within the same comprehension group, preserve the passage context.
+
+When navigating into another comprehension group, show its own passage.
+
+## Mode 2: All questions
+
+The all-questions mode should display the assessment as a continuous, well-organized document.
+
+The order should be:
+
+Section heading → content block → comprehension passage → its associated questions → next assessment content.
+
+A passage should appear once before its associated questions in this mode, not be repeated as a separate answer item.
+
+Allow students to scroll naturally through the assessment.
+
+The student should be able to see questions clearly without unnecessary decorative panels.
+
+## Viewing-mode controls
+
+Replace the current flame-based focused-mode control with a simple, professional icon and clear label.
+
+Suggested labels:
+
+- One at a time
+- All questions
+
+Use the existing `List` icon or another appropriate non-decorative Lucide icon.
+
+The two controls should look consistent and work on touch screens.
+
+Do not make the design depend on a dark navy background.
+
+Use the same theme-aware visual system as the rest of the platform.
+
+---
+
+# 13. HANDLE ASSIGNMENTS, ACTIVITIES, TESTS AND EXAMINATIONS DIFFERENTLY
+
+The existing assessment system supports different work types:
+
+- ASSIGNMENT
+- ACTIVITY
+- TEST
+- EXAMINATION
+
+Their time and exit behaviour should not be treated identically.
+
+## A. Assignments and Activities
+
+These should support a save-and-exit or pause-and-resume workflow.
+
+Where a timed Assignment or Activity is configured:
+
+- Provide an explicit Pause / Save and Exit action.
+- Persist the pause state.
+- Persist the remaining time or equivalent server-authoritative timing information.
+- Allow the student to resume later.
+- Resume from the correct remaining time.
+
+For untimed work, simply save progress and allow the student to leave and return.
+
+Do not lose previously entered answers.
+
+## B. Tests and Examinations
+
+Tests and Examinations must not have a pause feature.
+
+Their timers must continue counting even when the student:
+
+- Leaves the assessment page.
+- Reloads the browser.
+- Navigates away.
+- Closes and reopens the assessment.
+
+The deadline must remain authoritative.
+
+When the student returns, calculate the actual remaining time from the existing attempt deadline.
+
+When the deadline expires, run the normal expiry and submission process.
+
+A test or examination must never receive extra time because the student navigated away.
+
+## C. Important implementation safeguards
+
+Do not accidentally introduce a universal pause mechanism that also pauses tests and examinations.
+
+Do not reset timers when a component mounts again.
+
+Use persisted server-side state and appropriate transactional operations for pausing or resuming Assignment and Activity attempts.
+
+Ensure pause and resume cannot be abused to create extra examination time.
+
+Preserve all existing submission and deadline protections.
+
+---
+
+# 14. LIGHT MODE, DARK MODE AND ACCESSIBILITY
+
+The assessment experience must follow the existing platform theme.
+
+Inspect:
+
+- `src/contexts/ThemeContext.tsx`
+- `src/index.css`
+- Existing Tailwind theme conventions.
+- Existing high-contrast support.
+
+The new interface must work in:
+
+1. Light mode.
+2. Dark mode.
+3. Existing high-contrast mode where applicable.
+
+Do not force the student examination interface to use a dark navy background.
+
+Do not hardcode a single dark appearance for all students.
+
+Use the existing theme classes and coherent design tokens.
+
+The design should be comfortable for extended reading.
+
+Pay particular attention to:
+
+- Text contrast.
+- Passage readability.
+- Question readability.
+- Option visibility.
+- Input backgrounds.
+- Borders.
+- Disabled states.
+- Selected answers.
+- Timer warning states.
+- Focus states.
+
+Ensure the layout remains usable on:
+
+- Large desktop screens.
+- Laptops.
+- Tablets.
+- Small mobile phones.
+
+Avoid horizontal scrolling.
+
+Avoid fixed-width elements that overflow narrow screens.
+
+Respect accessibility requirements, including keyboard navigation, visible focus, appropriate labels and reduced-motion preferences.
+
+---
+
+# 15. CONTENT-BLOCK DISPLAY RULES
+
+Ensure each assessment element behaves correctly in both student viewing modes.
+
+| Element | Student display | Requires answer | Adds marks |
+|---|---|---|---|
+| Question | Normal question interface | Yes, where required | Yes, according to question points |
+| Comprehension passage | Reading/content panel | No | No |
+| Text / Instructions | Informational content panel | No | No |
+| Section heading | Section divider/title | No | No |
+| Comprehension questions | Normal question interface under passage | Yes, where required | Yes |
+
+Do not count passages or section headings as questions.
+
+Do not include content blocks in:
+
+- Answered counts.
+- Unanswered counts.
+- Required-question validation.
+- Question navigation numbers.
+- Answer review lists.
+- Total marks.
+- Grading calculations.
+- Student response records.
+
+However, maintain correct section and question numbering so that students can follow the assessment.
+
+If the assessment contains 20 answerable questions and 3 content blocks, it should still report 20 questions, not 23.
+
+---
+
+# 16. PRESERVE ALL EXISTING ASSESSMENT FUNCTIONALITY
+
+This implementation must not compromise existing features.
+
+Preserve:
+
+- Multiple-choice questions.
+- Single-choice questions.
+- True/false questions.
+- Dropdown questions.
+- Short-answer questions.
+- Long-answer questions.
+- Essay questions.
+- Link submissions.
+- File submissions.
+- Practical tasks.
+- Learning resources.
+- Tutor marking.
+- Manual grading.
+- Automatic grading.
+- Question explanations.
+- Correct answers.
+- Accepted answers.
+- Question point values.
+- Required-question settings.
+- Uniform MCQ scoring.
+- Question duplication.
+- Question deletion.
+- Question reordering.
+- Question import.
+- Assessment preview.
+- Assessment scheduling.
+- Passcode access.
+- Time limits.
+- Attempt limits.
+- Response management.
+- Result release policies.
+- Student reports.
+- Parent and school result visibility.
+- Existing question snapshots.
+- Existing student attempt records.
+- Existing assessment status transitions.
+
+The new content-block system must work alongside the existing assessment features rather than replacing them.
+
+---
+
+# 17. PREVIEW MUST MATCH THE REAL STUDENT EXPERIENCE
+
+The existing tutor preview functionality should be updated.
+
+When a tutor previews an assessment, it should display:
+
+- Content blocks.
+- Section headings.
+- Comprehension passages.
+- Questions grouped under their passages.
+- Correct question ordering.
+- The two student viewing modes.
+- Appropriate response controls.
+
+Preview must not treat informational content as questions.
+
+Do not create a completely separate preview design that differs from the actual student assessment page.
+
+Where possible, reuse the same presentation components so tutors can trust that what they see in preview is what students will receive.
+
+Do not expose answer keys to actual students through preview-related code paths.
+
+---
+
+# 18. PERFORMANCE, FIRESTORE AND RELIABILITY
+
+Our priorities are balance, stability, low resource consumption and predictable behaviour.
+
+Do not introduce unnecessary Firestore reads or writes.
+
+In particular:
+
+- Do not fetch every question or content block independently.
+- Do not create a separate Firestore document for every passage unless the existing architecture genuinely requires it.
+- Prefer storing the validated assessment layout with its parent assessment.
+- Capture the attempt layout snapshot when the attempt is created.
+- Reuse existing assessment-fetching logic where appropriate.
+- Avoid unnecessary listeners.
+- Avoid excessive React re-renders when typing long passages.
+- Do not introduce frequent writes for every individual keystroke.
+- Preserve existing autosave and debounce patterns.
+- Avoid expensive client-side reconstruction on every render.
+
+Use stable React keys and memoization where beneficial.
+
+Do not introduce unnecessary new npm packages.
+
+Any new persistence logic must follow the existing database conventions and security boundaries.
+
+---
+
+# 19. TESTING AND REGRESSION REQUIREMENTS
+
+Add appropriate regression tests.
+
+The existing test suite is:
+
+`tests/jdi-assessment.test.mjs`
+
+The current assessment quality workflow already runs:
+
+- `npm run test:assessment`
+- `npm run lint`
+- `npm run typecheck:functions`
+- `npm run build`
+
+Extend the test suite rather than weakening or bypassing existing tests.
+
+At minimum, test the following:
+
+### Assessment layout tests
+
+1. A legacy assessment without layout data loads successfully.
+2. A normal assessment creates a default section without losing question order.
+3. A content block is accepted and persisted.
+4. A comprehension group can reference valid question IDs.
+5. Invalid question references are rejected.
+6. Duplicate question references are rejected.
+7. Each question is represented exactly once in the layout.
+8. Passage and section data survive saving and reloading.
+9. Existing question normalization still works.
+
+### Scoring tests
+
+1. Passages contribute zero marks.
+2. Text blocks contribute zero marks.
+3. Section headings contribute zero marks.
+4. Only answerable questions contribute to total marks.
+5. Only answerable questions are graded.
+6. Existing short-answer and objective grading still works.
+7. Manual grading remains unaffected.
+8. Existing score recalculation remains correct.
+
+### Shuffle tests
+
+1. Disabled question shuffling preserves the intended order.
+2. Enabled question shuffling changes eligible question orders.
+3. Comprehension passages never become separated from their questions.
+4. Comprehension questions shuffle only inside their own group.
+5. Questions from one comprehension never enter another comprehension.
+6. Standalone questions never cross protected content/group boundaries.
+7. Option shuffling preserves correct-option IDs.
+8. Reloading an attempt preserves its originally generated order.
+9. Existing attempts without new ordering metadata remain readable.
+
+Use a deterministic shuffle helper or injectable random source where necessary so tests can reliably verify the algorithm.
+
+### Attempt and timer tests
+
+1. Students can start assessments normally.
+2. Existing in-progress attempts resume instead of creating duplicate attempts.
+3. Reloading does not reset test or examination deadlines.
+4. Tests and examinations continue counting down after leaving the assessment page.
+5. Assignment and Activity pause/resume state is persisted correctly.
+6. Expired attempts cannot receive extra time.
+7. Existing access controls and attempt limits remain enforced.
+
+### UI verification
+
+Manually or through available automated browser tests, check:
+
+- The tutor can create a comprehension passage.
+- The tutor can add multiple linked questions.
+- The tutor can edit and reorder the group.
+- The student sees the correct passage in both viewing modes.
+- The question textarea shows 10–12 lines initially.
+- Enter creates new lines.
+- The textarea grows as text is entered.
+- The tutor workspace is responsive.
+- The title is properly prominent.
+- The student assessment opens without the normal portal sidebar.
+- The timer remains visible while scrolling.
+- The assessment title scrolls away.
+- No flame visuals remain.
+- Both viewing modes work.
+- Light and dark themes work properly.
+
+Do not claim tests passed unless they were actually executed.
+
+---
+
+# 20. IMPLEMENTATION SEQUENCE
+
+Work in this order.
+
+### Phase 1: Audit and technical plan
+
+Inspect all relevant components, backend functions, route definitions, interfaces and tests.
+
+Identify every place where the assessment question schema is read, written, validated or transformed.
+
+Produce a concise internal implementation map before editing.
+
+### Phase 2: Data model and backend
+
+Implement the separate assessment-layout model.
+
+Extend the domain types, normalization, validation, persistence, safe projections and attempt snapshots.
+
+Preserve backward compatibility.
+
+### Phase 3: Tutor authoring interface
+
+Implement:
+
+- Add Question.
+- Add Comprehension Passage.
+- Add Text / Instructions.
+- Add Section.
+- Comprehension grouping.
+- Linked question management.
+- Section and content reordering.
+- Multiline expanding question inputs.
+
+Then refine the assessment title and three-tab workspace.
+
+### Phase 4: Randomization
+
+Implement group-aware question-order generation and stable option randomization.
+
+Correct the differences between the server-side and fallback attempt flows.
+
+Ensure old attempts still load.
+
+### Phase 5: Student interface
+
+Move the assessment attempt into a dedicated full-screen protected route.
+
+Remove portal sidebar/navigation from the assessment experience.
+
+Refine the assessment title, timer and viewing-mode controls.
+
+Remove all flame-themed elements.
+
+Implement proper content-block rendering in both viewing modes.
+
+### Phase 6: Assessment exit behaviour
+
+Implement the appropriate save/pause/resume behaviour for Assignments and Activities.
+
+Ensure Tests and Examinations remain deadline-driven and cannot be paused.
+
+### Phase 7: Regression and QA
+
+Run the test suite, lint, serverless function typecheck and production build.
+
+Resolve all errors attributable to your changes.
+
+Review the final changes for accidental regressions, unnecessary dependencies and duplicated logic.
+
+---
+
+# 21. DESIGN DIRECTION
+
+The final result should feel like a mature, professional academic assessment platform.
+
+Use Google Forms as a functional reference, not as a design to copy.
+
+The design should be:
+
+- Clean.
+- Spacious.
+- Well aligned.
+- Minimal but functional.
+- Readable.
+- Consistent.
+- Responsive.
+- Theme-aware.
+
+Avoid:
+
+- Excessively nested cards.
+- Too many borders.
+- Oversized banners.
+- Tiny input fields.
+- Overloaded toolbars.
+- Unnecessary icons.
+- Decorative flames.
+- Excessive dark navy panels.
+- Large fixed headers.
+- Unnecessary animations.
+- Excessive empty space.
+
+Use the existing Jaystarbliss visual identity and design system.
+
+The existing red accent can remain where appropriate, but the assessment experience should not be forced into a navy-blue presentation.
+
+Prioritize the content students and tutors are actually working with.
+
+---
+
+# 22. DEFINITION OF DONE
+
+The work is not complete just because the interface looks different.
+
+It is complete only when all the following are true:
+
+- Tutors can insert non-answer text blocks.
+- Tutors can create comprehension passages.
+- Tutors can attach multiple questions to a comprehension.
+- Tutors can create and organize assessment sections.
+- The system saves and reloads the new structure.
+- Existing assessments remain compatible.
+- Passages and sections never affect scores.
+- Comprehension questions never shuffle outside their passage.
+- Options can still shuffle independently.
+- All student attempts preserve their original assessment structure.
+- Both student viewing modes render the new structure correctly.
+- The question editor supports long-form multiline writing.
+- The question editor initially displays approximately 10–12 lines.
+- The assessment title looks like a proper heading.
+- The tutor workspace is visually refined without losing useful settings.
+- The student assessment opens as a full-screen protected page.
+- The normal portal sidebar does not appear during the attempt.
+- The assessment title scrolls away naturally.
+- The timer stays visible independently.
+- No flame or fire visuals remain.
+- Assignments and Activities support the appropriate pause/resume behaviour.
+- Tests and Examinations continue counting down after navigation or reload.
+- Light mode and dark mode both work.
+- Existing grading, responses, access control and result release still work.
+- The available assessment tests pass.
+- Lint, typecheck and production build pass.
+
+---
+
+# 23. FINAL REPORT
+
+After implementation, provide a proper technical completion report containing:
+
+1. What you discovered in the existing assessment architecture.
+2. The files changed.
+3. The new assessment-layout data model.
+4. How comprehension groups are represented.
+5. How group-aware randomization works.
+6. How student attempt snapshots preserve the new structure.
+7. How the full-screen student assessment route works.
+8. How timer and exit behaviour differ between activities/assignments and tests/examinations.
+9. What interface improvements were made.
+10. What regression tests were added.
+11. Which validation commands were executed and their actual results.
+12. Any outstanding issues or limitations.
+
+Do not report an item as completed if it was only partially implemented.
+
+Do not make unrelated modifications to the wider platform.
+
+**FINAL PRIORITY: Build this as a stable extension of the existing Jaystarbliss assessment infrastructure. Preserve everything that already works, improve the areas identified, and make the assessment experience significantly more intuitive for both tutors and students.**

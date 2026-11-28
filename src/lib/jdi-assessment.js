@@ -206,7 +206,6 @@ export function normalizeClassList(input) {
 
 /**
  * Expands a canonical grade range (inclusive) into an ordered array of canonical class names.
- * Automatically normalizes reversed bounds (e.g., Grade 6 to Grade 3).
  */
 export function expandGradeRange(fromClass, toClass) {
   const fromNorm = normalizeClassName(fromClass, "");
@@ -988,6 +987,16 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
 
   // Allow empty questions list only when saving as draft
   if (rawQuestions.length === 0 && status === "draft") {
+    let draftLayout = null;
+    if (body.assessmentLayout !== undefined && body.assessmentLayout !== null) {
+      const checkedLayout = normalizeAssessmentLayout(body.assessmentLayout, []);
+      if (checkedLayout.error) return { error: checkedLayout.error };
+      draftLayout = checkedLayout.layout;
+    } else if (existingDoc?.assessmentLayout) {
+      const checkedLayout = normalizeAssessmentLayout(existingDoc.assessmentLayout, []);
+      if (!checkedLayout.error) draftLayout = checkedLayout.layout;
+    }
+
     return {
       deliveryMode: "NATIVE",
       workType,
@@ -1012,6 +1021,7 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
       questions: [],
       questionCount: 0,
       maxScore: 0,
+      ...(draftLayout ? { assessmentLayout: draftLayout } : {}),
       durationMinutes,
       gradingMode,
       releaseGradesPolicy,
@@ -1025,6 +1035,20 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
 
   const normalized = normalizeQuestions(rawQuestions, gradingMode);
   if (normalized.error) return { error: normalized.error };
+
+  let assessmentLayout = null;
+  if (body.assessmentLayout !== undefined && body.assessmentLayout !== null) {
+    const checkedLayout = normalizeAssessmentLayout(body.assessmentLayout, normalized.questions);
+    if (checkedLayout.error) return { error: checkedLayout.error };
+    assessmentLayout = checkedLayout.layout;
+  } else if (existingDoc?.assessmentLayout) {
+    const checkedLayout = normalizeAssessmentLayout(existingDoc.assessmentLayout, normalized.questions, {
+      dropUnknownQuestions: true,
+    });
+    if (!checkedLayout.error) {
+      assessmentLayout = checkedLayout.layout;
+    }
+  }
 
   return {
     deliveryMode: "NATIVE",
@@ -1050,6 +1074,7 @@ export function validateExamCreationPayload(body = {}, existingDoc = null) {
     questions: normalized.questions,
     questionCount: normalized.questions.length,
     maxScore: normalized.maxScore,
+    ...(assessmentLayout ? { assessmentLayout } : {}),
     durationMinutes,
     gradingMode,
     releaseGradesPolicy,
@@ -1198,6 +1223,12 @@ function questionsSnapshotDiffers(prevSnap, nextSnap) {
  * Automatically recalculates an existing student attempt's score, maxScore, percentage,
  * questionResults, and questionsSnapshot whenever an assessment's point values or answer keys
  * are updated — whether the assessment is active, completed/inactive, scheduled, or draft.
+ *
+ * - Objective / auto-gradable questions are re-scored against the updated question `points` & keys.
+ * - Manually graded questions preserve tutor-awarded marks (proportionally rescaled only if that
+ *   question's max points changed, and always clamped to `[0, newMaxPoints]`).
+ * - Unsubmitted `in_progress` attempts never have their score fabricated; only their
+ *   `questionsSnapshot` & `maxScore` are synced so submission uses the updated point values.
  */
 export function recalculateAttemptForUpdatedExam(exam, attempt) {
   if (!attempt || typeof attempt !== "object") {
@@ -1245,6 +1276,7 @@ export function recalculateAttemptForUpdatedExam(exam, attempt) {
     return { skipped: true, changed: false, isSubmitted: false };
   }
 
+  // Handle non-question assessments (e.g., CODING_LAB / EXTERNAL_LINK / deliverable-only)
   if (updatedQuestions.length === 0) {
     const newMaxScore = Number((computeExamMaxScore(exam) || Number(exam?.maxScore || 0)).toFixed(2));
     const prevMaxScore = Number(attempt.maxScore ?? 0);
@@ -1420,7 +1452,7 @@ export function schoolSafeQuestion(question) {
     prompt: String(question?.prompt || ""),
     type: String(question?.type || ""),
     points: Math.max(0, Math.min(1000, Number(question?.points ?? (question?.type === "learning_resource" ? 0 : 1)) || 0)),
-    required: question?.type === "learning_resource" ? false : question?.required !== false,
+    ...(question?.required !== undefined ? { required: question.type === "learning_resource" ? false : Boolean(question.required) } : {}),
     options: Array.isArray(question?.options)
       ? question.options.map(option => ({
           id: String(option?.id || ""),
@@ -1697,14 +1729,6 @@ export function normalizeRecipientTargets(body = {}, existingDoc = null) {
 
 /**
  * Checks whether a student is eligible to view/attempt a work item or resource.
- * Precedence:
- * 1. Draft / archived items are never eligible.
- * 2. Explicit exclusions (excludedStudentIds) ALWAYS block access.
- * 3. Direct targetStudentIds match grants access (unless excluded above).
- * 4. School / Private audience isolation.
- * 5. Grade / Grade Range match (when classIds / gradeRange / targetClass is configured).
- * 6. Multi-Programme & Sub-Programme match (when targetProgramIds / targetProgramTitles is configured).
- *    When BOTH Grade Range and Programmes are configured, BOTH must match (intersection).
  */
 export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
   let student = studentOrOpts;
@@ -1775,7 +1799,6 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
     .map(v => String(v ?? "").trim())
     .filter(Boolean);
 
-  // 1. Explicit exclusion gate takes highest precedence
   const excludedStudentIds = (
     Array.isArray(workItem.excludedStudentIds) ? workItem.excludedStudentIds : []
   )
@@ -1842,7 +1865,6 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
     }
   }
 
-  // 2. Grade / Grade Range check
   const studentClass = student.className || student.grade || student.class || student.level || "";
   const rangeClasses =
     workItem.gradeRange && typeof workItem.gradeRange === "object"
@@ -1858,7 +1880,6 @@ export function isStudentEligibleForWork(studentOrOpts = {}, workItemArg = {}) {
     return false;
   }
 
-  // 3. Multi-Programme & Sub-Programme intersection check (only enforced when explicitly configured)
   const workProgramIds = (
     Array.isArray(workItem.targetProgramIds) ? workItem.targetProgramIds : []
   )
@@ -2392,13 +2413,6 @@ export function getWorkTypeLabels(input = null, fallbackObj = null) {
   return WORK_TYPE_LABEL_MAP[normalized] || WORK_TYPE_LABEL_MAP.EXAMINATION;
 }
 
-/**
- * Classifies a student record into:
- * - 'school': Partner-school enrolled student
- * - 'private_parent': Parent-enrolled private student
- * - 'private_individual': Individually enrolled private student
- * - 'unclassified': Record lacks genuine private or school enrolment markers
- */
 export function classifyStudentEnrolment(studentRecord = {}, options = {}) {
   const s = studentRecord && typeof studentRecord === "object" ? studentRecord : {};
   const rawType = String(s.studentType || "").trim().toLowerCase();
@@ -2447,7 +2461,6 @@ export function classifyStudentEnrolment(studentRecord = {}, options = {}) {
     };
   }
 
-  // 1. Check Parent-Enrolled Private Student
   const parentId = String(s.parentId || s.parentUid || s.parent_id || "").trim();
   const parentEmail = String(s.parentEmail || s.guardianEmail || "").trim().toLowerCase();
   const parentName = String(s.parentName || s.guardianName || "").trim();
@@ -2477,7 +2490,6 @@ export function classifyStudentEnrolment(studentRecord = {}, options = {}) {
     };
   }
 
-  // 2. Check Individually Enrolled Private Student
   const email = String(s.email || s.studentEmail || "").trim().toLowerCase();
   const isSyntheticSchoolEmail = email.endsWith("@jbs-portal.local") && !rawSource.includes("admin") && !rawType;
   const deliveryType = String(s.deliveryType || s.billingModel || s.teachingMode || "").trim().toUpperCase();
@@ -2625,6 +2637,9 @@ export function isAttemptOverdueForExpiry(attempt = {}, exam = {}, nowMs = Date.
 /**
  * Determines whether an assessment has passed its effective closing deadline (`availableUntil` or `dueDate`),
  * accounting for manual reopening (`manuallyReopenedAt`).
+ * When an administrator or authorized tutor manually reopens/activates a closed assessment whose original
+ * `availableUntil` or `dueDate` was in the past, the manual reopen supersedes that past deadline without
+ * erasing the original metadata fields.
  */
 export function isExamPastEffectiveDeadline(exam = {}, nowMs = Date.now()) {
   if (!exam || typeof exam !== "object") return false;
@@ -2677,6 +2692,13 @@ export function isExamPastEffectiveDeadline(exam = {}, nowMs = Date.now()) {
 /**
  * Resolves the single canonical status ("draft" | "scheduled" | "active" | "completed" | "archived")
  * for any examination or work item across Tutor, Admin, School, Parent, and Student views.
+ *
+ * Key guarantees:
+ * 1. Explicit "draft" assessments resolve to "draft" (unless they already have recorded student submissions)
+ *    and are strictly hidden from all student-facing views.
+ * 2. Legacy/past external-link CBT assessments ("EXTERNAL_LINK") that lack a status field or were created
+ *    in past sessions without an active reopen override or future closing date resolve to "completed".
+ * 3. Any assessment past its effective deadline (accounting for manual reopening) resolves to "completed".
  */
 export function resolveCanonicalExamStatus(exam = {}, nowMs = Date.now()) {
   if (!exam || typeof exam !== "object") return "draft";
@@ -2739,6 +2761,8 @@ export function resolveCanonicalExamStatus(exam = {}, nowMs = Date.now()) {
     return "completed";
   }
 
+  // Legacy external-link CBT assessments without an explicit status field were conducted via external forms
+  // and previously defaulted to "draft" in Tutor views and "active" in Student views. Mark them "completed".
   if (isExternal) {
     if (!rawStatus) {
       return "completed";
@@ -2777,6 +2801,8 @@ export function resolveCanonicalExamStatus(exam = {}, nowMs = Date.now()) {
     return "active";
   }
 
+  // Fallback when status is missing on a native assessment:
+  // If questions is explicitly an empty array on a native exam document (and not a task-only assignment), treat as draft.
   const isTaskOrSubmission =
     exam.isTaskOnlyAssignment === true ||
     Boolean(String(exam.submissionFormat || "").trim());
@@ -2793,6 +2819,11 @@ const EXAM_COLLECTION_PRECEDENCE = {
   jdiExams: 3,
 };
 
+/**
+ * Merges duplicate assessment records across `exams`, `schoolExams`, and `jdiExams` so that
+ * `jdiExams` is always the authoritative source of truth and stale `schoolExams`/`exams` copies
+ * can never overwrite `jdiExams` status (e.g., turning a draft or completed exam back into active).
+ */
 export function mergeExamRecordByPrecedence(
   existing = null,
   incoming = null,
@@ -2818,10 +2849,13 @@ export function mergeExamRecordByPrecedence(
   const secondary = incomingRank >= existingRank ? existing : incoming;
   const winningSource = incomingRank >= existingRank ? incomingSource : existingSource;
 
+  // Preserve questions array from whichever document carries full questions (since schoolExams often strips questions)
   const primaryQuestions = Array.isArray(primary.questions) ? primary.questions : [];
   const secondaryQuestions = Array.isArray(secondary.questions) ? secondary.questions : [];
   const questions = primaryQuestions.length > 0 ? primaryQuestions : secondaryQuestions;
 
+  // If either record explicitly marks the exam as draft or archived in jdiExams (or if primary has a status),
+  // use primary's status; never let a missing status in one collection override an explicit status in another.
   const primaryRawStatus = String(primary.status || "").trim().toLowerCase();
   const secondaryRawStatus = String(secondary.status || "").trim().toLowerCase();
   const effectiveRawStatus =
@@ -2839,5 +2873,448 @@ export function mergeExamRecordByPrecedence(
 
   combined.status = resolveCanonicalExamStatus(combined, nowMs);
   return combined;
+}
+
+/* ============================================================================
+ * ASSESSMENT LAYOUT v1, COMPREHENSION GROUPS, GROUP-AWARE RANDOMIZATION & PAUSE
+ * ============================================================================ */
+
+const VALID_CONTENT_BLOCK_TYPES = new Set(["instruction", "text"]);
+const MAX_LAYOUT_SECTIONS = 50;
+const MAX_LAYOUT_ITEMS_PER_SECTION = 250;
+const MAX_CONTENT_TITLE_LEN = 300;
+const MAX_CONTENT_BODY_LEN = 20000;
+const MAX_COMPREHENSION_BODY_LEN = 30000;
+
+function sanitizeStableLayoutId(raw, fallbackPrefix, index) {
+  const s = String(raw || "").trim().slice(0, 80);
+  if (s && /^[a-zA-Z0-9_-]+$/.test(s)) return s;
+  return `${fallbackPrefix}_${index + 1}`;
+}
+
+/**
+ * Synthesizes a backward-compatible default v1 AssessmentLayout in memory
+ * for legacy assessments that only stored a flat `questions[]` array.
+ */
+export function buildDefaultAssessmentLayout(questions = []) {
+  const list = Array.isArray(questions) ? questions : [];
+  return {
+    version: 1,
+    sections: [
+      {
+        id: "sec_1",
+        title: "",
+        items: list
+          .filter((q) => q && typeof q === "object" && String(q.id || "").trim())
+          .map((q, idx) => ({
+            id: `item_${sanitizeStableLayoutId(q.id, "q", idx)}`,
+            kind: "question",
+            questionId: String(q.id).trim(),
+          })),
+      },
+    ],
+  };
+}
+
+/**
+ * Validates and normalizes an AssessmentLayout v1 document against the flat `questions[]` array.
+ * - Passages, content/instruction blocks, and sections NEVER hold marks or count as questions.
+ * - Rejects unknown block kinds, unsupported content block types, unknown question references
+ *   (unless `options.dropUnknownQuestions` is true for legacy partial updates), and duplicate
+ *   question references across groups or sections.
+ * - Ensures every answerable question in `questions[]` appears exactly once.
+ */
+export function normalizeAssessmentLayout(rawLayout, questions = [], options = {}) {
+  if (!rawLayout || typeof rawLayout !== "object" || Array.isArray(rawLayout)) {
+    return { error: "Assessment layout must be a valid object." };
+  }
+
+  const version = rawLayout.version === undefined ? 1 : Number(rawLayout.version);
+  if (version !== 1) {
+    return { error: `Unsupported assessmentLayout version: ${String(rawLayout.version)}.` };
+  }
+
+  if (!Array.isArray(rawLayout.sections)) {
+    return { error: "Assessment layout must include a sections array." };
+  }
+  if (rawLayout.sections.length > MAX_LAYOUT_SECTIONS) {
+    return { error: `An assessment cannot exceed ${MAX_LAYOUT_SECTIONS} sections.` };
+  }
+
+  const questionList = Array.isArray(questions) ? questions : [];
+  const validQuestionIds = new Set(
+    questionList
+      .filter((q) => q && typeof q === "object" && String(q.id || "").trim())
+      .map((q) => String(q.id).trim())
+  );
+
+  const dropUnknown = Boolean(options.dropUnknownQuestions);
+  const seenQuestionIds = new Set();
+  const seenSectionIds = new Set();
+  const seenItemIds = new Set();
+  const normalizedSections = [];
+
+  for (let sIdx = 0; sIdx < rawLayout.sections.length; sIdx += 1) {
+    const rawSec = rawLayout.sections[sIdx];
+    if (!rawSec || typeof rawSec !== "object" || Array.isArray(rawSec)) {
+      return { error: `Section ${sIdx + 1} is invalid.` };
+    }
+
+    let secId = sanitizeStableLayoutId(rawSec.id, "sec", sIdx);
+    while (seenSectionIds.has(secId)) secId = `${secId}_${sIdx + 1}`;
+    seenSectionIds.add(secId);
+
+    const title = String(rawSec.title || "").trim().slice(0, MAX_CONTENT_TITLE_LEN);
+    const description = String(rawSec.description || "").trim().slice(0, 4000);
+    const rawItems = Array.isArray(rawSec.items) ? rawSec.items : [];
+    if (rawItems.length > MAX_LAYOUT_ITEMS_PER_SECTION) {
+      return {
+        error: `Section "${title || `Section ${sIdx + 1}`}" exceeds the maximum item limit (${MAX_LAYOUT_ITEMS_PER_SECTION}).`,
+      };
+    }
+
+    const normalizedItems = [];
+    for (let iIdx = 0; iIdx < rawItems.length; iIdx += 1) {
+      const rawItem = rawItems[iIdx];
+      if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) {
+        return { error: `Section ${sIdx + 1}, item ${iIdx + 1} is invalid.` };
+      }
+
+      const kind = String(rawItem.kind || "").trim().toLowerCase();
+      let itemId = sanitizeStableLayoutId(rawItem.id, "item", sIdx * 1000 + iIdx);
+      while (seenItemIds.has(itemId)) itemId = `${itemId}_${iIdx + 1}`;
+      seenItemIds.add(itemId);
+
+      if (kind === "question") {
+        const qId = String(rawItem.questionId || "").trim();
+        if (!qId || !validQuestionIds.has(qId)) {
+          if (dropUnknown) continue;
+          return {
+            error: `Assessment layout references unknown question ID "${qId || "(empty)"}".`,
+          };
+        }
+        if (seenQuestionIds.has(qId)) {
+          return {
+            error: `Assessment layout references question "${qId}" more than once.`,
+          };
+        }
+        seenQuestionIds.add(qId);
+        normalizedItems.push({
+          id: itemId,
+          kind: "question",
+          questionId: qId,
+        });
+      } else if (kind === "content") {
+        const blockType = String(rawItem.blockType || "text").trim().toLowerCase();
+        if (!VALID_CONTENT_BLOCK_TYPES.has(blockType)) {
+          return {
+            error: `Unsupported content block type "${String(rawItem.blockType || "")}".`,
+          };
+        }
+        const blockTitle = String(rawItem.title || "").trim().slice(0, MAX_CONTENT_TITLE_LEN);
+        const rawBody = String(rawItem.body ?? "");
+        if (rawBody.length > MAX_CONTENT_BODY_LEN) {
+          return {
+            error: `Text / instruction block "${blockTitle || itemId}" exceeds the maximum length (${MAX_CONTENT_BODY_LEN} characters).`,
+          };
+        }
+        normalizedItems.push({
+          id: itemId,
+          kind: "content",
+          blockType,
+          ...(blockTitle ? { title: blockTitle } : {}),
+          body: rawBody,
+        });
+      } else if (kind === "comprehension") {
+        const compTitle = String(rawItem.title || "").trim().slice(0, MAX_CONTENT_TITLE_LEN);
+        const rawBody = String(rawItem.body ?? "");
+        if (rawBody.length > MAX_COMPREHENSION_BODY_LEN) {
+          return {
+            error: `Comprehension passage "${compTitle || itemId}" exceeds the maximum length (${MAX_COMPREHENSION_BODY_LEN} characters).`,
+          };
+        }
+        if (rawItem.questionIds !== undefined && !Array.isArray(rawItem.questionIds)) {
+          return {
+            error: `Comprehension passage "${compTitle || itemId}" must provide a questionIds array.`,
+          };
+        }
+        const rawChildIds = Array.isArray(rawItem.questionIds) ? rawItem.questionIds : [];
+        const childIds = [];
+        for (const rawChildId of rawChildIds) {
+          const qId = String(rawChildId || "").trim();
+          if (!qId || !validQuestionIds.has(qId)) {
+            if (dropUnknown) continue;
+            return {
+              error: `Comprehension passage "${compTitle || itemId}" references unknown question ID "${qId || "(empty)"}".`,
+            };
+          }
+          if (seenQuestionIds.has(qId)) {
+            return {
+              error: `Question "${qId}" is referenced more than once across assessment sections or comprehension groups.`,
+            };
+          }
+          seenQuestionIds.add(qId);
+          childIds.push(qId);
+        }
+        normalizedItems.push({
+          id: itemId,
+          kind: "comprehension",
+          ...(compTitle ? { title: compTitle } : {}),
+          body: rawBody,
+          questionIds: childIds,
+        });
+      } else {
+        return { error: `Unsupported assessment layout item kind "${String(rawItem.kind || "")}".` };
+      }
+    }
+
+    normalizedSections.push({
+      id: secId,
+      title,
+      ...(description ? { description } : {}),
+      items: normalizedItems,
+    });
+  }
+
+  // Ensure every answerable question appears exactly once (append any newly added/unplaced question cleanly)
+  const missingQuestionIds = [];
+  for (const q of questionList) {
+    const qId = String(q?.id || "").trim();
+    if (qId && !seenQuestionIds.has(qId)) {
+      missingQuestionIds.push(qId);
+      seenQuestionIds.add(qId);
+    }
+  }
+  if (missingQuestionIds.length > 0) {
+    if (normalizedSections.length === 0) {
+      normalizedSections.push({ id: "sec_1", title: "", items: [] });
+    }
+    const targetSection = normalizedSections[normalizedSections.length - 1];
+    missingQuestionIds.forEach((qId, idx) => {
+      let fallbackItemId = `item_${sanitizeStableLayoutId(qId, "q", idx)}`;
+      while (seenItemIds.has(fallbackItemId)) fallbackItemId = `${fallbackItemId}_${idx + 1}`;
+      seenItemIds.add(fallbackItemId);
+      targetSection.items.push({
+        id: fallbackItemId,
+        kind: "question",
+        questionId: qId,
+      });
+    });
+  }
+
+  if (normalizedSections.length === 0) {
+    normalizedSections.push({ id: "sec_1", title: "", items: [] });
+  }
+
+  return {
+    layout: {
+      version: 1,
+      sections: normalizedSections,
+    },
+  };
+}
+
+/**
+ * Resolves the effective AssessmentLayout for any exam or attempt,
+ * falling back cleanly to a single default section for legacy assessments.
+ */
+export function resolveAssessmentLayout(examOrAttempt, questions = []) {
+  const qList = Array.isArray(questions)
+    ? questions
+    : Array.isArray(examOrAttempt?.questions)
+    ? examOrAttempt.questions
+    : [];
+
+  const candidate =
+    examOrAttempt?.assessmentLayoutSnapshot ||
+    examOrAttempt?.assessmentLayout ||
+    null;
+
+  if (candidate && typeof candidate === "object") {
+    const normalized = normalizeAssessmentLayout(candidate, qList, {
+      dropUnknownQuestions: true,
+    });
+    if (!normalized.error && normalized.layout) {
+      return normalized.layout;
+    }
+  }
+  return buildDefaultAssessmentLayout(qList);
+}
+
+/**
+ * Deterministic-ready Fisher-Yates shuffle returning a new array without mutating input.
+ */
+export function shuffleArrayWithRng(items, rng = Math.random) {
+  const arr = Array.isArray(items) ? [...items] : [];
+  const nextRand = typeof rng === "function" ? rng : Math.random;
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const r = Number(nextRand());
+    const clamped = Number.isFinite(r) ? Math.min(0.9999999999, Math.max(0, r)) : Math.random();
+    const j = Math.floor(clamped * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr;
+}
+
+/**
+ * Comprehension-aware and section-aware attempt ordering generator.
+ * - Preserves section order and non-question content block positions.
+ * - Keeps every comprehension passage attached to all of its linked child questions.
+ * - When `shuffleQuestions` is true:
+ *   - Shuffles child questions ONLY within their own comprehension group.
+ *   - Shuffles standalone questions ONLY within their contiguous run (never crossing a
+ *     content block, comprehension group, or section boundary).
+ * - When `shuffleOptions` is true:
+ *   - Shuffles objective question options independently using stable option IDs,
+ *     never modifying `correctOptionIds`.
+ */
+export function generateAttemptOrdering(exam = {}, questions = [], rng = Math.random) {
+  const qList = Array.isArray(questions)
+    ? questions
+    : Array.isArray(exam?.questions)
+    ? exam.questions
+    : [];
+
+  const baseLayout = resolveAssessmentLayout(exam, qList);
+  const shouldShuffleQuestions = Boolean(exam?.shuffleQuestions);
+  const shouldShuffleOptions = Boolean(exam?.shuffleOptions);
+
+  const questionOrder = [];
+  const questionOrderByGroup = {};
+  const snapshotSections = [];
+
+  for (const sec of baseLayout.sections) {
+    const outItems = [];
+    let standaloneRun = [];
+
+    const flushStandaloneRun = () => {
+      if (standaloneRun.length === 0) return;
+      const orderedRun =
+        shouldShuffleQuestions && standaloneRun.length > 1
+          ? shuffleArrayWithRng(standaloneRun, rng)
+          : standaloneRun;
+      for (const item of orderedRun) {
+        outItems.push({ ...item });
+        questionOrder.push(item.questionId);
+      }
+      standaloneRun = [];
+    };
+
+    for (const item of sec.items) {
+      if (item.kind === "question") {
+        standaloneRun.push(item);
+      } else {
+        flushStandaloneRun();
+        if (item.kind === "comprehension") {
+          const orderedChildIds =
+            shouldShuffleQuestions && item.questionIds.length > 1
+              ? shuffleArrayWithRng(item.questionIds, rng)
+              : [...item.questionIds];
+          questionOrderByGroup[item.id] = orderedChildIds;
+          outItems.push({
+            ...item,
+            questionIds: orderedChildIds,
+          });
+          for (const qId of orderedChildIds) {
+            questionOrder.push(qId);
+          }
+        } else {
+          // Non-question content/instruction block stays anchored at its exact authored position
+          outItems.push({ ...item });
+        }
+      }
+    }
+    flushStandaloneRun();
+
+    snapshotSections.push({
+      id: sec.id,
+      title: sec.title || "",
+      ...(sec.description ? { description: sec.description } : {}),
+      items: outItems,
+    });
+  }
+
+  const optionOrderMap = {};
+  if (shouldShuffleOptions) {
+    for (const q of qList) {
+      if (
+        q &&
+        (q.type === "single_choice" || q.type === "multiple_choice" || q.type === "dropdown") &&
+        Array.isArray(q.options) &&
+        q.options.length > 1
+      ) {
+        optionOrderMap[q.id] = shuffleArrayWithRng(
+          q.options.map((o) => o.id),
+          rng
+        );
+      }
+    }
+  }
+
+  return {
+    questionOrder,
+    optionOrderMap,
+    assessmentLayoutSnapshot: {
+      version: 1,
+      sections: snapshotSections,
+    },
+    questionOrderByGroup,
+  };
+}
+
+/**
+ * Builds a fast lookup mapping each questionId to its enclosing section,
+ * linked comprehension passage (if any), and any immediately preceding content/instruction blocks.
+ * Used by Focused ("One at a time") viewing mode so passages stay visible alongside linked questions.
+ */
+export function buildQuestionContextMap(layout) {
+  const map = {};
+  if (!layout || !Array.isArray(layout.sections)) return map;
+
+  layout.sections.forEach((sec, sectionIndex) => {
+    let pendingContent = [];
+    for (const item of sec.items || []) {
+      if (item.kind === "content") {
+        pendingContent.push(item);
+      } else if (item.kind === "question") {
+        map[item.questionId] = {
+          section: sec,
+          sectionIndex,
+          comprehension: null,
+          comprehensionQuestionIndex: -1,
+          comprehensionQuestionTotal: 0,
+          precedingContentBlocks: pendingContent,
+        };
+        pendingContent = [];
+      } else if (item.kind === "comprehension") {
+        const childIds = Array.isArray(item.questionIds) ? item.questionIds : [];
+        childIds.forEach((qId, idx) => {
+          map[qId] = {
+            section: sec,
+            sectionIndex,
+            comprehension: item,
+            comprehensionQuestionIndex: idx,
+            comprehensionQuestionTotal: childIds.length,
+            precedingContentBlocks: idx === 0 ? pendingContent : [],
+          };
+        });
+        pendingContent = [];
+      }
+    }
+  });
+
+  return map;
+}
+
+/**
+ * Pause/Exit policy by academic work type:
+ * - ASSIGNMENT and ACTIVITY: Students MAY save & pause / exit and return later.
+ * - TEST and EXAMINATION: NEVER pausable; timer continues server-side across reloads.
+ */
+export function canPauseAssessmentWorkType(workType) {
+  const normalized = normalizeWorkType(workType);
+  return normalized === "ASSIGNMENT" || normalized === "ACTIVITY";
 }
 

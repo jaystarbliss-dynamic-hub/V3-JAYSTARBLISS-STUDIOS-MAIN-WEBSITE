@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   BookOpen, LogOut, LayoutDashboard, CreditCard, Moon, Sun, Radio, Trophy,
   GraduationCap, ClipboardCheck, CalendarDays, KeyRound, Users, FileCheck2,
-  Library, SlidersHorizontal, WalletCards, ExternalLink, Award, Headphones,
+  Library, SlidersHorizontal, WalletCards, Award, Headphones,
   HelpCircle, Keyboard, ChevronDown, PanelLeftClose, FileText, History,
   ChartNoAxesColumn, UserRoundCog, Wallet, Headset, Settings, Menu, Lock, Loader2,
   Pin, PinOff, Code2
@@ -29,8 +29,6 @@ import { getActiveImpersonation } from '../../utils/impersonation';
 import { migrateAllFirestoreClasses } from '../../lib/classMigration';
 import { resolvePartnerSchoolName } from '../../lib/classes';
 import { useEdgeSwipeDrawer } from '../../hooks/useEdgeSwipeDrawer';
-import PWAInstallButton from '../ui/PWAInstallButton';
-import { getExternalMainWebsiteUrl, useStandalonePWA } from '../../utils/pwa';
 import {
   fetchStudentProgrammeEnrollments,
   normalizeProgrammeEnrollmentDoc,
@@ -147,7 +145,6 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
     isRouteAllowed,
     isNavPathLocked,
   } = useSubscriptionEntitlement();
-  const isStandalone = useStandalonePWA();
 
   const [displayName, setDisplayName] = useState('Portal User');
   const [roleSubtitle, setRoleSubtitle] = useState(() => resolveRoleSubtitle(role));
@@ -1079,26 +1076,8 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
               {/* Navigation links */}
               <nav className="flex-1 space-y-2 pt-2">{renderNavGroups(true)}</nav>
 
-              {/* Drawer footer utilities */}
-              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-1">
-                <PWAInstallButton variant="sidebar" expanded={true} />
-                {isStandalone ? (
-                  <a
-                    href={getExternalMainWebsiteUrl('/')}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-[#64748B] hover:text-[#1E293B] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-white/5 transition-colors"
-                  >
-                    <ExternalLink size={16} /> Open Main Website
-                  </a>
-                ) : (
-                  <Link
-                    to="/"
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-[#64748B] hover:text-[#1E293B] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-white/5 transition-colors"
-                  >
-                    <ExternalLink size={16} /> Main Website
-                  </Link>
-                )}
+              {/* Drawer footer: Log Out only */}
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={logout}
@@ -1181,54 +1160,8 @@ const PortalLayoutInner: React.FC<{ role: string }> = ({ role }) => {
           {renderNavGroups(false)}
         </nav>
 
-        {/* External & Account actions utility area */}
-        <div className="p-3 border-t border-[#E2E8F0] dark:border-zinc-800 shrink-0 flex flex-col gap-1 bg-[#F8FAFC] dark:bg-[#0C0C0E]">
-          <PWAInstallButton variant="sidebar" expanded={sidebarExpanded} />
-          <Tooltip content={isStandalone ? "Open Main Website in Browser" : "Return to Main Website"} placement="right" fullWidth>
-            {isStandalone ? (
-              <a
-                href={getExternalMainWebsiteUrl('/')}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-zinc-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors ${
-                  !sidebarExpanded ? 'justify-center px-0' : ''
-                }`}
-              >
-                <span className="w-8 h-8 flex items-center justify-center shrink-0">
-                  <ExternalLink size={17} />
-                </span>
-                {sidebarExpanded && <span className="pl-2 whitespace-nowrap truncate">Main Website</span>}
-              </a>
-            ) : (
-              <Link
-                to="/"
-                className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-zinc-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors ${
-                  !sidebarExpanded ? 'justify-center px-0' : ''
-                }`}
-              >
-                <span className="w-8 h-8 flex items-center justify-center shrink-0">
-                  <ExternalLink size={17} />
-                </span>
-                {sidebarExpanded && <span className="pl-2 whitespace-nowrap truncate">Main Website</span>}
-              </Link>
-            )}
-          </Tooltip>
-
-          <Tooltip content="Appearance" placement="right" fullWidth>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className={`w-full flex items-center h-10 shrink-0 px-3 rounded-xl hover:bg-[#F1F5F9] dark:hover:bg-white/10 text-[#64748B] dark:text-zinc-300 hover:text-[#1E293B] dark:hover:text-white text-xs font-semibold overflow-hidden transition-colors cursor-pointer ${
-                !sidebarExpanded ? 'justify-center px-0' : ''
-              }`}
-            >
-              <span className="w-8 h-8 flex items-center justify-center shrink-0">
-                {theme === 'dark' ? <Sun size={17} className="text-zinc-200" /> : <Moon size={17} />}
-              </span>
-              {sidebarExpanded && <span className="pl-2 whitespace-nowrap truncate">Appearance</span>}
-            </button>
-          </Tooltip>
-
+        {/* Account footer: Log Out only */}
+        <div className="p-3 border-t border-[#E2E8F0] dark:border-zinc-800 shrink-0 flex flex-col bg-[#F8FAFC] dark:bg-[#0C0C0E]">
           <Tooltip content="Log Out" placement="right" fullWidth>
             <button
               type="button"

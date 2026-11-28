@@ -114,14 +114,39 @@ export function attachCodingLabVm(vm) {
 
 if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search);
+    const expectedNonce = params.get('nonce') || '';
     if (params.get('readonly') === '1') {
         applyReadOnlyMode(true);
+    }
+    const initialTheme = params.get('theme');
+    if (initialTheme === 'light' || initialTheme === 'dark' || initialTheme === 'glass') {
+        document.documentElement.dataset.codingLabTheme = initialTheme;
     }
 
     window.addEventListener('message', async event => {
         if (event.origin !== window.location.origin) return;
+        if (event.source !== window.parent) return;
         const msg = event.data;
         if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return;
+        if (expectedNonce && msg.nonce && msg.nonce !== expectedNonce) return;
+
+        if (msg.type === 'CODING_LAB_HANDSHAKE_INIT') {
+            if (expectedNonce && msg.nonce !== expectedNonce) return;
+            postToParent({
+                type: 'CODING_LAB_HANDSHAKE_ACK',
+                nonce: expectedNonce,
+                theme: document.documentElement.dataset.codingLabTheme || 'light'
+            });
+            return;
+        }
+
+        if (msg.type === 'CODING_LAB_SET_THEME') {
+            if (expectedNonce && msg.nonce !== expectedNonce) return;
+            if (msg.theme === 'light' || msg.theme === 'dark' || msg.theme === 'glass') {
+                document.documentElement.dataset.codingLabTheme = msg.theme;
+            }
+            return;
+        }
 
         if (msg.type === 'CODING_LAB_PING') {
             if (activeVm && (projectLoaded || readySent)) {

@@ -1,4 +1,2 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="80" height="60" viewBox="0 0 80 60">
-          <ellipse cx="40" cy="40" rx="34" ry="14" fill="#475569" stroke="#0F172A" stroke-width="3"/>
-          <ellipse cx="40" cy="36" rx="28" ry="11" fill="#16A34A" stroke="#14532D" stroke-width="3"/>
-        </svg>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="80" height="60" viewBox="0 0 80 60" xmlns:xlink="http://www.w3.org/1999/xlink"><g data-paper-data="{&quot;isPaintingLayer&quot;:true}" fill-rule="nonzero" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" style="mix-blend-mode: normal"><ellipse cx="40" cy="40" rx="34" ry="14" fill="#475569" stroke="#0F172A" stroke-width="3"/>
+          <ellipse cx="40" cy="36" rx="28" ry="11" fill="#16A34A" stroke="#14532D" stroke-width="3"/></g></svg>

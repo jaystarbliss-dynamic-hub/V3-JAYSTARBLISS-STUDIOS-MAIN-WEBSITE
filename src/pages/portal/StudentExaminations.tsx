@@ -47,6 +47,7 @@ import {
   mergeExamRecordByPrecedence,
   gradeAnswers,
   resolveAttemptQuestions,
+  generateAttemptOrdering,
   type WorkType,
 } from "../../lib/classes";
 import { ExamListSkeleton } from "../../components/ui/Skeleton";
@@ -1062,6 +1063,8 @@ export default function StudentExaminations() {
             sessionStorage.getItem("schoolName") || ""
           );
 
+          const examQuestions = Array.isArray(targetExam.questions) ? targetExam.questions : [];
+          const ordering = generateAttemptOrdering(targetExam, examQuestions);
           const attemptPayload = {
             id: newAttemptId,
             examId,
@@ -1073,8 +1076,13 @@ export default function StudentExaminations() {
             schoolId: studentInfo.schoolId || targetExam.schoolId || null,
             schoolName,
             maxScore,
-            questionsSnapshot: Array.isArray(targetExam.questions) ? targetExam.questions : [],
+            questionsSnapshot: examQuestions,
+            questionOrder: ordering.questionOrder,
+            optionOrderMap: ordering.optionOrderMap,
+            assessmentLayoutSnapshot: ordering.assessmentLayoutSnapshot,
+            questionOrderByGroup: ordering.questionOrderByGroup,
             status: "in_progress",
+            isPaused: false,
             answers: {},
             startedAt: serverTimestamp(),
             deadlineAt,
@@ -1103,7 +1111,12 @@ export default function StudentExaminations() {
         return;
       }
 
-      window.location.assign(`/portal/student/exams/${encodeURIComponent(attemptId)}`);
+      const unlockedExam = exams.find((item) => item.id === examId);
+      const targetUrl =
+        unlockedExam?.deliveryMode === "CODING_LAB"
+          ? `/coding-lab/assessment/${encodeURIComponent(attemptId)}`
+          : `/portal/student/exams/${encodeURIComponent(attemptId)}`;
+      window.location.assign(targetUrl);
     } catch (error) {
       logInternalDiagnostic("StudentExaminations::ValidatePasscode", error);
       setMessage({
@@ -1444,7 +1457,9 @@ export default function StudentExaminations() {
                           type="button"
                           onClick={() =>
                             window.location.assign(
-                              `/portal/student/exams/${encodeURIComponent(exam.attemptId!)}`
+                              isCodingLab
+                                ? `/coding-lab/assessment/${encodeURIComponent(exam.attemptId!)}`
+                                : `/portal/student/exams/${encodeURIComponent(exam.attemptId!)}`
                             )
                           }
                           className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] px-5 py-2.5 text-sm font-bold text-white hover:bg-red-800 cursor-pointer"

@@ -43,6 +43,13 @@ import {
   isExamPastEffectiveDeadline,
   resolveCanonicalExamStatus,
   mergeExamRecordByPrecedence,
+  buildDefaultAssessmentLayout,
+  normalizeAssessmentLayout,
+  resolveAssessmentLayout,
+  shuffleArrayWithRng,
+  generateAttemptOrdering,
+  buildQuestionContextMap,
+  canPauseAssessmentWorkType,
 } from "../api/_lib/jdi-assessment.js";
 
 const objective = (overrides = {}) => ({
@@ -1371,6 +1378,373 @@ test("recalculateAttemptForUpdatedExam preserves manual essay grades on mixed ex
   assert.equal(ipRecalc.score, undefined);
   assert.equal(ipRecalc.questionsSnapshot[0].points, 1);
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// Assessment Layout v1, Comprehension Groups, Randomization & Pause Policy
+// ────────────────────────────────────────────────────────────────────────────
+
+const createSeededRng = (seed = 42) => {
+  let state = seed >>> 0;
+  return () => {
+    state = (1664525 * state + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+};
+
+test("buildDefaultAssessmentLayout & resolveAssessmentLayout provide backward-compatible fallback for legacy flat exams", () => {
+  const legacyQuestions = [
+    objective({ id: "q1", prompt: "First" }),
+    objective({ id: "q2", prompt: "Second" }),
+    { id: "q3", type: "short_answer", prompt: "Explain", points: 3 },
+  ];
+
+  const fallback = buildDefaultAssessmentLayout(legacyQuestions);
+  assert.equal(fallback.version, 1);
+  assert.equal(fallback.sections.length, 1);
+  assert.equal(fallback.sections[0].id, "sec_1");
+  assert.deepEqual(
+    fallback.sections[0].items.map((it) => ({ kind: it.kind, questionId: it.questionId })),
+    [
+      { kind: "question", questionId: "q1" },
+      { kind: "question", questionId: "q2" },
+      { kind: "question", questionId: "q3" },
+    ]
+  );
+
+  // Legacy exam without assessmentLayout resolves cleanly to the same single-section structure
+  const resolved = resolveAssessmentLayout({ id: "legacy-1", questions: legacyQuestions }, legacyQuestions);
+  assert.equal(resolved.version, 1);
+  assert.equal(resolved.sections.length, 1);
+  assert.deepEqual(
+    resolved.sections[0].items.map((it) => it.questionId),
+    ["q1", "q2", "q3"]
+  );
+});
+
+test("normalizeAssessmentLayout & validateExamCreationPayload validate sections, comprehension passages, zero-mark content blocks, and reject malformed schemas", () => {
+  const questions = [
+    objective({ id: "q1", points: 2, prompt: "Standalone 1" }),
+    objective({ id: "q2", points: 3, prompt: "Passage Q1" }),
+    objective({ id: "q3", points: 5, prompt: "Passage Q2" }),
+    { id: "q4", type: "essay", points: 10, prompt: "Final essay" },
+  ];
+
+  const validLayout = {
+    version: 1,
+    sections: [
+      {
+        id: "sec_a",
+        title: "Section A — Warmup",
+        description: "Answer all questions carefully.",
+        items: [
+          {
+            id: "inst_1",
+            kind: "content",
+            blockType: "instruction",
+            title: "General Instructions",
+            body: "Read every line carefully.\nNo calculators permitted.",
+          },
+          { id: "item_q1", kind: "question", questionId: "q1" },
+        ],
+      },
+      {
+        id: "sec_b",
+        title: "Section B — Reading Comprehension",
+        items: [
+          {
+            id: "comp_1",
+            kind: "comprehension",
+            title: "Passage I: Solar Microgrids",
+            body: "Paragraph 1.\n\nParagraph 2.",
+            questionIds: ["q2", "q3"],
+          },
+          {
+            id: "txt_1",
+            kind: "content",
+            blockType: "text",
+            title: "Essay Guidance",
+            body: "Write at least two clear paragraphs.",
+          },
+          { id: "item_q4", kind: "question", questionId: "q4" },
+        ],
+      },
+    ],
+  };
+
+  const normalized = normalizeAssessmentLayout(validLayout, questions);
+  assert.equal(normalized.error, undefined);
+  assert.equal(normalized.layout.version, 1);
+  assert.equal(normalized.layout.sections.length, 2);
+  assert.deepEqual(normalized.layout.sections[1].items[0].questionIds, ["q2", "q3"]);
+
+  // Full exam payload validation confirms non-graded blocks carry 0 marks and never alter questionCount or maxScore
+  const examValidation = validateExamCreationPayload({
+    title: "Term 2 Comprehension & Logic",
+    subject: "English & Critical Thinking",
+    passcode: "JDI-COMP2",
+    schoolId: "sch-1",
+    classIds: ["Grade 8"],
+    durationMinutes: 45,
+    status: "published",
+    workType: "EXAMINATION",
+    deliveryMode: "NATIVE",
+    questions,
+    assessmentLayout: validLayout,
+  });
+  assert.equal(examValidation.error, undefined);
+  assert.equal(examValidation.questions.length, 4);
+  assert.equal(examValidation.maxScore, 20);
+  assert.equal(computeExamMaxScore({ questions: examValidation.questions }), 20);
+  assert.equal(examValidation.assessmentLayout.sections.length, 2);
+
+  // Rejects unknown questionId
+  const unknownQ = normalizeAssessmentLayout(
+    {
+      version: 1,
+      sections: [{ id: "sec_1", title: "", items: [{ id: "i1", kind: "question", questionId: "missing_q" }] }],
+    },
+    questions
+  );
+  assert.match(unknownQ.error || "", /unknown question ID/i);
+
+  // Rejects unknown questionId inside comprehension group
+  const unknownCompQ = normalizeAssessmentLayout(
+    {
+      version: 1,
+      sections: [
+        {
+          id: "sec_1",
+          title: "",
+          items: [{ id: "c1", kind: "comprehension", title: "P", body: "Text", questionIds: ["q2", "ghost"] }],
+        },
+      ],
+    },
+    questions
+  );
+  assert.match(unknownCompQ.error || "", /unknown question ID/i);
+
+  // Rejects duplicate questionId across standalone + comprehension
+  const dupQ = normalizeAssessmentLayout(
+    {
+      version: 1,
+      sections: [
+        {
+          id: "sec_1",
+          title: "",
+          items: [
+            { id: "i1", kind: "question", questionId: "q2" },
+            { id: "c1", kind: "comprehension", title: "P", body: "Text", questionIds: ["q2"] },
+          ],
+        },
+      ],
+    },
+    questions
+  );
+  assert.match(dupQ.error || "", /more than once/i);
+
+  // Rejects unsupported item kind
+  const badKind = normalizeAssessmentLayout(
+    {
+      version: 1,
+      sections: [{ id: "sec_1", title: "", items: [{ id: "x1", kind: "video_embed" }] }],
+    },
+    questions
+  );
+  assert.match(badKind.error || "", /unsupported assessment layout item kind/i);
+
+  // Rejects invalid content blockType
+  const badBlockType = normalizeAssessmentLayout(
+    {
+      version: 1,
+      sections: [
+        { id: "sec_1", title: "", items: [{ id: "x2", kind: "content", blockType: "html_script", body: "Hi" }] },
+      ],
+    },
+    questions
+  );
+  assert.match(badBlockType.error || "", /unsupported content block type/i);
+});
+
+test("generateAttemptOrdering keeps comprehension passages attached, restricts shuffles to safe boundaries, preserves option grading, and replays identically from snapshot", () => {
+  const questions = [
+    objective({
+      id: "s1",
+      points: 2,
+      options: [
+        { id: "optA", text: "Alpha" },
+        { id: "optB", text: "Beta" },
+        { id: "optC", text: "Gamma" },
+        { id: "optD", text: "Delta" },
+      ],
+      correctOptionIds: ["optB"],
+    }),
+    objective({ id: "s2", points: 2, correctOptionIds: ["a"] }),
+    objective({ id: "s3", points: 2, correctOptionIds: ["b"] }),
+    objective({ id: "c1", points: 3, correctOptionIds: ["a"] }),
+    objective({ id: "c2", points: 3, correctOptionIds: ["b"] }),
+    objective({ id: "c3", points: 3, correctOptionIds: ["a"] }),
+    objective({ id: "t1", points: 2, correctOptionIds: ["a"] }),
+    objective({ id: "t2", points: 2, correctOptionIds: ["b"] }),
+  ];
+
+  const layout = {
+    version: 1,
+    sections: [
+      {
+        id: "sec_1",
+        title: "Section 1",
+        items: [
+          { id: "i_s1", kind: "question", questionId: "s1" },
+          { id: "i_s2", kind: "question", questionId: "s2" },
+          { id: "i_s3", kind: "question", questionId: "s3" },
+          { id: "note_1", kind: "content", blockType: "instruction", title: "Note", body: "Read passage next." },
+          {
+            id: "comp_main",
+            kind: "comprehension",
+            title: "Passage A",
+            body: "A long comprehension text.",
+            questionIds: ["c1", "c2", "c3"],
+          },
+        ],
+      },
+      {
+        id: "sec_2",
+        title: "Section 2",
+        items: [
+          { id: "i_t1", kind: "question", questionId: "t1" },
+          { id: "i_t2", kind: "question", questionId: "t2" },
+        ],
+      },
+    ],
+  };
+
+  const exam = {
+    id: "exam-rand",
+    shuffleQuestions: true,
+    shuffleOptions: true,
+    questions,
+    assessmentLayout: layout,
+  };
+
+  // Run multiple seeds to verify boundary invariants never break
+  for (let seed = 1; seed <= 10; seed += 1) {
+    const ordering = generateAttemptOrdering(exam, questions, createSeededRng(seed));
+    assert.equal(ordering.questionOrder.length, 8);
+
+    // First 3 questions MUST stay within the Section 1 standalone run {s1, s2, s3}
+    assert.deepEqual([...ordering.questionOrder.slice(0, 3)].sort(), ["s1", "s2", "s3"]);
+
+    // Next 3 questions MUST stay within comprehension group {c1, c2, c3} and match questionOrderByGroup
+    const compOrder = ordering.questionOrder.slice(3, 6);
+    assert.deepEqual([...compOrder].sort(), ["c1", "c2", "c3"]);
+    assert.deepEqual(ordering.questionOrderByGroup.comp_main, compOrder);
+
+    // Final 2 questions MUST stay within Section 2 {t1, t2}
+    assert.deepEqual([...ordering.questionOrder.slice(6, 8)].sort(), ["t1", "t2"]);
+
+    // Instruction block stays anchored at index 3 of Section 1, right before comprehension at index 4
+    const sec1Items = ordering.assessmentLayoutSnapshot.sections[0].items;
+    assert.equal(sec1Items[3].kind, "content");
+    assert.equal(sec1Items[3].id, "note_1");
+    assert.equal(sec1Items[4].kind, "comprehension");
+    assert.deepEqual(sec1Items[4].questionIds, compOrder);
+
+    // Option shuffling preserves all stable option IDs and grading still scores optB as correct
+    assert.deepEqual([...ordering.optionOrderMap.s1].sort(), ["optA", "optB", "optC", "optD"]);
+  }
+
+  // Deterministic replay: same seed yields identical ordering, and persisted snapshot resolves identically on reload
+  const runA = generateAttemptOrdering(exam, questions, createSeededRng(1337));
+  const runB = generateAttemptOrdering(exam, questions, createSeededRng(1337));
+  assert.deepEqual(runA, runB);
+
+  // Confirm shuffled options grade accurately against original correctOptionIds
+  const graded = gradeAnswers(
+    { gradingMode: "automatic", questions },
+    {
+      s1: "optB",
+      s2: "a",
+      s3: "b",
+      c1: "a",
+      c2: "b",
+      c3: "a",
+      t1: "a",
+      t2: "b",
+    }
+  );
+  assert.equal(graded.score, 19);
+  assert.equal(graded.maxScore, 19);
+  assert.equal(graded.percentage, 100);
+
+  // Reloading from attempt snapshot produces the exact frozen layout & order
+  const reloadedLayout = resolveAssessmentLayout(
+    { assessmentLayoutSnapshot: runA.assessmentLayoutSnapshot },
+    questions
+  );
+  assert.deepEqual(reloadedLayout, runA.assessmentLayoutSnapshot);
+
+  // shuffleArrayWithRng does not mutate input array
+  const src = [1, 2, 3, 4];
+  const shuffled = shuffleArrayWithRng(src, createSeededRng(7));
+  assert.deepEqual(src, [1, 2, 3, 4]);
+  assert.deepEqual([...shuffled].sort(), [1, 2, 3, 4]);
+});
+
+test("buildQuestionContextMap maps linked comprehension questions to their parent passage and isolates standalone questions", () => {
+  const layout = {
+    version: 1,
+    sections: [
+      {
+        id: "sec_1",
+        title: "Part I",
+        items: [
+          { id: "c_intro", kind: "content", blockType: "instruction", title: "Directions", body: "Read carefully." },
+          { id: "i_q1", kind: "question", questionId: "q1" },
+          { id: "c_pass", kind: "content", blockType: "text", title: "Context", body: "Before passage." },
+          {
+            id: "comp_1",
+            kind: "comprehension",
+            title: "The Water Cycle",
+            body: "Evaporation and condensation.",
+            questionIds: ["q2", "q3"],
+          },
+        ],
+      },
+    ],
+  };
+
+  const ctxMap = buildQuestionContextMap(layout);
+  assert.equal(ctxMap.q1.comprehension, null);
+  assert.equal(ctxMap.q1.section.id, "sec_1");
+  assert.equal(ctxMap.q1.precedingContentBlocks.length, 1);
+  assert.equal(ctxMap.q1.precedingContentBlocks[0].id, "c_intro");
+
+  assert.equal(ctxMap.q2.comprehension.id, "comp_1");
+  assert.equal(ctxMap.q2.comprehensionQuestionIndex, 0);
+  assert.equal(ctxMap.q2.comprehensionQuestionTotal, 2);
+  assert.equal(ctxMap.q2.precedingContentBlocks.length, 1);
+  assert.equal(ctxMap.q2.precedingContentBlocks[0].id, "c_pass");
+
+  assert.equal(ctxMap.q3.comprehension.id, "comp_1");
+  assert.equal(ctxMap.q3.comprehensionQuestionIndex, 1);
+  assert.equal(ctxMap.q3.comprehensionQuestionTotal, 2);
+  assert.equal(ctxMap.q3.precedingContentBlocks.length, 0);
+});
+
+test("canPauseAssessmentWorkType allows pausing only for ASSIGNMENT and ACTIVITY and forbids TEST and EXAMINATION", () => {
+  assert.equal(canPauseAssessmentWorkType("ASSIGNMENT"), true);
+  assert.equal(canPauseAssessmentWorkType("ACTIVITY"), true);
+  assert.equal(canPauseAssessmentWorkType("assignment"), true);
+  assert.equal(canPauseAssessmentWorkType(" activity "), true);
+
+  assert.equal(canPauseAssessmentWorkType("TEST"), false);
+  assert.equal(canPauseAssessmentWorkType("EXAMINATION"), false);
+  assert.equal(canPauseAssessmentWorkType("test"), false);
+  assert.equal(canPauseAssessmentWorkType("examination"), false);
+  assert.equal(canPauseAssessmentWorkType(""), false);
+  assert.equal(canPauseAssessmentWorkType(undefined), false);
+});
+
 
 
 

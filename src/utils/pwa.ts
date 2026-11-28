@@ -88,6 +88,8 @@ export function isPortalAppRoute(pathname: string): boolean {
   return (
     clean === '/portal' ||
     clean.startsWith('/portal/') ||
+    clean === '/coding-lab' ||
+    clean.startsWith('/coding-lab/') ||
     clean === '/register' ||
     clean.startsWith('/register/') ||
     clean === '/admin' ||

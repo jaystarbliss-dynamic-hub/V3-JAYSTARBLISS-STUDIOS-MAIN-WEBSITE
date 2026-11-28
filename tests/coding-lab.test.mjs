@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { gradeScratchProject } from "../api/_lib/coding-lab-grader.js";
 import {
+  SB3_LIMITS,
   isSafeSb3EntryPath,
   sanitizeSvgContent,
   validateScratchProjectJson,
@@ -10,6 +11,7 @@ import {
   compressProjectJson,
   decompressAndVerifyProjectJson,
   splitPayloadForFirestore,
+  diffPayloadChunks,
   reassemblePayloadChunks,
 } from "../api/_lib/coding-lab-sb3-security.js";
 import {
@@ -407,3 +409,42 @@ test("Assessment domain supports CODING_LAB without breaking NATIVE or EXTERNAL_
   assert.ok(!("error" in extValid));
   assert.equal(extValid.deliveryMode, "EXTERNAL_LINK");
 });
+
+test("550 KiB inline headroom threshold and per-chunk SHA-256 diffing minimize Firestore writes", async () => {
+  assert.equal(SB3_LIMITS.firestoreSingleDocThresholdBytes, 550 * 1024);
+
+  // 600 KiB incompressible buffer must split into chunked mode under the 550 KiB threshold
+  const buf600k = new Uint8Array(600 * 1024);
+  for (let i = 0; i < buf600k.length; i += 1) {
+    buf600k[i] = (i * 19 + 7) & 0xff;
+  }
+  const splitA = splitPayloadForFirestore(buf600k);
+  assert.equal(splitA.storageMode, "chunked");
+  assert.equal(splitA.chunkCount, 2);
+
+  // Initial diff against empty previous hashes writes both chunks and deletes 0
+  const diffInitial = await diffPayloadChunks(splitA.chunks, []);
+  assert.equal(diffInitial.changedChunks.length, 2);
+  assert.equal(diffInitial.obsoleteChunkIndices.length, 0);
+  assert.equal(diffInitial.nextChunkHashes.length, 2);
+
+  // Identical re-save writes 0 chunks and deletes 0
+  const diffUnchanged = await diffPayloadChunks(splitA.chunks, diffInitial.nextChunkHashes);
+  assert.equal(diffUnchanged.changedChunks.length, 0);
+  assert.equal(diffUnchanged.obsoleteChunkIndices.length, 0);
+
+  // Mutate ONLY chunk 1 (byte near end of buffer) -> only chunk 1 is rewritten
+  const bufMutated = new Uint8Array(buf600k);
+  bufMutated[bufMutated.length - 10] ^= 0xff;
+  const splitMutated = splitPayloadForFirestore(bufMutated);
+  const diffSingleChunk = await diffPayloadChunks(splitMutated.chunks, diffInitial.nextChunkHashes);
+  assert.equal(diffSingleChunk.changedChunks.length, 1);
+  assert.equal(diffSingleChunk.changedChunks[0].index, 1);
+  assert.equal(diffSingleChunk.obsoleteChunkIndices.length, 0);
+
+  // Shrink project back to inline (empty chunk array) -> obsolete trailing chunks are scheduled for deletion
+  const diffShrunk = await diffPayloadChunks([], diffInitial.nextChunkHashes);
+  assert.equal(diffShrunk.changedChunks.length, 0);
+  assert.deepEqual(diffShrunk.obsoleteChunkIndices, [0, 1]);
+});
+

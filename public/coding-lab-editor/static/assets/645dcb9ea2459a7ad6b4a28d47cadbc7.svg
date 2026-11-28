@@ -1,6 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="88" height="72" viewBox="0 0 88 72">
-          <rect x="10" y="28" width="68" height="36" rx="6" fill="#92400E" stroke="#1E293B" stroke-width="3"/>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="88" height="72" viewBox="0 0 88 72" xmlns:xlink="http://www.w3.org/1999/xlink"><g data-paper-data="{&quot;isPaintingLayer&quot;:true}" fill-rule="nonzero" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" style="mix-blend-mode: normal"><path d="M16 28 L72 28 C75.31 28 78 30.69 78 34 L78 58 C78 61.31 75.31 64 72 64 L16 64 C12.69 64 10 61.31 10 58 L10 34 C10 30.69 12.69 28 16 28 Z" fill="#92400E" stroke="#1E293B" stroke-width="3"/>
           <path d="M10 30 C10 14 78 14 78 30 Z" fill="#B45309" stroke="#1E293B" stroke-width="3"/>
-          <rect x="10" y="28" width="68" height="7" fill="#F59E0B" stroke="#1E293B" stroke-width="2"/>
-          <rect x="38" y="26" width="12" height="16" rx="3" fill="#FACC15" stroke="#1E293B" stroke-width="2.5"/>
-        </svg>
+          <path d="M10 28 L78 28 L78 35 L10 35 Z" fill="#F59E0B" stroke="#1E293B" stroke-width="2"/>
+          <path d="M41 26 L47 26 C48.66 26 50 27.34 50 29 L50 39 C50 40.66 48.66 42 47 42 L41 42 C39.34 42 38 40.66 38 39 L38 29 C38 27.34 39.34 26 41 26 Z" fill="#FACC15" stroke="#1E293B" stroke-width="2.5"/></g></svg>

@@ -61,11 +61,22 @@ export const CodingLabComplianceModal: React.FC<CodingLabComplianceModalProps> =
             </p>
           </div>
 
-          {/* Upstream Source & Revision */}
+          {/* Upstream Source & Engine Revision */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60">
               <div className="font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[10px] mb-1">
-                Upstream Repository
+                Active Self-Hosted Engine
+              </div>
+              <div className="font-semibold text-slate-900 dark:text-slate-100">
+                {CODING_LAB_CONFIG.engineRegistry[CODING_LAB_CONFIG.engine].label}
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Licence: {compliance.licenseName}
+              </div>
+            </div>
+            <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60">
+              <div className="font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[10px] mb-1">
+                Upstream Source &amp; Revision
               </div>
               <a
                 href={compliance.upstreamRepositoryUrl}
@@ -73,15 +84,12 @@ export const CodingLabComplianceModal: React.FC<CodingLabComplianceModalProps> =
                 rel="noopener noreferrer"
                 className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium break-all"
               >
-                scratchfoundation/scratch-editor
+                {CODING_LAB_CONFIG.engine === 'turbowarp'
+                  ? 'TurboWarp/scratch-gui'
+                  : 'scratchfoundation/scratch-editor'}
                 <ExternalLink size={12} />
               </a>
-            </div>
-            <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60">
-              <div className="font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[10px] mb-1">
-                Pinned Revision
-              </div>
-              <div className="font-mono text-slate-900 dark:text-slate-100 break-all">
+              <div className="font-mono text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 break-all">
                 v{compliance.upstreamVersion} • {compliance.upstreamCommitHash.slice(0, 12)}
               </div>
             </div>

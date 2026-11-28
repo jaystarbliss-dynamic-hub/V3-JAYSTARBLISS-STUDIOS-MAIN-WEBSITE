@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import { Fragment, useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { auth, db, getAllClientDatabases } from "../../lib/firebase";
 import {
@@ -83,7 +83,17 @@ import {
   Award,
   Play,
   RotateCcw,
+  ArrowUpDown,
 } from "lucide-react";
+import {
+  sortAssessments,
+  groupAssessmentsByRecency,
+  formatAssessmentRecencyLabel,
+  sortDropdownLabels,
+  sortNamedEntities,
+  toTimestampMs,
+  type AssessmentSortOrder,
+} from "../../lib/assessmentOrdering";
 import { TableSkeleton, MetricGridSkeleton } from "../../components/ui/Skeleton";
 
 function attemptStatusRank(status?: string): number {
@@ -228,7 +238,10 @@ type Attempt = {
   maxScore?: number;
   percentage?: number;
   submittedAt?: any;
+  gradedAt?: any;
   releasedAt?: any;
+  updatedAt?: any;
+  startedAt?: any;
   resultReleased?: boolean;
   autoGraded?: boolean;
   answers?: Record<string, any>;
@@ -482,6 +495,10 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
   const [workTypeTab, setWorkTypeTab] = useState<"ALL" | WorkType>("ALL");
   const [overviewSearch, setOverviewSearch] = useState("");
   const [archiveSearch, setArchiveSearch] = useState("");
+  const [assessmentDropdownSort, setAssessmentDropdownSort] =
+    useState<AssessmentSortOrder>("newest");
+  const [overviewSortOrder, setOverviewSortOrder] = useState<AssessmentSortOrder>("newest");
+  const [archiveSortOrder, setArchiveSortOrder] = useState<AssessmentSortOrder>("newest");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [zipBusy, setZipBusy] = useState(false);
@@ -1816,23 +1833,31 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     return map;
   }, [attempts]);
 
-  // Filtered Private Learners for selector dropdown
+  // Alphabetically sorted partner schools for all dropdown selectors
+  const sortedAvailableSchools = useMemo(
+    () => sortNamedEntities(availableSchools),
+    [availableSchools]
+  );
+
+  // Filtered Private Learners for selector dropdown (Alphabetical A–Z)
   const filteredPrivateLearnerOptions = useMemo(() => {
-    return privateLearners.filter((p) => {
+    const matches = privateLearners.filter((p) => {
       if (privateSubFilter !== "all" && p.subType !== privateSubFilter) return false;
       return true;
     });
+    return sortNamedEntities(matches);
   }, [privateLearners, privateSubFilter]);
 
-  // Filtered Partner School Learners for selector dropdown
+  // Filtered Partner School Learners for selector dropdown (Alphabetical A–Z)
   const filteredSchoolLearnerOptions = useMemo(() => {
-    return schoolLearners.filter((s) => {
+    const matches = schoolLearners.filter((s) => {
       if (schoolId && s.schoolId !== schoolId) return false;
       if (selectedClass && normalizeClassName(s.className) !== normalizeClassName(selectedClass)) {
         return false;
       }
       return true;
     });
+    return sortNamedEntities(matches);
   }, [schoolLearners, schoolId, selectedClass]);
 
   // Helper: Resolve all normalized classes associated with an exam (explicit classIds, gradeRange, targetClass)
@@ -2099,6 +2124,12 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     getExamClassSet,
   ]);
 
+  // Ordered Assessment dropdown options (Newest → Oldest by default, or Oldest / A–Z)
+  const sortedAvailableExamsForFilter = useMemo(
+    () => sortAssessments(availableExamsForFilter, assessmentDropdownSort, { mode: "concluded" }),
+    [availableExamsForFilter, assessmentDropdownSort]
+  );
+
   // Auto-clear downstream selections whenever upstream filters invalidate them
   useEffect(() => {
     if (selectedClass && !availableClassesForFilter.includes(selectedClass)) {
@@ -2166,6 +2197,25 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       if (attemptStateFilter === "in_progress" && a.status !== "in_progress") return false;
       if (attemptStateFilter === "expired" && a.status !== "expired") return false;
       return true;
+    }).sort((a, b) => {
+      const tsB = Math.max(
+        toTimestampMs(b.submittedAt),
+        toTimestampMs(b.gradedAt),
+        toTimestampMs(b.releasedAt),
+        toTimestampMs(b.updatedAt),
+        toTimestampMs(b.startedAt)
+      );
+      const tsA = Math.max(
+        toTimestampMs(a.submittedAt),
+        toTimestampMs(a.gradedAt),
+        toTimestampMs(a.releasedAt),
+        toTimestampMs(a.updatedAt),
+        toTimestampMs(a.startedAt)
+      );
+      if (tsB !== tsA) return tsB - tsA;
+      return String(a.studentName || "").localeCompare(String(b.studentName || ""), undefined, {
+        sensitivity: "base",
+      });
     });
   }, [
     attempts,
@@ -2245,13 +2295,23 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
     archiveSearch,
   ]);
 
-  // Filtered current & upcoming exams for Examination Overview
+  const sortedArchivedExams = useMemo(
+    () => sortAssessments(filteredArchivedExams, archiveSortOrder, { mode: "concluded" }),
+    [filteredArchivedExams, archiveSortOrder]
+  );
+
+  const archivedRecencyGroups = useMemo(
+    () => groupAssessmentsByRecency(sortedArchivedExams, { mode: "concluded" }),
+    [sortedArchivedExams]
+  );
+
+  // Filtered current & upcoming exams for Examination Overview (sorted newest → oldest by default)
   const currentAndUpcomingExams = useMemo(() => {
     const combined = [
       ...categorizedExams.active.map((e) => ({ ...e, computedLifecycle: "active" as const })),
       ...categorizedExams.upcoming.map((e) => ({ ...e, computedLifecycle: "upcoming" as const })),
     ];
-    return combined.filter((ex) => {
+    const filteredList = combined.filter((ex) => {
       if (workTypeTab !== "ALL" && normalizeWorkType(ex.workType, ex) !== workTypeTab) {
         return false;
       }
@@ -2271,7 +2331,20 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
       }
       return true;
     });
-  }, [categorizedExams, workTypeTab, overviewStatusFilter, selectedClass, overviewSearch]);
+    return sortAssessments(filteredList, overviewSortOrder, { mode: "general" });
+  }, [
+    categorizedExams,
+    workTypeTab,
+    overviewStatusFilter,
+    selectedClass,
+    overviewSearch,
+    overviewSortOrder,
+  ]);
+
+  const overviewRecencyGroups = useMemo(
+    () => groupAssessmentsByRecency(currentAndUpcomingExams, { mode: "general" }),
+    [currentAndUpcomingExams]
+  );
 
   const overviewClasses = useMemo(() => {
     const set = new Set<string>();
@@ -2283,7 +2356,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
         if (norm) set.add(norm);
       });
     });
-    return Array.from(set).sort();
+    return sortDropdownLabels(Array.from(set));
   }, [categorizedExams]);
 
   // Average Released Score calculated from accurate percentages (score / maxScore * 100)
@@ -2661,7 +2734,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                   <option value="">
                     {isPlatformAdmin ? "All Partner Schools" : "All Assigned Schools"}
                   </option>
-                  {availableSchools.map((s) => (
+                  {sortedAvailableSchools.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                     </option>
@@ -2729,6 +2802,19 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-1.5">
+                <ArrowUpDown size={13} className="text-slate-400 shrink-0" />
+                <select
+                  aria-label="Sort school assessments"
+                  value={overviewSortOrder}
+                  onChange={(e) => setOverviewSortOrder(e.target.value as AssessmentSortOrder)}
+                  className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:border-[#1E293B] dark:focus:border-white cursor-pointer"
+                >
+                  <option value="newest">Newest First (Grouped)</option>
+                  <option value="oldest">Oldest First</option>
+                  <option value="alpha">Alphabetical (A–Z)</option>
+                </select>
+              </div>
               <button
                 type="button"
                 disabled={loading}
@@ -2788,130 +2874,167 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               </p>
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {currentAndUpcomingExams.map((ex) => {
-                const isUpcoming = ex.computedLifecycle === "upcoming";
-                const isExternal = ex.deliveryMode === "EXTERNAL_LINK";
-                const stats = attemptCountsByExam[ex.id] || {
-                  total: 0,
-                  submitted: 0,
-                  inProgress: 0,
-                };
-                return (
-                  <article
-                    key={ex.id}
-                    onContextMenu={(e) => {
-                      if (!isSchoolUser) {
-                        examContextMenu.openFromContextMenu(e, ex);
-                      }
-                    }}
-                    {...(!isSchoolUser ? examContextMenu.getTouchHandlers(ex) : {})}
-                    className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-4 sm:p-5 flex flex-col justify-between gap-4"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold uppercase tracking-wider">
-                          <span className="text-[#B91C1C] dark:text-red-400">
-                            {getWorkTypeLabels(ex.workType, ex).singular}
-                          </span>
-                          <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
-                          <span
-                            className={
-                              isUpcoming
-                                ? "text-slate-600 dark:text-slate-300"
-                                : "text-[#1E293B] dark:text-white"
-                            }
-                          >
-                            {isUpcoming ? "Upcoming / Scheduled" : "Active Now"}
-                          </span>
-                          <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
-                          <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
-                            {isExternal ? <ExternalLink size={11} /> : <Layers size={11} />}
-                            {isExternal ? "External Link" : "Native CBT"}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                            Class: {ex.targetClass || ex.classIds?.join(", ") || "All"}
-                          </span>
-                          {!isSchoolUser && (
-                            <RowActionMenuButton
-                              onClick={(e) => {
-                                if (examContextMenu.state?.data?.id === ex.id) {
-                                  examContextMenu.close();
-                                } else {
-                                  examContextMenu.openFromButton(e, ex);
-                                }
-                              }}
-                              ariaLabel={`Actions for ${ex.title}`}
-                            />
-                          )}
-                        </div>
+            <div className="space-y-6">
+              {(overviewSortOrder === "newest"
+                ? overviewRecencyGroups
+                : [{ key: "flat" as const, label: "", subtitle: "", items: currentAndUpcomingExams }]
+              ).map((group) => (
+                <div key={group.key} className="space-y-3">
+                  {group.label && (
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-800 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`h-2 w-2 rounded-full shrink-0 ${
+                            group.key === "most_recent"
+                              ? "bg-[#B91C1C]"
+                              : group.key === "this_month"
+                              ? "bg-[#1E293B] dark:bg-slate-300"
+                              : "bg-slate-400 dark:bg-slate-500"
+                          }`}
+                        />
+                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                          {group.label}
+                        </h3>
+                        <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                          · {group.subtitle}
+                        </span>
                       </div>
-
-                      <h3 className="font-bold text-base text-slate-900 dark:text-white">
-                        {ex.title}
-                      </h3>
-
-                      <p className="text-xs text-slate-600 dark:text-slate-400">
-                        <strong>{ex.subject}</strong>
-                        {!isExternal && (
-                          <>
-                            {" "}
-                            · {ex.durationMinutes || 30} mins ·{" "}
-                            <span className="tabular-nums">
-                              {ex.maxScore ?? computeExamMaxScore(ex)} Marks
-                            </span>
-                          </>
-                        )}
-                      </p>
-
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 pt-1">
-                        {ex.availableFrom && (
-                          <span className="inline-flex items-center gap-1">
-                            <Calendar size={12} /> Opens:{" "}
-                            {new Date(ex.availableFrom).toLocaleString()}
-                          </span>
-                        )}
-                        {ex.availableUntil && (
-                          <span className="inline-flex items-center gap-1">
-                            <Clock size={12} /> Closes:{" "}
-                            {new Date(ex.availableUntil).toLocaleString()}
-                          </span>
-                        )}
-                        {!isExternal && (
-                          <span className="tabular-nums">
-                            Attempts: <strong>{stats.total}</strong> ({stats.submitted} submitted
-                            {stats.inProgress > 0 ? `, ${stats.inProgress} in progress` : ""})
-                          </span>
-                        )}
-                      </div>
+                      <span className="text-[11px] font-bold tabular-nums text-slate-500 dark:text-slate-400">
+                        {group.items.length} assessment{group.items.length === 1 ? "" : "s"}
+                      </span>
                     </div>
-
-                    {ex.passcode && (
-                      <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <KeyRound size={15} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
-                          <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                            Access Code:
-                          </span>
-                          <code className="font-mono text-sm font-black tracking-wider text-slate-900 dark:text-white truncate">
-                            {ex.passcode}
-                          </code>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => copyPasscode(ex.id, ex.passcode)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-[#1E293B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#0F172A] shrink-0 cursor-pointer"
+                  )}
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {group.items.map((ex) => {
+                      const isUpcoming = ex.computedLifecycle === "upcoming";
+                      const isExternal = ex.deliveryMode === "EXTERNAL_LINK";
+                      const recencyStamp = formatAssessmentRecencyLabel(ex, { mode: "general" });
+                      const stats = attemptCountsByExam[ex.id] || {
+                        total: 0,
+                        submitted: 0,
+                        inProgress: 0,
+                      };
+                      return (
+                        <article
+                          key={ex.id}
+                          onContextMenu={(e) => {
+                            if (!isSchoolUser) {
+                              examContextMenu.openFromContextMenu(e, ex);
+                            }
+                          }}
+                          {...(!isSchoolUser ? examContextMenu.getTouchHandlers(ex) : {})}
+                          className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-4 sm:p-5 flex flex-col justify-between gap-4"
                         >
-                          {copiedExamId === ex.id ? <Check size={13} /> : <Copy size={13} />}
-                          {copiedExamId === ex.id ? "Copied" : "Copy Code"}
-                        </button>
-                      </div>
-                    )}
-                  </article>
-                );
-              })}
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold uppercase tracking-wider">
+                                <span className="text-[#B91C1C] dark:text-red-400">
+                                  {getWorkTypeLabels(ex.workType, ex).singular}
+                                </span>
+                                <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                                <span
+                                  className={
+                                    isUpcoming
+                                      ? "text-slate-600 dark:text-slate-300"
+                                      : "text-[#1E293B] dark:text-white"
+                                  }
+                                >
+                                  {isUpcoming ? "Upcoming / Scheduled" : "Active Now"}
+                                </span>
+                                <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                                <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
+                                  {isExternal ? <ExternalLink size={11} /> : <Layers size={11} />}
+                                  {isExternal ? "External Link" : "Native CBT"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 tabular-nums">
+                                  {recencyStamp}
+                                </span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                  Class: {ex.targetClass || ex.classIds?.join(", ") || "All"}
+                                </span>
+                                {!isSchoolUser && (
+                                  <RowActionMenuButton
+                                    onClick={(e) => {
+                                      if (examContextMenu.state?.data?.id === ex.id) {
+                                        examContextMenu.close();
+                                      } else {
+                                        examContextMenu.openFromButton(e, ex);
+                                      }
+                                    }}
+                                    ariaLabel={`Actions for ${ex.title}`}
+                                  />
+                                )}
+                              </div>
+                            </div>
+
+                            <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                              {ex.title}
+                            </h3>
+
+                            <p className="text-xs text-slate-600 dark:text-slate-400">
+                              <strong>{ex.subject}</strong>
+                              {!isExternal && (
+                                <>
+                                  {" "}
+                                  · {ex.durationMinutes || 30} mins ·{" "}
+                                  <span className="tabular-nums">
+                                    {ex.maxScore ?? computeExamMaxScore(ex)} Marks
+                                  </span>
+                                </>
+                              )}
+                            </p>
+
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 pt-1">
+                              {ex.availableFrom && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Calendar size={12} /> Opens:{" "}
+                                  {new Date(ex.availableFrom).toLocaleString()}
+                                </span>
+                              )}
+                              {ex.availableUntil && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Clock size={12} /> Closes:{" "}
+                                  {new Date(ex.availableUntil).toLocaleString()}
+                                </span>
+                              )}
+                              {!isExternal && (
+                                <span className="tabular-nums">
+                                  Attempts: <strong>{stats.total}</strong> ({stats.submitted} submitted
+                                  {stats.inProgress > 0 ? `, ${stats.inProgress} in progress` : ""})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {ex.passcode && (
+                            <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <KeyRound size={15} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
+                                <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                                  Access Code:
+                                </span>
+                                <code className="font-mono text-sm font-black tracking-wider text-slate-900 dark:text-white truncate">
+                                  {ex.passcode}
+                                </code>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => copyPasscode(ex.id, ex.passcode)}
+                                className="inline-flex items-center gap-1 rounded-lg bg-[#1E293B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#0F172A] shrink-0 cursor-pointer"
+                              >
+                                {copiedExamId === ex.id ? <Check size={13} /> : <Copy size={13} />}
+                                {copiedExamId === ex.id ? "Copied" : "Copy Code"}
+                              </button>
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </section>
@@ -3324,7 +3447,7 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 <option value="">
                   {isPlatformAdmin ? "All Partner Schools" : "All Assigned Schools"}
                 </option>
-                {availableSchools.map((s) => (
+                {sortedAvailableSchools.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -3333,25 +3456,40 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
             </label>
           )}
 
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
-            Assessment ({availableExamsForFilter.length})
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="assessment-history-filter-select">
+                Assessment ({sortedAvailableExamsForFilter.length})
+              </label>
+              <select
+                aria-label="Order assessment dropdown list"
+                value={assessmentDropdownSort}
+                onChange={(e) => setAssessmentDropdownSort(e.target.value as AssessmentSortOrder)}
+                className="rounded-md border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 px-1.5 py-0.5 text-[10px] font-bold normal-case tracking-normal text-slate-600 dark:text-zinc-300 outline-none focus:border-[#1E293B] cursor-pointer"
+              >
+                <option value="newest">Newest → Oldest</option>
+                <option value="oldest">Oldest → Newest</option>
+                <option value="alpha">A → Z</option>
+              </select>
+            </div>
             <select
+              id="assessment-history-filter-select"
               className="mt-1.5 block w-full rounded-xl border border-slate-300 dark:border-zinc-700 bg-white dark:bg-[#09090B] p-2.5 text-sm font-normal text-slate-800 dark:text-zinc-100 outline-none focus:border-[#1E293B] dark:focus:border-white normal-case tracking-normal"
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
             >
               <option value="">
-                {availableExamsForFilter.length === 0
+                {sortedAvailableExamsForFilter.length === 0
                   ? "No assessments in current scope"
-                  : `All Matching Assessments (${availableExamsForFilter.length})`}
+                  : `All Matching Assessments (${sortedAvailableExamsForFilter.length})`}
               </option>
-              {availableExamsForFilter.map((e) => (
+              {sortedAvailableExamsForFilter.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.title} — {e.subject}
+                  {e.title} — {e.subject} ({formatAssessmentRecencyLabel(e, { mode: "concluded" })})
                 </option>
               ))}
             </select>
-          </label>
+          </div>
 
           {recipientCategory !== "private_students" ? (
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
@@ -3857,32 +3995,47 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
               Click any archived assessment row to inspect full participation records, student submissions, and individual reports.
             </p>
           </div>
-          {/* Small Search Bar beside the Completed & Past Assessments Archive heading */}
-          <div className="relative w-full sm:w-72 shrink-0">
-            <Search
-              size={14}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-            />
-            <input
-              type="text"
-              value={archiveSearch}
-              onChange={(e) => setArchiveSearch(e.target.value)}
-              placeholder="Search title, subject, school or class…"
-              className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 pl-8 pr-8 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-[#1E293B] dark:focus:border-white focus:bg-white dark:focus:bg-slate-900"
-            />
-            {archiveSearch && (
-              <button
-                type="button"
-                onClick={() => setArchiveSearch("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+          {/* Sort Selector & Search Bar beside the Completed & Past Assessments Archive heading */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto shrink-0">
+            <div className="inline-flex items-center gap-1.5 shrink-0">
+              <ArrowUpDown size={13} className="text-slate-400 shrink-0" />
+              <select
+                aria-label="Sort archived assessments"
+                value={archiveSortOrder}
+                onChange={(e) => setArchiveSortOrder(e.target.value as AssessmentSortOrder)}
+                className="rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:border-[#1E293B] dark:focus:border-white cursor-pointer"
               >
-                <X size={13} />
-              </button>
-            )}
+                <option value="newest">Newest First (Grouped)</option>
+                <option value="oldest">Oldest First</option>
+                <option value="alpha">Alphabetical (A–Z)</option>
+              </select>
+            </div>
+            <div className="relative w-full sm:w-64 shrink-0">
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+              />
+              <input
+                type="text"
+                value={archiveSearch}
+                onChange={(e) => setArchiveSearch(e.target.value)}
+                placeholder="Search title, subject, school or class…"
+                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 pl-8 pr-8 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-[#1E293B] dark:focus:border-white focus:bg-white dark:focus:bg-slate-900"
+              />
+              {archiveSearch && (
+                <button
+                  type="button"
+                  onClick={() => setArchiveSearch("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {filteredArchivedExams.length === 0 ? (
+        {sortedArchivedExams.length === 0 ? (
           <div className="p-10 text-center text-slate-500">
             <History size={34} className="mx-auto mb-2 text-slate-400" />
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -3908,117 +4061,164 @@ export default function ExaminationHistory({ mode }: ExaminationHistoryProps = {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredArchivedExams.map((ex) => {
-                  const stats = attemptCountsByExam[ex.id] || {
-                    total: 0,
-                    submitted: 0,
-                    inProgress: 0,
-                  };
-                  const typeLabels = getWorkTypeLabels(ex.workType, ex);
-                  const isPriv = isPrivateAttemptOrExam({
-                    schoolId: ex.schoolId,
-                    schoolName: ex.schoolName,
-                    recipientMode: ex.recipientMode,
-                  });
-                  const schoolDisplay = isPriv
-                    ? "Private Students Cohort"
-                    : resolveSchoolLabel(ex.schoolId, ex.schoolName);
-                  const classDisplay =
-                    ex.targetClass ||
-                    ex.className ||
-                    (Array.isArray(ex.classIds) && ex.classIds.length > 0
-                      ? ex.classIds.join(", ")
-                      : "All Eligible");
-                  const closingDateDisplay = formatTimestampShort(
-                    ex.dueDate || ex.availableUntil || ex.updatedAt || ex.createdAt
-                  );
+                {(archiveSortOrder === "newest"
+                  ? archivedRecencyGroups
+                  : [{ key: "flat" as const, label: "", subtitle: "", items: sortedArchivedExams }]
+                ).map((group) => (
+                  <Fragment key={group.key}>
+                    {group.label && (
+                      <tr className="bg-slate-50/95 dark:bg-slate-800/80 border-y border-slate-200/80 dark:border-slate-700">
+                        <td colSpan={8} className="px-4 py-2.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`h-2 w-2 rounded-full shrink-0 ${
+                                  group.key === "most_recent"
+                                    ? "bg-[#B91C1C]"
+                                    : group.key === "this_month"
+                                    ? "bg-[#1E293B] dark:bg-slate-300"
+                                    : "bg-slate-400 dark:bg-slate-500"
+                                }`}
+                              />
+                              <span className="text-[11px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                                {group.label}
+                              </span>
+                              <span className="text-[11px] font-medium text-slate-400 dark:text-slate-400">
+                                · {group.subtitle}
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-bold tabular-nums text-slate-500 dark:text-slate-400">
+                              {group.items.length} assessment{group.items.length === 1 ? "" : "s"}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {group.items.map((ex) => {
+                      const stats = attemptCountsByExam[ex.id] || {
+                        total: 0,
+                        submitted: 0,
+                        inProgress: 0,
+                      };
+                      const typeLabels = getWorkTypeLabels(ex.workType, ex);
+                      const isPriv = isPrivateAttemptOrExam({
+                        schoolId: ex.schoolId,
+                        schoolName: ex.schoolName,
+                        recipientMode: ex.recipientMode,
+                      });
+                      const schoolDisplay = isPriv
+                        ? "Private Students Cohort"
+                        : resolveSchoolLabel(ex.schoolId, ex.schoolName);
+                      const classDisplay =
+                        ex.targetClass ||
+                        ex.className ||
+                        (Array.isArray(ex.classIds) && ex.classIds.length > 0
+                          ? ex.classIds.join(", ")
+                          : "All Eligible");
+                      const closingDateDisplay = formatTimestampShort(
+                        (ex as any).manuallyClosedAt ||
+                          ex.dueDate ||
+                          ex.availableUntil ||
+                          ex.updatedAt ||
+                          ex.createdAt
+                      );
+                      const recencyStamp = formatAssessmentRecencyLabel(ex, { mode: "concluded" });
 
-                  const rawSt = String(ex.status || "completed").toLowerCase();
-                  const isClosedRow =
-                    rawSt === "completed" ||
-                    rawSt === "closed" ||
-                    isExamPastEffectiveDeadline(ex);
+                      const rawSt = String(ex.status || "completed").toLowerCase();
+                      const isClosedRow =
+                        rawSt === "completed" ||
+                        rawSt === "closed" ||
+                        isExamPastEffectiveDeadline(ex);
 
-                  return (
-                    <tr
-                      key={ex.id}
-                      onClick={() => setArchivedDetailExam(ex)}
-                      onContextMenu={(e) => {
-                        if (!isSchoolUser) {
-                          examContextMenu.openFromContextMenu(e, ex);
-                        }
-                      }}
-                      {...(!isSchoolUser ? examContextMenu.getTouchHandlers(ex) : {})}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
-                    >
-                      <td className="p-3.5 sm:p-4 font-bold text-slate-900 dark:text-white group-hover:text-[#B91C1C] dark:group-hover:text-red-400">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span>{ex.title}</span>
-                          <span
-                            className={`text-[10px] font-black uppercase tracking-wider ${
-                              isClosedRow
-                                ? "text-[#B91C1C] dark:text-red-400"
-                                : "text-emerald-700 dark:text-emerald-400"
-                            }`}
+                      return (
+                        <tr
+                          key={ex.id}
+                          onClick={() => setArchivedDetailExam(ex)}
+                          onContextMenu={(e) => {
+                            if (!isSchoolUser) {
+                              examContextMenu.openFromContextMenu(e, ex);
+                            }
+                          }}
+                          {...(!isSchoolUser ? examContextMenu.getTouchHandlers(ex) : {})}
+                          className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+                        >
+                          <td className="p-3.5 sm:p-4 font-bold text-slate-900 dark:text-white group-hover:text-[#B91C1C] dark:group-hover:text-red-400">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span>{ex.title}</span>
+                              <span
+                                className={`text-[10px] font-black uppercase tracking-wider ${
+                                  isClosedRow
+                                    ? "text-[#B91C1C] dark:text-red-400"
+                                    : "text-emerald-700 dark:text-emerald-400"
+                                }`}
+                              >
+                                · {isClosedRow ? "Closed" : "Active"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3.5 sm:p-4">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
+                              {typeLabels.singular}
+                            </span>
+                          </td>
+                          <td className="p-3.5 sm:p-4 text-slate-700 dark:text-slate-300 font-medium">
+                            {ex.subject || "General"}
+                          </td>
+                          <td className="p-3.5 sm:p-4 text-slate-700 dark:text-slate-300">
+                            {schoolDisplay}
+                          </td>
+                          <td className="p-3.5 sm:p-4 text-slate-600 dark:text-slate-400">
+                            {classDisplay}
+                          </td>
+                          <td className="p-3.5 sm:p-4 text-center">
+                            <span className="inline-flex items-center gap-1 text-xs font-bold tabular-nums text-[#1E293B] dark:text-slate-200">
+                              <Users size={12} />
+                              {stats.total} student{stats.total === 1 ? "" : "s"}
+                            </span>
+                          </td>
+                          <td className="p-3.5 sm:p-4 text-slate-600 dark:text-slate-400 whitespace-nowrap tabular-nums">
+                            <div>
+                              <p className="font-semibold text-slate-700 dark:text-slate-200">
+                                {closingDateDisplay}
+                              </p>
+                              <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                                {recencyStamp}
+                              </p>
+                            </div>
+                          </td>
+                          <td
+                            className="p-3.5 sm:p-4 text-right whitespace-nowrap"
+                            onClick={(e) => {
+                              // Prevent row modal open when clicking the options button container
+                              if ((e.target as HTMLElement).closest("button")) {
+                                e.stopPropagation();
+                              }
+                            }}
                           >
-                            · {isClosedRow ? "Closed" : "Active"}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-3.5 sm:p-4">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#B91C1C] dark:text-red-400">
-                          {typeLabels.singular}
-                        </span>
-                      </td>
-                      <td className="p-3.5 sm:p-4 text-slate-700 dark:text-slate-300 font-medium">
-                        {ex.subject || "General"}
-                      </td>
-                      <td className="p-3.5 sm:p-4 text-slate-700 dark:text-slate-300">
-                        {schoolDisplay}
-                      </td>
-                      <td className="p-3.5 sm:p-4 text-slate-600 dark:text-slate-400">
-                        {classDisplay}
-                      </td>
-                      <td className="p-3.5 sm:p-4 text-center">
-                        <span className="inline-flex items-center gap-1 text-xs font-bold tabular-nums text-[#1E293B] dark:text-slate-200">
-                          <Users size={12} />
-                          {stats.total} student{stats.total === 1 ? "" : "s"}
-                        </span>
-                      </td>
-                      <td className="p-3.5 sm:p-4 text-slate-600 dark:text-slate-400 whitespace-nowrap tabular-nums">
-                        {closingDateDisplay}
-                      </td>
-                      <td
-                        className="p-3.5 sm:p-4 text-right whitespace-nowrap"
-                        onClick={(e) => {
-                          // Prevent row modal open when clicking the options button container
-                          if ((e.target as HTMLElement).closest("button")) {
-                            e.stopPropagation();
-                          }
-                        }}
-                      >
-                        <div className="inline-flex items-center justify-end gap-2">
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-[#B91C1C] dark:text-red-400 group-hover:translate-x-0.5 transition-transform">
-                            View Records
-                            <ChevronRight size={14} />
-                          </span>
-                          {!isSchoolUser && (
-                            <RowActionMenuButton
-                              onClick={(e) => {
-                                if (examContextMenu.state?.data?.id === ex.id) {
-                                  examContextMenu.close();
-                                } else {
-                                  examContextMenu.openFromButton(e, ex);
-                                }
-                              }}
-                              ariaLabel={`Actions for ${ex.title}`}
-                            />
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                            <div className="inline-flex items-center justify-end gap-2">
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#B91C1C] dark:text-red-400 group-hover:translate-x-0.5 transition-transform">
+                                View Records
+                                <ChevronRight size={14} />
+                              </span>
+                              {!isSchoolUser && (
+                                <RowActionMenuButton
+                                  onClick={(e) => {
+                                    if (examContextMenu.state?.data?.id === ex.id) {
+                                      examContextMenu.close();
+                                    } else {
+                                      examContextMenu.openFromButton(e, ex);
+                                    }
+                                  }}
+                                  ariaLabel={`Actions for ${ex.title}`}
+                                />
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                ))}
               </tbody>
             </table>
           </div>

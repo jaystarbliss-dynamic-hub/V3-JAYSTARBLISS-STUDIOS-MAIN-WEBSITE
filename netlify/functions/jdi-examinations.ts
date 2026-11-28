@@ -23,6 +23,8 @@ import {
   mergeExamRecordByPrecedence,
   normalizeWorkType,
   recalculateAttemptForUpdatedExam,
+  generateAttemptOrdering,
+  canPauseAssessmentWorkType,
 } from "../../api/_lib/jdi-assessment.js";
 
 const json = (statusCode: number, body: Record<string, unknown>) => ({
@@ -836,23 +838,13 @@ export const handler: Handler = async event => {
         ? Math.min(525600, Math.max(1, Number(exam.durationMinutes || 30)))
         : null;
       const questions = Array.isArray(exam.questions) ? exam.questions : [];
-      const shuffle = <T,>(items: T[]) => {
-        const copy = [...items];
-        for (let i = copy.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [copy[i], copy[j]] = [copy[j], copy[i]];
-        }
-        return copy;
-      };
-      const questionOrder =
-        exam.shuffleQuestions === true
-          ? shuffle(questions.map((q: any) => String(q.id)))
-          : questions.map((q: any) => String(q.id));
-      const optionOrderMap: Record<string, string[]> = {};
-      for (const q of questions) {
-        const ids = Array.isArray(q.options) ? q.options.map((o: any) => String(o.id)) : [];
-        optionOrderMap[String(q.id)] = exam.shuffleOptions === true ? shuffle(ids) : ids;
-      }
+      const ordering = generateAttemptOrdering(exam, questions);
+      const {
+        questionOrder,
+        optionOrderMap,
+        assessmentLayoutSnapshot,
+        questionOrderByGroup,
+      } = ordering;
 
       const resolvedSchoolName = await resolveSchoolNameById(
         schoolId || String(exam.schoolId || ""),
@@ -884,8 +876,11 @@ export const handler: Handler = async event => {
         deliveryMode: resolvedDeliveryMode,
         maxScore,
         questionsSnapshot: questions,
+        assessmentLayoutSnapshot,
+        questionOrderByGroup,
         startedAt: FieldValue.serverTimestamp(),
         deadlineAt: duration ? new Date(now + duration * 60000).toISOString() : null,
+        isPaused: false,
         answers: {},
         questionOrder,
         optionOrderMap,
@@ -925,15 +920,35 @@ export const handler: Handler = async event => {
           const activeSnap = await tx.get(activeRef);
           const activeData = activeSnap.data() || {};
           const allowFinishAfterManualClose = currentExam.allowInProgressFinish === true;
+          const isPausedPausable =
+            activeData.isPaused === true && canPauseAssessmentWorkType(currentExam.workType);
+          const notExpiredOrPaused =
+            isPausedPausable ||
+            !activeData.deadlineAt ||
+            new Date(activeData.deadlineAt).getTime() > Date.now();
           if (
             !isRetakeRequest &&
             activeSnap.exists &&
             activeData.status === "in_progress" &&
             activeData.studentUid === c.uid &&
-            (!activeData.deadlineAt || new Date(activeData.deadlineAt).getTime() > Date.now()) &&
+            notExpiredOrPaused &&
             (effectiveStatus === "active" ||
               ((effectiveStatus === "completed" || effectiveStatus === "closed") && allowFinishAfterManualClose))
           ) {
+            if (isPausedPausable) {
+              const remSec = Number(activeData.remainingSecondsAtPause || 0);
+              const resumedDeadline =
+                Number.isFinite(remSec) && remSec > 0
+                  ? new Date(Date.now() + remSec * 1000).toISOString()
+                  : null;
+              tx.update(activeRef, {
+                isPaused: false,
+                pausedAt: FieldValue.delete(),
+                remainingSecondsAtPause: FieldValue.delete(),
+                deadlineAt: resumedDeadline ? resumedDeadline : FieldValue.delete(),
+                updatedAt: FieldValue.serverTimestamp(),
+              });
+            }
             resumed = true;
             finalAttemptId = activeRef.id;
             return;
@@ -1174,6 +1189,7 @@ export const handler: Handler = async event => {
         externalUrl,
         questions: normalizedQuestions,
         questionCount,
+        assessmentLayout: validatedAssessmentLayout,
         maxScore: computedMaxScore,
         durationMinutes,
         gradingMode,
@@ -1269,6 +1285,9 @@ export const handler: Handler = async event => {
         learningVideoUrl: learningVideoUrl || null,
         questions: deliveryMode === "NATIVE" ? normalizedQuestions : [],
         questionCount: deliveryMode === "NATIVE" ? questionCount : 0,
+        ...(deliveryMode === "NATIVE" && validatedAssessmentLayout
+          ? { assessmentLayout: validatedAssessmentLayout }
+          : {}),
         ...(deliveryMode === "CODING_LAB" && validatedCodingLabConfig
           ? { codingLabConfig: validatedCodingLabConfig }
           : {}),

@@ -43,8 +43,21 @@ import {
   resolveCanonicalExamStatus as sharedResolveCanonicalExamStatus,
   mergeExamRecordByPrecedence as sharedMergeExamRecordByPrecedence,
   MANUAL_DELIVERABLE_TYPES as SHARED_MANUAL_DELIVERABLE_TYPES,
+  buildDefaultAssessmentLayout as sharedBuildDefaultAssessmentLayout,
+  normalizeAssessmentLayout as sharedNormalizeAssessmentLayout,
+  resolveAssessmentLayout as sharedResolveAssessmentLayout,
+  generateAttemptOrdering as sharedGenerateAttemptOrdering,
+  buildQuestionContextMap as sharedBuildQuestionContextMap,
+  canPauseAssessmentWorkType as sharedCanPauseAssessmentWorkType,
   type WorkTypeLabels as SharedWorkTypeLabels,
   type StudentEnrolmentClassification as SharedStudentEnrolmentClassification,
+  type AssessmentLayout as SharedAssessmentLayout,
+  type AssessmentSection as SharedAssessmentSection,
+  type AssessmentSectionItem as SharedAssessmentSectionItem,
+  type AssessmentComprehensionItem as SharedAssessmentComprehensionItem,
+  type AssessmentContentBlockItem as SharedAssessmentContentBlockItem,
+  type AssessmentQuestionRefItem as SharedAssessmentQuestionRefItem,
+  type QuestionContextEntry as SharedQuestionContextEntry,
 } from './jdi-assessment.js';
 
 export const MANUAL_DELIVERABLE_TYPES = SHARED_MANUAL_DELIVERABLE_TYPES;
@@ -364,6 +377,52 @@ export function canViewOrPrintAttemptResult(
 ): boolean {
   return sharedCanViewOrPrintAttemptResult(attempt || {}, callerRole, exam || {});
 }
+
+export type AssessmentLayout = SharedAssessmentLayout;
+export type AssessmentSection = SharedAssessmentSection;
+export type AssessmentSectionItem = SharedAssessmentSectionItem;
+export type AssessmentComprehensionItem = SharedAssessmentComprehensionItem;
+export type AssessmentContentBlockItem = SharedAssessmentContentBlockItem;
+export type AssessmentQuestionRefItem = SharedAssessmentQuestionRefItem;
+export type QuestionContextEntry = SharedQuestionContextEntry;
+
+export function buildDefaultAssessmentLayout(questions?: Array<Record<string, any>>): AssessmentLayout {
+  return sharedBuildDefaultAssessmentLayout(questions);
+}
+
+export function normalizeAssessmentLayout(
+  rawLayout: unknown,
+  questions?: Array<Record<string, any>>,
+  options?: { dropUnknownQuestions?: boolean }
+) {
+  return sharedNormalizeAssessmentLayout(rawLayout, questions, options);
+}
+
+export function resolveAssessmentLayout(
+  examOrAttempt?: Record<string, any> | null,
+  questions?: Array<Record<string, any>>
+): AssessmentLayout {
+  return sharedResolveAssessmentLayout(examOrAttempt, questions);
+}
+
+export function generateAttemptOrdering(
+  exam?: Record<string, any> | null,
+  questions?: Array<Record<string, any>>,
+  rng?: () => number
+) {
+  return sharedGenerateAttemptOrdering(exam, questions, rng);
+}
+
+export function buildQuestionContextMap(
+  layout?: AssessmentLayout | null
+): Record<string, QuestionContextEntry> {
+  return sharedBuildQuestionContextMap(layout);
+}
+
+export function canPauseAssessmentWorkType(workType?: unknown): boolean {
+  return sharedCanPauseAssessmentWorkType(workType);
+}
+
 
 
 

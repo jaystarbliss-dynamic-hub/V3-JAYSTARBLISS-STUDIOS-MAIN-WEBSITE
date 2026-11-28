@@ -56,6 +56,11 @@ import {
 } from '../../lib/academic-reporting';
 import { ReferenceLookupPanel } from '../../components/academic-reporting/ReferenceLookupPanel';
 import { TutorProgressReportsWorkspace } from '../../components/documents/TutorProgressReportsWorkspace';
+import {
+  sortDropdownLabels,
+  sortNamedEntities,
+  toTimestampMs,
+} from '../../lib/assessmentOrdering';
 
 type ReportingTabKey =
   | 'OVERVIEW'
@@ -213,28 +218,41 @@ export const AcademicReportingCenter: React.FC = () => {
         fetchAcademicAuditLogs(authCtx),
       ]);
 
-      setSchools(dir.schools);
-      setLearners(dir.learners);
-      setProgrammes(dir.programmes);
-      setProfiles(loadedProfiles);
-      setPeriods(loadedPeriods);
+      const sortedSchools = sortNamedEntities(dir.schools);
+      const sortedLearners = sortNamedEntities(dir.learners);
+      const sortedProgrammes = sortDropdownLabels(dir.programmes);
+      const sortedProfiles = sortNamedEntities(loadedProfiles);
+      const sortedPeriods = [...loadedPeriods].sort((a, b) => {
+        const tsB = Math.max(toTimestampMs(b.startDate), toTimestampMs((b as any).createdAt));
+        const tsA = Math.max(toTimestampMs(a.startDate), toTimestampMs((a as any).createdAt));
+        if (tsB !== tsA) return tsB - tsA;
+        return String(b.sessionName || '').localeCompare(String(a.sessionName || ''), undefined, {
+          numeric: true,
+        });
+      });
+
+      setSchools(sortedSchools);
+      setLearners(sortedLearners);
+      setProgrammes(sortedProgrammes);
+      setProfiles(sortedProfiles);
+      setPeriods(sortedPeriods);
       setReports(loadedReports);
       setAuditLogs(loadedLogs);
 
-      if (!genPeriodId && loadedPeriods.length > 0) {
-        setGenPeriodId(loadedPeriods[0].id);
+      if (!genPeriodId && sortedPeriods.length > 0) {
+        setGenPeriodId(sortedPeriods[0].id);
       }
-      if (!genProfileId && loadedProfiles.length > 0) {
-        setGenProfileId(loadedProfiles[0].id);
+      if (!genProfileId && sortedProfiles.length > 0) {
+        setGenProfileId(sortedProfiles[0].id);
       }
-      if (!genLearnerId && dir.learners.length > 0) {
-        setGenLearnerId(dir.learners[0].id);
+      if (!genLearnerId && sortedLearners.length > 0) {
+        setGenLearnerId(sortedLearners[0].id);
       }
-      if (!genSchoolName && dir.schools.length > 0) {
-        setGenSchoolName(dir.schools[0].name);
+      if (!genSchoolName && sortedSchools.length > 0) {
+        setGenSchoolName(sortedSchools[0].name);
       }
-      if (!genProgramName && dir.programmes.length > 0) {
-        setGenProgramName(dir.programmes[0]);
+      if (!genProgramName && sortedProgrammes.length > 0) {
+        setGenProgramName(sortedProgrammes[0]);
       }
     } catch (err: any) {
       setBannerMessage({

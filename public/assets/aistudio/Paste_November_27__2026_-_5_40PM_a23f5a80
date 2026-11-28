@@ -1,0 +1,1389 @@
+# MASTER IMPLEMENTATION PROMPT
+## JAYSTARBLISS DYNAMIC INSTITUTE — CODING LAB UPGRADE, TURBOWARP INTEGRATION, PERFORMANCE HARDENING & LIQUID GLASS UI
+
+You are working on the existing **Jaystarbliss Dynamic Institute V3 application**.
+
+Your task is to inspect, improve, and carefully upgrade the existing Coding Lab implementation. This is not a request to build another isolated Scratch clone, replace the LMS architecture, or redesign the entire V3 application.
+
+We have already invested substantial development effort in Coding Lab. Your responsibility is to understand what exists, preserve the working functionality, identify weaknesses, and improve the architecture without introducing unnecessary dependencies, excessive database operations, performance regressions, or security weaknesses.
+
+The priorities, in order, are:
+
+1. Stability, data integrity and security.
+2. Efficient Firestore and Cloudinary usage.
+3. Reliable integration with the existing assessment system.
+4. TurboWarp and other suitable open-source editor improvements.
+5. A beautiful, dedicated, premium Coding Lab experience.
+6. Maintainability, compatibility and future extensibility.
+
+Do not sacrifice stability for visual appearance.
+
+---
+
+# PART 1 — UNDERSTAND THE EXISTING REPOSITORY BEFORE MODIFYING IT
+
+Repository:
+
+`https://github.com/jaystarbliss-dynamic-hub/V3-JAYSTARBLISS-STUDIOS-MAIN-WEBSITE`
+
+Start by examining the actual current repository and its latest code.
+
+Do not assume the repository still matches an earlier implementation or that every previously discussed feature has been completed.
+
+Inspect at least the following areas.
+
+### Existing Coding Lab implementation
+
+- `src/config/codingLabConfig.ts`
+- `src/types/codingLab.ts`
+- `src/pages/CodingLabPlaygroundPage.tsx`
+- `src/components/coding-lab/CodingLabEditorHost.tsx`
+- `src/components/coding-lab/CodingLabComplianceModal.tsx`
+- `src/services/codingLab/CodingLabProjectService.ts`
+- `src/services/codingLab/CodingLabAssetService.ts`
+- `src/services/codingLab/CodingLabLocalStorage.ts`
+- `src/services/codingLab/CodingLabSubmissionService.ts`
+- `src/services/codingLab/ScratchProjectAdapter.ts`
+- `api/_lib/coding-lab-sb3-security.js`
+- `api/_lib/coding-lab-grader.js`
+- `netlify/functions/coding-lab-media.ts`
+- `netlify/functions/coding-lab-assessment.ts`
+- `src/pages/portal/StudentExamAttempt.tsx`
+- `src/App.tsx`
+
+Also inspect:
+
+- The current Firebase configuration and all client database instances.
+- Firestore security rules and indexes.
+- `package.json` and existing dependencies.
+- Netlify configuration and functions.
+- The editor files under `public/coding-lab-editor/`.
+- The current upstream source and modification documentation.
+- All components that introduce global navigation, notifications, popups, widgets or background listeners.
+
+Identify the current implementation, existing dependencies, current build versions, project formats, active routes and data flow.
+
+Before changing anything, produce a short baseline report containing:
+
+1. What already works.
+2. What is incomplete.
+3. What should be fixed.
+4. What must remain untouched.
+5. What can safely be upgraded.
+6. Potential breaking changes and their mitigation.
+
+Do not rewrite existing functionality merely because you would prefer a different implementation.
+
+Preserve existing working services and interfaces wherever reasonably possible.
+
+---
+
+# PART 2 — OPEN-SOURCE EDITOR RESEARCH AND TECHNOLOGY DECISION
+
+Our current editor is based on the self-hosted Scratch 3 editor.
+
+We now want to investigate other beautiful, sophisticated open-source visual programming environments, particularly TurboWarp.
+
+Do not limit your research to the Scratch Foundation repository.
+
+## A. Primary candidate: TurboWarp
+
+Website:
+
+`https://turbowarp.org/`
+
+Inspect the official repositories:
+
+- GUI: https://github.com/TurboWarp/scratch-gui
+- VM: https://github.com/TurboWarp/scratch-vm
+- Blocks: https://github.com/TurboWarp/scratch-blocks
+- Renderer: https://github.com/TurboWarp/scratch-render
+- Paint editor: https://github.com/TurboWarp/scratch-paint
+- Audio: https://github.com/TurboWarp/scratch-audio
+- Storage: https://github.com/TurboWarp/scratch-storage
+- Parser: https://github.com/TurboWarp/scratch-parser
+- Packager: https://github.com/TurboWarp/packager
+
+For comparison, inspect:
+
+- https://github.com/scratchfoundation/scratch-editor
+- https://github.com/jmoenig/Snap
+- https://github.com/google/blockly
+- https://github.com/microsoft/pxt
+
+The primary recommendation is to investigate TurboWarp seriously because it is a modification of Scratch 3 with additional capabilities, including its compiler, performance enhancements, interface improvements and add-on ecosystem.
+
+However, do not assume every feature visible on turbowarp.org is available automatically in its source repository or compatible with our existing editor.
+
+Check the actual source.
+
+## B. Evaluate TurboWarp against the current implementation
+
+Compare the two environments across:
+
+- Visual appearance.
+- Block editing experience.
+- Workspace performance.
+- Sprite and costume management.
+- Backdrop editing.
+- Sound management.
+- Project loading and saving.
+- `.sb3` compatibility.
+- Existing Scratch extension compatibility.
+- Responsiveness.
+- Dark mode support.
+- Add-on support.
+- Runtime performance.
+- Build complexity.
+- React compatibility.
+- Licence obligations.
+- Ability to integrate our existing custom bridge.
+- Ability to preserve our existing project-validation and grading services.
+
+Do not replace our existing engine unless the candidate proves compatible.
+
+### Preferred architecture
+
+Create a controlled editor-engine architecture.
+
+For example:
+
+`CODING_LAB_ENGINE = scratch | turbowarp`
+
+Use the existing feature/configuration system where practical.
+
+Keep the present Scratch bundle as a working fallback while developing and testing the TurboWarp candidate.
+
+Build TurboWarp as a separately versioned and self-hosted editor bundle.
+
+Do not load the hosted turbowarp.org editor inside our application.
+
+Do not depend on TurboWarp's public website, Scratch's public editor endpoints, third-party CDNs or externally hosted editor bundles for normal operation.
+
+We want to own and serve the editor resources ourselves.
+
+Only switch the default engine after:
+
+1. The TurboWarp bundle builds successfully.
+2. The editor loads locally from our own domain.
+3. Existing `.sb3` projects open successfully.
+4. Project exports remain compatible.
+5. The existing bridge works.
+6. The assessment submission workflow works.
+7. The grading system receives valid project data.
+8. Existing asset policies remain enforced.
+9. Performance and browser tests pass.
+
+If the TurboWarp integration is not yet safe or sufficiently compatible, retain the current editor and complete the visual and architectural improvements around it first.
+
+Do not perform a destructive replacement.
+
+---
+
+# PART 3 — PRESERVE THE EXISTING CODING LAB ARCHITECTURE
+
+We already have a substantial implementation.
+
+Preserve and improve the following functionality.
+
+### Project Showcase / Playground mode
+
+The current `/coding-lab` page is intended to be the standalone Project Showcase or Playground environment.
+
+Maintain:
+
+- Local project editing.
+- New project creation.
+- `.sb3` import.
+- `.sb3` download/export.
+- IndexedDB recovery.
+- Project title editing.
+- Project reset.
+- Local recovery after reload.
+- Project validation.
+- Built-in self-hosted assets.
+
+**Strict requirement:** Playground mode must not write project data to Firestore or upload project images to Cloudinary.
+
+It should have zero project-related cloud reads and writes.
+
+Do not introduce user cloud storage, automatic project syncing, project analytics or cloud backups into Playground mode unless explicitly designed and approved as a separate feature.
+
+### Assessment mode
+
+Maintain the existing connection between Coding Lab and the LMS examination system.
+
+Preserve:
+
+- Tutor-authored Coding Lab assessments.
+- Assessment instructions.
+- Rubric criteria.
+- Starter projects.
+- Assessment timers.
+- Learner-specific attempts.
+- Save Progress.
+- Offline recovery.
+- Final submission.
+- Submission locking.
+- Automatic structural grading.
+- Manual grading.
+- Hybrid grading.
+- Tutor feedback.
+- Result release policies.
+- Parent/student/tutor result consistency.
+- Read-only tutor review.
+- `.sb3` downloads where authorised.
+
+Do not create a second independent assessment system.
+
+The existing `jdiExamAttempts`, `codingLabProjects` and `codingLabSubmissions` relationships should remain compatible with the rest of the LMS.
+
+---
+
+# PART 4 — CRITICAL SECURITY AND DATA-INTEGRITY IMPROVEMENTS
+
+Review and fix the following potential weaknesses.
+
+## A. Secure Cloudinary media authorisation
+
+Inspect:
+
+`netlify/functions/coding-lab-media.ts`
+
+The server must verify more than the assessment's active status.
+
+For learner upload requests, validate:
+
+- Authenticated Firebase UID.
+- Valid assessment document.
+- Existing assessment attempt.
+- Attempt ownership.
+- Attempt-to-assessment relationship.
+- Correct learner eligibility.
+- Attempt status.
+- Assessment status.
+- School/programme boundaries where applicable.
+- Project ownership and associated assessment.
+
+An ordinary learner must not be able to upload media for another learner's attempt merely by changing an ID in a request.
+
+For media reads, validate that the requested asset belongs to an authorised project or submission and that the current user is allowed to view it.
+
+Do not trust asset IDs, assessment IDs, project IDs or attempt IDs supplied by the browser without server-side verification.
+
+## B. Remove unsigned production upload fallbacks
+
+Inspect `CodingLabAssetService.ts`.
+
+Do not allow a failed server-side authorisation request to silently fall back to an unsigned Cloudinary upload preset during production assessment operations.
+
+Assessment uploads must use server-authorised signatures.
+
+If the Netlify function is unavailable:
+
+- Save the project locally.
+- Preserve the original custom image bytes locally.
+- Report that cloud media synchronisation is pending or unavailable.
+- Do not claim the image has been safely uploaded.
+- Do not bypass the server-side permission checks.
+
+Only use a local-development fallback when an explicit local development/emulator configuration enables it.
+
+## C. Make asset registration reliable
+
+The current upload workflow must not silently ignore the failure of server-side asset registration.
+
+After a successful Cloudinary upload:
+
+1. Register the asset through the authenticated backend.
+2. Verify that the asset was registered.
+3. Associate it with the project.
+4. Only then report the asset as cloud-synchronised.
+
+Use deterministic Cloudinary public IDs based on validated content hashes.
+
+Maintain content-based deduplication.
+
+Avoid duplicate uploads when the same image already exists.
+
+## D. Make server submission authoritative
+
+Inspect:
+
+`src/services/codingLab/CodingLabSubmissionService.ts`
+
+`netlify/functions/coding-lab-assessment.ts`
+
+The production system must not fall back to browser-side grading and direct Firestore submission when the authoritative server function is unavailable.
+
+Client-side grading may be useful for development or previews, but it must never become an alternative production authority.
+
+In production:
+
+- The server validates the authenticated learner.
+- The server verifies the assessment and attempt.
+- The server verifies that the attempt exists.
+- The server verifies the attempt owner matches the authenticated UID.
+- The server verifies that the attempt belongs to the assessment.
+- The server verifies the project belongs to the same learner and attempt.
+- The server validates the saved project payload.
+- The server verifies the SHA-256 hash.
+- The server computes automatic grades.
+- The server creates the authoritative submission.
+- The server locks the project.
+- The server synchronises the appropriate examination record.
+
+A missing attempt or missing owner must result in rejection, not implicit acceptance.
+
+Use transactional or equivalently race-safe submission handling.
+
+Make submission idempotent:
+
+- Repeated submission requests for the same saved submission should not create duplicate records.
+- A duplicate request with the same submission hash should return the existing authoritative result.
+- Conflicting project revisions should be rejected or handled through a clear recovery process.
+
+Do not trust a client-supplied score or grading result.
+
+## E. Isolate Coding Lab assessment expiry
+
+Inspect the timer and submission effects in `StudentExamAttempt.tsx`.
+
+Ensure Coding Lab assessments do not accidentally enter the ordinary native examination timeout and expiry workflow.
+
+Coding Lab should have an appropriate timeout process:
+
+1. Preserve the learner's local working copy.
+2. Attempt an authorised final save where appropriate.
+3. Follow the actual assessment expiry rules.
+4. Submit and lock only through the authoritative Coding Lab workflow.
+5. Display an accurate result.
+6. Handle network failures without losing the learner's work.
+
+Do not send a Coding Lab attempt through a generic native-answer submission routine.
+
+## F. Preserve grading integrity
+
+Inspect `api/_lib/coding-lab-grader.js`.
+
+Maintain the existing structural rubric support.
+
+Test:
+
+- Required event blocks.
+- Required blocks.
+- Input values.
+- Field values.
+- Block sequences.
+- Nested blocks.
+- Variables and lists.
+- Sprite counts.
+- Costume/backdrop criteria.
+- Empty or invalid projects.
+- Imported projects.
+- Projects with unsupported extensions.
+
+Do not reward a learner merely for inserting a required block somewhere if the rubric requires a functional relationship or sequence.
+
+The grader must reflect the tutor's actual criterion definitions.
+
+Any changes to the supported rubric types must be backward-compatible or accompanied by a controlled migration.
+
+---
+
+# PART 5 — FIRESTORE, CLOUDINARY AND STORAGE OPTIMISATION
+
+This is one of the most important parts of the project.
+
+Our objective is a balanced application that performs well without unnecessarily consuming Firebase Spark allowances, database quotas, network requests or Cloudinary resources.
+
+Do not increase storage consumption or introduce new database reads merely to make implementation easier.
+
+## A. Keep the existing local/cloud separation
+
+The existing design uses:
+
+- IndexedDB for local recovery.
+- Firestore for assessment project JSON and assessment records.
+- Cloudinary for eligible custom image assets.
+- Self-hosted static assets for built-in resources.
+
+Preserve this separation.
+
+Do not store complete `.sb3` ZIP archives or image binaries inside Firestore.
+
+Store compressed, validated project JSON and the appropriate asset manifest.
+
+Do not duplicate the same image bytes in multiple Firestore documents.
+
+Use Firestore `Bytes` rather than Base64 strings for binary payloads.
+
+## B. Improve Firestore save efficiency
+
+Inspect:
+
+`src/services/codingLab/CodingLabProjectService.ts`
+
+Current implementation already includes:
+
+- Gzip compression.
+- SHA-256 hashes.
+- Inline versus chunked storage.
+- 700 KiB inline payload threshold.
+- 350 KiB payload chunks.
+- Unchanged-payload detection.
+- In-flight save coalescing.
+
+Preserve the useful parts.
+
+However, improve the following.
+
+### 1. Persist the composite hash
+
+The current implementation uses a `lastSavedCompositeHashRef`, but that value must also be recoverable after reloading the page.
+
+Persist the composite hash or equivalent verified project fingerprint alongside the project metadata.
+
+Restore it during hydration.
+
+An unchanged project must not be rewritten merely because the learner refreshed the browser or reopened an assessment.
+
+The fingerprint should account for:
+
+- Compressed project JSON hash.
+- Custom image content hashes.
+- Project title.
+- Any other data that materially affects the persisted project.
+
+### 2. Correct the save queue
+
+The current in-flight save map should be reviewed carefully.
+
+A second edit may occur while a save is in progress.
+
+Do not simply return the first promise and silently lose the newer project state.
+
+Use a serialised latest-state save queue or equivalent concurrency-safe mechanism.
+
+When several edits arrive during one save, preserve the latest valid state and write it once after the current save completes.
+
+Avoid unnecessary intermediate saves.
+
+### 3. Make manual save idempotent
+
+Manual Save Progress must mean:
+
+"Save the latest unsaved changes now."
+
+It must not mean:
+
+"Rewrite every Firestore document and every payload chunk regardless of whether anything changed."
+
+The manual save operation should still calculate and compare the project fingerprint.
+
+If the project has not changed, perform zero project writes.
+
+### 4. Avoid rewriting unchanged chunks
+
+Currently, a chunked project can rewrite all its chunks when only part of the payload has changed.
+
+Improve this where practical.
+
+Possible approach:
+
+- Calculate deterministic hashes for individual chunks.
+- Keep the previous chunk hashes in project metadata.
+- Write only modified chunks.
+- Delete obsolete trailing chunks.
+- Preserve correct chunk order.
+- Verify the full reconstructed payload using the overall SHA-256 hash.
+
+Do not add a large number of additional reads merely to discover whether a chunk has changed.
+
+Optimise using metadata already available wherever possible.
+
+### 5. Improve atomicity and revision consistency
+
+Prevent two devices or browser tabs from overwriting each other's newer project revisions silently.
+
+Use a safe revision strategy and optimistic concurrency checks.
+
+Ensure metadata and chunk updates remain consistent if a write fails halfway through.
+
+Never report a save as successful until its persisted state has been verified to the extent necessary.
+
+### 6. Reconsider document-size headroom
+
+The Firestore 1 MiB document limit applies to the whole document, not just the project payload.
+
+A document also contains metadata, asset manifests and field overhead.
+
+Review whether the existing 700 KiB inline threshold leaves adequate headroom.
+
+Use a conservative threshold based on the actual stored document size, not only the compressed binary size.
+
+Verify that payload fields are not unnecessarily indexed.
+
+Check the Firestore indexes configuration before changing it.
+
+### 7. Chunk reconstruction
+
+When loading a chunked project:
+
+- Load the parent project document.
+- Load the chunk collection once.
+- Validate expected chunk count.
+- Validate chunk ordering.
+- Verify the assembled payload hash.
+- Decompress safely.
+- Reconstruct the `.sb3` project.
+
+Avoid repeated chunk queries during a single hydration.
+
+Do not keep a permanent real-time listener on project chunks when one controlled load is sufficient.
+
+## C. Make Cloudinary usage predictable
+
+Inspect:
+
+`src/services/codingLab/CodingLabAssetService.ts`
+
+`netlify/functions/coding-lab-media.ts`
+
+Maintain the existing limits unless testing establishes a necessary adjustment:
+
+- Maximum custom image size: 1 MiB.
+- Maximum custom images per project: 20.
+- Maximum aggregate custom image size: 10 MiB.
+- Approved formats only.
+- No custom audio uploads.
+- No microphone recording.
+- No `.sb3` uploads to Cloudinary.
+
+Continue to identify duplicate images by SHA-256 hash.
+
+Improve the upload process:
+
+1. Parse and validate the archive once.
+2. Identify custom assets.
+3. Compare with the project's existing manifest.
+4. Compare previously registered asset hashes.
+5. Request authorisation only for genuinely new assets.
+6. Upload new assets with controlled concurrency.
+7. Register the results in a batch where feasible.
+8. Update the project manifest once.
+
+Use a small concurrency limit rather than uploading every custom image simultaneously.
+
+Avoid duplicate retries and repeated server calls.
+
+Cache non-sensitive Cloudinary configuration in a warm serverless instance where appropriate, but do not cache user permissions in a way that could allow stale access.
+
+Do not cache signed upload or delivery URLs longer than their validity permits.
+
+Implement limited retries for transient network failures, with exponential backoff and jitter.
+
+Never retry permanent authorisation or validation failures.
+
+## D. Avoid unbounded asset registry growth
+
+Review the current `codingLabAssets` registry and its reference-tracking structure.
+
+Ensure:
+
+- Asset identifiers remain deterministic.
+- Reference metadata cannot grow without a reasonable bound.
+- Old unused assets can be identified.
+- Deletion considers all projects and submissions that still reference an asset.
+- Shared assets are never deleted while still in use.
+- Cleanup is controlled and does not scan the entire collection on ordinary page loads.
+
+Do not introduce a background process that repeatedly scans all assets.
+
+## E. Local storage hygiene
+
+Inspect `CodingLabLocalStorage.ts`.
+
+Maintain local recovery, but prevent IndexedDB from growing indefinitely.
+
+Consider:
+
+- Draft age.
+- Per-project limits.
+- Total local storage limits.
+- Expired assessment attempts.
+- Submitted and locked projects.
+- Corrupted drafts.
+- User logout and account switching.
+- Safe cleanup of abandoned drafts.
+
+Never automatically delete a currently active learner's unsynchronised work.
+
+When clearing a local draft, make sure the user is not losing their only copy of a project.
+
+## F. Avoid unnecessary reads and listeners
+
+Do not create permanent Firestore listeners for editor state.
+
+Do not repeatedly read assessment documents when the required information has already been loaded and safely validated.
+
+Do not read user roles from Firestore repeatedly during every image operation when a suitable controlled strategy exists, while still verifying access appropriately on every sensitive request.
+
+Do not load portal dashboards, navigation counts or unrelated application data while a learner is in the standalone Coding Lab experience.
+
+Avoid mounting global widgets that make irrelevant Firestore requests.
+
+In particular, inspect `FloatingWhatsApp.tsx`: hiding its visual component does not automatically prevent its initial settings read.
+
+The full-screen Coding Lab experience should not trigger unnecessary global website or portal widget requests.
+
+---
+
+# PART 6 — CREATE A PROPER FULL-SCREEN CODING LAB EXPERIENCE
+
+This is a major design and navigation requirement.
+
+**The editor must not open inside the main homepage or as an ordinary embedded dashboard card.**
+
+It should feel like launching a proper standalone programming application.
+
+We want an independent workspace, similar in spirit to opening TurboWarp's editor.
+
+## A. Dedicated editor page
+
+The Project Showcase entry point should take learners to:
+
+`/coding-lab`
+
+However, the route must display the dedicated full-screen Coding Lab interface.
+
+It should not display:
+
+- The normal website header.
+- The normal public website footer.
+- Promotional banners.
+- Floating WhatsApp buttons.
+- The main portal sidebar.
+- Unrelated dashboard widgets.
+- Unnecessary navigation cards.
+
+Use an independent, carefully designed application shell.
+
+The editor should fill the available viewport using appropriate dynamic viewport sizing.
+
+The interface should have:
+
+- A compact top toolbar.
+- Coding Lab branding.
+- Project name.
+- Project actions.
+- Workspace and stage.
+- Theme selector.
+- Save status where applicable.
+- A clearly accessible exit/back action.
+- About/licence information.
+
+Keep the Scratch/TurboWarp workspace as the primary focus.
+
+The editor must not feel cramped inside the main V3 application.
+
+## B. Separate assessment workspace route
+
+The existing student assessment attempt route is nested under the student portal layout.
+
+I want the active Coding Lab assessment to open in a dedicated full-screen workspace as well.
+
+Review the current routing in `src/App.tsx`.
+
+Introduce an appropriately protected standalone assessment route or equivalent architecture.
+
+The new route must:
+
+- Require an authenticated learner.
+- Verify that the learner owns the attempt.
+- Verify that the assessment is available to that learner.
+- Preserve existing assessment rules.
+- Prevent access to other learners' attempts.
+- Preserve the return-to-assessments action.
+- Preserve save, submit, timer and result workflows.
+
+The dedicated assessment editor must not render the normal portal navigation around it.
+
+Do not weaken the existing route protection just to achieve the full-screen appearance.
+
+Preserve backward compatibility for existing assessment links, using redirects or controlled routing where necessary.
+
+---
+
+# PART 7 — THREE DISTINCT VISUAL MODES
+
+I want Coding Lab to offer three clearly distinguishable appearance modes.
+
+The modes are:
+
+1. Light Mode.
+2. Dark Mode.
+3. Glass Effect Mode.
+
+The theme selector should be accessible from the Coding Lab toolbar.
+
+Make the experience professional, refined and genuinely beautiful.
+
+Avoid generic dashboard styling.
+
+## A. Light mode
+
+Use:
+
+- Soft white and light-grey surfaces.
+- Gentle borders.
+- Clear separation between panels.
+- Carefully managed shadows.
+- Readable typography.
+- Subtle depth.
+- Proper contrast.
+
+It should feel clean, comfortable and professional.
+
+## B. Dark mode
+
+Use:
+
+- Deep navy/slate surfaces.
+- Well-balanced dark backgrounds.
+- Subtle contrast between panels.
+- Clearly visible borders.
+- Comfortable text contrast.
+- Refined highlights.
+- No excessive glow effects.
+
+Do not make every panel black.
+
+Use a sophisticated dark colour palette.
+
+## C. Glass Effect mode
+
+This is the premium visual mode.
+
+Use:
+
+- Translucent surfaces.
+- Subtle backdrop blur.
+- Layered glass-like panels.
+- Soft reflections.
+- Elegant borders.
+- Controlled highlights.
+- Shader gradients.
+- Depth and visual separation.
+
+The objective is a modern liquid-glass-inspired interface, not an interface covered with random transparency.
+
+The effects should improve the overall feel without making the editor difficult to use.
+
+Glass mode must remain readable and usable.
+
+Do not place aggressive blur, distortion or colour overlays over the programming blocks, block labels, code inputs or stage.
+
+The Scratch workspace must remain visually clear.
+
+## D. Theme persistence
+
+Store the selected Coding Lab mode locally using a lightweight preference.
+
+Use localStorage or an equivalent local preference mechanism.
+
+Do not create Firestore settings documents for editor themes.
+
+Do not make a Firestore request when switching between themes.
+
+Do not introduce a new global application theme system if the existing theme context can be used appropriately.
+
+Keep Coding Lab appearance preferences isolated enough that changing the Coding Lab theme does not unexpectedly change the user's entire V3 portal or public website theme.
+
+Respect system preferences where appropriate, but allow the learner's explicit selection to take precedence.
+
+---
+
+# PART 8 — PRESERVE THE PROGRAMMING BLOCK COLOURS
+
+This requirement is extremely important.
+
+The visual theme must not make Scratch/TurboWarp blocks difficult to recognise.
+
+Keep the familiar programming category colours consistent across Light, Dark and Glass modes.
+
+Preserve the existing category identity for:
+
+- Motion.
+- Looks.
+- Sound.
+- Events.
+- Control.
+- Sensing.
+- Operators.
+- Variables.
+- My Blocks.
+- Any other existing standard block categories.
+
+Do not apply a universal CSS colour filter to the workspace.
+
+Do not recolour every block based on the current theme.
+
+Do not add shader effects that alter block colours.
+
+Do not make the category flyouts visually indistinguishable.
+
+The user must still recognise each category immediately, regardless of the selected theme.
+
+Preserve:
+
+- Block category colours.
+- Block outlines.
+- Block shapes.
+- Input controls.
+- Dropdowns.
+- Connection points.
+- Flyout organisation.
+- Syntax and programming affordances.
+
+You may refine the surrounding workspace surfaces, menus, headers, separators and panels.
+
+The programming blocks themselves should retain their familiar colour identity.
+
+---
+
+# PART 9 — SHADER GRADIENT AND LIQUID GLASS TECHNOLOGIES
+
+Research and selectively use these projects.
+
+### ShaderGradient
+
+Repository:
+
+https://github.com/ruucm/shadergradient
+
+Evaluate its compatibility with our current React, Three.js and React Three Fiber versions before adding or changing dependencies.
+
+Use it to create an elegant background treatment for Glass mode.
+
+Potential applications:
+
+- Soft gradient backgrounds.
+- Subtle ambient lighting.
+- Moving gradient surfaces.
+- Premium application-shell backgrounds.
+
+The gradient must remain subtle enough that it does not compete with the programming workspace.
+
+### Liquid Glass JS
+
+Repository:
+
+https://github.com/dashersw/liquid-glass-js
+
+Evaluate its refraction and glass rendering approach.
+
+Use it selectively where it improves the surrounding interface.
+
+Do not apply expensive full-page effects to the entire editor.
+
+Do not place it directly over the stage or draggable programming workspace.
+
+Where native CSS glass styling provides the same result more efficiently, prefer CSS.
+
+### Existing dependencies
+
+Before adding libraries:
+
+1. Inspect `package.json`.
+2. Check already-installed dependencies.
+3. Check version compatibility.
+4. Avoid installing another library for something already supported.
+5. Avoid duplicate Three.js or React Three Fiber instances.
+6. Avoid unnecessarily increasing the application's bundle size.
+
+We want the best visual result with a controlled dependency footprint.
+
+---
+
+# PART 10 — RENDERING AND GPU PERFORMANCE
+
+The editor already has its own rendering workloads.
+
+The stage, sprites, costumes, animations, block editor and project runtime must remain responsive.
+
+The addition of a shader-gradient background introduces extra rendering work.
+
+Therefore:
+
+- Load shader effects only when required.
+- Do not mount the shader renderer unnecessarily in Light or ordinary Dark mode.
+- Pause ambient animation when the document is hidden.
+- Respect `prefers-reduced-motion`.
+- Provide a static gradient fallback.
+- Provide a non-WebGL fallback where required.
+- Avoid multiple continuously running animation loops.
+- Do not run expensive `html2canvas` page captures repeatedly.
+- Avoid unnecessary WebGL context creation.
+- Avoid creating separate heavy canvases when CSS can achieve the intended appearance.
+- Detect and handle WebGL context loss gracefully.
+
+The editor should remain usable on ordinary school laptops, tablets and lower-powered devices.
+
+Prioritise responsiveness over decorative effects.
+
+On smaller screens, provide a usable workspace layout rather than simply scaling a desktop editor until everything becomes too small.
+
+Retain the core editor functionality:
+
+- Blocks.
+- Stage.
+- Sprite selection.
+- Backdrops.
+- Costumes.
+- Project controls.
+
+Where a full desktop layout cannot fit comfortably, use carefully designed responsive arrangements, tabs or controlled scrolling.
+
+Do not redesign the actual block workspace in a way that breaks programming interactions.
+
+---
+
+# PART 11 — EDITOR BRIDGE AND ENGINE COMPATIBILITY
+
+Inspect the existing bridge in the self-hosted editor.
+
+Current implementation uses a same-origin `postMessage` bridge between:
+
+`CodingLabEditorHost.tsx`
+
+and the embedded editor.
+
+It already supports project loading/exporting, project-change notifications and read-only control.
+
+Preserve and extend this architecture.
+
+The upgraded bridge should support only the required capabilities, such as:
+
+- Ready handshake.
+- Project loading.
+- Project export.
+- Project change notifications.
+- Read-only mode.
+- Theme synchronisation.
+- Editor error messages.
+- Controlled reset.
+- Project metadata.
+- Save state coordination.
+
+For the new visual modes, synchronise the selected theme with the editor iframe using an explicit, validated bridge message.
+
+Do not directly manipulate the editor iframe's DOM from the parent.
+
+Security improvements:
+
+- Validate `event.origin`.
+- Validate the expected `event.source` against the iframe window.
+- Validate message types and payload structure.
+- Use a per-instance handshake nonce or equivalent protection against unintended messages.
+- Validate request IDs.
+- Add controlled timeout handling.
+- Reject unknown or malformed messages.
+
+Do not weaken the iframe sandbox merely to make a visual effect work.
+
+The bridge must continue supporting both the original Scratch bundle and any future TurboWarp bundle.
+
+---
+
+# PART 12 — PROJECT COMPATIBILITY AND ASSET HANDLING
+
+All existing project and assessment functionality must remain reliable after the upgrade.
+
+The system should continue to support standard `.sb3` project import/export.
+
+Maintain the existing security rules in:
+
+`api/_lib/coding-lab-sb3-security.js`
+
+`src/services/codingLab/ScratchProjectAdapter.ts`
+
+Retain appropriate protections against:
+
+- ZIP bombs.
+- Excessive uncompressed payloads.
+- Excessive file counts.
+- Path traversal.
+- Invalid `project.json`.
+- Missing stage targets.
+- Malicious SVG content.
+- Arbitrary extensions.
+- Unapproved remote extension URLs.
+- Unapproved audio uploads.
+
+If TurboWarp supports additional project features or extensions, do not enable them indiscriminately.
+
+Only enable features that can be safely validated, stored and reopened.
+
+Ensure that the current structural grader can handle all project features permitted in assessment mode.
+
+If a feature cannot be safely assessed, either disable it specifically in assessment mode or implement the necessary validation and grading support.
+
+Do not compromise project security for additional editor functionality.
+
+---
+
+# PART 13 — OPEN-SOURCE LICENSING AND ATTRIBUTION
+
+We already have open-source compliance documentation.
+
+Inspect:
+
+- `public/coding-lab-editor/LICENSE`
+- `public/coding-lab-editor/MODIFICATIONS.md`
+- `public/coding-lab-editor/MEDIA_LICENSES.md`
+- `src/config/codingLabConfig.ts`
+- `src/components/coding-lab/CodingLabComplianceModal.tsx`
+- Existing vendor source and build scripts.
+
+The current editor documentation records a Scratch Foundation editor revision and AGPL-3.0 obligations.
+
+If TurboWarp is introduced, its own modifications and dependencies have different licences.
+
+Verify the licence of every actual component, dependency and copied asset included in the shipped bundle.
+
+In particular, distinguish:
+
+- TurboWarp GUI modifications.
+- TurboWarp VM modifications.
+- Original Scratch Foundation components.
+- Scratch Blocks.
+- Render and Paint packages.
+- Third-party libraries.
+- Original Coding Lab assets.
+- Other media and artwork.
+
+Do not assume that the entire TurboWarp ecosystem has one licence.
+
+Preserve the original copyright and licence notices.
+
+Update the About Coding Lab screen and modification records accurately.
+
+Do not publish fake source URLs or claim that source code is publicly available if it is not.
+
+Ensure that the appropriate corresponding source and notices are available as required by the applicable licences.
+
+Do not redistribute Scratch Foundation trademark characters or third-party copyrighted media without verifying the relevant permissions.
+
+Preserve our existing independent-product notice and branding.
+
+The product remains:
+
+**Coding Lab — Jaystarbliss Dynamic Institute**
+
+It must not claim to be an official Scratch or TurboWarp product.
+
+---
+
+# PART 14 — DESIGN THE EXPERIENCE AS A COMPLETE APPLICATION
+
+The finished Coding Lab should feel like a polished programming application, not a normal LMS page with an editor placed inside it.
+
+Use a clear design hierarchy.
+
+### Top toolbar
+
+Include:
+
+- Jaystarbliss Coding Lab identity.
+- Back/Exit.
+- Project name.
+- Current editor mode where relevant.
+- Theme selection.
+- New project.
+- Open `.sb3`.
+- Save/download.
+- Save status.
+- About/licence information.
+
+In assessment mode, include the relevant controls:
+
+- Task Brief.
+- Remaining time.
+- Save Progress.
+- Submit Assessment.
+
+Do not overwhelm the toolbar with too many controls.
+
+Use compact, recognisable icons with accessible labels and tooltips.
+
+### Main workspace
+
+The main editor should have sufficient room.
+
+Do not place unnecessary cards around it.
+
+Keep block editing, stage rendering, sprite management and backdrops as the central experience.
+
+### Save feedback
+
+Use clear save states:
+
+- Local changes saved.
+- Saving to LMS.
+- Saved to LMS.
+- Offline; changes preserved locally.
+- Uploading custom images.
+- Save failed.
+- Submitted and locked.
+
+Never show a successful cloud-save status merely because the local IndexedDB write succeeded.
+
+### About and licence information
+
+Retain an accessible About dialog with accurate upstream details, licences and modification information.
+
+### Empty and loading states
+
+Provide polished loading and error states.
+
+Do not keep the editor permanently covered by a loading layer after a failed handshake.
+
+Provide a retry/recovery action.
+
+---
+
+# PART 15 — TESTING AND ACCEPTANCE CRITERIA
+
+Do not declare the work complete merely because the page looks good or the TypeScript compiler reports no errors.
+
+Test the entire workflow.
+
+## A. Visual tests
+
+Test all three modes:
+
+- Light.
+- Dark.
+- Glass.
+
+Confirm that:
+
+- Block colours remain identifiable.
+- Block labels remain readable.
+- Dropdowns and inputs remain usable.
+- The stage is clear.
+- The sprite panel is clear.
+- The interface remains responsive.
+- No global website widget appears.
+- The workspace has adequate space.
+- Theme selection persists after refresh.
+- Theme switching does not cause unnecessary network requests.
+
+## B. Functional tests
+
+Test:
+
+1. Open Coding Lab from the standalone entry point.
+2. Create a new project.
+3. Move blocks.
+4. Execute a project.
+5. Add sprites.
+6. Change costumes.
+7. Change backdrops.
+8. Use built-in sounds.
+9. Import a valid `.sb3`.
+10. Export a valid `.sb3`.
+11. Reload and recover a local project.
+12. Reset a project.
+13. Open an assessment.
+14. Load a tutor starter project.
+15. Save assessment progress.
+16. Reload and restore the assessment project.
+17. Submit an assessment.
+18. Confirm it becomes locked.
+19. Review it as an authorised tutor.
+20. Grade it.
+21. Release results.
+22. View the released result as a learner.
+23. Confirm authorised parents and tutors see consistent results.
+
+## C. Security tests
+
+Test:
+
+- A learner attempting to access another learner's attempt.
+- A learner using a different assessment ID.
+- A learner submitting an attempt owned by someone else.
+- An expired attempt.
+- A closed assessment.
+- A repeated submission.
+- A modified project payload.
+- An invalid hash.
+- An incomplete chunk set.
+- An unauthorised image upload.
+- An unauthorised image retrieval.
+- An invalid Cloudinary asset ID.
+- An unsupported SVG.
+- A malicious or invalid `.sb3`.
+- An unsupported extension.
+- An attempted production client-side submission bypass.
+
+All unauthorised operations must fail safely.
+
+## D. Database and storage tests
+
+Instrument Firestore calls and measure actual reads/writes.
+
+Test at least these scenarios:
+
+| Scenario | Required behaviour |
+|---|---|
+| Open Showcase | No project-related Firestore reads/writes |
+| Edit Showcase | IndexedDB only |
+| Export Showcase | No cloud project writes |
+| Switch theme | No Firestore request |
+| Open assessment | Load only required assessment/project data |
+| Edit assessment | Local recovery first |
+| Wait without changes | No cloud save |
+| Wait after changes | One debounced save |
+| Manual save without changes | Zero project writes |
+| Manual save after changes | Save only changed data |
+| Reload unchanged project | No unnecessary rewrite |
+| Save an image already registered | Do not upload it again |
+| Upload a new image | One controlled authorisation/upload/registration flow |
+| Submit assessment | One authoritative submission |
+| Repeat submission | Return existing result or reject safely |
+
+Do not invent performance numbers. Measure them in the actual implementation or test environment.
+
+## E. Build and regression tests
+
+Run the repository's relevant:
+
+- Lint checks.
+- TypeScript checks.
+- Unit tests.
+- Coding Lab tests.
+- Grading tests.
+- Production build.
+- Relevant Netlify function tests.
+- Browser integration tests where available.
+
+Confirm that Native and External Link assessments still work after the Coding Lab changes.
+
+Confirm that other V3 portals and public website routes have not been broken.
+
+---
+
+# PART 16 — IMPLEMENTATION DISCIPLINE
+
+This is an existing production application.
+
+Follow a careful implementation process.
+
+1. Inspect before changing.
+2. Record the current baseline.
+3. Identify the safest implementation sequence.
+4. Separate security fixes from visual work where practical.
+5. Retain the existing editor as a fallback.
+6. Develop TurboWarp as an isolated candidate.
+7. Keep the bridge backward-compatible.
+8. Preserve existing assessment and Firestore contracts.
+9. Add tests alongside critical changes.
+10. Test each major phase before proceeding.
+
+Do not:
+
+- Rewrite unrelated V3 modules.
+- Remove functioning assessment features.
+- Change unrelated Firestore collections.
+- Add unnecessary Firestore listeners.
+- Introduce background database scans.
+- Install duplicate libraries.
+- Upload built-in assets repeatedly.
+- Replace the existing project format with a proprietary format.
+- Depend on externally hosted editors.
+- expose Cloudinary API secrets.
+- Allow unsigned assessment uploads.
+- Allow browser-side authoritative grading.
+- Remove the existing fallback editor prematurely.
+- Deploy to production.
+- Merge into the production branch.
+- Push changes to the production branch without explicit authorisation.
+
+Use a dedicated development branch if available.
+
+Keep changes reviewable and explain any unavoidable schema or data migration.
+
+If a proposed change cannot be implemented safely, document the reason instead of forcing an incomplete implementation.
+
+---
+
+# PART 17 — FINAL DELIVERABLE
+
+When finished, provide a comprehensive implementation report.
+
+Include:
+
+### 1. Repository audit
+What was already implemented and what was missing.
+
+### 2. Open-source research
+Why TurboWarp was selected or rejected, the exact version/commit evaluated and any compatibility limitations.
+
+### 3. Architecture
+Explain how the engine selection, standalone routes, iframe bridge, theme system and assessment workflows fit together.
+
+### 4. Security improvements
+List the specific weaknesses corrected and the protections added.
+
+### 5. Performance improvements
+Explain how unnecessary Firestore reads/writes, Cloudinary calls, asset uploads, rendering workloads and local storage usage were reduced.
+
+### 6. Design improvements
+Describe the Light, Dark and Glass modes, responsiveness, accessibility and preserved programming block colours.
+
+### 7. Files changed
+List the important files created, modified or removed and explain why.
+
+### 8. Tests
+List the actual tests run and their results.
+
+Clearly distinguish tests that were actually executed from tests that were only recommended.
+
+### 9. Outstanding issues
+List anything incomplete, any known risks and anything requiring manual configuration.
+
+### 10. Production readiness
+State whether the implementation is ready for staging, requires more work, or is ready for production after review.
+
+Do not claim success without evidence.
+
+---
+
+# FINAL DESIGN AND ENGINEERING DIRECTION
+
+The finished product should combine:
+
+- The visual programming experience and performance advantages worth adopting from TurboWarp.
+- The reliability of the existing Jaystarbliss Coding Lab architecture.
+- The flexibility of our local and cloud project storage strategy.
+- The existing LMS assessment and grading system.
+- A premium, independent full-screen interface.
+- Three appearance modes: Light, Dark and Glass.
+- Carefully controlled shader gradients and glass effects.
+- Familiar, consistent programming block colours.
+- Strong security and data integrity.
+- Minimal unnecessary database operations.
+- Efficient use of Cloudinary and local storage.
+
+**Our guiding principle is BALANCE.**
+
+We want a beautiful and sophisticated Coding Lab, but not one that consumes excessive GPU resources, Firestore reads, Firestore writes, Cloudinary storage or network requests.
+
+Make the experience feel premium while keeping the underlying architecture lightweight, predictable, secure and maintainable.
+
+Do not build a visually impressive system that is expensive or unreliable to operate.
+
+Build a Coding Lab that Jaystarbliss Dynamic Institute can depend on as part of its actual learning platform.

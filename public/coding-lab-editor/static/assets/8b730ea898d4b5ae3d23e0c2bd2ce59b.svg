@@ -1,10 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="480" height="360" viewBox="0 0 480 360">
-      <rect width="480" height="360" fill="#0369A1"/>
-      <rect width="480" height="120" fill="#0EA5E9" opacity="0.45"/>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="480" height="360" viewBox="0 0 480 360" xmlns:xlink="http://www.w3.org/1999/xlink"><g data-paper-data="{&quot;isPaintingLayer&quot;:true}" fill-rule="nonzero" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" style="mix-blend-mode: normal"><path d="M0 0 L480 0 L480 360 L0 360 Z" fill="#0369A1"/>
+      <path d="M0 0 L480 0 L480 120 L0 120 Z" fill="#0EA5E9" opacity="0.45"/>
       <path d="M0 305 Q120 285 240 305 T480 295 L480 360 L0 360 Z" fill="#FDE68A"/>
       <circle cx="80" cy="180" r="8" fill="#BAE6FD" opacity="0.6"/>
       <circle cx="94" cy="150" r="5" fill="#BAE6FD" opacity="0.6"/>
       <circle cx="360" cy="140" r="9" fill="#BAE6FD" opacity="0.5"/>
       <path d="M40 315 Q32 270 46 235" fill="none" stroke="#15803D" stroke-width="8" stroke-linecap="round"/>
-      <path d="M430 310 Q442 260 426 225" fill="none" stroke="#15803D" stroke-width="8" stroke-linecap="round"/>
-    </svg>
+      <path d="M430 310 Q442 260 426 225" fill="none" stroke="#15803D" stroke-width="8" stroke-linecap="round"/></g></svg>

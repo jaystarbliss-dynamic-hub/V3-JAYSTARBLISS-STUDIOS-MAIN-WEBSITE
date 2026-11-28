@@ -27,3 +27,7 @@ All modifications listed below are applied to commit `89181a7a224793a05bf9d55e2a
 
 8. **`src/playground/render-gui.jsx` & `src/playground/index.css`**
    - Renders `GUI` with `menuBarHidden` and `onVmInit={attachCodingLabVm}` so the surrounding Jaystarbliss **Coding Lab** shell provides toolbar controls without Scratch trademark branding, adds responsive scrolling styles, and adds `.coding-lab-readonly` CSS guards for read-only tutor inspection.
+
+9. **`public/coding-lab-editor/index.html` & `src/playground/coding-lab-bridge.js`**
+   - Adds strict `event.source === window.parent` and per-instance handshake `nonce` verification (`CODING_LAB_HANDSHAKE_INIT` / `CODING_LAB_HANDSHAKE_ACK`), plus instant theme synchronization (`CODING_LAB_SET_THEME` for `light`, `dark`, and `glass` outer chrome modes) while strictly preserving authentic Scratch block colors, stage canvas, and paint editor canvas without CSS filters.
+

@@ -1,7 +1,12 @@
 /**
- * CodingLabSubmissionService — coordinates immutable assessment submission,
+ * CodingLabSubmissionService — coordinates authoritative immutable assessment submission,
  * tutor submission inspection, manual/hybrid grading with override audit logs,
  * and .sb3 download for tutors.
+ *
+ * Production security guarantees:
+ * - Server endpoint `/.netlify/functions/coding-lab-assessment` is authoritative in production.
+ * - Browser-side auto-grading / direct Firestore submission fallback is disabled in production
+ *   and strictly gated behind `CODING_LAB_CONFIG.allowDevClientSubmissionFallback` for local dev.
  */
 
 import {
@@ -16,6 +21,7 @@ import { auth, db } from '../../lib/firebase';
 import { calculateScorePercentage } from '../../lib/classes';
 import { notifyOnClientAssessmentSubmit } from '../../lib/assessmentNotificationHelpers';
 import { gradeScratchProject } from '../../../api/_lib/coding-lab-grader.js';
+import { CODING_LAB_CONFIG } from '../../config/codingLabConfig';
 import type {
   CodingLabAssessmentConfig,
   CodingLabSubmissionRecord,
@@ -35,11 +41,10 @@ async function getAuthHeader(): Promise<Record<string, string>> {
 
 /**
  * Submits a learner's Coding Lab assessment:
- * 1. Saves latest project JSON & custom images to Firestore/Cloudinary (fails submission if save fails!)
- * 2. Calls server-verified `/.netlify/functions/coding-lab-assessment` to freeze the snapshot,
- *    verify integrity, compute structural grade server-side, and link to `jdiExamAttempts`.
- * 3. Falls back cleanly in local dev preview if Netlify Functions are unreachable.
- * 4. Notifies the tutor via the existing notification helper.
+ * 1. Saves latest project JSON & custom images to Firestore/Cloudinary (idempotent if already saved).
+ * 2. Calls authoritative `/.netlify/functions/coding-lab-assessment` to verify ownership & integrity,
+ *    compute structural rubric grade server-side, atomically freeze the project, and sync `jdiExamAttempts`.
+ * 3. Only allows dev/emulator fallback when explicitly enabled via `VITE_CODING_LAB_ALLOW_DEV_CLIENT_SUBMISSION=true`.
  */
 export async function submitCodingLabAssessment(params: {
   assessmentId: string;
@@ -57,11 +62,14 @@ export async function submitCodingLabAssessment(params: {
   releaseGradesPolicy?: string;
   existingRevision?: number;
   existingManifest?: any[];
+  existingChunkHashes?: string[];
+  lastSavedCompositeHash?: string | null;
+  expiredAutoSubmit?: boolean;
   onStageChange?: (stage: 'uploading_assets' | 'saving_lms') => void;
 }): Promise<CodingLabSubmissionRecord> {
   const projectId = buildAssessmentProjectId(params.assessmentId, params.attemptId);
 
-  // Step 1: Ensure latest changes are durably saved to Firestore/Cloudinary first
+  // Step 1: Ensure latest changes are durably saved to Firestore/Cloudinary first (idempotent if unchanged)
   const saveResult = await saveAssessmentProjectToFirestore({
     projectId,
     ownerUid: params.ownerUid,
@@ -72,12 +80,15 @@ export async function submitCodingLabAssessment(params: {
     sb3Buffer: params.sb3Buffer,
     existingRevision: params.existingRevision,
     existingManifest: params.existingManifest,
-    lastSavedCompositeHash: null, // Force latest verification before freezing
+    existingChunkHashes: params.existingChunkHashes,
+    lastSavedCompositeHash: params.lastSavedCompositeHash ?? null,
     onStageChange: params.onStageChange,
   });
 
-  // Step 2: Submit via server-verified Netlify Function
+  // Step 2: Submit via server-verified Netlify Function (authoritative in production)
   let submission: CodingLabSubmissionRecord | null = null;
+  let networkOrNotFound = false;
+
   try {
     const headers = await getAuthHeader();
     const res = await fetch('/.netlify/functions/coding-lab-assessment', {
@@ -88,26 +99,42 @@ export async function submitCodingLabAssessment(params: {
         assessmentId: params.assessmentId,
         attemptId: params.attemptId,
         projectId,
+        expectedPayloadHash: saveResult.payloadHash,
+        expiredAutoSubmit: Boolean(params.expiredAutoSubmit),
       }),
     });
+
     if (res.ok) {
       const data = await res.json();
       if (data?.submission) {
         submission = data.submission as CodingLabSubmissionRecord;
+      } else {
+        throw new Error('Assessment server returned an incomplete submission confirmation.');
       }
-    } else if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 409) {
+    } else if (res.status === 404 && CODING_LAB_CONFIG.allowDevClientSubmissionFallback) {
+      networkOrNotFound = true;
+    } else {
       const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || 'Submission rejected by assessment server.');
+      throw new Error(
+        errData.error ||
+          `Submission could not be verified by the assessment server (${res.status}). Your project remains saved safely on this device—please retry.`
+      );
     }
   } catch (err) {
-    // Re-throw authoritative rejections; only fall back on network/404 when Functions aren't mounted locally
-    if (err instanceof Error && !err.message.toLowerCase().includes('fetch')) {
-      throw err;
+    if (
+      CODING_LAB_CONFIG.allowDevClientSubmissionFallback &&
+      err instanceof TypeError
+    ) {
+      networkOrNotFound = true;
+    } else {
+      throw err instanceof Error
+        ? err
+        : new Error('Unable to reach the assessment server. Your work is saved locally—please retry.');
     }
   }
 
-  // Step 3: Local preview fallback when Netlify Functions are unavailable
-  if (!submission) {
+  // Step 3: Explicit local-dev-only fallback (NEVER runs in production builds)
+  if (!submission && networkOrNotFound && CODING_LAB_CONFIG.allowDevClientSubmissionFallback) {
     const gradingMethod = params.codingConfig?.gradingMethod || 'automatic';
     const rubricCriteria = params.codingConfig?.rubricCriteria || [];
     const autoResult =
@@ -199,6 +226,12 @@ export async function submitCodingLabAssessment(params: {
     await batch.commit();
   }
 
+  if (!submission) {
+    throw new Error(
+      'Assessment submission could not be confirmed by the server. Your local backup is safe—please retry.'
+    );
+  }
+
   // Clear local recovery draft for this submitted attempt
   await clearLocalDraft(
     buildLocalDraftKey({
@@ -276,6 +309,8 @@ export async function saveCodingLabTutorGrade(params: {
   actorRole?: string;
 }): Promise<{ finalScore: number; percentage: number; resultReleased: boolean }> {
   const headers = await getAuthHeader();
+  let devFallback = false;
+
   try {
     const res = await fetch('/.netlify/functions/coding-lab-assessment', {
       method: 'POST',
@@ -295,21 +330,31 @@ export async function saveCodingLabTutorGrade(params: {
       const data = await res.json();
       return {
         finalScore: Number(data.finalScore ?? params.finalScore),
-        percentage: Number(data.percentage ?? calculateScorePercentage(params.finalScore, params.maxScore)),
+        percentage: Number(
+          data.percentage ?? calculateScorePercentage(params.finalScore, params.maxScore)
+        ),
         resultReleased: Boolean(data.resultReleased),
       };
     }
-    if (res.status === 400 || res.status === 401 || res.status === 403) {
+    if (res.status === 404 && CODING_LAB_CONFIG.allowDevClientSubmissionFallback) {
+      devFallback = true;
+    } else {
       const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || 'Failed to save Coding Lab grade.');
+      throw new Error(errData.error || `Failed to save Coding Lab grade (${res.status}).`);
     }
   } catch (err) {
-    if (err instanceof Error && !err.message.toLowerCase().includes('fetch')) {
-      throw err;
+    if (CODING_LAB_CONFIG.allowDevClientSubmissionFallback && err instanceof TypeError) {
+      devFallback = true;
+    } else {
+      throw err instanceof Error ? err : new Error('Unable to save grade right now.');
     }
   }
 
-  // Fallback for local dev preview when Netlify Functions are not mounted
+  if (!devFallback) {
+    throw new Error('Failed to save Coding Lab grade on server.');
+  }
+
+  // Explicit local dev fallback
   const pct = calculateScorePercentage(params.finalScore, params.maxScore);
   const subRef = doc(db, 'codingLabSubmissions', params.submissionId);
   const snap = await getDoc(subRef);

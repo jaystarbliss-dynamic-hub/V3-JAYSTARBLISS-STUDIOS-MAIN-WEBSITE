@@ -20,7 +20,16 @@ import {
   getWorkTypeLabels,
   isAttemptResultReleased,
   shouldAutoReleaseAttemptResult,
+  resolveAssessmentLayout,
+  buildQuestionContextMap,
+  canPauseAssessmentWorkType,
+  type AssessmentLayout,
 } from "../../lib/classes";
+import {
+  SectionBanner,
+  ContentBlockCard,
+  ComprehensionPassagePanel,
+} from "../../components/assessment/AssessmentContentBlocks";
 import {
   buildExamReportViewModel,
   generateExamReportPdf,
@@ -46,11 +55,13 @@ import {
   Check,
   AlertTriangle,
   ShieldCheck,
-  Flame,
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
   List,
+  Layers,
+  PauseCircle,
+  PlayCircle,
   CheckCircle,
   RotateCcw,
   Code2,
@@ -93,6 +104,10 @@ type D = {
     schoolName?: string;
     status: string;
     deadlineAt?: string | null;
+    isPaused?: boolean;
+    pausedAt?: string | null;
+    remainingSecondsAtPause?: number | null;
+    assessmentLayoutSnapshot?: AssessmentLayout | null;
     score?: number;
     maxScore?: number;
     percentage?: number;
@@ -155,6 +170,7 @@ type D = {
     allowInProgressFinish?: boolean;
     manuallyClosedAt?: unknown;
     manuallyReopenedAt?: unknown;
+    assessmentLayout?: AssessmentLayout | null;
     questions?: Q[];
   };
   questions: Q[];
@@ -277,6 +293,7 @@ export default function StudentExamAttempt() {
   const [viewMode, setViewMode] = useState<"focused" | "all">("focused");
   const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
   const [retakingBusy, setRetakingBusy] = useState<boolean>(false);
+  const [pauseBusy, setPauseBusy] = useState<boolean>(false);
 
   // Load Exam Attempt Data (Server + Direct Firestore Fallback)
   const loadAttemptData = async () => {
@@ -493,6 +510,13 @@ export default function StudentExamAttempt() {
             schoolName: resolvedSchoolName,
             maxScore,
             deadlineAt: resolvedAttemptDeadlineIso,
+            isPaused: Boolean(attemptData.isPaused),
+            pausedAt: attemptData.pausedAt || null,
+            remainingSecondsAtPause:
+              typeof attemptData.remainingSecondsAtPause === "number"
+                ? attemptData.remainingSecondsAtPause
+                : null,
+            assessmentLayoutSnapshot: attemptData.assessmentLayoutSnapshot || null,
           },
           exam: {
             id: attemptData.examId,
@@ -524,6 +548,7 @@ export default function StudentExamAttempt() {
             allowInProgressFinish: examData.allowInProgressFinish,
             manuallyClosedAt: examData.manuallyClosedAt,
             manuallyReopenedAt: examData.manuallyReopenedAt,
+            assessmentLayout: examData.assessmentLayout || null,
             questions: isReleased ? rawQuestions : safeQuestions,
           },
           questions: safeQuestions,
@@ -553,12 +578,24 @@ export default function StudentExamAttempt() {
 
       setData(loadedData);
       setAnswers(loadedData.attempt.answers || {});
+      const loadedCanPause = canPauseAssessmentWorkType(loadedData.exam.workType);
+      const loadedIsPaused = loadedCanPause && Boolean(loadedData.attempt.isPaused) && loadedData.attempt.status === "in_progress";
       const hasActiveDeadline =
-        Boolean(loadedData.attempt.deadlineAt) &&
+        (Boolean(loadedData.attempt.deadlineAt) || loadedIsPaused) &&
         loadedData.exam.hasTimeLimit !== false &&
         (loadedData.exam.hasTimeLimit === true ||
           (loadedData.exam.durationMinutes != null && Number(loadedData.exam.durationMinutes) > 0));
-      if (hasActiveDeadline && loadedData.attempt.deadlineAt) {
+      if (loadedIsPaused) {
+        const savedSec =
+          typeof loadedData.attempt.remainingSecondsAtPause === "number" &&
+          loadedData.attempt.remainingSecondsAtPause >= 0
+            ? Math.floor(loadedData.attempt.remainingSecondsAtPause)
+            : loadedData.attempt.deadlineAt
+            ? Math.max(0, Math.ceil((new Date(loadedData.attempt.deadlineAt).getTime() - Date.now()) / 1000))
+            : 0;
+        setSeconds(savedSec);
+        setTimerInitialized(hasActiveDeadline);
+      } else if (hasActiveDeadline && loadedData.attempt.deadlineAt) {
         const remaining = Math.max(
           0,
           Math.ceil((new Date(loadedData.attempt.deadlineAt).getTime() - Date.now()) / 1000)
@@ -585,14 +622,24 @@ export default function StudentExamAttempt() {
     void loadAttemptData();
   }, [attemptId]);
 
-  // Countdown timer (only runs when a time limit / deadline is configured)
+  // Countdown timer (runs when a time limit is configured and attempt is active and NOT paused)
   useEffect(() => {
+    const isPaused =
+      canPauseAssessmentWorkType(data?.exam.workType) && Boolean(data?.attempt.isPaused);
     const hasDeadline =
       Boolean(data?.attempt.deadlineAt) &&
       data?.exam.hasTimeLimit !== false &&
       (data?.exam.hasTimeLimit === true ||
         (data?.exam.durationMinutes != null && Number(data?.exam.durationMinutes) > 0));
-    if (!data || data.attempt.status !== "in_progress" || !hasDeadline || !data.attempt.deadlineAt) return;
+    if (
+      !data ||
+      data.attempt.status !== "in_progress" ||
+      isPaused ||
+      !hasDeadline ||
+      !data.attempt.deadlineAt
+    ) {
+      return;
+    }
     const deadlineIso = data.attempt.deadlineAt;
     const interval = window.setInterval(() => {
       const remaining = Math.max(
@@ -605,11 +652,184 @@ export default function StudentExamAttempt() {
       }
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [data?.attempt.deadlineAt, data?.attempt.status, data?.exam.hasTimeLimit, data?.exam.durationMinutes]);
+  }, [
+    data?.attempt.deadlineAt,
+    data?.attempt.status,
+    data?.attempt.isPaused,
+    data?.exam.workType,
+    data?.exam.hasTimeLimit,
+    data?.exam.durationMinutes,
+  ]);
 
-  // Autosave answers with 2000ms debounce after answer changes
+  // Explicit Save & Pause / Resume handlers strictly for ASSIGNMENT and ACTIVITY work types
+  const handlePauseAttempt = async () => {
+    if (!data || pauseBusy || busy) return;
+    if (!canPauseAssessmentWorkType(data.exam.workType)) return;
+    setPauseBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      let serverPayload: any = null;
+      try {
+        if (auth.currentUser) {
+          const token = await auth.currentUser.getIdToken();
+          const res = await fetch("/.netlify/functions/examination-attempt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ attemptId, action: "pause", answers }),
+          });
+          if (res.ok) {
+            serverPayload = await res.json().catch(() => null);
+          } else if (res.status === 403 || res.status === 409) {
+            const errJson = await res.json().catch(() => ({}));
+            throw new Error(errJson?.error || "This assessment cannot be paused.");
+          }
+        }
+      } catch (err) {
+        if (err instanceof Error && /cannot be paused|closed/i.test(err.message)) {
+          throw err;
+        }
+      }
+
+      const nowIso = new Date().toISOString();
+      const computedRemaining =
+        typeof serverPayload?.remainingSecondsAtPause === "number"
+          ? serverPayload.remainingSecondsAtPause
+          : data.attempt.deadlineAt
+          ? Math.max(
+              0,
+              Math.ceil((new Date(data.attempt.deadlineAt).getTime() - Date.now()) / 1000)
+            )
+          : null;
+
+      if (!serverPayload) {
+        await Promise.all(
+          getAllClientDatabases().map((dbInst) =>
+            setDoc(
+              doc(dbInst, "jdiExamAttempts", attemptId),
+              {
+                answers,
+                isPaused: true,
+                pausedAt: nowIso,
+                remainingSecondsAtPause: computedRemaining,
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            ).catch(() => undefined)
+          )
+        );
+      }
+
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              attempt: {
+                ...prev.attempt,
+                answers,
+                isPaused: true,
+                pausedAt: serverPayload?.pausedAt || nowIso,
+                remainingSecondsAtPause: computedRemaining,
+              },
+            }
+          : prev
+      );
+      if (typeof computedRemaining === "number") {
+        setSeconds(computedRemaining);
+      }
+      setSaveStatus("saved");
+      setNotice("Progress saved and timer paused. You can resume whenever you are ready.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to pause this assessment.");
+    } finally {
+      setPauseBusy(false);
+    }
+  };
+
+  const handleResumeAttempt = async () => {
+    if (!data || pauseBusy || busy) return;
+    if (!canPauseAssessmentWorkType(data.exam.workType)) return;
+    setPauseBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      let serverPayload: any = null;
+      try {
+        if (auth.currentUser) {
+          const token = await auth.currentUser.getIdToken();
+          const res = await fetch("/.netlify/functions/examination-attempt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ attemptId, action: "resume" }),
+          });
+          if (res.ok) {
+            serverPayload = await res.json().catch(() => null);
+          }
+        }
+      } catch {}
+
+      const remainingSec =
+        typeof data.attempt.remainingSecondsAtPause === "number"
+          ? Math.max(0, Math.floor(data.attempt.remainingSecondsAtPause))
+          : seconds;
+      const resumedDeadline =
+        serverPayload?.deadlineAt !== undefined
+          ? serverPayload.deadlineAt
+          : data.attempt.deadlineAt
+          ? new Date(Date.now() + remainingSec * 1000).toISOString()
+          : null;
+
+      if (!serverPayload) {
+        await Promise.all(
+          getAllClientDatabases().map((dbInst) =>
+            setDoc(
+              doc(dbInst, "jdiExamAttempts", attemptId),
+              {
+                isPaused: false,
+                pausedAt: null,
+                remainingSecondsAtPause: null,
+                ...(resumedDeadline ? { deadlineAt: resumedDeadline } : {}),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            ).catch(() => undefined)
+          )
+        );
+      }
+
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              attempt: {
+                ...prev.attempt,
+                isPaused: false,
+                pausedAt: null,
+                remainingSecondsAtPause: null,
+                deadlineAt: resumedDeadline,
+              },
+            }
+          : prev
+      );
+      if (resumedDeadline) {
+        const nextSec = Math.max(
+          0,
+          Math.ceil((new Date(resumedDeadline).getTime() - Date.now()) / 1000)
+        );
+        setSeconds(nextSec);
+        setTimerInitialized(true);
+      }
+      setNotice("Assessment resumed from where you left off.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to resume assessment.");
+    } finally {
+      setPauseBusy(false);
+    }
+  };
+
+  // Autosave answers with 2000ms debounce after answer changes (NATIVE exams only)
   useEffect(() => {
-    if (!data || data.attempt.status !== "in_progress" || busy) return;
+    if (!data || data.exam.deliveryMode === "CODING_LAB" || data.attempt.status !== "in_progress" || busy) return;
     const initialSerialized = JSON.stringify(data.attempt.answers || {});
     const currentSerialized = JSON.stringify(answers || {});
     if (currentSerialized === initialSerialized) {
@@ -712,9 +932,9 @@ export default function StudentExamAttempt() {
     };
   }, [answers, data?.attempt.status, busy]);
 
-  // Live Proctor Heartbeat: writes isOnline: true and lastHeartbeat every 60 seconds while taking exam
+  // Live Proctor Heartbeat: writes isOnline: true and lastHeartbeat every 60 seconds while taking exam (NATIVE exams only)
   useEffect(() => {
-    if (!data || data.attempt.status !== "in_progress" || busy || !attemptId) return;
+    if (!data || data.exam.deliveryMode === "CODING_LAB" || data.attempt.status !== "in_progress" || busy || !attemptId) return;
 
     const ping = () => {
       const attemptRef = doc(db, "jdiExamAttempts", attemptId);
@@ -1135,8 +1355,9 @@ export default function StudentExamAttempt() {
     }
   };
 
-  // Auto-expire when timer hits 00:00 (only when a time limit / deadline is configured and deadlineMs has genuinely passed)
+  // Auto-expire when timer hits 00:00 (NATIVE exams ONLY — Coding Lab handles timer expiry via its own isolated workflow)
   useEffect(() => {
+    if (data?.exam.deliveryMode === "CODING_LAB") return;
     const hasDeadline =
       Boolean(data?.attempt.deadlineAt) &&
       data?.exam.hasTimeLimit !== false &&
@@ -1162,10 +1383,22 @@ export default function StudentExamAttempt() {
     timerInitialized,
     data?.attempt.status,
     data?.attempt.deadlineAt,
+    data?.exam.deliveryMode,
     data?.exam.hasTimeLimit,
     data?.exam.durationMinutes,
     busy,
   ]);
+
+  // Redirect active Coding Lab attempts to the dedicated full-screen workspace outside PortalLayout
+  useEffect(() => {
+    if (
+      data?.exam.deliveryMode === "CODING_LAB" &&
+      data.attempt.status === "in_progress" &&
+      attemptId
+    ) {
+      nav(`/coding-lab/assessment/${encodeURIComponent(attemptId)}`, { replace: true });
+    }
+  }, [data?.exam.deliveryMode, data?.attempt.status, attemptId, nav]);
 
   // Start a fresh Retake Attempt when limitOneAttempt is unchecked (or after premature empty expiry)
   const handleRetakeAssessment = async () => {
@@ -1427,14 +1660,19 @@ export default function StudentExamAttempt() {
     );
   }
 
+  const allowPause = canPauseAssessmentWorkType(data.exam.workType);
+  const isPausedAttempt =
+    allowPause && Boolean(data.attempt.isPaused) && data.attempt.status === "in_progress";
   const hasTimeLimit =
-    Boolean(data.attempt.deadlineAt) &&
+    (Boolean(data.attempt.deadlineAt) ||
+      (isPausedAttempt && typeof data.attempt.remainingSecondsAtPause === "number")) &&
     data.exam.hasTimeLimit !== false &&
     (data.exam.hasTimeLimit === true ||
       (data.exam.durationMinutes != null && Number(data.exam.durationMinutes) > 0));
-  const isTimeUp = hasTimeLimit && timerInitialized && seconds <= 0;
+  const isTimeUp = hasTimeLimit && !isPausedAttempt && timerInitialized && seconds <= 0;
   const isExpiredAttempt =
     hasTimeLimit &&
+    !isPausedAttempt &&
     (data.attempt.status === "expired" ||
       autoExpiredBanner ||
       (data.attempt.status === "in_progress" && isTimeUp));
@@ -1453,6 +1691,16 @@ export default function StudentExamAttempt() {
     return val !== undefined && val !== null && String(val).trim() !== "";
   }).length;
 
+  // Resolve structured assessment layout (sections, content blocks, comprehension passages)
+  const resolvedLayout = resolveAssessmentLayout(
+    {
+      assessmentLayoutSnapshot: data.attempt.assessmentLayoutSnapshot,
+      assessmentLayout: data.exam.assessmentLayout,
+    },
+    data.questions
+  );
+  const questionContextMap = buildQuestionContextMap(resolvedLayout);
+
   // Detect if this is a single Practical Task / Deliverable without conventional Q&A list
   const isSingleDeliverableTask =
     Boolean(data.exam.isTaskOnlyAssignment) ||
@@ -1461,7 +1709,8 @@ export default function StudentExamAttempt() {
         data.questions[0]?.type
       ));
 
-  const isLowTime = hasTimeLimit && !closed && seconds > 0 && seconds <= 300;
+  const isCriticalTime = hasTimeLimit && !closed && !isPausedAttempt && seconds > 0 && seconds <= 60;
+  const isLowTime = hasTimeLimit && !closed && !isPausedAttempt && seconds > 0 && seconds <= 300;
   const safeSeconds = isExpiredAttempt || closed ? 0 : Math.max(0, seconds);
   const formattedTime = `${Math.floor(safeSeconds / 60).toString().padStart(2, "0")}:${String(
     safeSeconds % 60
@@ -1495,126 +1744,147 @@ export default function StudentExamAttempt() {
     (reportVm?.schoolName || "").toLowerCase().includes("private");
 
   return (
-    <main className="mx-auto max-w-4xl space-y-5 p-3 sm:p-5 md:p-8">
-      {/* STICKY ASSESSMENT INFO & COUNTDOWN TIMER BAR */}
-      <section
-        aria-label={`${typeLabels.singular} status and countdown timer`}
-        className={`${
-          closed ? "" : "sticky top-[52px] sm:top-[56px] z-30"
-        } rounded-2xl bg-slate-900/95 backdrop-blur-md p-3.5 sm:p-5 text-white shadow-md border border-slate-800`}
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mb-0.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-red-300">
-                {typeLabels.singular}
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0D1117] text-slate-900 dark:text-slate-100">
+      {/* COMPACT PERSISTENT FLOATING TOP-RIGHT COUNTDOWN TIMER */}
+      {hasTimeLimit && !closed && !isPausedAttempt && (
+        <div
+          role="timer"
+          aria-live="off"
+          aria-label={`Time remaining ${formattedTime}`}
+          className={`fixed top-3 right-3 sm:top-4 sm:right-5 z-40 rounded-xl border px-3.5 py-2 shadow-md backdrop-blur-md transition-colors ${
+            isCriticalTime
+              ? "border-red-300 dark:border-red-800 bg-red-50/95 dark:bg-red-950/90 text-[#B91C1C] dark:text-red-200"
+              : isLowTime
+              ? "border-amber-300 dark:border-amber-800 bg-amber-50/95 dark:bg-amber-950/90 text-amber-900 dark:text-amber-200"
+              : "border-slate-200/90 dark:border-slate-700/90 bg-white/95 dark:bg-[#161B22]/95 text-slate-900 dark:text-slate-100"
+          }`}
+          style={{
+            top: "max(0.75rem, env(safe-area-inset-top))",
+            right: "max(0.75rem, env(safe-area-inset-right))",
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <Clock
+              size={15}
+              className={
+                isCriticalTime
+                  ? "text-[#B91C1C] dark:text-red-400 shrink-0"
+                  : isLowTime
+                  ? "text-amber-600 dark:text-amber-400 shrink-0"
+                  : "text-slate-500 dark:text-slate-400 shrink-0"
+              }
+            />
+            <div className="leading-none">
+              <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">
+                {isCriticalTime ? "Final minute" : isLowTime ? "Low time" : "Time left"}
               </span>
-              <span aria-hidden="true" className="text-slate-500">·</span>
-              <h2 className="text-base sm:text-xl font-bold text-white truncate sm:whitespace-normal sm:break-words">
-                {data.exam.title}
-              </h2>
+              <span className="font-mono text-sm sm:text-base font-bold tabular-nums">
+                {formattedTime}
+              </span>
             </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-slate-300 mt-0.5 tabular-nums">
-              <span>{data.exam.subject}</span>
-              {!closed && answerableQuestions.length > 0 && !isSingleDeliverableTask && (
-                <>
-                  <span aria-hidden="true" className="text-slate-500">·</span>
-                  <span className="text-xs font-semibold text-slate-200">
-                    {answeredCount} / {answerableQuestions.length} Answered
-                  </span>
-                </>
+          </div>
+        </div>
+      )}
+
+      <main className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:px-6 sm:py-8 md:py-10">
+        {/* NATURALLY SCROLLING CLEAN ACADEMIC ASSESSMENT HEADER */}
+        <header
+          aria-label={`${typeLabels.singular} overview`}
+          className={`space-y-4 border-b border-slate-200 dark:border-slate-800 pb-5 ${
+            hasTimeLimit && !closed && !isPausedAttempt ? "pr-28 sm:pr-36" : ""
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => nav("/portal/student/exams")}
+              className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              <ArrowLeft size={15} />
+              <span>Assessments</span>
+            </button>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {allowPause && !closed && !isPausedAttempt && (
+                <button
+                  type="button"
+                  disabled={pauseBusy || busy}
+                  onClick={() => void handlePauseAttempt()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#161B22] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                >
+                  <PauseCircle size={14} className="text-slate-500 dark:text-slate-400" />
+                  <span>{pauseBusy ? "Pausing…" : "Save & Pause"}</span>
+                </button>
+              )}
+
+              {!closed && !isPausedAttempt && data.questions.length > 1 && !isSingleDeliverableTask && (
+                <div
+                  role="group"
+                  aria-label="Assessment viewing mode"
+                  className="inline-flex items-center gap-1 p-1 rounded-lg bg-slate-200/70 dark:bg-slate-800/80"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("focused")}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+                      viewMode === "focused"
+                        ? "bg-white dark:bg-[#161B22] text-slate-900 dark:text-white shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    <Layers size={13} />
+                    <span>One at a time</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("all")}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+                      viewMode === "all"
+                        ? "bg-white dark:bg-[#161B22] text-slate-900 dark:text-white shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    <List size={13} />
+                    <span>All questions</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
-            {!closed && data.questions.length > 1 && !isSingleDeliverableTask && (
-              <div className="flex items-center gap-1 p-1 bg-black/40 rounded-xl border border-white/10 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setViewMode("focused")}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    viewMode === "focused"
-                      ? "bg-[#B91C1C] text-white shadow-sm"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                  title="Focused Quiz Player (single question step-by-step format)"
-                >
-                  <Flame size={13} className={viewMode === "focused" ? "text-red-200" : ""} />
-                  <span className="hidden xs:inline">Quiz Player</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("all")}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    viewMode === "all"
-                      ? "bg-white/20 text-white shadow-sm"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                  title="View all questions in a scrolling list"
-                >
-                  <List size={13} />
-                  <span className="hidden xs:inline">All Questions</span>
-                </button>
-              </div>
-            )}
-
-            {(hasTimeLimit || closed) && (
-              <div
-                role={hasTimeLimit ? "timer" : "status"}
-                aria-live="off"
-                aria-label={closed ? "Assessment status" : `Time remaining ${formattedTime}`}
-                className={`rounded-xl border px-3.5 py-2 sm:px-5 sm:py-2.5 text-center shrink-0 transition-colors ${
-                  isExpiredAttempt
-                    ? "border-red-500/40 bg-red-950/60"
-                    : closed
-                    ? "border-white/10 bg-white/5"
-                    : isLowTime
-                    ? "border-red-400/50 bg-red-500/20 animate-pulse"
-                    : "border-white/20 bg-white/10"
-                }`}
-              >
-                {isExpiredAttempt ? (
-                  <div className="flex items-center gap-2">
-                    <Clock className="text-red-400 shrink-0" size={18} />
-                    <div className="text-left">
-                      <span className="block text-[9px] uppercase tracking-wider font-bold text-red-300 leading-none mb-0.5">
-                        Time Expired
-                      </span>
-                      <span className="font-mono text-base sm:text-xl font-black leading-none text-red-200 tabular-nums">
-                        00:00 · Closed
-                      </span>
-                    </div>
-                  </div>
-                ) : closed ? (
-                  <span className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
-                    {isReleased ? "Released" : data.attempt.status}
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span className="text-[#B91C1C] dark:text-red-400">{typeLabels.singular}</span>
+              <span aria-hidden="true">·</span>
+              <span>{data.exam.subject}</span>
+              {!closed && answerableQuestions.length > 0 && !isSingleDeliverableTask && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="tabular-nums text-slate-700 dark:text-slate-300">
+                    {answeredCount} of {answerableQuestions.length} answered
                   </span>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Clock
-                      className={isLowTime ? "text-red-300 shrink-0" : "text-slate-200 shrink-0"}
-                      size={18}
-                    />
-                    <div className="text-left">
-                      <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-300 leading-none mb-0.5">
-                        Time Left
-                      </span>
-                      <span
-                        className={`font-mono text-lg sm:text-2xl font-black leading-none tabular-nums ${
-                          isLowTime ? "text-red-200" : "text-white"
-                        }`}
-                      >
-                        {formattedTime}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+                </>
+              )}
+              {isPausedAttempt && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-amber-700 dark:text-amber-400">Paused</span>
+                </>
+              )}
+              {closed && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="capitalize text-slate-700 dark:text-slate-300">
+                    {isReleased ? "Result Released" : data.attempt.status}
+                  </span>
+                </>
+              )}
+            </div>
+            <h1 className="text-xl sm:text-2xl md:text-[28px] font-bold text-slate-900 dark:text-white tracking-tight leading-snug break-words">
+              {data.exam.title}
+            </h1>
           </div>
-        </div>
-      </section>
+        </header>
 
       {isExpiredAttempt && (
         <div
@@ -1989,16 +2259,68 @@ export default function StudentExamAttempt() {
             </div>
           )}
         </section>
+      ) : isPausedAttempt ? (
+        /* PAUSED STATE SCREEN (Strictly for ASSIGNMENT and ACTIVITY work types) */
+        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161B22] p-6 sm:p-10 text-center space-y-5 shadow-2xs max-w-2xl mx-auto">
+          <div className="mx-auto w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200">
+            <PauseCircle size={26} />
+          </div>
+          <div className="space-y-1.5">
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
+              {typeLabels.singular} Paused
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 max-w-md mx-auto leading-relaxed">
+              Your answers have been saved safely. You can return later or resume right now from where you stopped.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-4 text-xs sm:text-sm text-slate-600 dark:text-slate-300 tabular-nums">
+            <span>
+              Progress: <strong className="text-slate-900 dark:text-white">{answeredCount}</strong> of{" "}
+              <strong className="text-slate-900 dark:text-white">{answerableQuestions.length}</strong> answered
+            </span>
+            {hasTimeLimit && (
+              <>
+                <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                <span>
+                  Remaining time:{" "}
+                  <strong className="font-mono text-slate-900 dark:text-white">{formattedTime}</strong>
+                </span>
+              </>
+            )}
+          </div>
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              type="button"
+              disabled={pauseBusy}
+              onClick={() => void handleResumeAttempt()}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 px-6 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+            >
+              <PlayCircle size={16} />
+              <span>{pauseBusy ? "Resuming…" : `Resume ${typeLabels.singular}`}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => nav("/portal/student/exams")}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            >
+              <ArrowLeft size={16} />
+              <span>Return to Assessments</span>
+            </button>
+          </div>
+        </section>
       ) : (
         <>
           {viewMode === "focused" && !isSingleDeliverableTask && data.questions.length > 0 ? (
-            /* FOCUSED QUIZ PLAYER (MATCHING REFERENCE DESIGN) */
+            /* ONE-AT-A-TIME FOCUSED ASSESSMENT VIEW (Light & Dark Mode + Comprehension Context) */
             (() => {
               const safeCurrentIndex = Math.max(
                 0,
                 Math.min(data.questions.length - 1, currentQuestionIndex)
               );
               const currentQ = data.questions[safeCurrentIndex];
+              const currentCtx = questionContextMap[currentQ.id];
+              const currentSection =
+                currentCtx?.section || resolvedLayout.sections[currentCtx?.sectionIndex ?? 0];
               const currentQMediaUrl = currentQ.resourceUrl || currentQ.videoUrl || "";
               const structured = parseStructuredAnswer(answers[currentQ.id]);
               const subMethod =
@@ -2018,45 +2340,43 @@ export default function StudentExamAttempt() {
                 currentQ.type === "practical_task" &&
                 ["both", "text", "link", "file"].includes(subMethod);
 
-              return (
-                <section className="space-y-6 pt-1 pb-6 max-w-3xl mx-auto">
-                  {/* TOP TITLE & MOTTO WITH GLOWING FLAMES */}
-                  <div className="text-center py-2 sm:py-4 space-y-2">
-                    <div className="inline-flex items-center justify-center gap-2.5">
-                      <Flame className="text-red-500 fill-red-500 animate-pulse" size={28} />
-                      <h1 className="text-2xl sm:text-3xl font-black text-white tracking-wide">
-                        Quiz Time
-                      </h1>
-                      <Flame className="text-red-500 fill-red-500 animate-pulse" size={28} />
-                    </div>
-                    <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto">
-                      Answer the questions below to test what you've learned.
-                    </p>
-                  </div>
+              const currentPassageRangeLabel = (() => {
+                if (!currentCtx?.comprehension) return undefined;
+                const linkedIds: string[] = currentCtx.comprehension.questionIds;
+                const indices = linkedIds
+                  .map((id: string) => data.questions.findIndex((q) => q.id === id))
+                  .filter((idx: number) => idx >= 0)
+                  .sort((a: number, b: number) => a - b);
+                if (indices.length === 1) return `Question ${indices[0] + 1}`;
+                if (indices.length > 1) return `Questions ${indices[0] + 1}–${indices[indices.length - 1] + 1}`;
+                return undefined;
+              })();
 
-                  {/* INSTRUCTIONS, DELIVERABLES & REFERENCE LEARNING MATERIALS IN QUIZ PLAYER */}
+              return (
+                <section className="space-y-5 pb-6 max-w-3xl mx-auto">
+                  {/* INSTRUCTIONS, DELIVERABLES & REFERENCE LEARNING MATERIALS */}
                   {(data.exam.instructions ||
                     data.exam.deliverables ||
                     examResourceUrl ||
                     (Array.isArray(data.exam.learningResources) &&
                       data.exam.learningResources.length > 0)) && (
-                    <div className="rounded-2xl border border-white/10 bg-[#131418] p-4 sm:p-5 space-y-3">
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161B22] p-5 space-y-3.5">
                       {data.exam.instructions && (
                         <div className="space-y-1">
-                          <p className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                            {typeLabels.singular} Instructions &amp; Brief
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                            {typeLabels.singular} Instructions
                           </p>
-                          <p className="text-xs sm:text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
+                          <p className="text-sm text-slate-700 dark:text-slate-200 whitespace-pre-line leading-relaxed">
                             {data.exam.instructions}
                           </p>
                         </div>
                       )}
                       {data.exam.deliverables && (
-                        <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-1">
-                          <p className="text-xs font-bold uppercase tracking-wider text-red-400">
-                            Deliverables &amp; Expectations
+                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1">
+                          <p className="text-xs font-semibold text-[#B91C1C] dark:text-red-400">
+                            Expected Deliverables
                           </p>
-                          <p className="text-xs sm:text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
+                          <p className="text-sm text-slate-700 dark:text-slate-200 whitespace-pre-line leading-relaxed">
                             {data.exam.deliverables}
                           </p>
                         </div>
@@ -2066,18 +2386,24 @@ export default function StudentExamAttempt() {
                           url={examResourceUrl}
                           title={
                             data.exam.resourceTitle ||
-                            `${typeLabels.singular} Learning Video / Reference Material`
+                            `${typeLabels.singular} Reference Material`
                           }
                           hideExternalLink={true}
                         />
                       )}
                       {Array.isArray(data.exam.learningResources) &&
                         data.exam.learningResources
-                          .filter((r) => (r.url || r.youtubeUrl) && (r.url || r.youtubeUrl) !== examResourceUrl)
+                          .filter(
+                            (r) =>
+                              (r.url || r.youtubeUrl) &&
+                              (r.url || r.youtubeUrl) !== examResourceUrl
+                          )
                           .map((resItem, rIdx) => (
                             <div key={resItem.id || rIdx} className="space-y-1.5">
                               {resItem.instructions && (
-                                <p className="text-xs text-slate-300">{resItem.instructions}</p>
+                                <p className="text-xs text-slate-600 dark:text-slate-300">
+                                  {resItem.instructions}
+                                </p>
                               )}
                               <EmbeddedLearningMedia
                                 url={resItem.url || resItem.youtubeUrl || ""}
@@ -2089,19 +2415,19 @@ export default function StudentExamAttempt() {
                     </div>
                   )}
 
-                  {/* PROGRESS BAR & QUESTIONS COUNTERS */}
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between text-xs sm:text-sm font-semibold text-slate-400">
+                  {/* CLEAN PROGRESS BAR */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400 tabular-nums">
                       <span>
                         Question {safeCurrentIndex + 1} of {data.questions.length}
                       </span>
-                      <span className="text-slate-300">
-                        {answeredCount} answered
+                      <span>
+                        {answeredCount} of {answerableQuestions.length} answered
                       </span>
                     </div>
-                    <div className="h-2 w-full rounded-full bg-slate-800/90 overflow-hidden">
+                    <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
                       <div
-                        className="h-full bg-red-600 rounded-full transition-all duration-300 shadow-[0_0_12px_rgba(239,68,68,0.7)]"
+                        className="h-full bg-[#B91C1C] rounded-full transition-all duration-300"
                         style={{
                           width: `${Math.max(
                             4,
@@ -2112,32 +2438,46 @@ export default function StudentExamAttempt() {
                     </div>
                   </div>
 
-                  {/* FOCUSED QUESTION CARD */}
-                  <article className="rounded-2xl border border-white/10 bg-[#131418] p-5 sm:p-8 shadow-2xl space-y-6 transition-all">
-                    <div className="flex items-start justify-between gap-3">
-                      <h2 className="text-base sm:text-xl font-bold text-white leading-relaxed">
-                        <span className="text-red-500 font-extrabold mr-2">
+                  {/* SECTION & LINKED COMPREHENSION PASSAGE CONTEXT */}
+                  {currentSection && (
+                    <SectionBanner
+                      section={currentSection}
+                      sectionIndex={currentCtx?.sectionIndex ?? 0}
+                      totalSections={resolvedLayout.sections.length}
+                      compact
+                    />
+                  )}
+                  {currentCtx?.comprehension && (
+                    <ComprehensionPassagePanel
+                      comprehension={currentCtx.comprehension}
+                      questionRangeLabel={currentPassageRangeLabel}
+                    />
+                  )}
+
+                  {/* FOCUSED QUESTION CARD (Full Light & Dark Mode Support) */}
+                  <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161B22] p-5 sm:p-7 shadow-2xs space-y-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <h2 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-white leading-relaxed whitespace-pre-line">
+                        <span className="text-[#B91C1C] dark:text-red-400 font-bold mr-2 tabular-nums">
                           {safeCurrentIndex + 1}.
                         </span>
                         {currentQ.prompt}
                       </h2>
                       {currentQ.points > 0 && (
-                        <span className="shrink-0 text-xs font-bold text-slate-400 bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg">
-                          {currentQ.points} pt{currentQ.points > 1 ? "s" : ""}
+                        <span className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap">
+                          {currentQ.points} {currentQ.points === 1 ? "mark" : "marks"}
                         </span>
                       )}
                     </div>
 
-                    {/* Deliverable instructions if provided */}
                     {currentQ.deliverableInstructions && (
-                      <div className="rounded-xl bg-white/5 border border-white/10 p-3.5 text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">
+                      <div className="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-4 text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line">
                         {currentQ.deliverableInstructions}
                       </div>
                     )}
 
-                    {/* Question media if present */}
                     {currentQMediaUrl && currentQMediaUrl !== examResourceUrl && (
-                      <div className="rounded-xl overflow-hidden border border-white/10">
+                      <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800">
                         <EmbeddedLearningMedia
                           url={currentQMediaUrl}
                           title={currentQ.prompt || "Question Media"}
@@ -2148,14 +2488,14 @@ export default function StudentExamAttempt() {
 
                     {/* QUESTION OPTIONS */}
                     {currentQ.type === "learning_resource" ? (
-                      <div className="rounded-xl bg-white/5 border border-white/15 p-4 flex items-center gap-3 text-xs font-semibold text-slate-200">
-                        <Video size={18} className="text-red-400 shrink-0" />
+                      <div className="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-4 flex items-center gap-3 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        <Video size={18} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
                         <span>
                           Review the learning resource above carefully. No written answer is required for this step.
                         </span>
                       </div>
                     ) : ["single_choice", "true_false"].includes(currentQ.type) ? (
-                      <div className="space-y-3">
+                      <div className="space-y-2.5">
                         {(currentQ.options || []).map((o) => {
                           const isSelected = answers[currentQ.id] === o.id;
                           return (
@@ -2166,19 +2506,28 @@ export default function StudentExamAttempt() {
                                 setAnswers((prev) => ({ ...prev, [currentQ.id]: o.id }));
                                 if (error) setError("");
                               }}
-                              className={`w-full text-left rounded-xl p-4 sm:p-5 transition-all text-sm sm:text-base font-semibold cursor-pointer select-none ${
+                              className={`w-full text-left rounded-xl p-4 transition-colors text-sm sm:text-[15px] font-medium cursor-pointer select-none flex items-start gap-3 ${
                                 isSelected
-                                  ? "bg-[#1f2029] border-2 border-white text-white shadow-lg ring-1 ring-white/10"
-                                  : "bg-[#17181e] border border-white/10 text-slate-300 hover:border-white/30 hover:bg-[#1f2029]"
+                                  ? "bg-slate-100 dark:bg-slate-800 border-2 border-[#1E293B] dark:border-slate-200 text-slate-900 dark:text-white font-semibold"
+                                  : "bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                               }`}
                             >
-                              {o.text}
+                              <span
+                                className={`mt-0.5 w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                                  isSelected
+                                    ? "border-[#B91C1C] bg-[#B91C1C] text-white"
+                                    : "border-slate-300 dark:border-slate-600"
+                                }`}
+                              >
+                                {isSelected && <span className="w-2 h-2 rounded-full bg-white" />}
+                              </span>
+                              <span className="leading-relaxed">{o.text}</span>
                             </button>
                           );
                         })}
                       </div>
                     ) : currentQ.type === "multiple_choice" ? (
-                      <div className="space-y-3">
+                      <div className="space-y-2.5">
                         {(currentQ.options || []).map((o) => {
                           const isSelected =
                             Array.isArray(answers[currentQ.id]) &&
@@ -2195,18 +2544,18 @@ export default function StudentExamAttempt() {
                                 setAnswers((prev) => ({ ...prev, [currentQ.id]: next }));
                                 if (error) setError("");
                               }}
-                              className={`w-full text-left rounded-xl p-4 sm:p-5 transition-all text-sm sm:text-base font-semibold cursor-pointer select-none flex items-center justify-between ${
+                              className={`w-full text-left rounded-xl p-4 transition-colors text-sm sm:text-[15px] font-medium cursor-pointer select-none flex items-center justify-between gap-3 ${
                                 isSelected
-                                  ? "bg-[#1f2029] border-2 border-white text-white shadow-lg ring-1 ring-white/10"
-                                  : "bg-[#17181e] border border-white/10 text-slate-300 hover:border-white/30 hover:bg-[#1f2029]"
+                                  ? "bg-slate-100 dark:bg-slate-800 border-2 border-[#1E293B] dark:border-slate-200 text-slate-900 dark:text-white font-semibold"
+                                  : "bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                               }`}
                             >
-                              <span>{o.text}</span>
+                              <span className="leading-relaxed">{o.text}</span>
                               <span
-                                className={`w-5 h-5 rounded-md flex items-center justify-center border transition-colors ${
+                                className={`w-5 h-5 rounded-md flex items-center justify-center border shrink-0 transition-colors ${
                                   isSelected
-                                    ? "bg-red-600 border-red-500 text-white"
-                                    : "border-white/20 bg-white/5"
+                                    ? "bg-[#B91C1C] border-[#B91C1C] text-white"
+                                    : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
                                 }`}
                               >
                                 {isSelected && <Check size={13} className="stroke-[3]" />}
@@ -2222,13 +2571,11 @@ export default function StudentExamAttempt() {
                           setAnswers((prev) => ({ ...prev, [currentQ.id]: e.target.value }));
                           if (error) setError("");
                         }}
-                        className="w-full rounded-xl border border-white/15 bg-[#17181e] p-4 text-sm sm:text-base font-semibold text-white outline-none focus:border-red-500 transition-colors"
+                        className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3.5 text-sm sm:text-base font-medium text-slate-900 dark:text-white outline-none focus:border-[#1E293B] dark:focus:border-slate-300 transition-colors"
                       >
-                        <option value="" className="bg-slate-900 text-slate-400">
-                          Select an option…
-                        </option>
+                        <option value="">Select an option…</option>
                         {(currentQ.options || []).map((o) => (
-                          <option key={o.id} value={o.id} className="bg-slate-900 text-white">
+                          <option key={o.id} value={o.id}>
                             {o.text}
                           </option>
                         ))}
@@ -2237,7 +2584,7 @@ export default function StudentExamAttempt() {
                       <textarea
                         rows={currentQ.type === "short_answer" ? 3 : 6}
                         maxLength={10000}
-                        className="w-full rounded-xl border border-white/15 bg-[#17181e] p-4 text-sm sm:text-base text-white placeholder-slate-500 outline-none focus:border-red-500 transition-colors"
+                        className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 text-sm sm:text-base text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-[#1E293B] dark:focus:border-slate-300 transition-colors leading-relaxed"
                         value={String(answers[currentQ.id] || "")}
                         onChange={(e) => {
                           setAnswers((prev) => ({ ...prev, [currentQ.id]: e.target.value }));
@@ -2253,7 +2600,7 @@ export default function StudentExamAttempt() {
                       /* Deliverables & practical task */
                       <div className="space-y-4 pt-1">
                         {subMethod === "none" ? (
-                          <div className="rounded-xl bg-white/5 border border-white/10 p-3.5 text-xs font-semibold text-slate-300">
+                          <div className="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-3.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
                             Complete this practical activity as instructed. No online file or link
                             upload is required.
                           </div>
@@ -2262,23 +2609,23 @@ export default function StudentExamAttempt() {
                             {showLinkInput && (() => {
                               const linkValidation = validateSubmissionLink(structured.linkUrl);
                               return (
-                                <div className="rounded-xl border border-white/15 bg-white/5 p-4 space-y-2.5">
+                                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-4 space-y-2.5">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <label className="flex items-center gap-2 text-xs font-bold text-white">
-                                      <Link2 size={15} className="text-red-400" />
+                                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                                      <Link2 size={15} className="text-[#B91C1C] dark:text-red-400" />
                                       Submit Project or Shared Link (Google Drive, Scratch, GitHub, Canva, etc.)
                                     </label>
                                     {linkValidation.hasValue && (
                                       <span
-                                        className={`inline-flex items-center gap-1 text-[11px] font-bold ${
+                                        className={`inline-flex items-center gap-1 text-xs font-semibold ${
                                           linkValidation.isValid
-                                            ? "text-slate-200"
-                                            : "text-red-400"
+                                            ? "text-emerald-700 dark:text-emerald-400"
+                                            : "text-[#B91C1C] dark:text-red-400"
                                         }`}
                                       >
                                         {linkValidation.isValid ? (
                                           <>
-                                            <Check size={12} className="text-white" /> Valid Link Format
+                                            <Check size={12} /> Valid Link Format
                                           </>
                                         ) : (
                                           <>
@@ -2298,41 +2645,38 @@ export default function StudentExamAttempt() {
                                       if (error) setError("");
                                     }}
                                     placeholder="https://drive.google.com/... or https://scratch.mit.edu/projects/..."
-                                    className={`w-full rounded-xl border bg-[#17181e] px-3.5 py-2.5 text-sm text-white outline-none transition-colors ${
+                                    className={`w-full rounded-xl border bg-white dark:bg-slate-900 px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none transition-colors ${
                                       linkValidation.hasValue && !linkValidation.isValid
-                                        ? "border-red-500 focus:border-red-400"
+                                        ? "border-red-500 focus:border-red-500"
                                         : linkValidation.hasValue && linkValidation.isValid
-                                        ? "border-white/40 focus:border-white"
-                                        : "border-white/15 focus:border-red-500"
+                                        ? "border-emerald-500/70 focus:border-emerald-600"
+                                        : "border-slate-300 dark:border-slate-700 focus:border-[#1E293B]"
                                     }`}
                                   />
                                   {linkValidation.hasValue && !linkValidation.isValid && (
-                                    <p className="flex items-start gap-1.5 text-xs font-semibold text-red-300 bg-red-950/40 border border-red-800 rounded-lg p-2.5">
-                                      <AlertTriangle
-                                        size={14}
-                                        className="mt-0.5 shrink-0 text-red-400"
-                                      />
+                                    <p className="flex items-start gap-1.5 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg p-2.5">
+                                      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                                       <span>{linkValidation.errorMessage}</span>
                                     </p>
                                   )}
                                   {linkValidation.hasValue && linkValidation.isGoogleDrive && (
-                                    <div className="rounded-xl border border-red-800/70 bg-red-950/30 p-3 space-y-2">
+                                    <div className="rounded-xl border border-amber-200 dark:border-amber-900/70 bg-amber-50/70 dark:bg-amber-950/30 p-3 space-y-2">
                                       <div className="flex items-start gap-2">
-                                        <Info size={16} className="text-red-400 shrink-0 mt-0.5" />
-                                        <div className="text-xs text-slate-200 space-y-1">
-                                          <p className="font-bold text-white">
+                                        <Info size={16} className="text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
+                                        <div className="text-xs text-slate-700 dark:text-slate-200 space-y-1">
+                                          <p className="font-bold text-slate-900 dark:text-white">
                                             Google Drive Sharing Permission Check
                                           </p>
-                                          <p className="text-slate-300 leading-relaxed">
+                                          <p className="leading-relaxed">
                                             Please ensure your file or folder is set to{" "}
-                                            <strong className="text-white underline">
+                                            <strong className="underline">
                                               "Anyone with the link can view"
                                             </strong>{" "}
                                             so your tutor can access and grade your work.
                                           </p>
                                         </div>
                                       </div>
-                                      <label className="flex items-center gap-2.5 cursor-pointer pt-1 border-t border-white/10">
+                                      <label className="flex items-center gap-2.5 cursor-pointer pt-1 border-t border-amber-200/70 dark:border-amber-900/50">
                                         <input
                                           type="checkbox"
                                           checked={Boolean(drivePermissionConfirmed[currentQ.id])}
@@ -2343,11 +2687,10 @@ export default function StudentExamAttempt() {
                                             }));
                                             if (error) setError("");
                                           }}
-                                          className="h-4 w-4 rounded border-white/30 text-red-600 focus:ring-red-500"
+                                          className="h-4 w-4 rounded accent-[#B91C1C]"
                                         />
-                                        <span className="text-xs font-bold text-slate-200">
-                                          I confirm that this Google Drive link is set to "Anyone
-                                          with the link can view"
+                                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                                          I confirm that this Google Drive link is set to "Anyone with the link can view"
                                         </span>
                                       </label>
                                     </div>
@@ -2357,16 +2700,16 @@ export default function StudentExamAttempt() {
                             })()}
 
                             {showFileInput && (
-                              <div className="rounded-xl border border-white/15 bg-white/5 p-4 space-y-2">
-                                <label className="flex items-center gap-2 text-xs font-bold text-white">
-                                  <Upload size={15} className="text-red-400" />
+                              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-4 space-y-2">
+                                <label className="flex items-center gap-2 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                                  <Upload size={15} className="text-[#B91C1C] dark:text-red-400" />
                                   Attach File Deliverable (PDF, Code, ZIP, Scratch .sb3, Screenshots)
                                 </label>
                                 {structured.fileName ? (
-                                  <div className="flex items-center justify-between gap-3 rounded-xl border border-white/15 bg-[#17181e] p-3 text-xs">
+                                  <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs">
                                     <div className="flex items-center gap-2 min-w-0">
-                                      <FileText size={18} className="text-red-400 shrink-0" />
-                                      <span className="font-bold text-white truncate">
+                                      <FileText size={18} className="text-[#B91C1C] dark:text-red-400 shrink-0" />
+                                      <span className="font-semibold text-slate-900 dark:text-white truncate">
                                         {structured.fileName}
                                       </span>
                                     </div>
@@ -2380,16 +2723,16 @@ export default function StudentExamAttempt() {
                                           fileType: "",
                                         })
                                       }
-                                      className="text-red-400 hover:text-red-300 p-1"
+                                      className="text-[#B91C1C] hover:text-red-700 p-1"
                                       title="Remove file"
                                     >
                                       <Trash2 size={16} />
                                     </button>
                                   </div>
                                 ) : (
-                                  <label className="flex flex-col items-center justify-center p-5 rounded-xl border border-dashed border-white/20 hover:border-red-500 bg-[#17181e]/60 cursor-pointer transition-colors text-center">
+                                  <label className="flex flex-col items-center justify-center p-5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-[#B91C1C] bg-white dark:bg-slate-900 cursor-pointer transition-colors text-center">
                                     <Upload size={22} className="text-slate-400 mb-2" />
-                                    <p className="text-xs sm:text-sm font-bold text-white">
+                                    <p className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
                                       {uploadingQId === currentQ.id
                                         ? "Attaching file…"
                                         : "Click to select a file from your device"}
@@ -2412,7 +2755,7 @@ export default function StudentExamAttempt() {
 
                             {showTextInput && (
                               <div className="space-y-1.5">
-                                <label className="block text-xs font-bold text-slate-300">
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                                   {subMethod === "text"
                                     ? "Your Written Response"
                                     : "Additional Notes (Optional)"}
@@ -2427,7 +2770,7 @@ export default function StudentExamAttempt() {
                                     })
                                   }
                                   placeholder="Add any notes or written response here…"
-                                  className="w-full rounded-xl border border-white/15 bg-[#17181e] p-3.5 text-sm text-white outline-none focus:border-red-500"
+                                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3.5 text-sm text-slate-900 dark:text-white outline-none focus:border-[#1E293B]"
                                 />
                               </div>
                             )}
@@ -2438,14 +2781,14 @@ export default function StudentExamAttempt() {
                   </article>
 
                   {/* NAVIGATION CONTROLS */}
-                  <div className="flex items-center justify-between pt-2">
+                  <div className="flex items-center justify-between pt-1">
                     <button
                       type="button"
                       disabled={safeCurrentIndex === 0}
                       onClick={() => setCurrentQuestionIndex((prev) => Math.max(0, prev - 1))}
-                      className="rounded-full px-7 py-2.5 text-sm font-bold border border-white/15 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                      className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-semibold border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#161B22] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
-                      Back
+                      <ChevronLeft size={16} /> Previous
                     </button>
 
                     {safeCurrentIndex < data.questions.length - 1 ? (
@@ -2456,7 +2799,7 @@ export default function StudentExamAttempt() {
                             Math.min(data.questions.length - 1, prev + 1)
                           )
                         }
-                        className="inline-flex items-center gap-1.5 rounded-full bg-red-600 hover:bg-red-500 text-white font-bold px-8 py-2.5 text-sm shadow-lg shadow-red-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-[#1E293B] hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 text-white font-semibold px-6 py-2.5 text-sm transition-colors"
                       >
                         Next <ChevronRight size={16} />
                       </button>
@@ -2464,15 +2807,15 @@ export default function StudentExamAttempt() {
                       <button
                         type="button"
                         onClick={() => setShowReviewModal(true)}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-red-600 hover:bg-red-500 text-white font-bold px-8 py-2.5 text-sm shadow-lg shadow-red-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white font-semibold px-6 py-2.5 text-sm transition-colors"
                       >
                         Review &amp; Finish <ChevronRight size={16} />
                       </button>
                     )}
                   </div>
 
-                  {/* PAGINATION NUMBERS STRIP */}
-                  <div className="pt-6">
+                  {/* QUESTION NUMBER NAVIGATOR (Answerable Questions Only) */}
+                  <div className="pt-3">
                     <div className="flex flex-wrap items-center justify-center gap-2">
                       {data.questions.map((q, idx) => {
                         const isCurrent = idx === safeCurrentIndex;
@@ -2485,12 +2828,12 @@ export default function StudentExamAttempt() {
                             aria-label={`Question ${idx + 1} (${
                               isAns ? "Answered" : "Unanswered"
                             })`}
-                            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full text-xs sm:text-sm font-bold flex items-center justify-center transition-all ${
+                            className={`w-9 h-9 rounded-lg text-xs font-bold tabular-nums flex items-center justify-center transition-colors border ${
                               isCurrent
-                                ? "bg-red-600 text-white ring-4 ring-red-500/20 scale-110 shadow-lg shadow-red-600/50 z-10 font-extrabold"
+                                ? "bg-[#B91C1C] border-[#B91C1C] text-white"
                                 : isAns
-                                ? "bg-red-950/70 border border-red-800/80 text-red-300 hover:bg-red-900/80"
-                                : "bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 hover:text-white"
+                                ? "bg-slate-900/10 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white"
+                                : "bg-white dark:bg-[#161B22] border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-400"
                             }`}
                           >
                             {idx + 1}
@@ -2503,26 +2846,26 @@ export default function StudentExamAttempt() {
               );
             })()
           ) : (
-            /* ALL QUESTIONS LIST VIEW (CLASSIC LIST) */
+            /* ALL QUESTIONS DOCUMENT VIEW (Sections -> Content Blocks -> Comprehension Passages -> Linked Questions) */
             <>
               {(data.exam.instructions || data.exam.deliverables) && (
-                <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-4 sm:p-5 text-xs sm:text-sm text-slate-800 dark:text-slate-200 space-y-3">
+                <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161B22] p-5 text-sm text-slate-700 dark:text-slate-200 space-y-3">
                   {data.exam.instructions && (
                     <div className="space-y-1">
-                      <p className="font-bold text-[#1E293B] dark:text-white">
-                        {typeLabels.singular} Instructions &amp; Brief
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        {typeLabels.singular} Instructions
                       </p>
-                      <p className="leading-relaxed whitespace-pre-wrap break-words">
+                      <p className="leading-relaxed whitespace-pre-line break-words">
                         {data.exam.instructions}
                       </p>
                     </div>
                   )}
                   {data.exam.deliverables && (
-                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1">
-                      <p className="font-bold text-[#B91C1C] dark:text-red-400">
-                        Deliverables &amp; Expectations
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1">
+                      <p className="text-xs font-semibold text-[#B91C1C] dark:text-red-400">
+                        Expected Deliverables
                       </p>
-                      <p className="leading-relaxed whitespace-pre-wrap break-words">
+                      <p className="leading-relaxed whitespace-pre-line break-words">
                         {data.exam.deliverables}
                       </p>
                     </div>
@@ -2532,12 +2875,12 @@ export default function StudentExamAttempt() {
 
               {/* Exam-Level Embedded Learning Video / Resource */}
               {examResourceUrl && (
-                <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm">
+                <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161B22] p-4 sm:p-5">
                   <EmbeddedLearningMedia
                     url={examResourceUrl}
                     title={
                       data.exam.resourceTitle ||
-                      `${typeLabels.singular} Learning Video / Reference Material`
+                      `${typeLabels.singular} Reference Material`
                     }
                     hideExternalLink={true}
                   />
@@ -2547,11 +2890,15 @@ export default function StudentExamAttempt() {
               {/* Additional Structured Learning Resources */}
               {Array.isArray(data.exam.learningResources) &&
                 data.exam.learningResources
-                  .filter((r) => (r.url || r.youtubeUrl) && (r.url || r.youtubeUrl) !== examResourceUrl)
+                  .filter(
+                    (r) =>
+                      (r.url || r.youtubeUrl) &&
+                      (r.url || r.youtubeUrl) !== examResourceUrl
+                  )
                   .map((resItem, rIdx) => (
                     <section
                       key={resItem.id || rIdx}
-                      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm space-y-2"
+                      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161B22] p-4 sm:p-5 space-y-2"
                     >
                       {resItem.instructions && (
                         <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">
@@ -2566,10 +2913,14 @@ export default function StudentExamAttempt() {
                     </section>
                   ))}
 
-              <section className="space-y-4 sm:space-y-5">
-                {data.questions.map((q, i) => {
-              const qMediaUrl = q.resourceUrl || q.videoUrl || "";
-              const structured = parseStructuredAnswer(answers[q.id]);
+              <section className="space-y-6">
+                {(() => {
+                  const qIndexMap = new Map<string, { q: Q; i: number }>();
+                  data.questions.forEach((q, i) => qIndexMap.set(q.id, { q, i }));
+
+                  const renderQuestionCard = (q: Q, i: number) => {
+                    const qMediaUrl = q.resourceUrl || q.videoUrl || "";
+                    const structured = parseStructuredAnswer(answers[q.id]);
               const subMethod =
                 q.submissionMethod ||
                 (q.type === "link_submission"
@@ -2949,198 +3300,251 @@ export default function StudentExamAttempt() {
                     />
                   )}
                 </article>
-              );
-            })}
-          </section>
-        </>
-      )}
+                    );
+                  };
 
-      {/* STICKY AUTOSAVE & SUBMIT FOOTER */}
-      <footer className="sticky bottom-3 z-20 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-3.5 sm:p-4 shadow-lg space-y-3">
-        {confirmingSubmit ? (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl bg-red-50/70 dark:bg-red-950/30 border border-red-200 dark:border-red-800/70 p-3">
-            <p className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Submit your {typeLabels.lowerSingular} now? Submissions are sent directly to your
-              tutor for grading.
-            </p>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setConfirmingSubmit(false)}
-                className="flex-1 sm:flex-initial rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void send("submit")}
-                className="flex-1 sm:flex-initial rounded-xl bg-[#B91C1C] px-5 py-2 text-xs sm:text-sm font-bold text-white hover:bg-red-800 disabled:opacity-50"
-              >
-                {busy ? "Submitting…" : `Confirm ${typeLabels.submitLabel}`}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center justify-between sm:justify-start gap-2.5">
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                {saveStatus === "pending"
-                  ? "Pending autosave…"
-                  : saveStatus === "saving"
-                  ? "Saving progress…"
-                  : saveStatus === "error"
-                  ? "Autosave delayed"
-                  : "✓ All progress saved"}
-              </span>
-              {hasTimeLimit && (
-                <span
-                  className={`inline-flex items-center gap-1.5 font-mono tabular-nums text-xs font-bold px-2.5 py-1 rounded-lg border ${
-                    isLowTime
-                      ? "text-[#B91C1C] dark:text-red-300 bg-red-50 dark:bg-red-950/50 border-red-200 dark:border-red-800"
-                      : "text-[#1E293B] dark:text-slate-200 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                  }`}
-                >
-                  <Clock size={13} className="shrink-0" />
-                  {formattedTime}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2.5">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void send("save")}
-                className="flex-1 sm:flex-initial rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
-              >
-                {busy ? "Saving…" : "Save Progress"}
-              </button>
-              {viewMode === "focused" && (
-                <button
-                  type="button"
-                  onClick={() => setShowReviewModal(true)}
-                  className="flex-1 sm:flex-initial rounded-xl border border-red-300 dark:border-red-800 bg-red-50/60 dark:bg-red-950/40 px-4 py-2.5 text-xs sm:text-sm font-bold text-[#B91C1C] dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 tabular-nums"
-                >
-                  Review Answers ({answeredCount}/{data.questions.length})
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={busy}
-                onClick={handleInitiateSubmit}
-                className="flex-1 sm:flex-initial rounded-xl bg-[#B91C1C] px-5 sm:px-6 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-red-800 shadow-sm disabled:opacity-50"
-              >
-                {typeLabels.submitLabel}
-              </button>
-            </div>
-          </div>
-        )}
-      </footer>
-
-      {/* REVIEW & SUBMIT MODAL */}
-      {showReviewModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 overflow-y-auto"
-        >
-          <div className="relative w-full max-w-xl rounded-2xl border border-white/15 bg-[#141418] p-6 shadow-2xl text-white space-y-5">
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
-              <div className="flex items-center gap-2.5">
-                <Flame className="text-red-500 fill-red-500" size={24} />
-                <h2 className="text-lg sm:text-xl font-bold text-white">
-                  Review Assessment Answers
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowReviewModal(false)}
-                className="text-slate-400 hover:text-white text-sm font-semibold p-1 rounded-lg"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-center">
-              <div className="rounded-xl bg-white/5 border border-white/10 p-3">
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Answered</p>
-                <p className="text-2xl font-black tabular-nums text-white mt-1">
-                  {answeredCount} / {answerableQuestions.length}
-                </p>
-              </div>
-              <div className="rounded-xl bg-white/5 border border-white/10 p-3">
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Unanswered</p>
-                <p className="text-2xl font-black tabular-nums text-red-400 mt-1">
-                  {Math.max(0, answerableQuestions.length - answeredCount)}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Question Quick-Jump
-              </p>
-              <div className="grid grid-cols-6 sm:grid-cols-8 gap-2 max-h-52 overflow-y-auto pr-1">
-                {data.questions.map((q, idx) => {
-                  const isAns = isQuestionAnswered(q);
                   return (
-                    <button
-                      key={q.id}
-                      type="button"
-                      onClick={() => {
-                        setCurrentQuestionIndex(idx);
-                        setShowReviewModal(false);
-                      }}
-                      title={`Go to Question ${idx + 1}`}
-                      className={`py-2 rounded-lg text-xs font-bold tabular-nums border transition-all ${
-                        isAns
-                          ? "bg-red-950/60 border-red-800 text-red-300 hover:bg-red-900/80"
-                          : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white"
-                      }`}
-                    >
-                      #{idx + 1}
-                    </button>
+                    <>
+                      {resolvedLayout.sections.map((section, secIdx) => (
+                        <div key={section.id} className="space-y-4">
+                          <SectionBanner
+                            section={section}
+                            sectionIndex={secIdx}
+                            totalSections={resolvedLayout.sections.length}
+                          />
+                          {section.items.map((item) => {
+                            if (item.kind === "content") {
+                              return <ContentBlockCard key={item.id} block={item} />;
+                            }
+                            if (item.kind === "comprehension") {
+                              const childEntries = item.questionIds
+                                .map((qid) => qIndexMap.get(qid))
+                                .filter(Boolean) as Array<{ q: Q; i: number }>;
+                              const rangeLabel =
+                                childEntries.length === 1
+                                  ? `Question ${childEntries[0].i + 1}`
+                                  : childEntries.length > 1
+                                  ? `Questions ${childEntries[0].i + 1}–${childEntries[childEntries.length - 1].i + 1}`
+                                  : undefined;
+                              return (
+                                <div key={item.id} className="space-y-4">
+                                  <ComprehensionPassagePanel
+                                    comprehension={item}
+                                    questionRangeLabel={rangeLabel}
+                                  />
+                                  <div className="space-y-4">
+                                    {childEntries.map(({ q, i }) => renderQuestionCard(q, i))}
+                                  </div>
+                                </div>
+                              );
+                            }
+                            if (item.kind === "question") {
+                              const entry = qIndexMap.get(item.questionId);
+                              if (!entry) return null;
+                              return renderQuestionCard(entry.q, entry.i);
+                            }
+                            return null;
+                          })}
+                        </div>
+                      ))}
+                    </>
                   );
-                })}
-              </div>
-            </div>
+                })()}
+              </section>
+            </>
+          )}
 
-            {Math.max(0, answerableQuestions.length - answeredCount) > 0 && (
-              <div className="flex items-center gap-2 p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-xs text-red-200">
-                <AlertTriangle size={16} className="shrink-0 text-red-400" />
-                <span>
-                  You have {Math.max(0, answerableQuestions.length - answeredCount)} unanswered question(s). You can jump back to complete them or submit now.
-                </span>
+          {/* STICKY AUTOSAVE & SUBMIT FOOTER */}
+          <footer className="sticky bottom-3 z-20 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-[#161B22]/95 backdrop-blur-md p-3.5 sm:p-4 shadow-md space-y-3">
+            {confirmingSubmit ? (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl bg-red-50/70 dark:bg-red-950/30 border border-red-200 dark:border-red-800/70 p-3">
+                <p className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  Submit your {typeLabels.lowerSingular} now? Submissions are sent directly to your
+                  tutor for grading.
+                </p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setConfirmingSubmit(false)}
+                    className="flex-1 sm:flex-initial rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void send("submit")}
+                    className="flex-1 sm:flex-initial rounded-xl bg-[#B91C1C] px-5 py-2 text-xs sm:text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50"
+                  >
+                    {busy ? "Submitting…" : `Confirm ${typeLabels.submitLabel}`}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center justify-between sm:justify-start gap-2.5">
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                    {saveStatus === "pending"
+                      ? "Pending autosave…"
+                      : saveStatus === "saving"
+                      ? "Saving progress…"
+                      : saveStatus === "error"
+                      ? "Autosave delayed"
+                      : "All progress saved"}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void send("save")}
+                    className="flex-1 sm:flex-initial rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                  >
+                    {busy ? "Saving…" : "Save Progress"}
+                  </button>
+                  {allowPause && (
+                    <button
+                      type="button"
+                      disabled={pauseBusy || busy}
+                      onClick={() => void handlePauseAttempt()}
+                      className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                    >
+                      <PauseCircle size={15} />
+                      <span>{pauseBusy ? "Pausing…" : "Pause & Exit"}</span>
+                    </button>
+                  )}
+                  {viewMode === "focused" && (
+                    <button
+                      type="button"
+                      onClick={() => setShowReviewModal(true)}
+                      className="flex-1 sm:flex-initial rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 tabular-nums"
+                    >
+                      Review ({answeredCount}/{answerableQuestions.length})
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={handleInitiateSubmit}
+                    className="flex-1 sm:flex-initial rounded-xl bg-[#B91C1C] px-5 sm:px-6 py-2 text-xs sm:text-sm font-semibold text-white hover:bg-red-800 shadow-xs disabled:opacity-50"
+                  >
+                    {typeLabels.submitLabel}
+                  </button>
+                </div>
               </div>
             )}
+          </footer>
 
-            <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-3 border-t border-white/10">
-              <button
-                type="button"
-                onClick={() => setShowReviewModal(false)}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-white/15 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white font-semibold text-sm"
-              >
-                Back to Quiz
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setShowReviewModal(false);
-                  handleInitiateSubmit();
-                }}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white font-bold text-sm shadow-lg shadow-red-600/30 disabled:opacity-50"
-              >
-                {busy ? "Submitting…" : `Submit ${typeLabels.singular}`}
-              </button>
+          {/* REVIEW & SUBMIT MODAL (Full Light & Dark Mode) */}
+          {showReviewModal && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto"
+            >
+              <div className="relative w-full max-w-xl rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161B22] p-6 shadow-2xl text-slate-900 dark:text-slate-100 space-y-5">
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="text-[#B91C1C] dark:text-red-400" size={20} />
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                      Review Assessment Answers
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowReviewModal(false)}
+                    className="text-slate-500 hover:text-slate-900 dark:hover:text-white text-sm font-semibold p-1 rounded-lg"
+                    aria-label="Close review modal"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-center">
+                  <div className="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-3.5">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                      Answered
+                    </p>
+                    <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white mt-1">
+                      {answeredCount} / {answerableQuestions.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-3.5">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                      Unanswered
+                    </p>
+                    <p className="text-2xl font-bold tabular-nums text-[#B91C1C] dark:text-red-400 mt-1">
+                      {Math.max(0, answerableQuestions.length - answeredCount)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    Question Quick-Jump
+                  </p>
+                  <div className="grid grid-cols-6 sm:grid-cols-8 gap-2 max-h-52 overflow-y-auto pr-1">
+                    {data.questions.map((q, idx) => {
+                      const isAns = isQuestionAnswered(q);
+                      return (
+                        <button
+                          key={q.id}
+                          type="button"
+                          onClick={() => {
+                            setCurrentQuestionIndex(idx);
+                            setShowReviewModal(false);
+                          }}
+                          title={`Go to Question ${idx + 1}`}
+                          className={`py-2 rounded-lg text-xs font-bold tabular-nums border transition-colors ${
+                            isAns
+                              ? "bg-slate-900 dark:bg-slate-100 border-slate-900 dark:border-slate-100 text-white dark:text-slate-900"
+                              : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-400"
+                          }`}
+                        >
+                          {idx + 1}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {Math.max(0, answerableQuestions.length - answeredCount) > 0 && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200">
+                    <AlertTriangle size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span>
+                      You have {Math.max(0, answerableQuestions.length - answeredCount)} unanswered question(s). You can jump back to complete them or submit now.
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowReviewModal(false)}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 font-semibold text-sm"
+                  >
+                    Return to Questions
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setShowReviewModal(false);
+                      handleInitiateSubmit();
+                    }}
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white font-semibold text-sm disabled:opacity-50"
+                  >
+                    {busy ? "Submitting…" : `Submit ${typeLabels.singular}`}
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
-    </>
-  )}
-    </main>
+      </main>
+    </div>
   );
 }
 

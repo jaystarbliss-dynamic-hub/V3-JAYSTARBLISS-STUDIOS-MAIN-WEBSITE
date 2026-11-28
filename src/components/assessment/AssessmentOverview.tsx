@@ -18,8 +18,15 @@ import {
   Play,
   RotateCcw,
   X,
+  ArrowUpDown,
 } from 'lucide-react';
 import { resolveCanonicalExamStatus, type AcademicWorkType } from '../../lib/classes';
+import {
+  sortAssessments,
+  groupAssessmentsByRecency,
+  formatAssessmentRecencyLabel,
+  type AssessmentSortOrder,
+} from '../../lib/assessmentOrdering';
 import {
   FloatingActionMenu,
   RowActionMenuButton,
@@ -96,6 +103,7 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
   const [workTypeFilter, setWorkTypeFilter] = useState<string>('ALL');
   const [deliveryFilter, setDeliveryFilter] = useState<string>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [sortOrder, setSortOrder] = useState<AssessmentSortOrder>('newest');
   const [pendingStatusAction, setPendingStatusAction] = useState<{
     assessment: AssessmentListItem;
     nextStatus: 'active' | 'completed';
@@ -257,6 +265,16 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
     });
   }, [assessments, recipientFilter, categoryFilter, statusFilter, workTypeFilter, deliveryFilter, searchQuery]);
 
+  const sortedAssessments = useMemo(
+    () => sortAssessments(filteredAssessments, sortOrder, { mode: 'general' }),
+    [filteredAssessments, sortOrder]
+  );
+
+  const recencyGroups = useMemo(
+    () => groupAssessmentsByRecency(sortedAssessments, { mode: 'general' }),
+    [sortedAssessments]
+  );
+
   return (
     <div className="space-y-6">
       {/* ============================================================== */}
@@ -359,17 +377,17 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
           <Filter size={12} /> Filters:
         </span>
 
-        {/* Programme Category Dropdown */}
+        {/* Programme Category Dropdown (Alphabetical) */}
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
           className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold focus:outline-none focus:border-[#1E293B] cursor-pointer"
         >
           <option value="ALL">All Programme Categories</option>
-          <option value="technology">Technology</option>
-          <option value="design-graphics">Design & Graphics</option>
-          <option value="music">Music</option>
           <option value="academics">Academics</option>
+          <option value="design-graphics">Design &amp; Graphics</option>
+          <option value="music">Music</option>
+          <option value="technology">Technology</option>
         </select>
 
         {/* Status Dropdown */}
@@ -386,17 +404,17 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
           <option value="archived">Archived</option>
         </select>
 
-        {/* Work Type Dropdown */}
+        {/* Work Type Dropdown (Alphabetical) */}
         <select
           value={workTypeFilter}
           onChange={(e) => setWorkTypeFilter(e.target.value)}
           className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold focus:outline-none focus:border-[#1E293B] cursor-pointer"
         >
           <option value="ALL">All Assessment Types</option>
-          <option value="ASSIGNMENT">Assignment</option>
-          <option value="TEST">Test</option>
           <option value="ACTIVITY">Activity</option>
+          <option value="ASSIGNMENT">Assignment</option>
           <option value="EXAMINATION">Exam</option>
+          <option value="TEST">Test</option>
         </select>
 
         {/* Delivery Format */}
@@ -410,7 +428,22 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
           <option value="EXTERNAL_LINK">External Third-Party Link</option>
         </select>
 
-        {(categoryFilter !== 'ALL' || statusFilter !== 'ALL' || workTypeFilter !== 'ALL' || deliveryFilter !== 'ALL' || searchQuery) && (
+        {/* Chronological & Alphabetical Sort Selector */}
+        <div className="inline-flex items-center gap-1.5 ml-auto">
+          <ArrowUpDown size={12} className="text-slate-400 shrink-0" />
+          <select
+            aria-label="Sort assessments"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as AssessmentSortOrder)}
+            className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-bold focus:outline-none focus:border-[#1E293B] cursor-pointer"
+          >
+            <option value="newest">Newest First (Grouped)</option>
+            <option value="oldest">Oldest First</option>
+            <option value="alpha">Alphabetical (A–Z)</option>
+          </select>
+        </div>
+
+        {(categoryFilter !== 'ALL' || statusFilter !== 'ALL' || workTypeFilter !== 'ALL' || deliveryFilter !== 'ALL' || searchQuery || sortOrder !== 'newest') && (
           <button
             type="button"
             onClick={() => {
@@ -419,8 +452,9 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
               setWorkTypeFilter('ALL');
               setDeliveryFilter('ALL');
               setSearchQuery('');
+              setSortOrder('newest');
             }}
-            className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline cursor-pointer ml-auto"
+            className="text-xs font-bold text-[#B91C1C] dark:text-red-400 hover:underline cursor-pointer"
           >
             Reset Filters
           </button>
@@ -473,174 +507,213 @@ export const AssessmentOverview: React.FC<AssessmentOverviewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/70 text-xs">
-                {filteredAssessments.map((exam) => {
-                  const isExternal = exam.deliveryMode === 'EXTERNAL_LINK';
-                  const wt = exam.workType || 'EXAMINATION';
-                  const isPriv =
-                    exam.recipientMode === 'PRIVATE_LEARNERS' ||
-                    exam.schoolId === 'private' ||
-                    (Array.isArray(exam.targetStudentIds) &&
-                      exam.targetStudentIds.length > 0 &&
-                      (!exam.targetSchoolIds || exam.targetSchoolIds.length === 0));
-
-                  const isMultiTarget =
-                    exam.recipientMode === 'MULTI_TARGET' ||
-                    ((exam.targetSchoolIds?.length || 0) > 1) ||
-                    ((exam.targetSchoolIds?.length || 0) > 0 && (exam.targetStudentIds?.length || 0) > 0);
-
-                  const statusLower = resolveCanonicalExamStatus(exam);
-
-                  return (
-                    <tr
-                      key={exam.id}
-                      onContextMenu={(e) => {
-                        rowContextMenu.openFromContextMenu(e, exam);
-                      }}
-                      {...rowContextMenu.getTouchHandlers(exam)}
-                      className="hover:bg-slate-50/80 dark:hover:bg-zinc-900/60 transition-colors group"
-                    >
-                      {/* 1. Assessment Title & Format */}
-                      <td className="py-4 px-4 sm:px-6">
-                        <div className="space-y-1 min-w-[180px]">
-                          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400">
-                            <span className={wt === 'EXAMINATION' ? 'text-[#B91C1C] dark:text-red-400' : 'text-[#1E293B] dark:text-zinc-200'}>
-                              {wt}
-                            </span>
-                            <span className="mx-1.5 text-slate-300 dark:text-zinc-700">·</span>
-                            <span>{isExternal ? 'External Link' : 'Native Studio'}</span>
-                          </p>
-                          <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm group-hover:text-[#B91C1C] dark:group-hover:text-red-400 transition-colors">
-                            {exam.title || 'Untitled Assessment'}
-                          </p>
-                        </div>
-                      </td>
-
-                      {/* 2. Subject & Target Class */}
-                      <td className="py-4 px-4">
-                        <div className="space-y-1">
-                          <p className="font-bold text-slate-800 dark:text-zinc-200">
-                            {exam.subject || 'General Studies'}
-                          </p>
-                          <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-                            {(exam as any).gradeRange?.from && (exam as any).gradeRange?.to
-                              ? `${(exam as any).gradeRange.from} – ${(exam as any).gradeRange.to}`
-                              : exam.targetClass || exam.className || 'All Grades'}
-                          </p>
-                          {(exam.programTitle || exam.programBreadcrumbs || (Array.isArray((exam as any).targetProgramTitles) && (exam as any).targetProgramTitles.length > 0)) && (
-                            <p
-                              className="inline-flex items-center gap-1 text-[10px] font-bold text-[#1E293B] dark:text-zinc-300 max-w-[220px] truncate"
-                              title={
-                                Array.isArray((exam as any).targetProgramTitles) && (exam as any).targetProgramTitles.length > 0
-                                  ? (exam as any).targetProgramTitles.join(', ')
-                                  : exam.programBreadcrumbs || exam.programTitle
-                              }
-                            >
-                              <Tag size={9} className="shrink-0 text-[#B91C1C] dark:text-red-400" />
-                              <span className="truncate">
-                                {Array.isArray((exam as any).targetProgramTitles) && (exam as any).targetProgramTitles.length > 1
-                                  ? `${(exam as any).targetProgramTitles[0]} +${(exam as any).targetProgramTitles.length - 1} more`
-                                  : exam.programBreadcrumbs || exam.programTitle || (exam as any).targetProgramTitles?.[0]}
+                {(sortOrder === 'newest'
+                  ? recencyGroups
+                  : [{ key: 'flat' as const, label: '', subtitle: '', items: sortedAssessments }]
+                ).map((group) => (
+                  <React.Fragment key={group.key}>
+                    {group.label && (
+                      <tr className="bg-slate-50/95 dark:bg-zinc-900/90 border-y border-slate-200/80 dark:border-zinc-800">
+                        <td colSpan={6} className="py-2.5 px-4 sm:px-6">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`h-2 w-2 rounded-full shrink-0 ${
+                                  group.key === 'most_recent'
+                                    ? 'bg-[#B91C1C]'
+                                    : group.key === 'this_month'
+                                    ? 'bg-[#1E293B] dark:bg-slate-300'
+                                    : 'bg-slate-400 dark:bg-zinc-500'
+                                }`}
+                              />
+                              <span className="text-[11px] font-black uppercase tracking-wider text-slate-800 dark:text-zinc-100">
+                                {group.label}
                               </span>
-                            </p>
-                          )}
-                        </div>
-                      </td>
+                              <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500">
+                                · {group.subtitle}
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-bold tabular-nums text-slate-500 dark:text-zinc-400">
+                              {group.items.length} assessment{group.items.length === 1 ? '' : 's'}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {group.items.map((exam) => {
+                      const isExternal = exam.deliveryMode === 'EXTERNAL_LINK';
+                      const wt = exam.workType || 'EXAMINATION';
+                      const isPriv =
+                        exam.recipientMode === 'PRIVATE_LEARNERS' ||
+                        exam.schoolId === 'private' ||
+                        (Array.isArray(exam.targetStudentIds) &&
+                          exam.targetStudentIds.length > 0 &&
+                          (!exam.targetSchoolIds || exam.targetSchoolIds.length === 0));
 
-                      {/* 3. Recipients */}
-                      <td className="py-4 px-4">
-                        <div className="space-y-1">
-                          {isMultiTarget ? (
-                            <div className="flex items-center gap-1.5 text-[#1E293B] dark:text-zinc-200 font-bold tabular-nums">
-                              <Users size={13} className="text-[#B91C1C] dark:text-red-400" />
-                              <span>Multi-Target ({exam.targetSchoolIds?.length || 0} Schools, {exam.targetStudentIds?.length || 0} Private)</span>
-                            </div>
-                          ) : isPriv ? (
-                            <div className="flex items-center gap-1.5 text-[#1E293B] dark:text-zinc-200 font-bold tabular-nums">
-                              <User size={13} className="text-slate-500 dark:text-zinc-400" />
-                              <span>Private Learners ({exam.targetStudentIds?.length || 1})</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1.5 text-slate-700 dark:text-zinc-300 font-medium">
-                              <School size={13} className="text-slate-400 dark:text-zinc-500" />
-                              <span className="truncate max-w-[150px]">{exam.schoolName || 'Partner School'}</span>
-                            </div>
-                          )}
-                          {Array.isArray((exam as any).excludedStudentIds) && (exam as any).excludedStudentIds.length > 0 && (
-                            <p className="text-[10px] font-semibold text-slate-500 dark:text-zinc-400 tabular-nums">
-                              {(exam as any).excludedStudentIds.length} excluded
-                            </p>
-                          )}
-                        </div>
-                      </td>
+                      const isMultiTarget =
+                        exam.recipientMode === 'MULTI_TARGET' ||
+                        ((exam.targetSchoolIds?.length || 0) > 1) ||
+                        ((exam.targetSchoolIds?.length || 0) > 0 && (exam.targetStudentIds?.length || 0) > 0);
 
-                      {/* 4. Questions & Marks */}
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        <div className="space-y-0.5 text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums">
-                          {isExternal ? (
-                            <span className="font-semibold text-slate-400 dark:text-zinc-500">External Form</span>
-                          ) : (
-                            <>
+                      const statusLower = resolveCanonicalExamStatus(exam);
+                      const recencyStamp = formatAssessmentRecencyLabel(exam, { mode: 'general' });
+
+                      return (
+                        <tr
+                          key={exam.id}
+                          onContextMenu={(e) => {
+                            rowContextMenu.openFromContextMenu(e, exam);
+                          }}
+                          {...rowContextMenu.getTouchHandlers(exam)}
+                          className="hover:bg-slate-50/80 dark:hover:bg-zinc-900/60 transition-colors group"
+                        >
+                          {/* 1. Assessment Title & Format */}
+                          <td className="py-4 px-4 sm:px-6">
+                            <div className="space-y-1 min-w-[180px]">
+                              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                                <span className={wt === 'EXAMINATION' ? 'text-[#B91C1C] dark:text-red-400' : 'text-[#1E293B] dark:text-zinc-200'}>
+                                  {wt}
+                                </span>
+                                <span className="mx-1.5 text-slate-300 dark:text-zinc-700">·</span>
+                                <span>{isExternal ? 'External Link' : 'Native Studio'}</span>
+                              </p>
+                              <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm group-hover:text-[#B91C1C] dark:group-hover:text-red-400 transition-colors">
+                                {exam.title || 'Untitled Assessment'}
+                              </p>
+                            </div>
+                          </td>
+
+                          {/* 2. Subject & Target Class */}
+                          <td className="py-4 px-4">
+                            <div className="space-y-1">
                               <p className="font-bold text-slate-800 dark:text-zinc-200">
-                                {exam.questionCount || 0} Question(s)
+                                {exam.subject || 'General Studies'}
                               </p>
-                              <p className="text-slate-400 dark:text-zinc-500">
-                                {exam.maxScore || 0} Marks · {exam.durationMinutes ? `${exam.durationMinutes}m` : 'Untimed'}
+                              <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                                {(exam as any).gradeRange?.from && (exam as any).gradeRange?.to
+                                  ? `${(exam as any).gradeRange.from} – ${(exam as any).gradeRange.to}`
+                                  : exam.targetClass || exam.className || 'All Grades'}
                               </p>
-                            </>
-                          )}
-                        </div>
-                      </td>
+                              {(exam.programTitle || exam.programBreadcrumbs || (Array.isArray((exam as any).targetProgramTitles) && (exam as any).targetProgramTitles.length > 0)) && (
+                                <p
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-[#1E293B] dark:text-zinc-300 max-w-[220px] truncate"
+                                  title={
+                                    Array.isArray((exam as any).targetProgramTitles) && (exam as any).targetProgramTitles.length > 0
+                                      ? (exam as any).targetProgramTitles.join(', ')
+                                      : exam.programBreadcrumbs || exam.programTitle
+                                  }
+                                >
+                                  <Tag size={9} className="shrink-0 text-[#B91C1C] dark:text-red-400" />
+                                  <span className="truncate">
+                                    {Array.isArray((exam as any).targetProgramTitles) && (exam as any).targetProgramTitles.length > 1
+                                      ? `${(exam as any).targetProgramTitles[0]} +${(exam as any).targetProgramTitles.length - 1} more`
+                                      : exam.programBreadcrumbs || exam.programTitle || (exam as any).targetProgramTitles?.[0]}
+                                  </span>
+                                </p>
+                              )}
+                            </div>
+                          </td>
 
-                      {/* 5. Status & Availability */}
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        <div className="space-y-1">
-                          <span
-                            className={`text-[11px] font-black uppercase tracking-wider ${
-                              statusLower === 'active'
-                                ? 'text-emerald-700 dark:text-emerald-400'
-                                : statusLower === 'scheduled'
-                                ? 'text-[#1E293B] dark:text-zinc-200'
-                                : statusLower === 'completed'
-                                ? 'text-[#B91C1C] dark:text-red-400'
-                                : 'text-slate-500 dark:text-zinc-400'
-                            }`}
-                          >
-                            {statusLower === 'active'
-                              ? 'Active'
-                              : statusLower === 'scheduled'
-                              ? 'Scheduled'
-                              : statusLower === 'completed'
-                              ? 'Closed'
-                              : statusLower === 'archived'
-                              ? 'Archived'
-                              : 'Draft'}
-                          </span>
-                          {exam.passcode && (
-                            <p className="text-[10px] font-mono text-slate-400 dark:text-zinc-500 tabular-nums">
-                              Passcode: <strong>{exam.passcode}</strong>
-                            </p>
-                          )}
-                        </div>
-                      </td>
+                          {/* 3. Recipients */}
+                          <td className="py-4 px-4">
+                            <div className="space-y-1">
+                              {isMultiTarget ? (
+                                <div className="flex items-center gap-1.5 text-[#1E293B] dark:text-zinc-200 font-bold tabular-nums">
+                                  <Users size={13} className="text-[#B91C1C] dark:text-red-400" />
+                                  <span>Multi-Target ({exam.targetSchoolIds?.length || 0} Schools, {exam.targetStudentIds?.length || 0} Private)</span>
+                                </div>
+                              ) : isPriv ? (
+                                <div className="flex items-center gap-1.5 text-[#1E293B] dark:text-zinc-200 font-bold tabular-nums">
+                                  <User size={13} className="text-slate-500 dark:text-zinc-400" />
+                                  <span>Private Learners ({exam.targetStudentIds?.length || 1})</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 text-slate-700 dark:text-zinc-300 font-medium">
+                                  <School size={13} className="text-slate-400 dark:text-zinc-500" />
+                                  <span className="truncate max-w-[150px]">{exam.schoolName || 'Partner School'}</span>
+                                </div>
+                              )}
+                              {Array.isArray((exam as any).excludedStudentIds) && (exam as any).excludedStudentIds.length > 0 && (
+                                <p className="text-[10px] font-semibold text-slate-500 dark:text-zinc-400 tabular-nums">
+                                  {(exam as any).excludedStudentIds.length} excluded
+                                </p>
+                              )}
+                            </div>
+                          </td>
 
-                      {/* 6. More Actions (Three-Dot Menu & Right-Click Supported) */}
-                      <td className="py-4 px-4 sm:px-6 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end">
-                          <RowActionMenuButton
-                            onClick={(e) => {
-                              if (rowContextMenu.state?.data?.id === exam.id) {
-                                rowContextMenu.close();
-                              } else {
-                                rowContextMenu.openFromButton(e, exam);
-                              }
-                            }}
-                            ariaLabel={`Actions for ${exam.title || 'assessment'}`}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                          {/* 4. Questions & Marks */}
+                          <td className="py-4 px-4 whitespace-nowrap">
+                            <div className="space-y-0.5 text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums">
+                              {isExternal ? (
+                                <span className="font-semibold text-slate-400 dark:text-zinc-500">External Form</span>
+                              ) : (
+                                <>
+                                  <p className="font-bold text-slate-800 dark:text-zinc-200">
+                                    {exam.questionCount || 0} Question(s)
+                                  </p>
+                                  <p className="text-slate-400 dark:text-zinc-500">
+                                    {exam.maxScore || 0} Marks · {exam.durationMinutes ? `${exam.durationMinutes}m` : 'Untimed'}
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* 5. Status & Availability */}
+                          <td className="py-4 px-4 whitespace-nowrap">
+                            <div className="space-y-1">
+                              <span
+                                className={`text-[11px] font-black uppercase tracking-wider ${
+                                  statusLower === 'active'
+                                    ? 'text-emerald-700 dark:text-emerald-400'
+                                    : statusLower === 'scheduled'
+                                    ? 'text-[#1E293B] dark:text-zinc-200'
+                                    : statusLower === 'completed'
+                                    ? 'text-[#B91C1C] dark:text-red-400'
+                                    : 'text-slate-500 dark:text-zinc-400'
+                                }`}
+                              >
+                                {statusLower === 'active'
+                                  ? 'Active'
+                                  : statusLower === 'scheduled'
+                                  ? 'Scheduled'
+                                  : statusLower === 'completed'
+                                  ? 'Closed'
+                                  : statusLower === 'archived'
+                                  ? 'Archived'
+                                  : 'Draft'}
+                              </span>
+                              <p className="text-[10px] font-medium text-slate-500 dark:text-zinc-400 tabular-nums">
+                                {recencyStamp}
+                              </p>
+                              {exam.passcode && (
+                                <p className="text-[10px] font-mono text-slate-400 dark:text-zinc-500 tabular-nums">
+                                  Passcode: <strong>{exam.passcode}</strong>
+                                </p>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* 6. More Actions (Three-Dot Menu & Right-Click Supported) */}
+                          <td className="py-4 px-4 sm:px-6 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end">
+                              <RowActionMenuButton
+                                onClick={(e) => {
+                                  if (rowContextMenu.state?.data?.id === exam.id) {
+                                    rowContextMenu.close();
+                                  } else {
+                                    rowContextMenu.openFromButton(e, exam);
+                                  }
+                                }}
+                                ariaLabel={`Actions for ${exam.title || 'assessment'}`}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
           </div>
